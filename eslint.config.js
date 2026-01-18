@@ -10,8 +10,12 @@ export default [
     ignores: [
       "**/node_modules/**",
       "**/dist/**",
+      "**/.vercel/**",
       "**/.output/**",
       "**/.nitro/**",
+      "**/.github/**",
+      "**/.vscode/**",
+      "**/docs/**",
       "**/build/**",
       "**/coverage/**",
       "**/convex/_generated/**",

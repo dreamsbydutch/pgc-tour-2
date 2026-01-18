@@ -4,7 +4,7 @@ import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 
-const CronJobName = v.union(
+const CronJobNameValidator = v.union(
   v.literal("datagolf_live_sync"),
   v.literal("update_teams"),
   v.literal("recompute_standings"),
@@ -40,7 +40,7 @@ type CronRunErr = {
 
 export const adminRunCronJob = action({
   args: {
-    job: CronJobName,
+    job: CronJobNameValidator,
     tournamentId: v.optional(v.id("tournaments")),
     confirm: v.boolean(),
   },

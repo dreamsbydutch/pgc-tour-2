@@ -444,7 +444,6 @@ export interface EnhancedMemberDoc extends Omit<MemberDoc, "friends"> {
   // Computed display fields
   fullName: string;
   formattedBalance: string;
-  effectiveDisplayName: string;
 
   // Status fields
   hasBalance: boolean;

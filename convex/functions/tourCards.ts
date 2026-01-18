@@ -11,6 +11,8 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { ValidationResult } from "../types/types";
 
+const DEFAULT_MAX_PARTICIPANTS = 75;
+
 export const createTourCards = mutation({
   args: {
     data: v.object({
@@ -246,6 +248,57 @@ export const updateTourCards = mutation({
 
     await ctx.db.patch(args.id, {
       ...args.data,
+      updatedAt: Date.now(),
+    });
+
+    return await ctx.db.get(args.id);
+  },
+});
+
+export const switchTourCards = mutation({
+  args: {
+    id: v.id("tourCards"),
+    tourId: v.id("tours"),
+  },
+  handler: async (ctx, args) => {
+    const tourCard = await ctx.db.get(args.id);
+    if (!tourCard) {
+      throw new Error("Tour card not found");
+    }
+
+    await requireTourCardOwner(ctx, tourCard);
+
+    if (tourCard.tourId === args.tourId) {
+      return tourCard;
+    }
+
+    const tour = await ctx.db.get(args.tourId);
+    if (!tour) {
+      throw new Error("Tour not found");
+    }
+
+    if (tour.seasonId !== tourCard.seasonId) {
+      throw new Error("Tour does not belong to the tour card's season");
+    }
+
+    const maxParticipants =
+      typeof tour.maxParticipants === "number" && tour.maxParticipants > 0
+        ? tour.maxParticipants
+        : DEFAULT_MAX_PARTICIPANTS;
+
+    const existing = await ctx.db
+      .query("tourCards")
+      .withIndex("by_tour_season", (q) =>
+        q.eq("tourId", args.tourId).eq("seasonId", tourCard.seasonId),
+      )
+      .collect();
+
+    if (existing.length >= maxParticipants) {
+      throw new Error("Selected tour is full");
+    }
+
+    await ctx.db.patch(args.id, {
+      tourId: args.tourId,
       updatedAt: Date.now(),
     });
 

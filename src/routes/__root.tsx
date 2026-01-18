@@ -2,11 +2,11 @@ import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
 import { TanstackDevtools } from "@tanstack/react-devtools";
 import { useEffect } from "react";
 
-import Providers from "../components/Providers";
-import { NavigationContainer } from "../components/navigation";
-import { PWAInstallPrompt } from "../components/PWAInstallPrompt";
+import Providers from "../providers/Providers";
+import { PWAInstallPrompt } from "../components/internal/PWAInstallPrompt";
 
 import "../styles.css";
+import { NavigationContainer } from "@/components/internal/NavigationContainer";
 
 export const Route = createRootRoute({
   head: () => ({

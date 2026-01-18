@@ -6,8 +6,7 @@
     "node": "20.x"
   },
   "scripts": {
-    "dev": "node scripts/dev.mjs",
-    "dev:web": "vite dev --port 3000 --host",
+    "dev": "vite dev --port 3000 --host",
     "start": "node .output/server/index.mjs",
     "build": "vite build",
     "postbuild": "node scripts/patch-vercel-function-runtime.mjs",

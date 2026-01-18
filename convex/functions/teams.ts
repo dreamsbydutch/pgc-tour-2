@@ -6,7 +6,12 @@
  * through flexible configuration rather than multiple specialized functions.
  */
 
-import { query, mutation } from "../_generated/server";
+import {
+  query,
+  mutation,
+  type MutationCtx,
+  type QueryCtx,
+} from "../_generated/server";
 import { v } from "convex/values";
 import { requireOwnResource } from "../auth";
 import { processData, formatCents, sumArray, validators } from "./_utils";
@@ -498,6 +503,124 @@ export const getSeasonStandings = query({
   },
 });
 
+export const getChampionshipWinsForMember = query({
+  args: {
+    memberId: v.id("members"),
+    seasonId: v.optional(v.id("seasons")),
+  },
+  handler: async (ctx, args) => {
+    const tourCards = args.seasonId
+      ? await ctx.db
+          .query("tourCards")
+          .withIndex("by_member_season", (q) =>
+            q.eq("memberId", args.memberId).eq("seasonId", args.seasonId!),
+          )
+          .collect()
+      : await ctx.db
+          .query("tourCards")
+          .withIndex("by_member", (q) => q.eq("memberId", args.memberId))
+          .collect();
+
+    if (tourCards.length === 0) return [];
+
+    const tourCardIds = new Set(tourCards.map((tc) => tc._id));
+    const seasonIds = args.seasonId
+      ? [args.seasonId]
+      : Array.from(new Set(tourCards.map((tc) => tc.seasonId)));
+
+    const majorNames = new Set([
+      "The Masters",
+      "PGA Championship",
+      "U.S. Open",
+      "The Open Championship",
+    ]);
+
+    const playoffEventNames = [
+      "FedEx-St. Jude Championship",
+      "BMW Championship",
+      "TOUR Championship",
+    ];
+
+    const now = Date.now();
+    const winsByTournamentId = new Map<
+      Id<"tournaments">,
+      {
+        tournamentId: Id<"tournaments">;
+        name: string;
+        logoUrl: string | null;
+        startDate: number;
+        seasonId: Id<"seasons">;
+        tierName: string | null;
+      }
+    >();
+
+    for (const seasonId of seasonIds) {
+      const [tiers, tournaments] = await Promise.all([
+        ctx.db
+          .query("tiers")
+          .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
+          .collect(),
+        ctx.db
+          .query("tournaments")
+          .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
+          .collect(),
+      ]);
+
+      const tierNameById = new Map(tiers.map((t) => [t._id, t.name] as const));
+      const playoffTierIds = new Set(
+        tiers
+          .filter((t) => t.name.toLowerCase().includes("playoff"))
+          .map((t) => t._id),
+      );
+
+      const relevantTournaments = tournaments.filter((t) => {
+        const lowerName = t.name.toLowerCase();
+        const isCanadianOpen = lowerName.includes("canadian open");
+        const isMajor = majorNames.has(t.name);
+        const isPlayoffByTier = playoffTierIds.has(t.tierId);
+        const isPlayoffByName = playoffEventNames.some((n) => n === t.name);
+        const isFinished = t.status === "completed" || t.endDate <= now;
+        return (isCanadianOpen || isMajor || isPlayoffByTier || isPlayoffByName) &&
+          isFinished;
+      });
+
+      for (const tournament of relevantTournaments) {
+        const [pos1, posT1] = await Promise.all([
+          ctx.db
+            .query("teams")
+            .withIndex("by_tournament_position", (q) =>
+              q.eq("tournamentId", tournament._id).eq("position", "1"),
+            )
+            .collect(),
+          ctx.db
+            .query("teams")
+            .withIndex("by_tournament_position", (q) =>
+              q.eq("tournamentId", tournament._id).eq("position", "T1"),
+            )
+            .collect(),
+        ]);
+
+        const winners = [...pos1, ...posT1];
+        const userWon = winners.some((team) => tourCardIds.has(team.tourCardId));
+        if (!userWon) continue;
+
+        winsByTournamentId.set(tournament._id, {
+          tournamentId: tournament._id,
+          name: tournament.name,
+          logoUrl: tournament.logoUrl ?? null,
+          startDate: tournament.startDate,
+          seasonId: tournament.seasonId,
+          tierName: tierNameById.get(tournament.tierId) ?? null,
+        });
+      }
+    }
+
+    return Array.from(winsByTournamentId.values()).sort(
+      (a, b) => b.startDate - a.startDate,
+    );
+  },
+});
+
 /**
  * Update teams with comprehensive options
  *
@@ -924,7 +1047,10 @@ async function enhanceTeam(
   return enhanced;
 }
 
-async function requireTourCardOwner(ctx: any, tourCardId: Id<"tourCards">) {
+async function requireTourCardOwner(
+  ctx: MutationCtx | QueryCtx,
+  tourCardId: Id<"tourCards">,
+) {
   const tourCard = await ctx.db.get(tourCardId);
   const member = tourCard ? await ctx.db.get(tourCard.memberId) : null;
   const clerkId = member?.clerkId;

@@ -1477,11 +1477,6 @@ async function enhanceMember(
     ...member,
     fullName: generateFullName(member.firstname, member.lastname),
     formattedBalance: formatCents(member.account),
-    effectiveDisplayName: generateDisplayName(
-      member.firstname,
-      member.lastname,
-      member.email,
-    ),
     hasBalance: member.account > 0,
     isOnline: isOnline(member.lastLoginAt),
     daysSinceLastLogin: calculateDaysSinceLastLogin(member.lastLoginAt),

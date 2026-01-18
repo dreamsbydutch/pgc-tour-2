@@ -2,7 +2,7 @@
  * Push Subscriptions - Basic CRUD
  */
 
-import { mutation, query } from "../_generated/server";
+import { mutation, query, type MutationCtx } from "../_generated/server";
 import { v } from "convex/values";
 import { requireOwnResource, getCurrentMember } from "../auth";
 import type { Id } from "../_generated/dataModel";
@@ -150,7 +150,10 @@ export const deletePushSubscriptions = mutation({
   },
 });
 
-async function requirePushSubscriptionOwner(ctx: any, memberId: Id<"members">) {
+async function requirePushSubscriptionOwner(
+  ctx: MutationCtx,
+  memberId: Id<"members">,
+) {
   const member = (await ctx.db.get(memberId)) as { clerkId?: string } | null;
   const clerkId = member?.clerkId;
   if (!clerkId) {

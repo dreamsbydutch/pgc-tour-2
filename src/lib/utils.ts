@@ -1,9 +1,52 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import type { NavigationError, TimeLeftType } from "./types";
+import type {
+  LeaderboardPgaRow,
+  LeaderboardTeamRow,
+  LeaderboardVariant,
+} from "./types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+export function normalizeList<T, K extends string>(
+  result: unknown,
+  key: K,
+): Array<T> {
+  if (!result) return [];
+  if (Array.isArray(result)) {
+    return (result as Array<T | null>).filter((x): x is T => x !== null);
+  }
+  if (typeof result === "object" && result !== null && key in result) {
+    const value = (result as Record<string, unknown>)[key];
+    if (Array.isArray(value)) {
+      return (value as Array<T | null>).filter((x): x is T => x !== null);
+    }
+  }
+  return [];
+}
+
+export function formatCentsAsDollars(cents: number): string {
+  const sign = cents < 0 ? "-" : "";
+  return `${sign}$${(Math.abs(cents) / 100).toFixed(2)}`;
+}
+
+export function parseNumberList(input: string): number[] {
+  const trimmed = input.trim();
+  if (!trimmed) return [];
+  const parts = trimmed
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const nums = parts.map((p) => Number(p));
+  if (nums.some((n) => !Number.isFinite(n))) {
+    throw new Error("List must be comma-separated numbers");
+  }
+  return nums.map((n) => Math.trunc(n));
+}
+
 export function capitalize(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 }
@@ -17,6 +60,17 @@ export function formatMoney(amount: number): string {
   }).format(amount / 100);
 }
 
+export function formatBuyIn(cents?: number): string {
+  if (typeof cents !== "number") {
+    return "$0";
+  }
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(cents / 100);
+}
+
 export function formatNumber(num: number): string {
   return new Intl.NumberFormat("en-US").format(num);
 }
@@ -25,6 +79,71 @@ export function formatRank(position: number): string {
   const suffix = ["th", "st", "nd", "rd"][position % 10] || "th";
   if (position >= 11 && position <= 13) return `${position}th`;
   return `${position}${suffix}`;
+}
+
+export function isNavItemActive(href: string, pathname: string): boolean {
+  if (!href || !pathname) return false;
+  return href === "/" ? pathname === href : pathname.startsWith(href);
+}
+
+export function formatUserDisplayName(
+  firstName: string | null,
+  lastName: string | null,
+): string {
+  const first = firstName?.trim() || "";
+  const last = lastName?.trim() || "";
+
+  if (!first && !last) return "User";
+  return `${first} ${last}`.trim();
+}
+
+export function createNavigationError(
+  code: string,
+  message: string,
+  retry?: () => void,
+): NavigationError {
+  return { code, message, retry };
+}
+
+export function isNetworkError(error: unknown): boolean {
+  if (!error) return false;
+
+  const errorMessage = String(error).toLowerCase();
+  const networkKeywords = [
+    "network",
+    "fetch",
+    "connection",
+    "timeout",
+    "offline",
+    "unreachable",
+  ];
+
+  return networkKeywords.some((keyword) => errorMessage.includes(keyword));
+}
+
+export function getRetryDelay(attemptIndex: number): number {
+  return Math.min(1000 * Math.pow(2, attemptIndex), 30000);
+}
+
+export function formatTwoDigits(num: number): string {
+  return String(num).padStart(2, "0");
+}
+
+export function calculateCountdownTimeLeft(
+  startDateTime: number,
+): TimeLeftType {
+  const difference = startDateTime - Date.now();
+
+  if (difference <= 0) {
+    return null;
+  }
+
+  return {
+    days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+    hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+    minutes: Math.floor((difference / 1000 / 60) % 60),
+    seconds: Math.floor((difference / 1000) % 60),
+  };
 }
 export function getTournamentTimeline<
   T extends {
@@ -58,10 +177,90 @@ export function hasItems<T>(array: T[] | null | undefined): array is T[] {
   return Array.isArray(array) && array.length > 0;
 }
 
+/**
+ * Returns a stable display year for tournaments in the leaderboard header.
+ */
+export function getTournamentYear(tournament: {
+  startDate: number;
+  season?: { year?: number | null } | null;
+}) {
+  return (
+    tournament.season?.year ?? new Date(tournament.startDate).getFullYear()
+  );
+}
+
 export function isNonEmptyString(
   str: string | null | undefined,
 ): str is string {
   return typeof str === "string" && str.trim().length > 0;
+}
+
+/**
+ * Returns true when a label contains "playoff" (case-insensitive).
+ */
+export function includesPlayoff(value: string | null | undefined): boolean {
+  if (!isNonEmptyString(value)) return false;
+  return value.toLowerCase().includes("playoff");
+}
+
+/**
+ * Determines whether a tournament should be treated as a playoff event.
+ */
+export function isPlayoffTournament(args: {
+  tournamentName?: string | null;
+  tierName?: string | null;
+}): boolean {
+  return includesPlayoff(args.tierName) || includesPlayoff(args.tournamentName);
+}
+
+export function getMemberDisplayName(
+  member:
+    | {
+        firstname?: string | null;
+        lastname?: string | null;
+        email?: string | null;
+      }
+    | null
+    | undefined,
+  user:
+    | {
+        fullName?: string | null;
+        primaryEmailAddress?: { emailAddress?: string | null } | null;
+        emailAddresses?: Array<{ emailAddress?: string | null }> | null;
+      }
+    | null
+    | undefined,
+): string {
+  const nameParts = [member?.firstname, member?.lastname].filter(
+    (part): part is string => isNonEmptyString(part),
+  );
+
+  if (nameParts.length) {
+    return `${nameParts[0][0]}. ${nameParts[1] ?? ""}`.trim();
+  }
+
+  if (isNonEmptyString(member?.email)) {
+    return member.email.split("@")[0];
+  }
+
+  if (isNonEmptyString(user?.fullName)) {
+    const firstName = user.fullName.split(" ")[0] ?? "";
+    const lastName = user.fullName.split(" ").slice(1).join(" ");
+
+    if (firstName && lastName) {
+      return `${firstName[0]}. ${lastName}`;
+    }
+  }
+
+  const email =
+    user?.primaryEmailAddress?.emailAddress ||
+    user?.emailAddresses?.[0]?.emailAddress;
+
+  if (isNonEmptyString(email)) {
+    return email.split("@")[0];
+  }
+
+  return "PGC Member";
 }
 
 export function isDate(value: unknown): value is Date {
@@ -84,6 +283,173 @@ export function formatTournamentDateRange(
   }).format(endDate);
 
   return `${start} - ${end}`;
+}
+
+export function formatToPar(score: number | null | undefined): string {
+  if (score === null || score === undefined) return "-";
+  if (score === 0) return "E";
+  if (score > 0) return `+${score}`;
+  return `${score}`;
+}
+
+export function formatPercentageDisplay(
+  value: number | null | undefined,
+): string {
+  if (!value) return "-";
+  return `${Math.round(value * 1000) / 10}%`;
+}
+
+export function formatMoneyUsd(amount: number | null | undefined): string {
+  if (amount === null || amount === undefined || amount === 0) return "-";
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0,
+    }).format(amount / 100);
+  } catch {
+    return `$${Math.round(amount / 100)}`;
+  }
+}
+
+const EMOJI_FLAGS: Record<string, string> = {
+  USA: "🇺🇸",
+  CAN: "🇨🇦",
+  ENG: "🏴",
+  SCO: "🏴",
+  IRL: "🇮🇪",
+  GER: "🇩🇪",
+  FRA: "🇫🇷",
+  ITA: "🇮🇹",
+  SWE: "🇸🇪",
+  NOR: "🇳🇴",
+  DEN: "🇩🇰",
+  FIN: "🇫🇮",
+  JPN: "🇯🇵",
+  KOR: "🇰🇷",
+  AUS: "🇦🇺",
+  RSA: "🇿🇦",
+  ARG: "🇦🇷",
+  COL: "🇨🇴",
+  CHI: "🇨🇳",
+  TPE: "🇹🇼",
+  BEL: "🇧🇪",
+  AUT: "🇦🇹",
+  PHI: "🇵🇭",
+  PUR: "🇵🇷",
+  VEN: "🇻🇪",
+};
+
+export function getCountryFlagEmoji(
+  code: string | null | undefined,
+): string | null {
+  if (!code) return null;
+  return EMOJI_FLAGS[code] ?? null;
+}
+
+const SCORE_PENALTIES = {
+  DQ: 999,
+  WD: 888,
+  CUT: 444,
+} as const;
+
+export function isPlayerCut(position: string | null | undefined): boolean {
+  return position === "CUT" || position === "WD" || position === "DQ";
+}
+
+function calculateScoreForSorting(
+  position: string | null | undefined,
+  score: number | null | undefined,
+): number {
+  if (position === "DQ") return SCORE_PENALTIES.DQ + (score ?? 999);
+  if (position === "WD") return SCORE_PENALTIES.WD + (score ?? 999);
+  if (position === "CUT") return SCORE_PENALTIES.CUT + (score ?? 999);
+  return score ?? 999;
+}
+
+export function getPositionChangeForTeam(team: {
+  pastPosition: string | null;
+  position: string | null;
+}): number {
+  if (!team.pastPosition || !team.position) return 0;
+  return (
+    Number(team.pastPosition.replace("T", "")) -
+    Number(team.position.replace("T", ""))
+  );
+}
+
+export function sortPgaRows(rows: LeaderboardPgaRow[]): LeaderboardPgaRow[] {
+  const nonCut = rows.filter((r) => !isPlayerCut(r.position));
+  const cut = rows.filter((r) => isPlayerCut(r.position));
+
+  nonCut.sort(
+    (a, b) =>
+      calculateScoreForSorting(a.position, a.score) -
+      calculateScoreForSorting(b.position, b.score),
+  );
+
+  cut
+    .sort(
+      (a, b) =>
+        calculateScoreForSorting(a.position, a.score) -
+        calculateScoreForSorting(b.position, b.score),
+    )
+    .sort((a, b) => (a.group ?? 999) - (b.group ?? 999))
+    .sort((a, b) => (a.position ?? "").localeCompare(b.position ?? ""));
+
+  return [...nonCut, ...cut];
+}
+
+export function sortTeamRows(rows: LeaderboardTeamRow[]): LeaderboardTeamRow[] {
+  const next = [...rows];
+  next
+    .sort((a, b) => (a.thru ?? 0) - (b.thru ?? 0))
+    .sort(
+      (a, b) =>
+        calculateScoreForSorting(a.position, a.score) -
+        calculateScoreForSorting(b.position, b.score),
+    );
+  return next;
+}
+
+export function filterTeamRowsByTour(
+  rows: LeaderboardTeamRow[],
+  activeTourId: string,
+  variant: LeaderboardVariant,
+): LeaderboardTeamRow[] {
+  const sorted = sortTeamRows(rows);
+
+  if (variant === "playoff") {
+    const playoffLevel =
+      activeTourId === "gold" ? 1 : activeTourId === "silver" ? 2 : 1;
+    return sorted.filter((t) => (t.tourCard.playoff ?? 0) === playoffLevel);
+  }
+
+  return sorted.filter((t) => (t.tourCard.tourId ?? "") === activeTourId);
+}
+
+export function getLeaderboardRowClass(args: {
+  type: "PGC" | "PGA";
+  isCut: boolean;
+  isUser: boolean;
+  isFriend: boolean;
+}): string {
+  const classes = [
+    "col-span-10 grid grid-flow-row grid-cols-10 py-0.5 sm:grid-cols-33",
+  ];
+
+  if (args.type === "PGC") {
+    if (args.isUser) classes.push("bg-slate-200 font-semibold");
+    else if (args.isFriend) classes.push("bg-slate-100");
+    if (args.isCut) classes.push("text-gray-400");
+  }
+
+  if (args.type === "PGA") {
+    if (args.isUser) classes.push("bg-slate-100");
+    if (args.isCut) classes.push("text-gray-400");
+  }
+
+  return classes.join(" ");
 }
 
 const DATAGOLF_BASE_URL = "https://feeds.datagolf.com/";

@@ -37,6 +37,7 @@ import type * as functions_index from "../functions/index.js";
 import type * as functions_members from "../functions/members.js";
 import type * as functions_pushSubscriptions from "../functions/pushSubscriptions.js";
 import type * as functions_seasons from "../functions/seasons.js";
+import type * as functions_standings from "../functions/standings.js";
 import type * as functions_teams from "../functions/teams.js";
 import type * as functions_tiers from "../functions/tiers.js";
 import type * as functions_tourCards from "../functions/tourCards.js";
@@ -83,6 +84,7 @@ declare const fullApi: ApiFromModules<{
   "functions/members": typeof functions_members;
   "functions/pushSubscriptions": typeof functions_pushSubscriptions;
   "functions/seasons": typeof functions_seasons;
+  "functions/standings": typeof functions_standings;
   "functions/teams": typeof functions_teams;
   "functions/tiers": typeof functions_tiers;
   "functions/tourCards": typeof functions_tourCards;

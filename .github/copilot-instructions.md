@@ -17,6 +17,24 @@ You are working in the **PGC** repo (Vite/React + Convex backend). Follow these 
 - Prefer JSDoc that works with IntelliSense: include a short summary and (when helpful) `@param`, `@returns`, and an `@example`.
 - Do not add block-by-block narration comments within a function.
 
+## Frontend: Components (Project Convention)
+
+- **One component per file**: each component lives in a single `.tsx` file and exports exactly one React component (the UI).
+- **Optional internals**: if the component needs local business logic or a loading state, define them in the same file as:
+  - an unexported custom hook (business logic + fetching; called only by the exported component), and/or
+  - an unexported `Skeleton` component (loading state; used only by the exported component).
+- **Exports**: only the main UI component is exported. Any hook/skeleton in the file must be unexported.
+- **Documentation**:
+  - The exported component must have an in-depth JSDoc header immediately above its declaration describing the full file behavior, including `@param`, `@returns`, data fetching sources, and the purpose/major render states.
+  - If present, the unexported hook must have a thorough doc comment immediately above its declaration explaining what it fetches/derives, its inputs, and what it returns to the UI component.
+  - If present, the unexported `Skeleton` must have a short doc comment immediately above its declaration that explains its purpose.
+- **No shared helpers/types/constants**: do not define shared types, shared utility functions, or shared constants inside component files.
+  - Put shared/reused TypeScript types in `src/lib/types.ts`.
+  - Put shared/reused utility functions in `src/lib/utils.ts`.
+  - Put shared/reused constants in `src/lib/constants.ts`.
+  - Components should import from `@/lib/types`, `@/lib/utils`, and `@/lib/constants`.
+- **Skeleton UI**: use existing primitives from `src/components/ui/*` (e.g. `Skeleton`) rather than inventing new loading styles.
+
 ## Frontend: How src/ works in this repo
 
 This repo’s frontend is **TanStack Start** + **TanStack Router** (file-based routes), built with Vite.
@@ -30,6 +48,19 @@ Key rules:
 - Prefer the `@/*` import alias (`@/components`, `@/hooks`, `@/lib/utils`).
 - Use existing UI primitives in `src/components/ui/*` (shadcn/ui). Don’t invent new design tokens.
 - Use `cn()` from `src/lib/utils.ts` for className composition.
+
+## Frontend: Routes (Project Convention)
+
+- Think of `src/routes/*` as **middleware**: routes may read/validate URL state, gate access, and keep the URL in sync — but they should not own UI or business logic.
+- Routes in `src/routes/*` should be thin and consistent.
+- Route files should contain only:
+  - minimal routing concerns (`createFileRoute`, `validateSearch`, reading params/search via `Route.useParams()` / `Route.useSearch()`),
+  - minimal auth gating (signed-in / role checks) when needed,
+  - minimal navigation wiring (`Route.useNavigate()` to keep URL state in sync),
+  - and rendering a single page component from `src/components/*`.
+- Do **not** put business logic, complex view-model construction, or data fetching (e.g. `useQuery`) in route files.
+- Move non-routing logic into the component the route renders (or into hooks under `src/hooks/*` used by that component).
+- `src/routes/__root.tsx` is the app shell and may include layout/provider wiring.
 
 Data & hooks:
 

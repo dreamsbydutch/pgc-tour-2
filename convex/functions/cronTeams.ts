@@ -158,7 +158,9 @@ export const runUpdateTeamsForActiveTournament: ReturnType<
             parsed.sort((a, b) => a.d - b.d);
             return parsed[pos - 1]?.t;
           }
-        } catch {}
+        } catch (err) {
+          void err;
+        }
         const sorted = [...valid].sort();
         return sorted[pos - 1];
       };
