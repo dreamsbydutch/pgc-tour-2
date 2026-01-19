@@ -31,6 +31,7 @@ import type { TourCardChangeButtonProps } from "@/lib/types";
  *   - `tours.getTours({ seasonId })` to list tours in that season.
  *   - `tourCards.getTourCards({ seasonId })` to compute per-tour capacity.
  *   - `tourCards.switchTourCards` mutation to perform the switch.
+ *   - `tourCards.deleteTourCardAndFee` mutation to remove the tour card and related fee.
  *
  * Major render states:
  * - `loading` prop: renders a local skeleton.
@@ -80,6 +81,7 @@ function TourCardChangeButtonLoaded({
     otherToursWithMeta,
     handleButtonClick,
     handleSwitch,
+    handleRemoveTourCard,
   } = useTourCardChangeButton({ tourCardId });
 
   return (
@@ -221,6 +223,13 @@ function TourCardChangeButtonLoaded({
                 </Button>
                 <Button
                   type="button"
+                  variant="destructive"
+                  onClick={handleRemoveTourCard}
+                >
+                  Remove Tour Card
+                </Button>
+                <Button
+                  type="button"
                   onClick={handleSwitch}
                   disabled={!selectedTourId || otherToursWithMeta.length === 0}
                   className={confirmEffect ? "animate-toggleClick" : ""}
@@ -321,6 +330,9 @@ function useTourCardChangeButton({
   }, [tourCard, tourCounts, tours]);
 
   const switchTourCard = useMutation(api.functions.tourCards.switchTourCards);
+  const deleteTourCardAndFee = useMutation(
+    api.functions.tourCards.deleteTourCardAndFee,
+  );
 
   const handleSwitch = useCallback(async () => {
     if (!selectedTourId) return;
@@ -344,6 +356,31 @@ function useTourCardChangeButton({
       setIsLoading(false);
     }
   }, [selectedTourId, switchTourCard, tourCardId]);
+
+  const handleRemoveTourCard = useCallback(async () => {
+    if (
+      !window.confirm(
+        "Remove your tour card? This will also remove your Tour Card Fee for this season.",
+      )
+    ) {
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    try {
+      await deleteTourCardAndFee({ id: tourCardId });
+      setIsModalOpen(false);
+      setSelectedTourId(null);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to remove tour card.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [deleteTourCardAndFee, tourCardId]);
 
   const handleButtonClick = useCallback(() => {
     setEffect(true);
@@ -370,6 +407,7 @@ function useTourCardChangeButton({
     otherToursWithMeta,
     handleButtonClick,
     handleSwitch,
+    handleRemoveTourCard,
   };
 }
 

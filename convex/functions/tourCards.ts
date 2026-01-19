@@ -377,6 +377,77 @@ export const deleteTourCards = mutation({
   },
 });
 
+export const deleteTourCardAndFee = mutation({
+  args: {
+    id: v.id("tourCards"),
+  },
+  handler: async (ctx, args) => {
+    const tourCard = await ctx.db.get(args.id);
+    if (!tourCard) {
+      throw new Error("Tour card not found");
+    }
+
+    await requireTourCardOwner(ctx, tourCard);
+
+    const member = await ctx.db.get(tourCard.memberId);
+    if (!member) {
+      throw new Error("Member not found");
+    }
+
+    const tourCardsInSeason = await ctx.db
+      .query("tourCards")
+      .withIndex("by_member_season", (q) =>
+        q.eq("memberId", member._id).eq("seasonId", tourCard.seasonId),
+      )
+      .collect();
+
+    const hasOtherTourCardsInSeason = tourCardsInSeason.some(
+      (doc) => doc._id !== tourCard._id,
+    );
+
+    const teams = await ctx.db
+      .query("teams")
+      .withIndex("by_tour_card", (q) => q.eq("tourCardId", tourCard._id))
+      .collect();
+
+    for (const team of teams) {
+      await ctx.db.delete(team._id);
+    }
+
+    await ctx.db.delete(tourCard._id);
+
+    if (!hasOtherTourCardsInSeason) {
+      const feeTransactions = await ctx.db
+        .query("transactions")
+        .withIndex("by_member_season_type", (q) =>
+          q
+            .eq("memberId", member._id)
+            .eq("seasonId", tourCard.seasonId)
+            .eq("transactionType", "TourCardFee"),
+        )
+        .collect();
+
+      const completedFeeTotal = feeTransactions
+        .filter(isCompletedTourCardFee)
+        .reduce((sum, tx) => sum + tx.amount, 0);
+
+      for (const tx of feeTransactions) {
+        await ctx.db.delete(tx._id);
+      }
+
+      if (completedFeeTotal !== 0) {
+        const updatedAt = Date.now();
+        await ctx.db.patch(member._id, {
+          account: member.account - completedFeeTotal,
+          updatedAt,
+        });
+      }
+    }
+
+    return tourCard;
+  },
+});
+
 /**
  * Validate tour card data
  */
