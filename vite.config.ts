@@ -1,13 +1,13 @@
-import { defineConfig } from 'vite'
-import { tanstackStart } from '@tanstack/react-start/plugin/vite'
-import viteReact from '@vitejs/plugin-react'
-import viteTsConfigPaths from 'vite-tsconfig-paths'
+import { defineConfig } from "vite";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import viteReact from "@vitejs/plugin-react";
+import viteTsConfigPaths from "vite-tsconfig-paths";
 
 const config = defineConfig({
   plugins: [
     // this is the plugin that enables path aliases
     viteTsConfigPaths({
-      projects: ['./tsconfig.json'],
+      projects: ["./tsconfig.json"],
     }),
     tanstackStart({
       customViteReactPlugin: true,
@@ -19,17 +19,17 @@ const config = defineConfig({
     rollupOptions: {
       onwarn(warning, warn) {
         if (
-          warning.code === 'UNUSED_EXTERNAL_IMPORT' &&
-          typeof warning.id === 'string' &&
-          warning.id.includes('node_modules/@tanstack/')
+          warning.code === "UNUSED_EXTERNAL_IMPORT" &&
+          typeof warning.id === "string" &&
+          warning.id.includes("node_modules/@tanstack/")
         ) {
-          return
+          return;
         }
 
-        warn(warning)
+        warn(warning);
       },
     },
   },
-})
+});
 
-export default config
+export default config;
