@@ -21,10 +21,10 @@ import { api } from "@/convex";
  * Data sources:
  * - Clerk: current user (`useUser`) for identity and display fallback.
  * - Convex:
- *   - `tourCards.getTourCards` (by clerkId) to load the member’s tour card
+ *   - `tourCards.getCurrentYearTourCard` (by clerkId + year) to load the member’s current-year tour card
  *   - `members.getMembers` (by clerkId) for account balance
  *   - `tours.getTours` (by tourId, enhanced with season) for tour/season display
- *   - `tourCards.getTourCards` (by tourId) to derive remaining capacity
+ *   - `tourCards.getTourCards` (by tourId + seasonId) to derive remaining capacity
  *
  * Major render states:
  * - While auth/data is loading: renders an internal skeleton.
@@ -114,20 +114,17 @@ export function TourCardOutput() {
 function useTourCardOutput() {
   const { user, isLoaded } = useUser();
   const clerkId = user?.id ?? null;
+  const currentYear = new Date().getFullYear();
 
-  const memberTourCards = useQuery(
-    api.functions.tourCards.getTourCards,
-    clerkId ? { options: { clerkId } } : "skip",
-  );
+  const tourCard = useQuery(
+    api.functions.tourCards.getCurrentYearTourCard,
+    clerkId ? { options: { clerkId, year: currentYear } } : "skip",
+  ) as TourCardDoc | null | undefined;
 
   const member = useQuery(
     api.functions.members.getMembers,
     clerkId ? { options: { clerkId } } : "skip",
   ) as MemberDoc | null | undefined;
-
-  const tourCard = Array.isArray(memberTourCards)
-    ? (memberTourCards[0] ?? null)
-    : ((memberTourCards as TourCardDoc | null | undefined) ?? null);
 
   const tour = useQuery(
     api.functions.tours.getTours,
@@ -143,10 +140,12 @@ function useTourCardOutput() {
 
   const tourCardsForTour = useQuery(
     api.functions.tourCards.getTourCards,
-    tourCard ? { options: { tourId: tourCard.tourId } } : "skip",
+    tourCard
+      ? { options: { tourId: tourCard.tourId, seasonId: tourCard.seasonId } }
+      : "skip",
   ) as TourCardDoc[] | undefined | null;
 
-  const isLoadingTourCard = Boolean(clerkId) && memberTourCards === undefined;
+  const isLoadingTourCard = Boolean(clerkId) && tourCard === undefined;
   const isLoadingMember = Boolean(clerkId) && member === undefined;
   const isLoadingTourDetails = Boolean(tourCard) && tour === undefined;
 

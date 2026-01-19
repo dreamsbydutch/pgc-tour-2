@@ -208,6 +208,55 @@ export const getTourCards = query({
   },
 });
 
+export const getCurrentYearTourCard = query({
+  args: {
+    options: v.object({
+      clerkId: v.string(),
+      year: v.number(),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.options.clerkId))
+      .first();
+
+    if (!member) return null;
+
+    const seasons = await ctx.db
+      .query("seasons")
+      .withIndex("by_year", (q) => q.eq("year", args.options.year))
+      .collect();
+
+    if (seasons.length === 0) return null;
+
+    const selectedSeason = seasons.reduce((best, candidate) => {
+      const bestNumber = best.number ?? 0;
+      const candidateNumber = candidate.number ?? 0;
+      if (candidateNumber !== bestNumber) {
+        return candidateNumber > bestNumber ? candidate : best;
+      }
+
+      const bestStart = best.startDate ?? 0;
+      const candidateStart = candidate.startDate ?? 0;
+      if (candidateStart !== bestStart) {
+        return candidateStart > bestStart ? candidate : best;
+      }
+
+      return candidate._creationTime > best._creationTime ? candidate : best;
+    }, seasons[0]);
+
+    const docs = await ctx.db
+      .query("tourCards")
+      .withIndex("by_member_season", (q) =>
+        q.eq("memberId", member._id).eq("seasonId", selectedSeason._id),
+      )
+      .collect();
+
+    return docs[0] ?? null;
+  },
+});
+
 export const updateTourCards = mutation({
   args: {
     id: v.id("tourCards"),

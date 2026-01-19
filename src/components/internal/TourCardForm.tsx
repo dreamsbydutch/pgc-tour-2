@@ -1,8 +1,8 @@
 "use client";
 
 import { Link } from "@tanstack/react-router";
-import { useUser } from "@clerk/clerk-react";
-import { useQuery } from "convex/react";
+import { useUser } from "@clerk/tanstack-react-start";
+import { useConvexAuth, useQuery } from "convex/react";
 import { useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 
@@ -105,6 +105,7 @@ export function TourCardForm() {
 function useTourCardForm() {
   const [isCreatingTourCard, setIsCreatingTourCard] = useState(false);
   const { user } = useUser();
+  const convexAuth = useConvexAuth();
   const clerkId = user?.id ?? null;
 
   const currentSeason = useQuery(api.functions.seasons.getCurrentSeason);
@@ -120,7 +121,7 @@ function useTourCardForm() {
   );
   const memberResult = useQuery(
     api.functions.members.getMembers,
-    clerkId ? { options: { clerkId } } : "skip",
+    clerkId && convexAuth.isAuthenticated ? { options: { clerkId } } : "skip",
   );
 
   const memberDoc = useMemo(() => {
@@ -130,7 +131,7 @@ function useTourCardForm() {
 
   const tourCardFeeResult = useQuery(
     api.functions.transactions.getTransactions,
-    memberDoc && currentSeason
+    memberDoc && currentSeason && convexAuth.isAuthenticated
       ? {
           options: {
             filter: {
@@ -199,12 +200,18 @@ function useTourCardForm() {
   const tourCardsLoading = currentSeason
     ? seasonTourCards === undefined
     : false;
-  const memberLoading = clerkId ? memberResult === undefined : false;
+  const memberLoading =
+    clerkId && convexAuth.isAuthenticated ? memberResult === undefined : false;
   const tourCardFeeLoading =
-    memberDoc && currentSeason ? tourCardFeeResult === undefined : false;
+    memberDoc && currentSeason && convexAuth.isAuthenticated
+      ? tourCardFeeResult === undefined
+      : false;
+
+  const authLoading = Boolean(clerkId) && !convexAuth.isAuthenticated;
 
   const isLoading =
     currentSeason === undefined ||
+    authLoading ||
     toursLoading ||
     tourCardsLoading ||
     memberLoading ||
