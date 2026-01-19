@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   SignedIn,
@@ -7,13 +7,11 @@ import {
   useUser,
 } from "@clerk/tanstack-react-start";
 import { Link } from "@tanstack/react-router";
-import { api } from "convex/_generated/api";
-import type { Doc, Id } from "convex/_generated/dataModel";
-import { useMutation, useQuery } from "convex/react";
+import { api, useMutation, useQuery } from "@/convex";
+import type { Doc, Id } from "@/convex";
 
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatMoney } from "@/lib/utils";
+import { Button, Card, CardContent, CardHeader, CardTitle } from "@/ui";
+import { formatMoney } from "@/lib";
 
 /**
  * Renders the `/account` screen.
@@ -357,21 +355,29 @@ function useAccountPage() {
     updatedAt: number | undefined;
   };
 
-  function isMemberForAccount(value: unknown): value is MemberForAccount {
-    if (!value || typeof value !== "object") return false;
-    if (!("_id" in value) || !("account" in value)) return false;
-    const record = value as Record<string, unknown>;
-    return typeof record.account === "number";
-  }
+  const isMemberForAccount = useCallback(
+    (value: unknown): value is MemberForAccount => {
+      if (!value || typeof value !== "object") return false;
+      if (!("_id" in value) || !("account" in value)) return false;
+      const record = value as Record<string, unknown>;
+      return typeof record.account === "number";
+    },
+    [],
+  );
 
-  function isSeasonForLabel(value: unknown): value is SeasonForLabel {
-    if (!value || typeof value !== "object") return false;
-    if (!("_id" in value) || !("year" in value) || !("number" in value)) {
-      return false;
-    }
-    const record = value as Record<string, unknown>;
-    return typeof record.year === "number" && typeof record.number === "number";
-  }
+  const isSeasonForLabel = useCallback(
+    (value: unknown): value is SeasonForLabel => {
+      if (!value || typeof value !== "object") return false;
+      if (!("_id" in value) || !("year" in value) || !("number" in value)) {
+        return false;
+      }
+      const record = value as Record<string, unknown>;
+      return (
+        typeof record.year === "number" && typeof record.number === "number"
+      );
+    },
+    [],
+  );
 
   function formatDateTime(ms: number | undefined): string {
     if (!ms) return "";
@@ -413,7 +419,7 @@ function useAccountPage() {
 
   const memberForAccount = useMemo<MemberForAccount | null>(() => {
     return isMemberForAccount(memberRaw) ? memberRaw : null;
-  }, [memberRaw]);
+  }, [isMemberForAccount, memberRaw]);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -444,7 +450,7 @@ function useAccountPage() {
       map.set(s._id, `${s.year} #${s.number}`);
     }
     return map;
-  }, [seasons]);
+  }, [isSeasonForLabel, seasons]);
 
   const tournamentHistory = useQuery(
     api.functions.members.getMyTournamentHistory,
@@ -587,15 +593,4 @@ function useAccountPage() {
     filteredHistoryRows,
     formatDateTime,
   };
-}
-
-/**
- * Loading state for the account page.
- */
-function AccountPageSkeleton() {
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="text-sm text-muted-foreground">Loading…</div>
-    </div>
-  );
 }

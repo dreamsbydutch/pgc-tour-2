@@ -21,204 +21,44 @@ import {
 import { PGADropdown } from "@/components/internal/PGADropdown";
 import { TeamGolfersTable } from "@/components/internal/TeamGolfersTable";
 
-/**
- * Renders a single leaderboard row (PGA golfer or PGC team) with an optional expandable panel.
- *
- * Behavior:
- * - Highlights the viewer's row and friends' rows (PGC only) via `getLeaderboardRowClass`.
- * - Shows position change when allowed by tournament state.
- * - Toggles an expandable dropdown on click unless `isPreTournament` is true.
- * - Expand content:
- *   - PGA: golfer stats panel.
- *   - PGC: team golfer table.
- *
- * @param props - `LeaderboardListingProps`.
- * @returns A clickable row plus an optional dropdown panel.
- */
-export function LeaderboardListing(props: LeaderboardListingProps) {
-  const model = useLeaderboardListing(props);
+function ScoreCell(args: {
+  value: ReactNode;
+  className?: string;
+  hiddenOnMobile?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "place-self-center font-varela text-sm sm:col-span-2",
+        args.className,
+        args.hiddenOnMobile ? "hidden sm:flex" : undefined,
+      )}
+    >
+      {args.value}
+    </div>
+  );
+}
 
-  if (!model.nameDisplay.trim()) {
-    return <LeaderboardListingSkeleton />;
-  }
-
-  const ScoreCell = (args: {
-    value: ReactNode;
-    className?: string;
-    hiddenOnMobile?: boolean;
-  }) => {
-    return (
-      <div
-        className={cn(
-          "place-self-center font-varela text-sm sm:col-span-2",
-          args.className,
-          args.hiddenOnMobile ? "hidden sm:flex" : undefined,
-        )}
-      >
-        {args.value}
-      </div>
-    );
-  };
-
-  const ScoreDisplay = (
-    args:
-      | { type: "PGA"; row: LeaderboardPgaRow; tournamentComplete: boolean }
-      | { type: "PGC"; row: LeaderboardTeamRow; tournamentComplete: boolean },
-  ) => {
-    if (args.type === "PGA") {
-      const row = args.row;
-      const cutOrWithdrawn = isPlayerCut(row.position);
-
-      if (cutOrWithdrawn) {
-        return (
-          <>
-            <ScoreCell
-              value={row.group === 0 ? "-" : (row.group ?? "-")}
-              className="col-span-1 sm:col-span-2"
-            />
-            <ScoreCell
-              value={row.rating ?? "-"}
-              className="col-span-1 sm:col-span-2"
-            />
-            <div className="col-span-1 hidden sm:flex" />
-            <ScoreCell
-              value={row.roundOne ?? "-"}
-              className="col-span-1"
-              hiddenOnMobile
-            />
-            <ScoreCell
-              value={row.roundTwo ?? "-"}
-              className="col-span-1"
-              hiddenOnMobile
-            />
-            <ScoreCell
-              value={row.roundThree ?? "-"}
-              className="col-span-1"
-              hiddenOnMobile
-            />
-            <ScoreCell
-              value={row.roundFour ?? "-"}
-              className="col-span-1"
-              hiddenOnMobile
-            />
-          </>
-        );
-      }
-
-      if (args.tournamentComplete) {
-        const firstValue = row.group === 0 ? "-" : (row.group ?? "-");
-        const secondValue = row.rating ?? "-";
-
-        return (
-          <>
-            <ScoreCell
-              value={firstValue}
-              className="col-span-1 sm:col-span-2"
-            />
-            <ScoreCell
-              value={secondValue}
-              className="col-span-1 whitespace-nowrap sm:col-span-2"
-            />
-            <div className="col-span-1 hidden sm:flex" />
-            <ScoreCell
-              value={row.roundOne ?? "-"}
-              className="col-span-1"
-              hiddenOnMobile
-            />
-            <ScoreCell
-              value={row.roundTwo ?? "-"}
-              className="col-span-1"
-              hiddenOnMobile
-            />
-            <ScoreCell
-              value={row.roundThree ?? "-"}
-              className="col-span-1"
-              hiddenOnMobile
-            />
-            <ScoreCell
-              value={row.roundFour ?? "-"}
-              className="col-span-1"
-              hiddenOnMobile
-            />
-          </>
-        );
-      }
-
-      if (!row.thru || row.thru === 0) {
-        return (
-          <>
-            <div className="col-span-2 place-self-center font-varela text-xs">
-              {row.teeTimeDisplay ?? "-"}
-              {row.endHole === 9 ? "*" : ""}
-            </div>
-            <div className="col-span-1 hidden sm:flex" />
-            <ScoreCell
-              value={row.roundOne ?? "-"}
-              className="col-span-1"
-              hiddenOnMobile
-            />
-            <ScoreCell
-              value={row.roundTwo ?? "-"}
-              className="col-span-1"
-              hiddenOnMobile
-            />
-            <ScoreCell
-              value={row.roundThree ?? "-"}
-              className="col-span-1"
-              hiddenOnMobile
-            />
-            <ScoreCell
-              value={row.roundFour ?? "-"}
-              className="col-span-1"
-              hiddenOnMobile
-            />
-          </>
-        );
-      }
-
-      return (
-        <>
-          <ScoreCell
-            value={formatToPar(row.today)}
-            className="col-span-1 sm:col-span-2"
-          />
-          <ScoreCell
-            value={row.thru === 18 ? "F" : row.thru}
-            className="col-span-1 sm:col-span-2"
-          />
-          <div className="col-span-1 hidden sm:flex" />
-          <ScoreCell
-            value={row.roundOne ?? "-"}
-            className="col-span-1"
-            hiddenOnMobile
-          />
-          <ScoreCell
-            value={row.roundTwo ?? "-"}
-            className="col-span-1"
-            hiddenOnMobile
-          />
-          <ScoreCell
-            value={row.roundThree ?? "-"}
-            className="col-span-1"
-            hiddenOnMobile
-          />
-          <ScoreCell
-            value={row.roundFour ?? "-"}
-            className="col-span-1"
-            hiddenOnMobile
-          />
-        </>
-      );
-    }
-
+function ScoreDisplay(
+  args:
+    | { type: "PGA"; row: LeaderboardPgaRow; tournamentComplete: boolean }
+    | { type: "PGC"; row: LeaderboardTeamRow; tournamentComplete: boolean },
+) {
+  if (args.type === "PGA") {
     const row = args.row;
     const cutOrWithdrawn = isPlayerCut(row.position);
 
     if (cutOrWithdrawn) {
       return (
         <>
-          <ScoreCell value="-" className="col-span-1 sm:col-span-2" />
-          <ScoreCell value="-" className="col-span-1 sm:col-span-2" />
+          <ScoreCell
+            value={row.group === 0 ? "-" : (row.group ?? "-")}
+            className="col-span-1 sm:col-span-2"
+          />
+          <ScoreCell
+            value={row.rating ?? "-"}
+            className="col-span-1 sm:col-span-2"
+          />
           <div className="col-span-1 hidden sm:flex" />
           <ScoreCell
             value={row.roundOne ?? "-"}
@@ -245,8 +85,8 @@ export function LeaderboardListing(props: LeaderboardListingProps) {
     }
 
     if (args.tournamentComplete) {
-      const firstValue = row.points === 0 ? "-" : (row.points ?? "-");
-      const secondValue = formatMoneyUsd(row.earnings ?? null);
+      const firstValue = row.group === 0 ? "-" : (row.group ?? "-");
+      const secondValue = row.rating ?? "-";
 
       return (
         <>
@@ -280,45 +120,14 @@ export function LeaderboardListing(props: LeaderboardListingProps) {
       );
     }
 
-    if (!row.thru || row.thru === 0) {
-      return (
-        <>
-          <div className="col-span-2 place-self-center font-varela text-xs">
-            {row.teeTimeDisplay ?? "-"}
-          </div>
-          <div className="col-span-1 hidden sm:flex" />
-          <ScoreCell
-            value={row.roundOne ?? "-"}
-            className="col-span-1"
-            hiddenOnMobile
-          />
-          <ScoreCell
-            value={row.roundTwo ?? "-"}
-            className="col-span-1"
-            hiddenOnMobile
-          />
-          <ScoreCell
-            value={row.roundThree ?? "-"}
-            className="col-span-1"
-            hiddenOnMobile
-          />
-          <ScoreCell
-            value={row.roundFour ?? "-"}
-            className="col-span-1"
-            hiddenOnMobile
-          />
-        </>
-      );
-    }
-
     return (
       <>
         <ScoreCell
-          value={formatToPar(row.today)}
+          value={row.today == null ? "-" : formatToPar(row.today)}
           className="col-span-1 sm:col-span-2"
         />
         <ScoreCell
-          value={row.thru === 18 ? "F" : row.thru}
+          value={row.thru ?? "-"}
           className="col-span-1 sm:col-span-2"
         />
         <div className="col-span-1 hidden sm:flex" />
@@ -344,33 +153,98 @@ export function LeaderboardListing(props: LeaderboardListingProps) {
         />
       </>
     );
-  };
+  }
 
-  const PositionChange = ({ posChange }: { posChange: number }) => {
-    if (posChange === 0) {
-      return (
-        <span className="ml-1 flex items-center justify-center text-3xs">
-          <MoveHorizontal className="w-2" />
-        </span>
-      );
-    }
+  const row = args.row;
+  const isComplete = args.tournamentComplete;
 
-    const isPositive = posChange > 0;
-    const Icon = isPositive ? MoveUp : MoveDown;
-    const colorClass = isPositive ? "text-green-900" : "text-red-900";
+  const money =
+    typeof row.earnings === "number" ? formatMoneyUsd(row.earnings) : "-";
+  const points = typeof row.points === "number" ? row.points : "-";
+  const score = row.score == null ? "-" : formatToPar(row.score);
+  const today = row.today == null ? "-" : formatToPar(row.today);
+  const thru = row.thru ?? "-";
 
+  return (
+    <>
+      <ScoreCell
+        value={isComplete ? points : today}
+        className="col-span-1 sm:col-span-2"
+      />
+      <ScoreCell
+        value={isComplete ? money : thru}
+        className="col-span-1 sm:col-span-2"
+      />
+      <div className="col-span-1 hidden sm:flex" />
+      <ScoreCell
+        value={row.roundOne ?? "-"}
+        className="col-span-1"
+        hiddenOnMobile
+      />
+      <ScoreCell
+        value={row.roundTwo ?? "-"}
+        className="col-span-1"
+        hiddenOnMobile
+      />
+      <ScoreCell
+        value={row.roundThree ?? "-"}
+        className="col-span-1"
+        hiddenOnMobile
+      />
+      <ScoreCell
+        value={row.roundFour ?? "-"}
+        className="col-span-1"
+        hiddenOnMobile
+      />
+      <div className="hidden">{score}</div>
+    </>
+  );
+}
+
+function PositionChange(props: { posChange: number }) {
+  if (props.posChange === 0) {
     return (
-      <span
-        className={cn(
-          "ml-0.5 flex items-center justify-center text-2xs",
-          colorClass,
-        )}
-      >
-        <Icon className="w-2" />
-        {Math.abs(posChange)}
+      <span className="ml-1 inline-flex items-center text-xs text-muted-foreground">
+        <MoveHorizontal className="h-3 w-3" />
       </span>
     );
-  };
+  }
+
+  const isPositive = props.posChange > 0;
+  const Icon = isPositive ? MoveUp : MoveDown;
+  return (
+    <span
+      className={cn(
+        "ml-1 inline-flex items-center text-xs",
+        isPositive ? "text-green-700" : "text-red-700",
+      )}
+    >
+      <Icon className="h-3 w-3" />
+      {Math.abs(props.posChange)}
+    </span>
+  );
+}
+
+/**
+ * Renders a single leaderboard row (PGA golfer or PGC team) with an optional expandable panel.
+ *
+ * Behavior:
+ * - Highlights the viewer's row and friends' rows (PGC only) via `getLeaderboardRowClass`.
+ * - Shows position change when allowed by tournament state.
+ * - Toggles an expandable dropdown on click unless `isPreTournament` is true.
+ * - Expand content:
+ *   - PGA: golfer stats panel.
+ *   - PGC: team golfer table.
+ *
+ * @param props - `LeaderboardListingProps`.
+ * @returns A clickable row plus an optional dropdown panel.
+ */
+export function LeaderboardListing(props: LeaderboardListingProps) {
+  const model = useLeaderboardListing(props);
+
+  if (!model.nameDisplay.trim()) {
+    return <LeaderboardListingSkeleton />;
+  }
 
   return (
     <div

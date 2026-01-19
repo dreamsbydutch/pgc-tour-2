@@ -10,13 +10,11 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { LogIn, UserRound } from "lucide-react";
 import { useMemo } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { NAV_ITEMS } from "@/lib/constants";
-import type { NavigationContainerProps } from "@/lib/types";
-import { cn, formatUserDisplayName, isNavItemActive } from "@/lib/utils";
-import { useQuery } from "convex/react";
-import { api } from "convex/_generated/api";
+import { Button, Skeleton } from "@/ui";
+import { NAV_ITEMS } from "@/lib";
+import type { NavigationContainerProps } from "@/lib";
+import { cn, formatUserDisplayName, isNavItemActive } from "@/lib";
+import { api, useQuery } from "@/convex";
 
 /**
  * Main app navigation with responsive layout and a Clerk-powered account affordance.

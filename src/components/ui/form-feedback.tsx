@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "./skeleton";
 
 /**
  * Renders standard inline form feedback messages.

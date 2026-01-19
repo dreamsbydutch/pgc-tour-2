@@ -6,10 +6,10 @@ import { useQuery } from "convex/react";
 import { useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 
-import { api } from "../../../convex/_generated/api";
-import type { Doc, Id } from "../../../convex/_generated/dataModel";
+import { api } from "@/convex";
+import type { Doc, Id } from "@/convex";
 import { TourCardFormButton } from "@/components/internal/TourCardFormButton";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/ui";
 import { DEFAULT_MAX_PARTICIPANTS } from "@/lib/constants";
 import { formatBuyIn, getMemberDisplayName } from "@/lib/utils";
 

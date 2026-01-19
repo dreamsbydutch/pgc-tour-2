@@ -1,16 +1,15 @@
 import type { FormEvent, ReactNode } from "react";
 
 import { AdminDataTable } from "@/components/internal/AdminDataTable";
-import { AdminFormActions } from "@/components/ui/admin-form-actions";
+import { AdminFormActions } from "@/ui";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { FormFeedback } from "@/components/ui/form-feedback";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "@/ui";
+import { FormFeedback, Skeleton } from "@/ui";
 import type { AdminDataTableColumn } from "@/lib/types";
 
 /**

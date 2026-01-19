@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import { AdminRowActions } from "@/components/ui/admin-row-actions";
+import { AdminRowActions } from "./admin-row-actions";
 
 /**
  * Convenience wrapper for the common admin pattern: an "Edit" button and an

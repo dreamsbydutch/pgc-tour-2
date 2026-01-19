@@ -3,9 +3,9 @@
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { Loader2 } from "lucide-react";
-import { api } from "../../../convex/_generated/api";
-import type { Doc, Id } from "../../../convex/_generated/dataModel";
-import { Button } from "@/components/ui/button";
+import { api } from "@/convex";
+import type { Doc, Id } from "@/convex";
+import { Button } from "@/ui";
 import {
   Dialog,
   DialogContent,
@@ -13,8 +13,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "@/ui";
+import { Skeleton } from "@/ui";
 import { DEFAULT_MAX_PARTICIPANTS } from "@/lib/constants";
 import { formatBuyIn } from "@/lib/utils";
 import type { TourCardChangeButtonProps } from "@/lib/types";
@@ -53,6 +53,14 @@ export function TourCardChangeButton({
     return <TourCardChangeButtonSkeleton />;
   }
 
+  return <TourCardChangeButtonLoaded tourCardId={tourCardId} />;
+}
+
+function TourCardChangeButtonLoaded({
+  tourCardId,
+}: {
+  tourCardId: Id<"tourCards">;
+}) {
   const {
     effect,
     setEffect,

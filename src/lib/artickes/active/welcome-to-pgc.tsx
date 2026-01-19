@@ -11,8 +11,8 @@ function Body() {
       </p>
       <h3>How publishing works</h3>
       <ul>
-        <li>In src/content/articles/active → shows on the site</li>
-        <li>In src/content/articles/inactive → hidden but kept in repo</li>
+        <li>In src/lib/articles/active → shows on the site</li>
+        <li>In src/lib/articles/inactive → hidden but kept in repo</li>
       </ul>
     </div>
   );

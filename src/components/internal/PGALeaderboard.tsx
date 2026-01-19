@@ -30,11 +30,11 @@ export function PGALeaderboard(props: {
   viewer?: LeaderboardViewerContext;
   isPreTournament?: boolean;
 }) {
+  const model = usePGALeaderboard({ golfers: props.golfers });
+
   if (props.golfers.length === 0) {
     return <PGALeaderboardSkeleton />;
   }
-
-  const model = usePGALeaderboard({ golfers: props.golfers });
 
   return (
     <>

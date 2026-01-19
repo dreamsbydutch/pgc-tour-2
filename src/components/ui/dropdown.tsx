@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
-import { cn } from "@/lib/utils";
-import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib";
+import { Skeleton } from "./skeleton";
 
 /**
  * Dropdown Component

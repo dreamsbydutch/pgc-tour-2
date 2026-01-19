@@ -3,8 +3,8 @@ import { useQuery } from "convex/react";
 
 import { cn } from "@/lib/utils";
 import type { LeagueScheduleProps } from "@/lib/types";
-import { api } from "../../../convex/_generated/api";
-import type { Id } from "../../../convex/_generated/dataModel";
+import { api } from "@/convex";
+import type { Id } from "@/convex";
 import type { EnhancedTournamentDoc } from "../../../convex/types/types";
 import {
   Table,
@@ -13,8 +13,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
-import { Skeleton, SVGSkeleton } from "@/components/ui/skeleton";
+} from "@/ui";
+import { Skeleton, SVGSkeleton } from "@/ui";
 import { getTournamentTimeline } from "@/lib/utils";
 
 /**

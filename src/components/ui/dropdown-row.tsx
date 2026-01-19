@@ -1,7 +1,7 @@
 "use client";
 
-import { cn, isNonEmptyString } from "@/lib/utils";
-import { Skeleton } from "@/components/ui/skeleton";
+import { cn, isNonEmptyString } from "@/lib";
+import { Skeleton } from "./skeleton";
 
 /**
  * DropdownRow Component

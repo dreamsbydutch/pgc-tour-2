@@ -1,6 +1,6 @@
 "use client";
 
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/ui";
 import type { HomePageListingsContainerProps } from "@/lib/types";
 
 /**

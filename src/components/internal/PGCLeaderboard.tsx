@@ -38,15 +38,15 @@ export function PGCLeaderboard(props: {
   variant: LeaderboardVariant;
   isPreTournament?: boolean;
 }) {
-  if (props.teams.length === 0) {
-    return <PGCLeaderboardSkeleton />;
-  }
-
   const model = usePGCLeaderboard({
     teams: props.teams,
     activeTourId: props.activeTourId,
     variant: props.variant,
   });
+
+  if (props.teams.length === 0) {
+    return <PGCLeaderboardSkeleton />;
+  }
 
   return (
     <>

@@ -6,9 +6,8 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "@/ui";
+import { Button, Skeleton } from "@/ui";
 import type { AdminPanelProps } from "@/lib/types";
 
 /**
@@ -43,7 +42,6 @@ export function AdminPanel({ loading = false }: AdminPanelProps) {
   if (loading) {
     return <AdminPanelSkeleton />;
   }
-
 
   return (
     <Card className="border-red-200 bg-red-50">

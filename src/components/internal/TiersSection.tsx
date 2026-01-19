@@ -2,13 +2,12 @@ import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQuery } from "convex/react";
 
-import { api } from "../../../convex/_generated/api";
-import type { Id } from "../../../convex/_generated/dataModel";
+import { api } from "@/convex";
+import type { Id } from "@/convex";
 import type { SeasonDoc, TierDoc } from "../../../convex/types/types";
-import { AdminEditDeleteActions } from "@/components/ui/admin-edit-delete-actions";
+import { AdminEditDeleteActions } from "@/ui";
 import { AdminCrudSection } from "@/components/internal/AdminCrudSection";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent, CardHeader, Skeleton } from "@/ui";
 
 import { Field } from "@/components/internal/AdminField";
 import {

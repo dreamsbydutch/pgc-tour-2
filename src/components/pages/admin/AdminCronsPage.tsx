@@ -1,20 +1,19 @@
 import { useMemo, useState } from "react";
 
 import { SignedIn, SignedOut, SignInButton } from "@clerk/tanstack-react-start";
-import { api } from "convex/_generated/api";
-import type { Id } from "convex/_generated/dataModel";
-import { useAction, useQuery } from "convex/react";
+import { api, useAction, useQuery } from "@/convex";
+import type { Id } from "@/convex";
 
-import { useRoleAccess } from "@/hooks/useRoleAccess";
+import { useRoleAccess } from "@/hooks";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "@/ui";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from "@/ui";
 
 /**
  * Renders the `/admin/crons` page.

@@ -1,10 +1,9 @@
 import { useMemo } from "react";
-import { useQuery } from "convex/react";
 
-import { api } from "../../../convex/_generated/api";
+import { api, useQuery } from "@/convex";
 import type { TierDoc } from "../../../convex/types/types";
-import { useSeasonIdOrCurrent } from "@/hooks/useSeasonIdOrCurrent";
-import type { PayoutsTableProps } from "@/lib/types";
+import { useSeasonIdOrCurrent } from "@/hooks";
+import type { PayoutsTableProps } from "@/lib";
 import {
   Table,
   TableBody,
@@ -12,9 +11,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
-import { cn, formatMoney, formatRank } from "@/lib/utils";
+} from "@/ui";
+import { Skeleton } from "@/ui";
+import { cn, formatMoney, formatRank } from "@/lib";
 
 /**
  * Displays the payouts distribution table used in the Rulebook Scoring section.

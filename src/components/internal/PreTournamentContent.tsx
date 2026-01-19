@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { TeamPickForm } from "@/components/internal/TeamPickForm";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button, Skeleton } from "@/ui";
 import { PRE_TOURNAMENT_PICK_WINDOW_MS } from "@/lib/constants";
 import { isPlayoffTournament } from "@/lib/utils";
 

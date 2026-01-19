@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import { useRouter } from "@tanstack/react-router";
 
-import { Button } from "@/components/ui/button";
+import { Button } from "@/ui";
 import { cn, formatMoney } from "@/lib/utils";
 
 import { MemberHeader } from "@/components/internal/MemberHeader";

@@ -5,7 +5,7 @@ import {
   hasItems,
   isNonEmptyString,
 } from "@/lib/utils";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/ui";
 
 /**
  * Displays the champions of the most recent tournament.

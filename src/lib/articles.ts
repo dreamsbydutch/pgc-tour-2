@@ -13,7 +13,7 @@ export type Article = {
 type ArticleModule = { article: Article };
 
 const activeModules = import.meta.glob<ArticleModule>(
-  "@/content/articles/active/*.tsx",
+  "/src/lib/articles/active/*.tsx",
   { eager: true },
 );
 

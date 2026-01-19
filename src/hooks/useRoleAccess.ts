@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { useUser } from "@clerk/tanstack-react-start";
-import { api } from "../../convex/_generated/api";
+import { api } from "@/convex";
 import type { MemberDoc } from "../../convex/types/types";
 
 export type UserRole = "admin" | "moderator" | "regular" | null;

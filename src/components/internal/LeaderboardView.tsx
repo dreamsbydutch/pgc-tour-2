@@ -6,7 +6,7 @@ import { ToursToggle } from "@/components/internal/ToursToggle";
 import { LeaderboardHeaderRow } from "@/components/internal/LeaderboardHeaderRow";
 import { PGALeaderboard } from "@/components/internal/PGALeaderboard";
 import { PGCLeaderboard } from "@/components/internal/PGCLeaderboard";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/ui";
 import type { LeaderboardViewProps } from "@/lib/types";
 
 /**

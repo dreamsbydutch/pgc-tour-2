@@ -7,21 +7,21 @@ import {
 } from "convex/react";
 import { SignInButton } from "@clerk/tanstack-react-start";
 
-import { api } from "../../../../convex/_generated/api";
-import type { Id } from "../../../../convex/_generated/dataModel";
+import { api } from "@/convex";
+import type { Id } from "@/convex";
 import type { SeasonDoc } from "../../../../convex/types/types";
 
-import { useRoleAccess } from "@/hooks/useRoleAccess";
-import { Button } from "@/components/ui/button";
+import { useRoleAccess } from "@/hooks";
+import { Button } from "@/ui";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from "@/ui";
 import { Field } from "@/components/internal/AdminField";
-import { normalizeList } from "@/lib/utils";
+import { normalizeList } from "@/lib";
 import { CoursesSection } from "@/components/internal/CoursesSection";
 import { MembersManager } from "@/components/internal/MembersManager";
 import { SeasonsSection } from "@/components/internal/SeasonsSection";

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { StandingsView } from "@/components/internal/StandingsView";
+import { StandingsView } from "@/components/pages/StandingsView";
 
 export const Route = createFileRoute("/standings")({
   validateSearch: (search: Record<string, unknown>) => {

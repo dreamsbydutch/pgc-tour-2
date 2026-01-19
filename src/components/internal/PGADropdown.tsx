@@ -36,11 +36,11 @@ export function PGADropdown(props: {
     props.golfer.topTen == null &&
     props.golfer.win == null;
 
+  const model = usePGADropdown(props);
+
   if (isMissingStats) {
     return <PGADropdownSkeleton />;
   }
-
-  const model = usePGADropdown(props);
 
   return (
     <div

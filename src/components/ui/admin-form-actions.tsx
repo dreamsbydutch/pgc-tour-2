@@ -1,5 +1,5 @@
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Button } from "./button";
+import { cn } from "@/lib";
 
 /**
  * Renders the standard admin form footer actions: a primary submit button and a

@@ -23,6 +23,11 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
+      "@/lib": ["./src/lib/index.ts"],
+      "@/hooks": ["./src/hooks/index.ts"],
+      "@/ui": ["./src/components/ui/index.ts"],
+      "@/providers": ["./src/providers/index.ts"],
+      "@/convex": ["./src/convex/index.ts"]
     }
   }
 }

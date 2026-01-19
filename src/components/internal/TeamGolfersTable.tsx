@@ -14,7 +14,7 @@ import {
   isPlayerCut,
 } from "@/lib/utils";
 
-import { Table, TableBody, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableHeader, TableRow } from "@/ui";
 
 /**
  * Renders a table of PGA golfers for a selected PGC team.

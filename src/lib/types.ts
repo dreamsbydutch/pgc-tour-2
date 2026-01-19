@@ -1,4 +1,4 @@
-import type { Doc, Id } from "../../convex/_generated/dataModel";
+import type { Doc, Id } from "@/convex";
 import type { EnhancedTournamentDoc } from "convex/types/types";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { LucideIcon } from "lucide-react";

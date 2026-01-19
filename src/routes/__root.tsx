@@ -2,11 +2,12 @@ import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
 import { TanstackDevtools } from "@tanstack/react-devtools";
 import { useEffect } from "react";
 
-import Providers from "../providers/Providers";
+import { Providers } from "@/providers";
 import { PWAInstallPrompt } from "../components/internal/PWAInstallPrompt";
+import { SignedOutPersistentSignIn } from "@/components/internal/SignedOutPersistentSignIn";
 
 import "../styles.css";
-import { NavigationContainer } from "@/components/internal/NavigationContainer";
+import { NavigationContainer } from "@/components/pages/NavigationContainer";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -152,6 +153,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           <NavigationContainer />
           <main className="pb-20 pt-16 md:pb-4 md:pt-20">{children}</main>
           <PWAInstallPrompt />
+          <SignedOutPersistentSignIn />
           <TanstackDevtools
             config={{
               position: "bottom-left",

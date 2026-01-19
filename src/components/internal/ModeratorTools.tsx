@@ -7,9 +7,8 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "@/ui";
+import { Button, Skeleton } from "@/ui";
 
 /**
  * Shows moderator controls for content management.

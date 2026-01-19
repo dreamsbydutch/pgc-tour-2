@@ -6,7 +6,7 @@ import type {
   TournamentCountdownTourney,
 } from "@/lib/types";
 import { calculateCountdownTimeLeft, formatTwoDigits } from "@/lib/utils";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/ui";
 import { useEffect, useState } from "react";
 
 /**

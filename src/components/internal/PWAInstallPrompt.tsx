@@ -12,6 +12,17 @@ interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 
+/**
+ * Prompts the user to install the PWA when the browser indicates installation is available.
+ *
+ * Behavior:
+ * - Does not render if already installed (standalone display-mode / iOS standalone).
+ * - Listens for `beforeinstallprompt` to capture a deferred prompt event.
+ * - Respects a 7-day dismissal cooldown via `localStorage`.
+ * - Hides itself after install or dismissal.
+ *
+ * @returns A fixed install prompt UI or `null`.
+ */
 export function PWAInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
@@ -94,7 +105,7 @@ export function PWAInstallPrompt() {
   }
 
   return (
-    <div className="fixed bottom-16 left-4 right-4 z-50 lg:bottom-4 lg:left-auto lg:right-4 lg:w-80">
+    <div className="fixed bottom-32 left-4 right-4 z-50 lg:bottom-4 lg:left-auto lg:right-4 lg:w-80">
       <div className="rounded-lg border bg-white p-4 shadow-lg">
         <div className="flex items-start justify-between">
           <div className="flex items-center space-x-3">

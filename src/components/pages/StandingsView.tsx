@@ -11,10 +11,15 @@ import {
 import { Link } from "@tanstack/react-router";
 
 import { ToursToggle } from "@/components/internal/ToursToggle";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useFriendManagement } from "@/hooks/useFriendManagement";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Skeleton,
+} from "@/ui";
+import { useFriendManagement } from "@/hooks";
 import type {
   ExtendedStandingsTourCard,
   StandingsMember,
@@ -24,11 +29,10 @@ import type {
   StandingsTourCard,
   StandingsTournament,
   StandingsViewProps,
-} from "@/lib/types";
-import { cn, includesPlayoff } from "@/lib/utils";
-import { useQuery } from "convex/react";
-import { api } from "convex/_generated/api";
-import { Doc } from "convex/_generated/dataModel";
+} from "@/lib";
+import { cn, includesPlayoff } from "@/lib";
+import { api, useQuery } from "@/convex";
+import type { Doc } from "@/convex";
 
 /**
  * Displays the standings screen (tour standings + playoff view) with friend filtering.
@@ -1072,11 +1076,14 @@ function useStandingsView(props: StandingsViewProps) {
     clerkId,
   );
 
-  const tours = data?.tours ?? [];
-  const tiers = data?.tiers ?? [];
-  const tournaments = data?.tournaments ?? [];
-  const teams = data?.teams ?? [];
-  const allTourCards = data?.tourCards ?? [];
+  const tours = useMemo(() => data?.tours ?? [], [data?.tours]);
+  const tiers = useMemo(() => data?.tiers ?? [], [data?.tiers]);
+  const tournaments = useMemo(
+    () => data?.tournaments ?? [],
+    [data?.tournaments],
+  );
+  const teams = useMemo(() => data?.teams ?? [], [data?.teams]);
+  const allTourCards = useMemo(() => data?.tourCards ?? [], [data?.tourCards]);
 
   const [activeView, setActiveViewState] = useState<ViewMode>(
     props.initialTourId ?? "",

@@ -2,8 +2,8 @@ import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQuery } from "convex/react";
 
-import { api } from "../../../convex/_generated/api";
-import type { Id } from "../../../convex/_generated/dataModel";
+import { api } from "@/convex";
+import type { Id } from "@/convex";
 import type { SeasonDoc, TourDoc } from "../../../convex/types/types";
 import { AdminCrudSection } from "@/components/internal/AdminCrudSection";
 import { AdminEditDeleteActions } from "../ui/admin-edit-delete-actions";

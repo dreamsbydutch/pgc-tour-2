@@ -2,20 +2,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAction, useMutation, useConvex } from "convex/react";
 import { useUser } from "@clerk/tanstack-react-start";
 
-import { api } from "../../../convex/_generated/api";
-import type { Id } from "../../../convex/_generated/dataModel";
+import { api } from "@/convex";
+import type { Id } from "@/convex";
 
-import { Button } from "@/components/ui/button";
-import { AdminRowActions } from "@/components/ui/admin-row-actions";
+import { AdminRowActions, Button } from "@/ui";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { FormFeedback } from "@/components/ui/form-feedback";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "@/ui";
+import { FormFeedback, Skeleton } from "@/ui";
 
 import { AdminDataTable } from "@/components/internal/AdminDataTable";
 import type { AdminDataTableColumn } from "@/lib/types";

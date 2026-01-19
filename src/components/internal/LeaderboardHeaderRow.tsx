@@ -17,11 +17,11 @@ export function LeaderboardHeaderRow(props: {
   tournamentOver: boolean;
   activeTourShortForm: string;
 }) {
+  const model = useLeaderboardHeaderRow(props);
+
   if (!props.activeTourShortForm.trim()) {
     return <LeaderboardHeaderRowSkeleton />;
   }
-
-  const model = useLeaderboardHeaderRow(props);
 
   return (
     <div className="mx-auto grid max-w-4xl grid-flow-row grid-cols-10 text-center sm:grid-cols-33">

@@ -1,22 +1,21 @@
 import { useMemo, useState } from "react";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { api, useAction, useMutation, useQuery } from "@/convex";
 import { SignedIn, SignedOut, SignInButton } from "@clerk/tanstack-react-start";
 import { useUser } from "@clerk/tanstack-react-start";
 
-import { api } from "../../../../convex/_generated/api";
-import type { Id } from "../../../../convex/_generated/dataModel";
+import type { Id } from "@/convex";
 import type { GolferDoc } from "../../../../convex/types/types";
 
-import { useRoleAccess } from "@/hooks/useRoleAccess";
+import { useRoleAccess } from "@/hooks";
 import { AdminDataTable } from "@/components/internal/AdminDataTable";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/ui";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from "@/ui";
 
 /**
  * Admin page for golfer management.

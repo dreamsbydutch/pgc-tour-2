@@ -1,17 +1,15 @@
 import { SignedIn } from "@clerk/tanstack-react-start";
 import { Shield, Star } from "lucide-react";
-import { useQuery } from "convex/react";
-
-import { api } from "convex/_generated/api";
+import { api, useQuery } from "@/convex";
 
 import { AdminPanel } from "@/components/internal/AdminPanel";
 import { LeagueSchedule } from "@/components/internal/LeagueSchedule";
 import { TourCardForm } from "@/components/internal/TourCardForm";
 import { TourCardOutput } from "@/components/internal/TourCardOutput";
 import { TournamentCountdown } from "@/components/internal/TournamentCountdown";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useRoleAccess } from "@/hooks/useRoleAccess";
-import type { TournamentCountdownTourney } from "@/lib/types";
+import { Skeleton } from "@/ui";
+import { useRoleAccess } from "@/hooks";
+import type { TournamentCountdownTourney } from "@/lib";
 
 /**
  * Renders the app home page.

@@ -5,8 +5,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "@/ui";
+import { Skeleton } from "@/ui";
 import { cn } from "@/lib/utils";
 
 import type { AdminDataTableColumn } from "@/lib/types";

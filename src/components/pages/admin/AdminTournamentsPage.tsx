@@ -8,8 +8,8 @@ import {
 } from "convex/react";
 import { SignInButton, useUser } from "@clerk/tanstack-react-start";
 
-import { api } from "../../../../convex/_generated/api";
-import type { Id } from "../../../../convex/_generated/dataModel";
+import { api } from "@/convex";
+import type { Id } from "@/convex";
 import type {
   CourseDoc,
   SeasonDoc,
@@ -17,16 +17,17 @@ import type {
   TournamentDoc,
 } from "../../../../convex/types/types";
 
-import { useRoleAccess } from "@/hooks/useRoleAccess";
+import { useRoleAccess } from "@/hooks";
+import { Field } from "@/components";
 import { AdminDataTable } from "@/components/internal/AdminDataTable";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/ui";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from "@/ui";
 
 /**
  * Admin page for creating and updating tournaments.
@@ -37,21 +38,6 @@ import {
  */
 export function AdminTournamentsPage() {
   const { isAdmin, isRoleLoading, vm } = useAdminTournamentsPage();
-
-  function Field({
-    label,
-    children,
-  }: {
-    label: string;
-    children: React.ReactNode;
-  }) {
-    return (
-      <label className="grid gap-1">
-        <span className="text-sm font-medium">{label}</span>
-        {children}
-      </label>
-    );
-  }
 
   function msToDateInput(ms: number | undefined): string {
     if (!ms) return "";

@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 
-import { Button, type ButtonProps } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
+import { Button, type ButtonProps } from "./button";
+import { Skeleton } from "./skeleton";
+import { cn } from "@/lib";
 
 /**
  * Renders a compact, right-aligned set of action buttons for admin table rows.

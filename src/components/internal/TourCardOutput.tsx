@@ -8,9 +8,9 @@ import type {
   TourCardDoc,
 } from "convex/types/types";
 import { TourCardChangeButton } from "@/components/internal/TourCardChangeButton";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/ui";
 import { formatMoney } from "@/lib/utils";
-import { api } from "convex/_generated/api";
+import { api } from "@/convex";
 
 /**
  * TourCardOutput

@@ -1,5 +1,4 @@
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button, Skeleton } from "@/ui";
 import { cn } from "@/lib/utils";
 import type { ToursToggleProps } from "@/lib/types";
 import { useMemo } from "react";
@@ -49,11 +48,11 @@ export function ToursToggle({
   sort = true,
   loading = false,
 }: ToursToggleProps) {
+  const { combinedToggles } = useToursToggle({ tours, extraToggles, sort });
+
   if (loading) {
     return <ToursToggleSkeleton />;
   }
-
-  const { combinedToggles } = useToursToggle({ tours, extraToggles, sort });
 
   if (combinedToggles.length === 0) return null;
 

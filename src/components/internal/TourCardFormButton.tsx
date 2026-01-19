@@ -4,10 +4,9 @@ import { useCallback, useState } from "react";
 import { useMutation } from "convex/react";
 import { Loader2 } from "lucide-react";
 
-import { api } from "../../../convex/_generated/api";
-import type { Id } from "../../../convex/_generated/dataModel";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { api } from "@/convex";
+import type { Id } from "@/convex";
+import { Button, Skeleton } from "@/ui";
 import { cn } from "@/lib/utils";
 import type { TourCardFormButtonProps } from "@/lib/types";
 
@@ -47,6 +46,12 @@ export function TourCardFormButton(props: TourCardFormButtonProps) {
     return <TourCardFormButtonSkeleton />;
   }
 
+  return <TourCardFormButtonLoaded {...props} />;
+}
+
+function TourCardFormButtonLoaded(
+  props: Exclude<TourCardFormButtonProps, { loading: true }>,
+) {
   const {
     tour,
     spotsRemaining,
@@ -164,7 +169,7 @@ function useTourCardFormButton({
           madeCut: 0,
           appearances: 0,
         },
-      } as any);
+      });
     } catch (error) {
       console.error("Error creating tour card:", error);
     } finally {

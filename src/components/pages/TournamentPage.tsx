@@ -1,18 +1,21 @@
 import { useMemo } from "react";
 
 import { useUser } from "@clerk/tanstack-react-start";
-import { api } from "convex/_generated/api";
-import { useQuery } from "convex/react";
+import { api, useQuery } from "@/convex";
 
-import { LeaderboardHeader, LeaderboardView } from "@/components";
+import {
+  LeaderboardHeader,
+  LeaderboardView,
+  PreTournamentContent,
+} from "@/components";
 import type {
   LeaderboardPgaRow,
   LeaderboardTeamRow,
   LeaderboardTourToggle,
   LeaderboardVariant,
   LeaderboardViewModel,
-} from "@/lib/types";
-import { getTournamentTimeline } from "@/lib/utils";
+} from "@/lib";
+import { getTournamentTimeline } from "@/lib";
 import type { EnhancedTournamentDoc } from "convex/types/types";
 
 /**
@@ -69,6 +72,29 @@ export function TournamentPage(props: {
     );
   }
 
+  if (vm.kind === "preTournament") {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <LeaderboardHeader
+          focusTourney={vm.selectedTournament}
+          tournaments={vm.tournaments}
+          onTournamentChange={props.onTournamentChange}
+        />
+
+        <div className="mt-4">
+          <PreTournamentContent
+            tournament={vm.preTournament.tournament}
+            member={vm.preTournament.member}
+            tourCard={vm.preTournament.tourCard}
+            existingTeam={vm.preTournament.existingTeam}
+            teamGolfers={vm.preTournament.teamGolfers}
+            playoffEventIndex={vm.preTournament.playoffEventIndex}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto px-4 py-8">
       <LeaderboardHeader
@@ -109,6 +135,48 @@ function useTournamentPage(args: {
   | { kind: "loadingTournaments" }
   | { kind: "noTournaments" }
   | { kind: "noSelection" }
+  | {
+      kind: "preTournament";
+      tournaments: EnhancedTournamentDoc[];
+      selectedTournament: EnhancedTournamentDoc;
+      preTournament: {
+        tournament: {
+          _id: string;
+          name: string;
+          startDate: number;
+          tier?: { name?: string | null } | null;
+        };
+        member:
+          | {
+              displayName?: string | null;
+              firstname?: string | null;
+              lastname?: string | null;
+              email?: string | null;
+              account?: number | null;
+            }
+          | null
+          | undefined;
+        tourCard:
+          | {
+              _id: string;
+              tourId: string;
+              playoff?: number | null;
+              currentPosition?: string | number | null;
+              points?: number | null;
+              earnings?: number | null;
+            }
+          | null
+          | undefined;
+        existingTeam: { golferIds?: number[] | null } | null;
+        teamGolfers: Array<{
+          apiId?: number | null;
+          _id?: string | null;
+          playerName: string;
+          worldRank?: number | null;
+        }> | null;
+        playoffEventIndex: number;
+      };
+    }
   | {
       kind: "ready";
       tournaments: EnhancedTournamentDoc[];
@@ -236,9 +304,120 @@ function useTournamentPage(args: {
         selectDefaultTournament(tournaments)
       : null;
 
+  const isNotStartedYet =
+    typeof selectedTournament?.startDate === "number" &&
+    selectedTournament.startDate > Date.now();
+
+  const memberResult = useQuery(
+    api.functions.members.getMembers,
+    user ? { options: { clerkId: user.id } } : "skip",
+  );
+
+  const member =
+    memberResult &&
+    typeof memberResult === "object" &&
+    !Array.isArray(memberResult) &&
+    "_id" in memberResult
+      ? (memberResult as unknown as {
+          displayName?: string | null;
+          firstname?: string | null;
+          lastname?: string | null;
+          email?: string | null;
+          account?: number | null;
+        })
+      : null;
+
+  const tourCardsResult = useQuery(
+    api.functions.tourCards.getTourCards,
+    user && selectedTournament
+      ? { options: { clerkId: user.id, seasonId: selectedTournament.seasonId } }
+      : "skip",
+  ) as
+    | Array<{
+        _id: unknown;
+        tourId: unknown;
+        playoff?: number | null;
+        currentPosition?: string | number | null;
+        points?: number | null;
+        earnings?: number | null;
+      }>
+    | undefined;
+
+  const tourCard =
+    tourCardsResult && tourCardsResult.length > 0
+      ? {
+          _id: String(tourCardsResult[0]!._id),
+          tourId: String(tourCardsResult[0]!.tourId),
+          playoff: tourCardsResult[0]!.playoff ?? null,
+          currentPosition: tourCardsResult[0]!.currentPosition ?? null,
+          points: tourCardsResult[0]!.points ?? null,
+          earnings: tourCardsResult[0]!.earnings ?? null,
+        }
+      : null;
+
+  const teamResult = useQuery(
+    api.functions.teams.getTeams,
+    selectedTournament && tourCard
+      ? {
+          options: {
+            filter: {
+              tournamentId: selectedTournament._id,
+              tourCardId: tourCard._id as unknown as never,
+            },
+            pagination: { limit: 1, offset: 0 },
+            enhance: { includeGolfers: true },
+          },
+        }
+      : "skip",
+  ) as
+    | Array<null | {
+        golferIds?: number[] | null;
+        golfers?: Array<{
+          _id?: unknown;
+          apiId?: number | null;
+          playerName: string;
+          worldRank?: number | null;
+        }>;
+      }>
+    | undefined;
+
+  const existingTeam =
+    teamResult && teamResult.length > 0 && teamResult[0]
+      ? { golferIds: teamResult[0].golferIds ?? null }
+      : null;
+
+  const teamGolfers =
+    teamResult && teamResult.length > 0 && teamResult[0]?.golfers
+      ? teamResult[0].golfers.map((g) => ({
+          _id: g._id ? String(g._id) : null,
+          apiId: g.apiId ?? null,
+          playerName: g.playerName,
+          worldRank: g.worldRank ?? null,
+        }))
+      : null;
+
+  const playoffEventIndex = useMemo(() => {
+    if (!selectedTournament) return 0;
+
+    const seasonId = String(selectedTournament.seasonId);
+    const playoffTournaments = (tournaments ?? [])
+      .filter((t) => String(t.seasonId) === seasonId)
+      .filter((t) => {
+        const name = (t.name ?? "").toLowerCase();
+        const tier = (t.tier?.name ?? "").toLowerCase();
+        return name.includes("playoff") || tier.includes("playoff");
+      })
+      .sort((a, b) => (a.startDate ?? 0) - (b.startDate ?? 0));
+
+    const idx = playoffTournaments.findIndex(
+      (t) => String(t._id) === String(selectedTournament._id),
+    );
+    return idx >= 0 ? idx + 1 : 0;
+  }, [selectedTournament, tournaments]);
+
   const leaderboardPayload = useQuery(
     api.functions.tournaments.getTournamentLeaderboardView,
-    selectedTournament
+    selectedTournament && !isNotStartedYet
       ? {
           tournamentId: selectedTournament._id,
           options: {
@@ -280,6 +459,7 @@ function useTournamentPage(args: {
 
   const model = useMemo((): LeaderboardViewModel => {
     if (!selectedTournament) return { kind: "loading" };
+    if (isNotStartedYet) return { kind: "loading" };
     if (leaderboardPayload === undefined) return { kind: "loading" };
     if (leaderboardPayload === null) {
       return { kind: "error", message: "Leaderboard data not found." };
@@ -405,7 +585,7 @@ function useTournamentPage(args: {
           }
         : undefined,
     };
-  }, [leaderboardPayload, selectedTournament]);
+  }, [isNotStartedYet, leaderboardPayload, selectedTournament]);
 
   if (tournaments === undefined) {
     return { kind: "loadingTournaments" };
@@ -417,6 +597,29 @@ function useTournamentPage(args: {
 
   if (!selectedTournament) {
     return { kind: "noSelection" };
+  }
+
+  if (isNotStartedYet) {
+    return {
+      kind: "preTournament",
+      tournaments,
+      selectedTournament,
+      preTournament: {
+        tournament: {
+          _id: String(selectedTournament._id),
+          name: selectedTournament.name,
+          startDate: selectedTournament.startDate,
+          tier: selectedTournament.tier
+            ? { name: selectedTournament.tier.name ?? null }
+            : null,
+        },
+        member,
+        tourCard,
+        existingTeam,
+        teamGolfers,
+        playoffEventIndex,
+      },
+    };
   }
 
   const allowedTourIds =

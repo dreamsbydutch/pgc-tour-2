@@ -1,7 +1,7 @@
 "use client";
 
 import { formatMoney, formatTournamentDateRange } from "@/lib/utils";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@/ui";
 import { LeaderboardHeaderDropdown } from "@/components/internal/LeaderboardHeaderDropdown";
 import type { LeaderboardHeaderProps } from "@/lib/types";
 

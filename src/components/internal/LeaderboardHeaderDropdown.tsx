@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, RefreshCwIcon } from "lucide-react";
 import { cn, formatTournamentDateRange, getTournamentYear } from "@/lib/utils";
 import type {
   LeaderboardHeaderDropdownProps,
   LeaderboardHeaderGroupMode,
 } from "@/lib/types";
-import { Dropdown, DropdownSkeleton } from "@/components/ui/dropdown";
-import { DropdownRow } from "@/components/ui/dropdown-row";
+import { Dropdown, DropdownRow, DropdownSkeleton } from "@/ui";
 
 /**
  * LeaderboardHeaderDropdown Component
@@ -31,6 +30,12 @@ export function LeaderboardHeaderDropdown(
     return <LeaderboardHeaderDropdownSkeleton className={props.className} />;
   }
 
+  return <LeaderboardHeaderDropdownLoaded {...props} />;
+}
+
+function LeaderboardHeaderDropdownLoaded(
+  props: Exclude<LeaderboardHeaderDropdownProps, { loading: true }>,
+) {
   const {
     isOpen,
     setIsOpen,
@@ -51,7 +56,8 @@ export function LeaderboardHeaderDropdown(
       className={props.className}
       triggerContent={
         <>
-          <span className="truncate">Switch Tournament</span>
+          <RefreshCwIcon className="h-4 w-4 sm:h-5 sm:w-5 md:hidden" />
+          <span className="hidden truncate md:block">Switch Tournament</span>
           <ChevronDown className="h-4 w-4" />
         </>
       }
@@ -204,7 +210,10 @@ function useLeaderboardHeaderDropdown(
   }, [selectedYear, props.tournaments]);
 
   const tierGroups = useMemo(() => {
-    const groups = new Map<string, typeof props.tournaments>();
+    const groups = new Map<
+      string,
+      Array<(typeof tournamentsForYear)[number]>
+    >();
     tournamentsForYear.forEach((tournament) => {
       const tierName = tournament.tier?.name ?? "Uncategorized";
       const list = groups.get(tierName) ?? [];
@@ -216,7 +225,7 @@ function useLeaderboardHeaderDropdown(
       const payoutB = tournsB[0]?.tier?.payouts[0] ?? 0;
       return payoutA - payoutB;
     });
-  }, [tournamentsForYear, props.tournaments]);
+  }, [tournamentsForYear]);
 
   const handleTournamentSelect = (tournamentId: string) => {
     setIsOpen(false);

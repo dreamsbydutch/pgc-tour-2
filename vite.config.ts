@@ -14,6 +14,22 @@ const config = defineConfig({
     }),
     viteReact(),
   ],
+  build: {
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      onwarn(warning, warn) {
+        if (
+          warning.code === 'UNUSED_EXTERNAL_IMPORT' &&
+          typeof warning.id === 'string' &&
+          warning.id.includes('node_modules/@tanstack/')
+        ) {
+          return
+        }
+
+        warn(warning)
+      },
+    },
+  },
 })
 
 export default config

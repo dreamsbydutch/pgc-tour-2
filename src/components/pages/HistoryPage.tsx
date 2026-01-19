@@ -1,6 +1,4 @@
-import { useQuery } from "convex/react";
-
-import { api } from "convex/_generated/api";
+import { api, useQuery } from "@/convex";
 
 import { LeaderboardHeader } from "@/components";
 import type { EnhancedTournamentDoc } from "convex/types/types";

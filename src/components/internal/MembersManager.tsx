@@ -1,14 +1,13 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQuery } from "convex/react";
 
-import { api } from "../../../convex/_generated/api";
-import type { Id } from "../../../convex/_generated/dataModel";
+import { api } from "@/convex";
+import type { Id } from "@/convex";
 import type { MemberDoc } from "../../../convex/types/types";
-import { AdminEditDeleteActions } from "@/components/ui/admin-edit-delete-actions";
+import { AdminEditDeleteActions } from "@/ui";
 import { AdminCrudSection } from "@/components/internal/AdminCrudSection";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent, CardHeader, Skeleton } from "@/ui";
 
 import { Field } from "@/components/internal/AdminField";
 import { ADMIN_FORM_CONTROL_CLASSNAME } from "@/lib/constants";
@@ -227,33 +226,32 @@ function useMembersManager() {
         ) => string;
       };
 
-  const capitalizeWord = (value: string): string => {
+  const capitalizeWord = useCallback((value: string): string => {
     if (!value) return "";
     return value[0].toUpperCase() + value.slice(1);
-  };
+  }, []);
 
-  const formatMemberDisplayName = (
-    firstname?: string,
-    lastname?: string,
-    fallbackEmail?: string,
-  ): string => {
-    const first = (firstname ?? "").trim();
-    const last = (lastname ?? "").trim();
+  const formatMemberDisplayName = useCallback(
+    (firstname?: string, lastname?: string, fallbackEmail?: string): string => {
+      const first = (firstname ?? "").trim();
+      const last = (lastname ?? "").trim();
 
-    if (first && last) {
-      return `${first[0].toUpperCase()}. ${capitalizeWord(last)}`;
-    }
+      if (first && last) {
+        return `${first[0].toUpperCase()}. ${capitalizeWord(last)}`;
+      }
 
-    if (last) {
-      return capitalizeWord(last);
-    }
+      if (last) {
+        return capitalizeWord(last);
+      }
 
-    if (first) {
-      return `${first[0].toUpperCase()}.`;
-    }
+      if (first) {
+        return `${first[0].toUpperCase()}.`;
+      }
 
-    return fallbackEmail ?? "";
-  };
+      return fallbackEmail ?? "";
+    },
+    [capitalizeWord],
+  );
 
   const createMember = useMutation(api.functions.members.createMembers);
   const updateMember = useMutation(api.functions.members.updateMembers);
@@ -297,7 +295,7 @@ function useMembersManager() {
         clerk.includes(term)
       );
     });
-  }, [members, searchTerm]);
+  }, [formatMemberDisplayName, members, searchTerm]);
 
   const emptyDisplayName = formatMemberDisplayName("", "", "");
 
