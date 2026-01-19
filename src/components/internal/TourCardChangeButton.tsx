@@ -291,6 +291,11 @@ function useTourCardChangeButton({
     tourCard ? { options: { seasonId: tourCard.seasonId } } : "skip",
   );
 
+  const reservedSpotsResult = useQuery(
+    api.functions.tourCards.getReservedTourSpotsForSeason,
+    tourCard ? { options: { seasonId: tourCard.seasonId } } : "skip",
+  );
+
   const tours = useMemo(() => {
     return (
       Array.isArray(toursResult)
@@ -318,16 +323,24 @@ function useTourCardChangeButton({
   const otherToursWithMeta = useMemo(() => {
     if (!tourCard) return [];
 
+    const reservedByTourId =
+      reservedSpotsResult && typeof reservedSpotsResult === "object"
+        ? ((
+            reservedSpotsResult as { reservedByTourId?: Record<string, number> }
+          ).reservedByTourId ?? {})
+        : {};
+
     return tours
       .filter((tour) => tour._id !== tourCard.tourId)
       .map((tour) => {
         const maxParticipants =
           tour.maxParticipants ?? DEFAULT_MAX_PARTICIPANTS;
         const taken = tourCounts.get(tour._id) ?? 0;
-        const spotsRemaining = Math.max(0, maxParticipants - taken);
+        const reserved = reservedByTourId[tour._id] ?? 0;
+        const spotsRemaining = Math.max(0, maxParticipants - taken - reserved);
         return { tour, spotsRemaining, isFull: spotsRemaining <= 0 };
       });
-  }, [tourCard, tourCounts, tours]);
+  }, [reservedSpotsResult, tourCard, tourCounts, tours]);
 
   const switchTourCard = useMutation(api.functions.tourCards.switchTourCards);
   const deleteTourCardAndFee = useMutation(

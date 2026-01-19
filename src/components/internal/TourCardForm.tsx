@@ -119,6 +119,10 @@ function useTourCardForm() {
     api.functions.tourCards.getTourCards,
     currentSeason ? { options: { seasonId: currentSeason._id } } : "skip",
   );
+  const reservedSpotsResult = useQuery(
+    api.functions.tourCards.getReservedTourSpotsForSeason,
+    currentSeason ? { options: { seasonId: currentSeason._id } } : "skip",
+  );
   const memberResult = useQuery(
     api.functions.members.getMembers,
     clerkId && convexAuth.isAuthenticated ? { options: { clerkId } } : "skip",
@@ -183,22 +187,33 @@ function useTourCardForm() {
   }, [toursResult]);
 
   const toursWithMeta = useMemo(() => {
+    const reservedByTourId =
+      reservedSpotsResult && typeof reservedSpotsResult === "object"
+        ? ((
+            reservedSpotsResult as { reservedByTourId?: Record<string, number> }
+          ).reservedByTourId ?? {})
+        : {};
+
     return tours.map((tour) => {
       const maxParticipants = tour.maxParticipants ?? DEFAULT_MAX_PARTICIPANTS;
       const taken = tourCounts.get(tour._id) ?? 0;
+      const reserved = reservedByTourId[tour._id] ?? 0;
       return {
         tour,
-        spotsRemaining: Math.max(0, maxParticipants - taken),
+        spotsRemaining: Math.max(0, maxParticipants - taken - reserved),
         buyInLabel: formatBuyIn(tour.buyIn),
       };
     });
-  }, [tourCounts, tours]);
+  }, [reservedSpotsResult, tourCounts, tours]);
 
   const headingYear = currentSeason?.year ?? new Date().getFullYear();
 
   const toursLoading = currentSeason ? toursResult === undefined : false;
   const tourCardsLoading = currentSeason
     ? seasonTourCards === undefined
+    : false;
+  const reservedSpotsLoading = currentSeason
+    ? reservedSpotsResult === undefined
     : false;
   const memberLoading =
     clerkId && convexAuth.isAuthenticated ? memberResult === undefined : false;
@@ -214,6 +229,7 @@ function useTourCardForm() {
     authLoading ||
     toursLoading ||
     tourCardsLoading ||
+    reservedSpotsLoading ||
     memberLoading ||
     tourCardFeeLoading;
 

@@ -257,6 +257,103 @@ export const getCurrentYearTourCard = query({
   },
 });
 
+/**
+ * getReservedTourSpotsForSeason
+ *
+ * Returns a per-tour count of reserved spots for a given season.
+ *
+ * A reserved spot is counted for each member who has paid the Tour Card Fee for the given season
+ * but does not yet have a tour card in that season; that reservation is assigned to the member's
+ * tour from the previous calendar year.
+ */
+export const getReservedTourSpotsForSeason = query({
+  args: {
+    options: v.object({
+      seasonId: v.id("seasons"),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const season = await ctx.db.get(args.options.seasonId);
+    if (!season) {
+      throw new Error("Season not found");
+    }
+
+    const previousYear = season.year - 1;
+
+    const previousSeasons = (await ctx.db.query("seasons").collect()).filter(
+      (s) => s.year === previousYear,
+    );
+
+    const reservedByTourId: Record<string, number> = {};
+
+    if (previousSeasons.length === 0) {
+      return { reservedByTourId };
+    }
+
+    const previousSeason = previousSeasons.reduce((best, candidate) => {
+      const bestNumber = best.number ?? 0;
+      const candidateNumber = candidate.number ?? 0;
+      if (candidateNumber !== bestNumber) {
+        return candidateNumber > bestNumber ? candidate : best;
+      }
+
+      const bestStart = best.startDate ?? 0;
+      const candidateStart = candidate.startDate ?? 0;
+      if (candidateStart !== bestStart) {
+        return candidateStart > bestStart ? candidate : best;
+      }
+
+      return candidate._creationTime > best._creationTime ? candidate : best;
+    }, previousSeasons[0]);
+
+    const currentSeasonTourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_season", (q) => q.eq("seasonId", season._id))
+      .collect();
+
+    const membersWithCurrentTourCard = new Set(
+      currentSeasonTourCards.map((card) => card.memberId),
+    );
+
+    const previousSeasonTourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_season", (q) => q.eq("seasonId", previousSeason._id))
+      .collect();
+
+    const previousTourByMemberId = new Map<Id<"members">, Id<"tours">>();
+    for (const card of previousSeasonTourCards) {
+      if (!previousTourByMemberId.has(card.memberId)) {
+        previousTourByMemberId.set(card.memberId, card.tourId);
+      }
+    }
+
+    const seasonTransactions = await ctx.db
+      .query("transactions")
+      .withIndex("by_season", (q) => q.eq("seasonId", season._id))
+      .collect();
+
+    const prepaidMemberIds = new Set<Id<"members">>();
+    for (const tx of seasonTransactions) {
+      if (tx.transactionType !== "TourCardFee") continue;
+      if (!isCompletedTourCardFee(tx)) continue;
+      if (!tx.memberId) continue;
+      prepaidMemberIds.add(tx.memberId);
+    }
+
+    for (const memberId of prepaidMemberIds) {
+      if (membersWithCurrentTourCard.has(memberId)) continue;
+
+      const previousTourId = previousTourByMemberId.get(memberId);
+      if (!previousTourId) continue;
+
+      reservedByTourId[previousTourId] =
+        (reservedByTourId[previousTourId] ?? 0) + 1;
+    }
+
+    return { reservedByTourId };
+  },
+});
+
 export const updateTourCards = mutation({
   args: {
     id: v.id("tourCards"),

@@ -145,6 +145,11 @@ function useTourCardOutput() {
       : "skip",
   ) as TourCardDoc[] | undefined | null;
 
+  const reservedSpotsResult = useQuery(
+    api.functions.tourCards.getReservedTourSpotsForSeason,
+    tourCard ? { options: { seasonId: tourCard.seasonId } } : "skip",
+  ) as { reservedByTourId?: Record<string, number> } | undefined;
+
   const isLoadingTourCard = Boolean(clerkId) && tourCard === undefined;
   const isLoadingMember = Boolean(clerkId) && member === undefined;
   const isLoadingTourDetails = Boolean(tourCard) && tour === undefined;
@@ -164,8 +169,10 @@ function useTourCardOutput() {
 
   const name = tourCard.displayName ?? user.fullName ?? "PGC Member";
   const pictureUrl = tour.logoUrl;
+  const reservedByTourId = reservedSpotsResult?.reservedByTourId ?? {};
+  const reserved = reservedByTourId[tourCard.tourId] ?? 0;
   const spotsRemaining =
-    +(tour.maxParticipants ?? 75) - (tourCardsForTour?.length ?? 0);
+    +(tour.maxParticipants ?? 75) - (tourCardsForTour?.length ?? 0) - reserved;
 
   return {
     state: "ready" as const,
