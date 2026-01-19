@@ -306,6 +306,34 @@ export const getReservedTourSpotsForSeason = query({
       return candidate._creationTime > best._creationTime ? candidate : best;
     }, previousSeasons[0]);
 
+    const currentSeasonTours = await ctx.db
+      .query("tours")
+      .withIndex("by_season", (q) => q.eq("seasonId", season._id))
+      .collect();
+
+    const currentTourIdByShortForm = new Map<string, Id<"tours">>();
+    const currentTourIdByName = new Map<string, Id<"tours">>();
+    for (const tour of currentSeasonTours) {
+      currentTourIdByShortForm.set(tour.shortForm, tour._id);
+      currentTourIdByName.set(tour.name, tour._id);
+    }
+
+    const previousSeasonTours = await ctx.db
+      .query("tours")
+      .withIndex("by_season", (q) => q.eq("seasonId", previousSeason._id))
+      .collect();
+
+    const previousTourMetaById = new Map<
+      Id<"tours">,
+      { shortForm: string; name: string }
+    >();
+    for (const tour of previousSeasonTours) {
+      previousTourMetaById.set(tour._id, {
+        shortForm: tour.shortForm,
+        name: tour.name,
+      });
+    }
+
     const currentSeasonTourCards = await ctx.db
       .query("tourCards")
       .withIndex("by_season", (q) => q.eq("seasonId", season._id))
@@ -346,8 +374,16 @@ export const getReservedTourSpotsForSeason = query({
       const previousTourId = previousTourByMemberId.get(memberId);
       if (!previousTourId) continue;
 
-      reservedByTourId[previousTourId] =
-        (reservedByTourId[previousTourId] ?? 0) + 1;
+      const previousTourMeta = previousTourMetaById.get(previousTourId);
+      if (!previousTourMeta) continue;
+
+      const mappedCurrentTourId =
+        currentTourIdByShortForm.get(previousTourMeta.shortForm) ??
+        currentTourIdByName.get(previousTourMeta.name);
+      if (!mappedCurrentTourId) continue;
+
+      reservedByTourId[mappedCurrentTourId] =
+        (reservedByTourId[mappedCurrentTourId] ?? 0) + 1;
     }
 
     return { reservedByTourId };
