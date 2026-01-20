@@ -135,7 +135,8 @@ function useToursToggle({
       const isPga = id === "pga" || shortForm === "pga";
       const isGold = id === "gold" || shortForm === "gold";
       const isSilver = id === "silver" || shortForm === "silver";
-      const isPlayoffs = id === "playoff" || id === "playoffs" || playoffLike(shortForm);
+      const isPlayoffs =
+        id === "playoff" || id === "playoffs" || playoffLike(shortForm);
 
       if (isPga) return 1;
       if (isGold) return 2;
