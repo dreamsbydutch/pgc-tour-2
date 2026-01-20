@@ -19,8 +19,11 @@ import { useMemo } from "react";
  *
  * Behavior notes:
  * - The active tour uses the `default` button variant and a subtle shadow.
- * - `sort` controls alphabetic sorting of the main `tours` list by `shortForm`.
- * - `extraToggles` are appended after the base list and ordered to prefer `Gold`, `Silver`, then `PGA`.
+ * - Toggle ordering is deterministic:
+ *   - First: tours from the DB (`props.tours`, preserving their given order).
+ *   - Then: `PGA`, `Gold`, `Silver`, `Playoff`/`Playoffs`.
+ *   - Finally: any remaining extra toggles in their given order.
+ * - `sort` (when true) alphabetically sorts only the DB-tour group by `shortForm`.
  * - When the active tour is not `PGA`, `Gold`, or `Silver`, its logo is inverted for contrast.
  *
  * @param props - Component props.
@@ -45,7 +48,7 @@ export function ToursToggle({
   activeTourId,
   onChangeTourId,
   extraToggles,
-  sort = true,
+  sort = false,
   loading = false,
 }: ToursToggleProps) {
   const { combinedToggles } = useToursToggle({ tours, extraToggles, sort });
@@ -113,34 +116,51 @@ function useToursToggle({
   extraToggles,
   sort,
 }: Pick<ToursToggleProps, "tours" | "extraToggles" | "sort">) {
-  const baseToggles = useMemo(() => {
-    if (!sort) return tours;
-    return tours.slice().sort((a, b) => a.shortForm.localeCompare(b.shortForm));
-  }, [sort, tours]);
+  const combinedToggles = useMemo(() => {
+    const all = [
+      ...tours.map((tour, index) => ({ tour, index })),
+      ...(extraToggles ?? []).map((tour, extraIndex) => ({
+        tour,
+        index: tours.length + extraIndex,
+      })),
+    ];
 
-  const sortedExtras = useMemo(() => {
-    const getExtraSortOrder = (shortForm: string) => {
-      if (shortForm === "Gold") return 0;
-      if (shortForm === "Silver") return 1;
-      if (shortForm === "PGA") return 2;
-      return 999;
+    const normalize = (value: string) => value.trim().toLowerCase();
+    const playoffLike = (value: string) => normalize(value).includes("playoff");
+
+    const rank = (item: { tour: ToursToggleProps["tours"][number] }) => {
+      const id = normalize(item.tour.id);
+      const shortForm = normalize(item.tour.shortForm);
+
+      const isPga = id === "pga" || shortForm === "pga";
+      const isGold = id === "gold" || shortForm === "gold";
+      const isSilver = id === "silver" || shortForm === "silver";
+      const isPlayoffs = id === "playoff" || id === "playoffs" || playoffLike(shortForm);
+
+      if (isPga) return 1;
+      if (isGold) return 2;
+      if (isSilver) return 3;
+      if (isPlayoffs) return 4;
+
+      const isDbTour = !isPga && !isGold && !isSilver && !isPlayoffs;
+      return isDbTour ? 0 : 5;
     };
 
-    const extras = extraToggles ?? [];
-    return extras
-      .map((tour, index) => ({ tour, index }))
+    return all
+      .slice()
       .sort((a, b) => {
-        return (
-          getExtraSortOrder(a.tour.shortForm) -
-            getExtraSortOrder(b.tour.shortForm) || a.index - b.index
-        );
+        const rankDiff = rank(a) - rank(b);
+        if (rankDiff !== 0) return rankDiff;
+
+        if (rank(a) === 0 && sort) {
+          const byName = a.tour.shortForm.localeCompare(b.tour.shortForm);
+          if (byName !== 0) return byName;
+        }
+
+        return a.index - b.index;
       })
       .map(({ tour }) => tour);
-  }, [extraToggles]);
-
-  const combinedToggles = useMemo(() => {
-    return [...baseToggles, ...sortedExtras];
-  }, [baseToggles, sortedExtras]);
+  }, [extraToggles, sort, tours]);
 
   return { combinedToggles };
 }

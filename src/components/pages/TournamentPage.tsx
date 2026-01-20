@@ -482,7 +482,8 @@ function useTournamentPage(args: {
         id: "pga",
         shortForm: "PGA",
         name: "PGA",
-        logoUrl: null,
+        logoUrl:
+          "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPHn0reMa1Sl6K8NiXDVstIvkZcpyWUmEoY3xj",
       },
     ];
 
