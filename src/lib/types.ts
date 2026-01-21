@@ -249,6 +249,8 @@ export interface NavigationData {
 export interface StandingsViewProps {
   initialTourId?: string;
   onTourChange?: (tourId: string) => void;
+  initialSeasonId?: string;
+  onSeasonChange?: (seasonId: string) => void;
 }
 
 export type StandingsMember = Doc<"members">;
@@ -308,6 +310,21 @@ export type TimeLeftType = {
 } | null;
 
 export type LeaderboardVariant = "regular" | "playoff" | "historical";
+
+export type AdminDashboardSection =
+  | "seasons"
+  | "tours"
+  | "tiers"
+  | "courses"
+  | "members"
+  | "account-audit"
+  | "transactions"
+  | "emails"
+  | "tournaments"
+  | "teams"
+  | "tourcards"
+  | "golfers"
+  | "crons";
 
 export type LeaderboardTourToggle = {
   id: string;

@@ -29,6 +29,7 @@ const schema = defineSchema({
     email: v.string(),
     firstname: v.optional(v.string()),
     lastname: v.optional(v.string()),
+    isActive: v.optional(v.boolean()),
     role: v.union(
       v.literal("admin"),
       v.literal("moderator"),
@@ -41,6 +42,7 @@ const schema = defineSchema({
   })
     .index("by_email", ["email"])
     .index("by_clerk_id", ["clerkId"])
+    .index("by_is_active", ["isActive"])
     .index("by_role", ["role"])
     .index("by_last_login", ["lastLoginAt"])
     .index("by_account", ["account"]),
@@ -138,6 +140,9 @@ const schema = defineSchema({
     ),
     currentRound: v.optional(v.number()),
     livePlay: v.optional(v.boolean()),
+
+    groupsEmailSentAt: v.optional(v.float64()),
+    reminderEmailSentAt: v.optional(v.float64()),
 
     updatedAt: v.optional(v.number()),
   })

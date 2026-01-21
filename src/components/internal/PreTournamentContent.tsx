@@ -6,6 +6,7 @@ import { TeamPickForm } from "@/components/internal/TeamPickForm";
 import { Button, Skeleton } from "@/ui";
 import { PRE_TOURNAMENT_PICK_WINDOW_MS } from "@/lib/constants";
 import { isPlayoffTournament } from "@/lib/utils";
+import { TournamentCountdown } from "./TournamentCountdown";
 
 /**
  * Renders the pre-tournament pick experience.
@@ -37,6 +38,7 @@ export function PreTournamentContent(props: {
         _id: string;
         name: string;
         startDate: number;
+        logoUrl?: string | null;
         tier?: { name?: string | null } | null;
       }
     | null
@@ -80,11 +82,7 @@ export function PreTournamentContent(props: {
   }
 
   if (model.kind === "picksClosed") {
-    return (
-      <div className="text-center">
-        Picks are closed for this tournament. Please check back later.
-      </div>
-    );
+    return <TournamentCountdown tourney={props.tournament ?? undefined} />;
   }
 
   if (model.kind === "mustSignIn") {
@@ -115,14 +113,7 @@ export function PreTournamentContent(props: {
   }
 
   if (model.kind === "carryOverLocked") {
-    return (
-      <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-center">
-        <p className="font-medium text-yellow-800">
-          Picks are closed for this playoff event. Your team carried over from
-          the first playoff.
-        </p>
-      </div>
-    );
+    return <TournamentCountdown tourney={props.tournament ?? undefined} />;
   }
 
   return (

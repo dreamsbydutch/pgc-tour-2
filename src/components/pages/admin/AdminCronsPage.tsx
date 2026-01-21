@@ -16,7 +16,7 @@ import {
 } from "@/ui";
 
 /**
- * Renders the `/admin/crons` page.
+ * Renders the Admin Dashboard "crons" section UI.
  *
  * This screen allows moderators/admins to manually trigger selected cron jobs.
  * It gates access via Clerk sign-in state and `useRoleAccess()`.

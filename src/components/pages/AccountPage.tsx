@@ -18,9 +18,9 @@ import { formatMoney } from "@/lib";
  *
  * This page handles:
  * - Sign-in/sign-out entry points (Clerk)
- * - Editing the member profile (first/last name)
+ * - Editing the member profile (first/last name + preferred email)
  * - Showing the current account balance
- * - Listing and filtering the signed-in member’s tournament history
+ * - Listing the signed-in member’s tournament history (season filter + sortable columns)
  *
  * Data sources:
  * - `api.functions.members.getMembers` (member record by Clerk id)
@@ -92,6 +92,17 @@ export function AccountPage() {
                     placeholder="Last name"
                   />
                 </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <label className="text-sm font-medium">Preferred email</label>
+                  <input
+                    value={vm.email}
+                    onChange={(e) => vm.setEmail(e.target.value)}
+                    className="w-full rounded-md border px-3 py-2 text-sm"
+                    placeholder="name@example.com"
+                    inputMode="email"
+                    autoComplete="email"
+                  />
+                </div>
               </div>
 
               <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -150,28 +161,6 @@ export function AccountPage() {
                     )}
                   </select>
                 </div>
-
-                <div className="space-y-1">
-                  <div className="text-xs font-medium text-muted-foreground">
-                    Tour card
-                  </div>
-                  <select
-                    value={vm.tTourCardFilter}
-                    onChange={(e) =>
-                      vm.setTTourCardFilter(
-                        e.target.value as Id<"tourCards"> | "all",
-                      )
-                    }
-                    className="w-full rounded-md border px-3 py-2 text-sm"
-                  >
-                    <option value="all">All tour cards</option>
-                    {vm.tourCardOptions.map((tc) => (
-                      <option key={tc.id} value={tc.id}>
-                        {tc.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
               </div>
 
               {vm.historyKind === "loading" ? (
@@ -224,7 +213,6 @@ export function AccountPage() {
                             Tournament{vm.sortIndicator("tournament")}
                           </button>
                         </th>
-                        <th className="py-2 pr-4">Tour card</th>
                         <th className="py-2 pr-4">
                           <button
                             type="button"
@@ -291,9 +279,6 @@ export function AccountPage() {
                               {row.tournamentName}
                             </Link>
                           </td>
-                          <td className="py-2 pr-4">
-                            {row.tourCardDisplayName}
-                          </td>
                           <td className="py-2 pr-4">{row.position ?? "—"}</td>
                           <td className="py-2 pr-4">
                             {typeof row.points === "number" ? row.points : "—"}
@@ -330,13 +315,14 @@ function useAccountPage() {
     | "start"
     | "season"
     | "tournament"
+    | "tourCard"
     | "points"
     | "earnings"
     | "position";
 
   type MemberForAccount = Pick<
     Doc<"members">,
-    "_id" | "firstname" | "lastname" | "account"
+    "_id" | "firstname" | "lastname" | "email" | "account"
   >;
   type SeasonForLabel = Pick<Doc<"seasons">, "_id" | "year" | "number">;
   type TournamentHistoryRow = {
@@ -350,7 +336,7 @@ function useAccountPage() {
     tourCardDisplayName: string;
     teamName: string | undefined;
     points: number | undefined;
-    position: number | undefined;
+    position: string | undefined;
     earnings: number | undefined;
     updatedAt: number | undefined;
   };
@@ -358,9 +344,13 @@ function useAccountPage() {
   const isMemberForAccount = useCallback(
     (value: unknown): value is MemberForAccount => {
       if (!value || typeof value !== "object") return false;
-      if (!("_id" in value) || !("account" in value)) return false;
+      if (!("_id" in value) || !("account" in value) || !("email" in value)) {
+        return false;
+      }
       const record = value as Record<string, unknown>;
-      return typeof record.account === "number";
+      return (
+        typeof record.account === "number" && typeof record.email === "string"
+      );
     },
     [],
   );
@@ -398,6 +388,14 @@ function useAccountPage() {
     return String(a).localeCompare(String(b));
   }
 
+  function positionToNumber(pos: string | undefined): number | null {
+    if (!pos) return null;
+    const raw = pos === "CUT" ? null : pos.startsWith("T") ? pos.slice(1) : pos;
+    if (!raw) return null;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) ? n : null;
+  }
+
   function toggleSort<T extends string>(
     current: { key: T; dir: SortDir } | null,
     nextKey: T,
@@ -423,6 +421,7 @@ function useAccountPage() {
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
@@ -431,6 +430,7 @@ function useAccountPage() {
     if (!memberForAccount) return;
     setFirstName(memberForAccount.firstname ?? "");
     setLastName(memberForAccount.lastname ?? "");
+    setEmail(memberForAccount.email ?? "");
   }, [memberForAccount]);
 
   const memberAccountCents = memberForAccount?.account;
@@ -460,9 +460,6 @@ function useAccountPage() {
   const [tSeasonFilter, setTSeasonFilter] = useState<Id<"seasons"> | "all">(
     "all",
   );
-  const [tTourCardFilter, setTTourCardFilter] = useState<
-    Id<"tourCards"> | "all"
-  >("all");
   const [tSort, setTSort] = useState<{ key: SortKey; dir: SortDir } | null>({
     key: "start",
     dir: "desc",
@@ -481,6 +478,7 @@ function useAccountPage() {
         data: {
           firstname: firstName,
           lastname: lastName,
+          email,
         },
         options: {
           returnEnhanced: false,
@@ -494,21 +492,6 @@ function useAccountPage() {
     }
   }
 
-  const tourCardOptions = useMemo(() => {
-    if (!Array.isArray(tournamentHistory)) {
-      return [] as Array<{ id: Id<"tourCards">; label: string }>;
-    }
-    const uniqueIds = Array.from(
-      new Set(tournamentHistory.map((r) => r.tourCardId)),
-    );
-    return uniqueIds
-      .map((id) => {
-        const row = tournamentHistory.find((r) => r.tourCardId === id);
-        return { id, label: row?.tourCardDisplayName ?? String(id) };
-      })
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [tournamentHistory]);
-
   const filteredHistoryRows = useMemo(() => {
     if (!Array.isArray(tournamentHistory) || tournamentHistory.length === 0) {
       return [] as TournamentHistoryRow[];
@@ -518,9 +501,6 @@ function useAccountPage() {
     return rows
       .filter((r) => {
         if (tSeasonFilter !== "all" && r.seasonId !== tSeasonFilter) {
-          return false;
-        }
-        if (tTourCardFilter !== "all" && r.tourCardId !== tTourCardFilter) {
           return false;
         }
         return true;
@@ -538,21 +518,20 @@ function useAccountPage() {
           }
           case "tournament":
             return dir * cmp(a.tournamentName, b.tournamentName);
+          case "tourCard":
+            return dir * cmp(a.tourCardDisplayName, b.tourCardDisplayName);
           case "points":
             return dir * cmp(a.points, b.points);
           case "earnings":
             return dir * cmp(a.earnings, b.earnings);
           case "position":
-            return dir * cmp(a.position, b.position);
+            return (
+              dir *
+              cmp(positionToNumber(a.position), positionToNumber(b.position))
+            );
         }
       });
-  }, [
-    seasonLabelById,
-    tSeasonFilter,
-    tSort,
-    tTourCardFilter,
-    tournamentHistory,
-  ]);
+  }, [seasonLabelById, tSeasonFilter, tSort, tournamentHistory]);
 
   function sortIndicator(key: string) {
     if (!tSort || tSort.key !== key) return "";
@@ -574,6 +553,8 @@ function useAccountPage() {
     setFirstName,
     lastName,
     setLastName,
+    email,
+    setEmail,
     saving,
     saveError,
     saveSuccess,
@@ -581,14 +562,11 @@ function useAccountPage() {
     seasonLabelById,
     tSeasonFilter,
     setTSeasonFilter,
-    tTourCardFilter,
-    setTTourCardFilter,
     tSort,
     setTSort,
     toggleSort,
     sortIndicator,
     onSaveProfile,
-    tourCardOptions,
     historyKind,
     filteredHistoryRows,
     formatDateTime,

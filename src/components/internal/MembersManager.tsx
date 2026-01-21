@@ -7,7 +7,7 @@ import type { Id } from "@/convex";
 import type { MemberDoc } from "../../../convex/types/types";
 import { AdminEditDeleteActions } from "@/ui";
 import { AdminCrudSection } from "@/components/internal/AdminCrudSection";
-import { Card, CardContent, CardHeader, Skeleton } from "@/ui";
+import { Button, Card, CardContent, CardHeader, Skeleton } from "@/ui";
 
 import { Field } from "@/components/internal/AdminField";
 import { ADMIN_FORM_CONTROL_CLASSNAME } from "@/lib/constants";
@@ -136,14 +136,35 @@ export function MembersManager() {
       tableTitle="Members"
       tableDescription="Search, edit, or remove members."
       tableControls={
-        <Field label="Search">
-          <input
-            value={model.searchTerm}
-            onChange={(e) => model.setSearchTerm(e.target.value)}
-            className={ADMIN_FORM_CONTROL_CLASSNAME}
-            placeholder="Search by name, email, or Clerk ID"
-          />
-        </Field>
+        <div className="space-y-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <Field label="Search">
+              <input
+                value={model.searchTerm}
+                onChange={(e) => model.setSearchTerm(e.target.value)}
+                className={ADMIN_FORM_CONTROL_CLASSNAME}
+                placeholder="Search by name, email, or Clerk ID"
+              />
+            </Field>
+
+            <Button
+              type="button"
+              variant="outline"
+              disabled={model.submitting || model.isRecomputingActiveFlags}
+              onClick={() => void model.recomputeActiveFlags()}
+            >
+              {model.isRecomputingActiveFlags
+                ? "Updating active flags…"
+                : "Recompute active flags"}
+            </Button>
+          </div>
+
+          {model.activeFlagsResult ? (
+            <pre className="max-h-40 overflow-auto rounded-md border bg-muted p-3 text-xs">
+              {JSON.stringify(model.activeFlagsResult, null, 2)}
+            </pre>
+          ) : null}
+        </div>
       }
       tableRows={model.filteredMembers}
       tableEmptyMessage="No members match your search."
@@ -224,6 +245,9 @@ function useMembersManager() {
           lastname?: string,
           fallbackEmail?: string,
         ) => string;
+        recomputeActiveFlags: () => Promise<void>;
+        isRecomputingActiveFlags: boolean;
+        activeFlagsResult: unknown | null;
       };
 
   const capitalizeWord = useCallback((value: string): string => {
@@ -256,6 +280,15 @@ function useMembersManager() {
   const createMember = useMutation(api.functions.members.createMembers);
   const updateMember = useMutation(api.functions.members.updateMembers);
   const deleteMember = useMutation(api.functions.members.deleteMembers);
+  const recomputeActiveFlagsMutation = useMutation(
+    api.functions.members.recomputeMemberActiveFlags,
+  );
+
+  const [isRecomputingActiveFlags, setIsRecomputingActiveFlags] =
+    useState<boolean>(false);
+  const [activeFlagsResult, setActiveFlagsResult] = useState<unknown | null>(
+    null,
+  );
 
   const membersResult = useQuery(api.functions.members.getMembers, {
     options: {
@@ -478,6 +511,16 @@ function useMembersManager() {
   const isStillLoading = membersResult === undefined;
   if (isStillLoading) return { status: "loading" } as const satisfies Model;
 
+  async function recomputeActiveFlags() {
+    setIsRecomputingActiveFlags(true);
+    try {
+      const res = await recomputeActiveFlagsMutation({});
+      setActiveFlagsResult(res);
+    } finally {
+      setIsRecomputingActiveFlags(false);
+    }
+  }
+
   return {
     status: "ready",
     members,
@@ -495,6 +538,9 @@ function useMembersManager() {
     onSubmit,
     onDelete,
     formatMemberDisplayName,
+    recomputeActiveFlags,
+    isRecomputingActiveFlags,
+    activeFlagsResult,
   } as const satisfies Model;
 }
 

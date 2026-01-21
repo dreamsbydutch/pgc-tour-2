@@ -28,22 +28,27 @@ import { SeasonsSection } from "@/components/internal/SeasonsSection";
 import { TiersSection } from "@/components/internal/TiersSection";
 import { ToursSection } from "@/components/internal/ToursSection";
 import { TransactionsManager } from "@/components/internal/TransactionsManager";
+import type { AdminDashboardSection } from "@/lib/types";
+import { AdminCronsPage } from "@/components/pages/admin/AdminCronsPage";
+import { AdminEmailsPage } from "@/components/pages/admin/AdminEmailsPage";
+import { AdminGolfersPage } from "@/components/pages/admin/AdminGolfersPage";
+import { AdminTeamsPage } from "@/components/pages/admin/AdminTeamsPage";
+import { AdminTourCardsPage } from "@/components/pages/admin/AdminTourCardsPage";
+import { AdminTournamentsPage } from "@/components/pages/admin/AdminTournamentsPage";
+import { MemberAccountAuditPage } from "@/components/pages/admin/MemberAccountAuditPage";
 
 /**
  * Admin page for league setup.
  *
- * @returns Admin setup UI with section navigation, optional season filter (for tours/tiers), and section-specific managers.
+ * @param props - Controlled UI state for the active admin dashboard section.
+ * @returns Admin dashboard UI with section navigation, optional season filter (for tours/tiers), and section-specific managers.
  */
-export function AdminSetupPage() {
-  const {
-    isAdmin,
-    isRoleLoading,
-    section,
-    setSection,
-    seasons,
-    seasonFilter,
-    setSeasonFilter,
-  } = useAdminSetupPage();
+export function AdminSetupPage(props: {
+  section: AdminDashboardSection;
+  onSectionChange: (next: AdminDashboardSection) => void;
+}) {
+  const { isAdmin, isRoleLoading, seasons, seasonFilter, setSeasonFilter } =
+    useAdminSetupPage();
 
   const sectionOptions = useMemo(
     () => [
@@ -52,7 +57,14 @@ export function AdminSetupPage() {
       { label: "Tiers", value: "tiers" as const },
       { label: "Courses", value: "courses" as const },
       { label: "Members", value: "members" as const },
+      { label: "Account Audit", value: "account-audit" as const },
       { label: "Transactions", value: "transactions" as const },
+      { label: "Emails", value: "emails" as const },
+      { label: "Tournaments", value: "tournaments" as const },
+      { label: "Teams", value: "teams" as const },
+      { label: "Tour Cards", value: "tourcards" as const },
+      { label: "Golfers", value: "golfers" as const },
+      { label: "Crons", value: "crons" as const },
     ],
     [],
   );
@@ -60,9 +72,7 @@ export function AdminSetupPage() {
   return (
     <div className="container mx-auto px-4 py-8 pb-20 lg:pb-8 lg:pt-20">
       <div className="mx-auto max-w-7xl space-y-6">
-        <h1 className="text-3xl font-bold tracking-tight">
-          Admin: League Setup
-        </h1>
+        <h1 className="text-3xl font-bold tracking-tight">Admin Dashboard</h1>
 
         <Unauthenticated>
           <Card>
@@ -99,7 +109,9 @@ export function AdminSetupPage() {
               <Card className="h-fit">
                 <CardHeader>
                   <CardTitle>Sections</CardTitle>
-                  <CardDescription>Manage league setup data.</CardDescription>
+                  <CardDescription>
+                    Manage league and admin data.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="grid gap-2">
@@ -107,16 +119,18 @@ export function AdminSetupPage() {
                       <Button
                         key={opt.value}
                         type="button"
-                        variant={section === opt.value ? "default" : "outline"}
+                        variant={
+                          props.section === opt.value ? "default" : "outline"
+                        }
                         className="justify-start"
-                        onClick={() => setSection(opt.value)}
+                        onClick={() => props.onSectionChange(opt.value)}
                       >
                         {opt.label}
                       </Button>
                     ))}
                   </div>
 
-                  {section === "tours" || section === "tiers" ? (
+                  {props.section === "tours" || props.section === "tiers" ? (
                     <div className="pt-3">
                       <Field label="Season filter">
                         <select
@@ -142,18 +156,31 @@ export function AdminSetupPage() {
               </Card>
 
               <div className="min-w-0">
-                {section === "seasons" ? (
+                {props.section === "seasons" ? (
                   <SeasonsSection seasons={seasons} />
                 ) : null}
-                {section === "tours" ? (
+                {props.section === "tours" ? (
                   <ToursSection seasons={seasons} seasonFilter={seasonFilter} />
                 ) : null}
-                {section === "tiers" ? (
+                {props.section === "tiers" ? (
                   <TiersSection seasons={seasons} seasonFilter={seasonFilter} />
                 ) : null}
-                {section === "courses" ? <CoursesSection /> : null}
-                {section === "members" ? <MembersManager /> : null}
-                {section === "transactions" ? <TransactionsManager /> : null}
+                {props.section === "courses" ? <CoursesSection /> : null}
+                {props.section === "members" ? <MembersManager /> : null}
+                {props.section === "account-audit" ? (
+                  <MemberAccountAuditPage />
+                ) : null}
+                {props.section === "transactions" ? (
+                  <TransactionsManager />
+                ) : null}
+                {props.section === "emails" ? <AdminEmailsPage /> : null}
+                {props.section === "tournaments" ? (
+                  <AdminTournamentsPage />
+                ) : null}
+                {props.section === "teams" ? <AdminTeamsPage /> : null}
+                {props.section === "tourcards" ? <AdminTourCardsPage /> : null}
+                {props.section === "golfers" ? <AdminGolfersPage /> : null}
+                {props.section === "crons" ? <AdminCronsPage /> : null}
               </div>
             </div>
           )}
@@ -171,9 +198,6 @@ export function AdminSetupPage() {
  */
 function useAdminSetupPage() {
   const { isAdmin, isLoading: isRoleLoading } = useRoleAccess();
-  const [section, setSection] = useState<
-    "seasons" | "tours" | "tiers" | "courses" | "members" | "transactions"
-  >("seasons");
 
   const seasonsResult = useQuery(api.functions.seasons.getSeasons, {
     options: {
@@ -199,8 +223,6 @@ function useAdminSetupPage() {
   return {
     isAdmin,
     isRoleLoading,
-    section,
-    setSection,
     seasons,
     seasonFilter,
     setSeasonFilter,

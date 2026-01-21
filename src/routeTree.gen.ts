@@ -13,16 +13,11 @@ import { Route as TournamentRouteImport } from './routes/tournament'
 import { Route as StandingsRouteImport } from './routes/standings'
 import { Route as RulebookRouteImport } from './routes/rulebook'
 import { Route as HistoryRouteImport } from './routes/history'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ArticlesIndexRouteImport } from './routes/articles/index'
 import { Route as ArticlesSlugRouteImport } from './routes/articles/$slug'
-import { Route as AdminTournamentsRouteImport } from './routes/admin/tournaments'
-import { Route as AdminTeamsRouteImport } from './routes/admin/teams'
-import { Route as AdminSetupRouteImport } from './routes/admin/setup'
-import { Route as AdminSeasonsRouteImport } from './routes/admin/seasons'
-import { Route as AdminGolfersRouteImport } from './routes/admin/golfers'
-import { Route as AdminCronsRouteImport } from './routes/admin/crons'
 
 const TournamentRoute = TournamentRouteImport.update({
   id: '/tournament',
@@ -42,6 +37,11 @@ const RulebookRoute = RulebookRouteImport.update({
 const HistoryRoute = HistoryRouteImport.update({
   id: '/history',
   path: '/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AccountRoute = AccountRouteImport.update({
@@ -64,66 +64,26 @@ const ArticlesSlugRoute = ArticlesSlugRouteImport.update({
   path: '/articles/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminTournamentsRoute = AdminTournamentsRouteImport.update({
-  id: '/admin/tournaments',
-  path: '/admin/tournaments',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminTeamsRoute = AdminTeamsRouteImport.update({
-  id: '/admin/teams',
-  path: '/admin/teams',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminSetupRoute = AdminSetupRouteImport.update({
-  id: '/admin/setup',
-  path: '/admin/setup',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminSeasonsRoute = AdminSeasonsRouteImport.update({
-  id: '/admin/seasons',
-  path: '/admin/seasons',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminGolfersRoute = AdminGolfersRouteImport.update({
-  id: '/admin/golfers',
-  path: '/admin/golfers',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminCronsRoute = AdminCronsRouteImport.update({
-  id: '/admin/crons',
-  path: '/admin/crons',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
+  '/admin': typeof AdminRoute
   '/history': typeof HistoryRoute
   '/rulebook': typeof RulebookRoute
   '/standings': typeof StandingsRoute
   '/tournament': typeof TournamentRoute
-  '/admin/crons': typeof AdminCronsRoute
-  '/admin/golfers': typeof AdminGolfersRoute
-  '/admin/seasons': typeof AdminSeasonsRoute
-  '/admin/setup': typeof AdminSetupRoute
-  '/admin/teams': typeof AdminTeamsRoute
-  '/admin/tournaments': typeof AdminTournamentsRoute
   '/articles/$slug': typeof ArticlesSlugRoute
   '/articles': typeof ArticlesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
+  '/admin': typeof AdminRoute
   '/history': typeof HistoryRoute
   '/rulebook': typeof RulebookRoute
   '/standings': typeof StandingsRoute
   '/tournament': typeof TournamentRoute
-  '/admin/crons': typeof AdminCronsRoute
-  '/admin/golfers': typeof AdminGolfersRoute
-  '/admin/seasons': typeof AdminSeasonsRoute
-  '/admin/setup': typeof AdminSetupRoute
-  '/admin/teams': typeof AdminTeamsRoute
-  '/admin/tournaments': typeof AdminTournamentsRoute
   '/articles/$slug': typeof ArticlesSlugRoute
   '/articles': typeof ArticlesIndexRoute
 }
@@ -131,16 +91,11 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
+  '/admin': typeof AdminRoute
   '/history': typeof HistoryRoute
   '/rulebook': typeof RulebookRoute
   '/standings': typeof StandingsRoute
   '/tournament': typeof TournamentRoute
-  '/admin/crons': typeof AdminCronsRoute
-  '/admin/golfers': typeof AdminGolfersRoute
-  '/admin/seasons': typeof AdminSeasonsRoute
-  '/admin/setup': typeof AdminSetupRoute
-  '/admin/teams': typeof AdminTeamsRoute
-  '/admin/tournaments': typeof AdminTournamentsRoute
   '/articles/$slug': typeof ArticlesSlugRoute
   '/articles/': typeof ArticlesIndexRoute
 }
@@ -149,48 +104,33 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/account'
+    | '/admin'
     | '/history'
     | '/rulebook'
     | '/standings'
     | '/tournament'
-    | '/admin/crons'
-    | '/admin/golfers'
-    | '/admin/seasons'
-    | '/admin/setup'
-    | '/admin/teams'
-    | '/admin/tournaments'
     | '/articles/$slug'
     | '/articles'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/account'
+    | '/admin'
     | '/history'
     | '/rulebook'
     | '/standings'
     | '/tournament'
-    | '/admin/crons'
-    | '/admin/golfers'
-    | '/admin/seasons'
-    | '/admin/setup'
-    | '/admin/teams'
-    | '/admin/tournaments'
     | '/articles/$slug'
     | '/articles'
   id:
     | '__root__'
     | '/'
     | '/account'
+    | '/admin'
     | '/history'
     | '/rulebook'
     | '/standings'
     | '/tournament'
-    | '/admin/crons'
-    | '/admin/golfers'
-    | '/admin/seasons'
-    | '/admin/setup'
-    | '/admin/teams'
-    | '/admin/tournaments'
     | '/articles/$slug'
     | '/articles/'
   fileRoutesById: FileRoutesById
@@ -198,16 +138,11 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountRoute: typeof AccountRoute
+  AdminRoute: typeof AdminRoute
   HistoryRoute: typeof HistoryRoute
   RulebookRoute: typeof RulebookRoute
   StandingsRoute: typeof StandingsRoute
   TournamentRoute: typeof TournamentRoute
-  AdminCronsRoute: typeof AdminCronsRoute
-  AdminGolfersRoute: typeof AdminGolfersRoute
-  AdminSeasonsRoute: typeof AdminSeasonsRoute
-  AdminSetupRoute: typeof AdminSetupRoute
-  AdminTeamsRoute: typeof AdminTeamsRoute
-  AdminTournamentsRoute: typeof AdminTournamentsRoute
   ArticlesSlugRoute: typeof ArticlesSlugRoute
   ArticlesIndexRoute: typeof ArticlesIndexRoute
 }
@@ -242,6 +177,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HistoryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/account': {
       id: '/account'
       path: '/account'
@@ -270,64 +212,17 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ArticlesSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/tournaments': {
-      id: '/admin/tournaments'
-      path: '/admin/tournaments'
-      fullPath: '/admin/tournaments'
-      preLoaderRoute: typeof AdminTournamentsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/teams': {
-      id: '/admin/teams'
-      path: '/admin/teams'
-      fullPath: '/admin/teams'
-      preLoaderRoute: typeof AdminTeamsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/setup': {
-      id: '/admin/setup'
-      path: '/admin/setup'
-      fullPath: '/admin/setup'
-      preLoaderRoute: typeof AdminSetupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/seasons': {
-      id: '/admin/seasons'
-      path: '/admin/seasons'
-      fullPath: '/admin/seasons'
-      preLoaderRoute: typeof AdminSeasonsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/golfers': {
-      id: '/admin/golfers'
-      path: '/admin/golfers'
-      fullPath: '/admin/golfers'
-      preLoaderRoute: typeof AdminGolfersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/crons': {
-      id: '/admin/crons'
-      path: '/admin/crons'
-      fullPath: '/admin/crons'
-      preLoaderRoute: typeof AdminCronsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRoute: AccountRoute,
+  AdminRoute: AdminRoute,
   HistoryRoute: HistoryRoute,
   RulebookRoute: RulebookRoute,
   StandingsRoute: StandingsRoute,
   TournamentRoute: TournamentRoute,
-  AdminCronsRoute: AdminCronsRoute,
-  AdminGolfersRoute: AdminGolfersRoute,
-  AdminSeasonsRoute: AdminSeasonsRoute,
-  AdminSetupRoute: AdminSetupRoute,
-  AdminTeamsRoute: AdminTeamsRoute,
-  AdminTournamentsRoute: AdminTournamentsRoute,
   ArticlesSlugRoute: ArticlesSlugRoute,
   ArticlesIndexRoute: ArticlesIndexRoute,
 }

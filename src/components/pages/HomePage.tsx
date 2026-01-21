@@ -1,8 +1,7 @@
-import { SignedIn } from "@clerk/tanstack-react-start";
+import { Link } from "@tanstack/react-router";
 import { Shield, Star } from "lucide-react";
 import { api, useQuery } from "@/convex";
 
-import { AdminPanel } from "@/components/internal/AdminPanel";
 import { LeagueSchedule } from "@/components/internal/LeagueSchedule";
 import { TourCardForm } from "@/components/internal/TourCardForm";
 import { TourCardOutput } from "@/components/internal/TourCardOutput";
@@ -19,7 +18,7 @@ import type { TournamentCountdownTourney } from "@/lib";
  * - fetching the current season and the first tournament for that season via Convex,
  * - gating the registration UI (tour card output/form) based on season/tournament dates,
  * - showing a countdown for the next tournament and the league schedule,
- * - optionally rendering the admin panel for admins.
+ * - showing a role badge (admins can click through to the admin dashboard).
  *
  * @returns The home page UI for the `/` route.
  */
@@ -47,8 +46,6 @@ export function HomePage() {
         {model.registrationOpen ? <TourCardForm /> : null}
         <TournamentCountdown tourney={tourney} />
         <LeagueSchedule />
-
-        <SignedIn>{model.isAdmin ? <AdminPanel /> : null}</SignedIn>
       </div>
     </div>
   );
@@ -71,7 +68,6 @@ function useHomePage():
     }
   | {
       kind: "ready";
-      isAdmin: boolean;
       registrationOpen: boolean;
       beforeFirstTournament: boolean;
       firstTournament: TournamentCountdownTourney | null;
@@ -128,10 +124,13 @@ function useHomePage():
     !isLoading && normalizedRole ? (
       <div className="flex items-center justify-center gap-2">
         {normalizedRole === "admin" ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-3 py-1 text-sm font-medium text-red-800">
+          <Link
+            to="/admin"
+            className="inline-flex items-center gap-1 rounded-full bg-red-100 px-3 py-1 text-sm font-medium text-red-800"
+          >
             <Shield className="h-4 w-4" />
             Administrator
-          </span>
+          </Link>
         ) : null}
         {normalizedRole === "moderator" ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-800">
@@ -148,7 +147,6 @@ function useHomePage():
 
   return {
     kind: "ready",
-    isAdmin,
     registrationOpen,
     beforeFirstTournament,
     firstTournament,

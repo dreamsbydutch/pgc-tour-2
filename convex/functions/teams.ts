@@ -580,8 +580,10 @@ export const getChampionshipWinsForMember = query({
         const isPlayoffByTier = playoffTierIds.has(t.tierId);
         const isPlayoffByName = playoffEventNames.some((n) => n === t.name);
         const isFinished = t.status === "completed" || t.endDate <= now;
-        return (isCanadianOpen || isMajor || isPlayoffByTier || isPlayoffByName) &&
-          isFinished;
+        return (
+          (isCanadianOpen || isMajor || isPlayoffByTier || isPlayoffByName) &&
+          isFinished
+        );
       });
 
       for (const tournament of relevantTournaments) {
@@ -601,7 +603,9 @@ export const getChampionshipWinsForMember = query({
         ]);
 
         const winners = [...pos1, ...posT1];
-        const userWon = winners.some((team) => tourCardIds.has(team.tourCardId));
+        const userWon = winners.some((team) =>
+          tourCardIds.has(team.tourCardId),
+        );
         if (!userWon) continue;
 
         winsByTournamentId.set(tournament._id, {
@@ -1100,3 +1104,607 @@ async function generateAnalytics(
     ),
   };
 }
+
+/**
+ * Batch-fix team earnings/points using legacy data (e.g. `email-templates/oldData.json`).
+ *
+ * This is intentionally guarded by `DATA_FIX_SECRET` to avoid accidental use.
+ */
+export const fixTeamsFromOldDataBatch = mutation({
+  args: {
+    secret: v.string(),
+    fixes: v.array(
+      v.object({
+        seasonYear: v.number(),
+        seasonNumber: v.number(),
+        tournamentApiId: v.string(),
+        tournamentName: v.optional(v.string()),
+        memberEmail: v.string(),
+        tourShortForm: v.string(),
+        tourCardDisplayName: v.optional(v.string()),
+        earningsDollars: v.optional(v.number()),
+        points: v.optional(v.number()),
+        position: v.optional(v.string()),
+      }),
+    ),
+    options: v.optional(
+      v.object({
+        dryRun: v.optional(v.boolean()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const expected = process.env.DATA_FIX_SECRET;
+    if (!expected) {
+      throw new Error(
+        "DATA_FIX_SECRET is not set in this Convex deployment environment.",
+      );
+    }
+    if (args.secret !== expected) {
+      throw new Error("Unauthorized");
+    }
+
+    const dryRun = args.options?.dryRun ?? false;
+
+    const seasonCache = new Map<string, Id<"seasons">>();
+    const tournamentsBySeason = new Map<
+      Id<"seasons">,
+      {
+        byApiId: Map<string, Id<"tournaments">>;
+        byName: Map<string, Id<"tournaments">>;
+      }
+    >();
+    const toursBySeason = new Map<Id<"seasons">, Map<string, Id<"tours">>>();
+    const memberByEmail = new Map<string, Id<"members">>();
+    const tourCardByKey = new Map<string, Id<"tourCards">>();
+    const tierPointsByTierId = new Map<Id<"tiers">, number[]>();
+
+    const parsePositionNumber = (
+      pos: string | undefined | null,
+    ): number | null => {
+      if (!pos) return null;
+      if (pos === "CUT") return null;
+      const raw = pos.startsWith("T") ? pos.slice(1) : pos;
+      const n = Number.parseInt(raw, 10);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+
+    const tourShortFormById = new Map<Id<"tours">, string>();
+
+    const results: Array<{
+      ok: boolean;
+      reason?:
+        | "season_not_found"
+        | "tournament_not_found"
+        | "tour_not_found"
+        | "member_not_found"
+        | "tour_card_not_found"
+        | "tour_card_ambiguous"
+        | "team_not_found"
+        | "no_changes";
+      seasonYear: number;
+      seasonNumber: number;
+      tournamentApiId: string;
+      memberEmail: string;
+      tourShortForm: string;
+      teamId?: string;
+      usedFallbackTourCard?: boolean;
+      debug?: {
+        seasonId?: string;
+        memberId?: string;
+        candidateTourCards?: Array<{
+          tourCardId: string;
+          displayName: string;
+          tourShortForm?: string;
+        }>;
+      };
+    }> = [];
+
+    let updated = 0;
+
+    for (const fix of args.fixes) {
+      const seasonKey = `${fix.seasonYear}-${fix.seasonNumber}`;
+
+      let seasonId = seasonCache.get(seasonKey) ?? null;
+      if (!seasonId) {
+        const seasons = await ctx.db
+          .query("seasons")
+          .withIndex("by_year", (q) => q.eq("year", fix.seasonYear))
+          .collect();
+        const season =
+          seasons.find((s) => s.number === fix.seasonNumber) ?? null;
+        if (!season) {
+          results.push({
+            ok: false,
+            reason: "season_not_found",
+            seasonYear: fix.seasonYear,
+            seasonNumber: fix.seasonNumber,
+            tournamentApiId: fix.tournamentApiId,
+            memberEmail: fix.memberEmail,
+            tourShortForm: fix.tourShortForm,
+          });
+          continue;
+        }
+        seasonId = season._id;
+        seasonCache.set(seasonKey, seasonId);
+      }
+
+      let tournamentMaps = tournamentsBySeason.get(seasonId) ?? null;
+      if (!tournamentMaps) {
+        const tournaments = await ctx.db
+          .query("tournaments")
+          .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
+          .collect();
+        const byApiId = new Map<string, Id<"tournaments">>();
+        const byName = new Map<string, Id<"tournaments">>();
+        for (const t of tournaments) {
+          if (typeof t.apiId === "string" && t.apiId.length) {
+            byApiId.set(t.apiId, t._id);
+          }
+          byName.set(String(t.name).trim().toLowerCase(), t._id);
+        }
+        tournamentMaps = { byApiId, byName };
+        tournamentsBySeason.set(seasonId, tournamentMaps);
+      }
+
+      const tournamentId =
+        tournamentMaps.byApiId.get(fix.tournamentApiId) ??
+        (fix.tournamentName
+          ? tournamentMaps.byName.get(
+              String(fix.tournamentName).trim().toLowerCase(),
+            )
+          : null) ??
+        null;
+      if (!tournamentId) {
+        results.push({
+          ok: false,
+          reason: "tournament_not_found",
+          seasonYear: fix.seasonYear,
+          seasonNumber: fix.seasonNumber,
+          tournamentApiId: fix.tournamentApiId,
+          memberEmail: fix.memberEmail,
+          tourShortForm: fix.tourShortForm,
+        });
+        continue;
+      }
+
+      let tourMap = toursBySeason.get(seasonId) ?? null;
+      if (!tourMap) {
+        const tours = await ctx.db
+          .query("tours")
+          .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
+          .collect();
+        tourMap = new Map<string, Id<"tours">>();
+        for (const t of tours) {
+          tourMap.set(String(t.shortForm).toLowerCase(), t._id);
+        }
+        toursBySeason.set(seasonId, tourMap);
+      }
+
+      const tourId =
+        tourMap.get(String(fix.tourShortForm).toLowerCase()) ?? null;
+      if (!tourId) {
+        results.push({
+          ok: false,
+          reason: "tour_not_found",
+          seasonYear: fix.seasonYear,
+          seasonNumber: fix.seasonNumber,
+          tournamentApiId: fix.tournamentApiId,
+          memberEmail: fix.memberEmail,
+          tourShortForm: fix.tourShortForm,
+        });
+        continue;
+      }
+
+      const emailKey = String(fix.memberEmail).trim().toLowerCase();
+      let memberId = memberByEmail.get(emailKey) ?? null;
+      if (!memberId) {
+        const member =
+          (await ctx.db
+            .query("members")
+            .withIndex("by_email", (q) => q.eq("email", fix.memberEmail))
+            .first()) ??
+          (await ctx.db
+            .query("members")
+            .withIndex("by_email", (q) => q.eq("email", emailKey))
+            .first());
+        if (!member) {
+          results.push({
+            ok: false,
+            reason: "member_not_found",
+            seasonYear: fix.seasonYear,
+            seasonNumber: fix.seasonNumber,
+            tournamentApiId: fix.tournamentApiId,
+            memberEmail: fix.memberEmail,
+            tourShortForm: fix.tourShortForm,
+          });
+          continue;
+        }
+        memberId = member._id;
+        memberByEmail.set(emailKey, memberId);
+      }
+
+      const tourCardKey = `${memberId}-${seasonId}-${tourId}`;
+      let tourCardId = tourCardByKey.get(tourCardKey) ?? null;
+      if (!tourCardId) {
+        const cards = await ctx.db
+          .query("tourCards")
+          .withIndex("by_member_season", (q) =>
+            q.eq("memberId", memberId!).eq("seasonId", seasonId!),
+          )
+          .collect();
+        let usedFallbackTourCard = false;
+
+        let card = cards.find((c) => c.tourId === tourId) ?? null;
+
+        if (!card && cards.length === 1) {
+          card = cards[0] ?? null;
+          usedFallbackTourCard = !!card;
+        }
+
+        if (!card && fix.tourCardDisplayName) {
+          const target = String(fix.tourCardDisplayName).trim().toLowerCase();
+          if (target.length > 0) {
+            const matches = cards.filter(
+              (c) => String(c.displayName).trim().toLowerCase() === target,
+            );
+            if (matches.length === 1) {
+              card = matches[0] ?? null;
+              usedFallbackTourCard = !!card;
+            } else if (matches.length > 1) {
+              const candidateTourCards: Array<{
+                tourCardId: string;
+                displayName: string;
+                tourShortForm?: string;
+              }> = [];
+              for (const c of matches) {
+                let shortForm = tourShortFormById.get(c.tourId) ?? undefined;
+                if (!shortForm) {
+                  const t = await ctx.db.get(c.tourId);
+                  shortForm = t?.shortForm;
+                  if (shortForm) {
+                    tourShortFormById.set(c.tourId, shortForm);
+                  }
+                }
+                candidateTourCards.push({
+                  tourCardId: String(c._id),
+                  displayName: c.displayName,
+                  ...(shortForm ? { tourShortForm: shortForm } : {}),
+                });
+              }
+
+              results.push({
+                ok: false,
+                reason: "tour_card_ambiguous",
+                seasonYear: fix.seasonYear,
+                seasonNumber: fix.seasonNumber,
+                tournamentApiId: fix.tournamentApiId,
+                memberEmail: fix.memberEmail,
+                tourShortForm: fix.tourShortForm,
+                debug: {
+                  seasonId: String(seasonId),
+                  memberId: String(memberId),
+                  candidateTourCards,
+                },
+              });
+              continue;
+            }
+          }
+        }
+
+        if (!card) {
+          const candidateTourCards: Array<{
+            tourCardId: string;
+            displayName: string;
+            tourShortForm?: string;
+          }> = [];
+          for (const c of cards) {
+            let shortForm = tourShortFormById.get(c.tourId) ?? undefined;
+            if (!shortForm) {
+              const t = await ctx.db.get(c.tourId);
+              shortForm = t?.shortForm;
+              if (shortForm) {
+                tourShortFormById.set(c.tourId, shortForm);
+              }
+            }
+            candidateTourCards.push({
+              tourCardId: String(c._id),
+              displayName: c.displayName,
+              ...(shortForm ? { tourShortForm: shortForm } : {}),
+            });
+          }
+
+          results.push({
+            ok: false,
+            reason: "tour_card_not_found",
+            seasonYear: fix.seasonYear,
+            seasonNumber: fix.seasonNumber,
+            tournamentApiId: fix.tournamentApiId,
+            memberEmail: fix.memberEmail,
+            tourShortForm: fix.tourShortForm,
+            debug: {
+              seasonId: String(seasonId),
+              memberId: String(memberId),
+              candidateTourCards,
+            },
+          });
+          continue;
+        }
+        tourCardId = card._id;
+        tourCardByKey.set(tourCardKey, tourCardId);
+
+        if (usedFallbackTourCard) {
+          tourCardByKey.set(tourCardKey, tourCardId);
+        }
+      }
+
+      const team = await ctx.db
+        .query("teams")
+        .withIndex("by_tournament_tour_card", (q) =>
+          q.eq("tournamentId", tournamentId).eq("tourCardId", tourCardId!),
+        )
+        .first();
+
+      if (!team) {
+        results.push({
+          ok: false,
+          reason: "team_not_found",
+          seasonYear: fix.seasonYear,
+          seasonNumber: fix.seasonNumber,
+          tournamentApiId: fix.tournamentApiId,
+          memberEmail: fix.memberEmail,
+          tourShortForm: fix.tourShortForm,
+        });
+        continue;
+      }
+
+      const nextPatch: Partial<TeamDoc> = {};
+
+      if (typeof fix.earningsDollars === "number") {
+        const desired = Math.round(fix.earningsDollars * 100);
+        if (team.earnings !== desired) {
+          nextPatch.earnings = desired;
+        }
+      }
+
+      const positionNumber = parsePositionNumber(
+        fix.position ?? team.position ?? null,
+      );
+      if (positionNumber !== null) {
+        const tournament = await ctx.db.get(tournamentId);
+        if (tournament) {
+          const tierId = tournament.tierId;
+          let tierPoints = tierPointsByTierId.get(tierId) ?? null;
+          if (!tierPoints) {
+            const tier = await ctx.db.get(tierId);
+            tierPoints = tier?.points ?? [];
+            tierPointsByTierId.set(tierId, tierPoints);
+          }
+
+          const computedPoints = tierPoints[positionNumber - 1] ?? 0;
+          const desired = Math.round(computedPoints);
+          if (team.points !== desired) {
+            nextPatch.points = desired;
+          }
+        }
+      } else if (typeof fix.points === "number") {
+        const desired = Math.round(fix.points);
+        if (team.points !== desired) {
+          nextPatch.points = desired;
+        }
+      }
+
+      if (Object.keys(nextPatch).length === 0) {
+        results.push({
+          ok: true,
+          reason: "no_changes",
+          seasonYear: fix.seasonYear,
+          seasonNumber: fix.seasonNumber,
+          tournamentApiId: fix.tournamentApiId,
+          memberEmail: fix.memberEmail,
+          tourShortForm: fix.tourShortForm,
+          teamId: String(team._id),
+        });
+        continue;
+      }
+
+      if (!dryRun) {
+        await ctx.db.patch(team._id, { ...nextPatch, updatedAt: Date.now() });
+      }
+
+      updated += 1;
+      results.push({
+        ok: true,
+        seasonYear: fix.seasonYear,
+        seasonNumber: fix.seasonNumber,
+        tournamentApiId: fix.tournamentApiId,
+        memberEmail: fix.memberEmail,
+        tourShortForm: fix.tourShortForm,
+        teamId: String(team._id),
+      });
+    }
+
+    const failures = results.filter((r) => !r.ok).length;
+
+    return {
+      ok: true,
+      dryRun,
+      attempted: args.fixes.length,
+      updated,
+      failures,
+      results,
+    } as const;
+  },
+});
+
+/**
+ * Recompute tour card standings for a season from the underlying teams.
+ *
+ * This is intentionally guarded by `DATA_FIX_SECRET` to avoid accidental use.
+ */
+export const recomputeTourCardsForSeason = mutation({
+  args: {
+    secret: v.string(),
+    seasonYear: v.number(),
+    seasonNumber: v.number(),
+    options: v.optional(
+      v.object({
+        dryRun: v.optional(v.boolean()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const expected = process.env.DATA_FIX_SECRET;
+    if (!expected) {
+      throw new Error(
+        "DATA_FIX_SECRET is not set in this Convex deployment environment.",
+      );
+    }
+    if (args.secret !== expected) {
+      throw new Error("Unauthorized");
+    }
+
+    const dryRun = args.options?.dryRun ?? false;
+
+    const seasons = await ctx.db
+      .query("seasons")
+      .withIndex("by_year", (q) => q.eq("year", args.seasonYear))
+      .collect();
+    const season = seasons.find((s) => s.number === args.seasonNumber) ?? null;
+    if (!season) {
+      return {
+        ok: true,
+        dryRun,
+        skipped: true,
+        reason: "season_not_found",
+        seasonYear: args.seasonYear,
+        seasonNumber: args.seasonNumber,
+      } as const;
+    }
+
+    const [tours, tourCards] = await Promise.all([
+      ctx.db
+        .query("tours")
+        .withIndex("by_season", (q) => q.eq("seasonId", season._id))
+        .collect(),
+      ctx.db
+        .query("tourCards")
+        .withIndex("by_season", (q) => q.eq("seasonId", season._id))
+        .collect(),
+    ]);
+
+    const tourById = new Map<string, (typeof tours)[number]>();
+    tours.forEach((t) => tourById.set(String(t._id), t));
+
+    const calculations = await Promise.all(
+      tourCards.map(async (tc) => {
+        const teams = await ctx.db
+          .query("teams")
+          .withIndex("by_tour_card", (q) => q.eq("tourCardId", tc._id))
+          .collect();
+
+        const completed = teams.filter((t) => (t.round ?? 0) > 4);
+
+        const win = completed.filter((t) => {
+          const pos = t.position ?? null;
+          if (!pos || pos === "CUT") return false;
+          const n = Number.parseInt(
+            pos.startsWith("T") ? pos.slice(1) : pos,
+            10,
+          );
+          return Number.isFinite(n) && n === 1;
+        }).length;
+
+        const topTen = completed.filter((t) => {
+          const pos = t.position ?? null;
+          if (!pos || pos === "CUT") return false;
+          const n = Number.parseInt(
+            pos.startsWith("T") ? pos.slice(1) : pos,
+            10,
+          );
+          return Number.isFinite(n) && n <= 10;
+        }).length;
+
+        const madeCut = completed.filter((t) => t.position !== "CUT").length;
+        const appearances = completed.length;
+
+        const earnings = completed.reduce(
+          (sum, t) => sum + (t.earnings ?? 0),
+          0,
+        );
+        const points = completed.reduce(
+          (sum, t) => sum + Math.round(t.points ?? 0),
+          0,
+        );
+
+        return {
+          tourCardId: tc._id,
+          tourId: tc.tourId,
+          win,
+          topTen,
+          madeCut,
+          appearances,
+          earnings,
+          points,
+        };
+      }),
+    );
+
+    const byTour = new Map<Id<"tours">, typeof calculations>();
+    for (const calc of calculations) {
+      const list = byTour.get(calc.tourId) ?? [];
+      list.push(calc);
+      byTour.set(calc.tourId, list);
+    }
+
+    let updated = 0;
+
+    for (const [tourId, list] of byTour.entries()) {
+      const tour = tourById.get(String(tourId)) ?? null;
+      const spots = Array.isArray(tour?.playoffSpots) ? tour!.playoffSpots : [];
+      const goldCut = spots[0] ?? 0;
+      const silverCut = goldCut + (spots[1] ?? 0);
+
+      for (const calc of list) {
+        const samePointsCount = list.filter(
+          (a) => a.points === calc.points,
+        ).length;
+        const betterPointsCount = list.filter(
+          (a) => a.points > calc.points,
+        ).length;
+        const position = `${samePointsCount > 1 ? "T" : ""}${betterPointsCount + 1}`;
+
+        const playoff =
+          goldCut > 0 && betterPointsCount < goldCut
+            ? 1
+            : silverCut > goldCut && betterPointsCount < silverCut
+              ? 2
+              : 0;
+
+        if (!dryRun) {
+          await ctx.db.patch(calc.tourCardId, {
+            points: calc.points,
+            earnings: calc.earnings,
+            wins: calc.win,
+            topTen: calc.topTen,
+            madeCut: calc.madeCut,
+            appearances: calc.appearances,
+            currentPosition: position,
+            playoff,
+            updatedAt: Date.now(),
+          });
+        }
+
+        updated += 1;
+      }
+    }
+
+    return {
+      ok: true,
+      dryRun,
+      skipped: false,
+      seasonId: season._id,
+      tourCardsUpdated: updated,
+    } as const;
+  },
+});

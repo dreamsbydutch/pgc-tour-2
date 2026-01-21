@@ -31,6 +31,8 @@ import type * as functions_cronJobsInternal from "../functions/cronJobsInternal.
 import type * as functions_cronTeams from "../functions/cronTeams.js";
 import type * as functions_cronTeamsInternal from "../functions/cronTeamsInternal.js";
 import type * as functions_datagolf from "../functions/datagolf.js";
+import type * as functions_emailData from "../functions/emailData.js";
+import type * as functions_emails from "../functions/emails.js";
 import type * as functions_golfers from "../functions/golfers.js";
 import type * as functions_golfersSync from "../functions/golfersSync.js";
 import type * as functions_index from "../functions/index.js";
@@ -78,6 +80,8 @@ declare const fullApi: ApiFromModules<{
   "functions/cronTeams": typeof functions_cronTeams;
   "functions/cronTeamsInternal": typeof functions_cronTeamsInternal;
   "functions/datagolf": typeof functions_datagolf;
+  "functions/emailData": typeof functions_emailData;
+  "functions/emails": typeof functions_emails;
   "functions/golfers": typeof functions_golfers;
   "functions/golfersSync": typeof functions_golfersSync;
   "functions/index": typeof functions_index;

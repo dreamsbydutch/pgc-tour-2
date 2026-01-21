@@ -66,7 +66,7 @@ export function AdminPanel({ loading = false }: AdminPanelProps) {
                   className="justify-start"
                   size="sm"
                 >
-                  <Link to={item.to} search={{}}>
+                  <Link to={item.to} search={item.search ?? {}}>
                     <item.Icon className="mr-2 h-4 w-4" />
                     {item.label}
                   </Link>
@@ -109,12 +109,48 @@ export function AdminPanel({ loading = false }: AdminPanelProps) {
 function useAdminPanel() {
   const items = [
     { label: "System Settings", to: undefined, Icon: Settings },
-    { label: "Tournaments", to: "/admin/tournaments", Icon: Database },
-    { label: "League Setup", to: "/admin/setup", Icon: Database },
-    { label: "Seasons", to: "/admin/seasons", Icon: Database },
-    { label: "Teams", to: "/admin/teams", Icon: Database },
-    { label: "Manage Golfers", to: "/admin/golfers", Icon: Database },
-    { label: "Cron Test", to: "/admin/crons", Icon: Timer },
+    {
+      label: "Tournaments",
+      to: "/admin",
+      search: { section: "tournaments" },
+      Icon: Database,
+    },
+    {
+      label: "League Setup",
+      to: "/admin",
+      search: { section: "seasons" },
+      Icon: Database,
+    },
+    {
+      label: "Account Audit",
+      to: "/admin",
+      search: { section: "account-audit" },
+      Icon: Database,
+    },
+    {
+      label: "Seasons",
+      to: "/admin",
+      search: { section: "seasons" },
+      Icon: Database,
+    },
+    {
+      label: "Teams",
+      to: "/admin",
+      search: { section: "teams" },
+      Icon: Database,
+    },
+    {
+      label: "Manage Golfers",
+      to: "/admin",
+      search: { section: "golfers" },
+      Icon: Database,
+    },
+    {
+      label: "Cron Test",
+      to: "/admin",
+      search: { section: "crons" },
+      Icon: Timer,
+    },
     { label: "View Audit Logs", to: undefined, Icon: Shield },
   ] as const;
 

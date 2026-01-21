@@ -144,6 +144,7 @@ function useTournamentPage(args: {
           _id: string;
           name: string;
           startDate: number;
+          logoUrl?: string | null;
           tier?: { name?: string | null } | null;
         };
         member:
@@ -471,21 +472,30 @@ function useTournamentPage(args: {
       (tours ?? []).map((t) => [String(t._id), t.shortForm]),
     );
 
-    const toggleTours: LeaderboardTourToggle[] = [
-      ...(tours ?? []).map((t) => ({
-        id: t.shortForm.toLowerCase(),
-        shortForm: t.shortForm,
-        name: t.name,
-        logoUrl: t.logoUrl,
-      })),
-      {
-        id: "pga",
-        shortForm: "PGA",
-        name: "PGA",
-        logoUrl:
-          "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPHn0reMa1Sl6K8NiXDVstIvkZcpyWUmEoY3xj",
-      },
-    ];
+    const pgaToggle: LeaderboardTourToggle = {
+      id: "pga",
+      shortForm: "PGA",
+      name: "PGA",
+      logoUrl:
+        "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPHn0reMa1Sl6K8NiXDVstIvkZcpyWUmEoY3xj",
+    };
+
+    const toggleTours: LeaderboardTourToggle[] =
+      computedVariant === "playoff"
+        ? [
+            { id: "gold", shortForm: "Gold", name: "Gold" },
+            { id: "silver", shortForm: "Silver", name: "Silver" },
+            pgaToggle,
+          ]
+        : [
+            ...(tours ?? []).map((t) => ({
+              id: t.shortForm.toLowerCase(),
+              shortForm: t.shortForm,
+              name: t.name,
+              logoUrl: t.logoUrl,
+            })),
+            pgaToggle,
+          ];
 
     const pgaRows: LeaderboardPgaRow[] = (golfers ?? []).map((tg) => ({
       kind: "pga",
@@ -586,7 +596,12 @@ function useTournamentPage(args: {
           }
         : undefined,
     };
-  }, [isNotStartedYet, leaderboardPayload, selectedTournament]);
+  }, [
+    computedVariant,
+    isNotStartedYet,
+    leaderboardPayload,
+    selectedTournament,
+  ]);
 
   if (tournaments === undefined) {
     return { kind: "loadingTournaments" };
@@ -610,6 +625,7 @@ function useTournamentPage(args: {
           _id: String(selectedTournament._id),
           name: selectedTournament.name,
           startDate: selectedTournament.startDate,
+          logoUrl: selectedTournament.logoUrl ?? null,
           tier: selectedTournament.tier
             ? { name: selectedTournament.tier.name ?? null }
             : null,

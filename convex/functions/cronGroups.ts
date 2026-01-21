@@ -183,13 +183,19 @@ export const runCreateGroupsForNextTournament: ReturnType<
       target.eventIndex > 1 &&
       target.firstPlayoffTournamentId
     ) {
-      return await ctx.runMutation(
+      const createResult = await ctx.runMutation(
         internal.functions.cronGroupsInternal.copyFromFirstPlayoff,
         {
           tournamentId,
           firstPlayoffTournamentId: target.firstPlayoffTournamentId,
         },
       );
+
+      return {
+        ok: true,
+        tournamentId,
+        createGroups: createResult,
+      };
     }
     const tour = "pga" as const;
 
@@ -253,7 +259,7 @@ export const runCreateGroupsForNextTournament: ReturnType<
       groups[gi]!.push(g);
     });
 
-    return await ctx.runMutation(
+    const createResult = await ctx.runMutation(
       internal.functions.cronGroupsInternal.applyCreateGroups,
       {
         tournamentId,
@@ -278,5 +284,11 @@ export const runCreateGroupsForNextTournament: ReturnType<
         })),
       },
     );
+
+    return {
+      ok: true,
+      tournamentId,
+      createGroups: createResult,
+    };
   },
 });

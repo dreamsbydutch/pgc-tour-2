@@ -3,7 +3,7 @@
  */
 
 import { mutation, query } from "../_generated/server";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { v } from "convex/values";
 import { requireAdmin, requireOwnResource } from "../auth";
 
@@ -352,6 +352,304 @@ export const getTransactionsPage = query({
       .query("transactions")
       .order("desc")
       .paginate(args.paginationOpts);
+  },
+});
+
+export const adminGetMemberAccountAudit = query({
+  args: {
+    options: v.optional(
+      v.object({
+        sumMode: v.optional(v.union(v.literal("completed"), v.literal("all"))),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const sumMode = args.options?.sumMode ?? "completed";
+
+    const members = await ctx.db.query("members").collect();
+
+    const includedTransactions =
+      sumMode === "completed"
+        ? await ctx.db
+            .query("transactions")
+            .withIndex("by_status", (q) => q.eq("status", "completed"))
+            .collect()
+        : await ctx.db.query("transactions").collect();
+
+    const includedByMember = new Map<
+      Id<"members">,
+      { sumCents: number; transactions?: Array<Doc<"transactions">> }
+    >();
+
+    for (const t of includedTransactions) {
+      const memberId = t.memberId;
+      if (!memberId) continue;
+
+      const existing = includedByMember.get(memberId);
+      if (!existing) {
+        includedByMember.set(memberId, {
+          sumCents: t.amount,
+          transactions: sumMode === "all" ? [t] : undefined,
+        });
+        continue;
+      }
+
+      existing.sumCents += t.amount;
+      if (sumMode === "all") {
+        (existing.transactions as Array<Doc<"transactions">>).push(t);
+      }
+    }
+
+    const mismatches = [] as Array<{
+      member: {
+        _id: Id<"members">;
+        email: string;
+        firstname?: string;
+        lastname?: string;
+        role: string;
+        account: number;
+        clerkId?: string;
+      };
+      accountCents: number;
+      includedSumCents: number;
+      deltaCents: number;
+      transactions: Array<Doc<"transactions">>;
+    }>;
+
+    for (const member of members) {
+      const includedSumCents = includedByMember.get(member._id)?.sumCents ?? 0;
+      if (includedSumCents === member.account) continue;
+
+      const allTransactions =
+        sumMode === "all"
+          ? (includedByMember.get(member._id)?.transactions ?? [])
+          : await ctx.db
+              .query("transactions")
+              .withIndex("by_member", (q) => q.eq("memberId", member._id))
+              .collect();
+
+      const transactionsSorted = [...allTransactions].sort((a, b) => {
+        const aTime = a.processedAt ?? a._creationTime ?? 0;
+        const bTime = b.processedAt ?? b._creationTime ?? 0;
+        return bTime - aTime;
+      });
+
+      mismatches.push({
+        member: {
+          _id: member._id,
+          email: member.email,
+          firstname: member.firstname,
+          lastname: member.lastname,
+          role: member.role,
+          account: member.account,
+          clerkId: member.clerkId,
+        },
+        accountCents: member.account,
+        includedSumCents,
+        deltaCents: member.account - includedSumCents,
+        transactions: transactionsSorted,
+      });
+    }
+
+    mismatches.sort((a, b) => Math.abs(b.deltaCents) - Math.abs(a.deltaCents));
+
+    return {
+      sumMode,
+      memberCount: members.length,
+      mismatchCount: mismatches.length,
+      mismatches,
+    };
+  },
+});
+
+export const adminGetTournamentWinningsAudit = query({
+  args: {
+    seasonId: v.id("seasons"),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const season = await ctx.db.get(args.seasonId);
+    if (!season) throw new Error("Season not found");
+
+    const now = Date.now();
+
+    const tournamentsAll = await ctx.db
+      .query("tournaments")
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .collect();
+
+    const tournaments = tournamentsAll
+      .filter((t) => t.status !== "cancelled" && t.endDate <= now)
+      .sort((a, b) => a.endDate - b.endDate);
+
+    const tourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .collect();
+
+    const memberIdByTourCardId = new Map<Id<"tourCards">, Id<"members">>();
+    for (const tc of tourCards) {
+      memberIdByTourCardId.set(tc._id, tc.memberId);
+    }
+
+    const earningsByMemberByTournament = new Map<
+      Id<"members">,
+      Map<Id<"tournaments">, number>
+    >();
+
+    for (const tournament of tournaments) {
+      const teams = await ctx.db
+        .query("teams")
+        .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
+        .collect();
+
+      for (const team of teams) {
+        if (typeof team.earnings !== "number") continue;
+        if (!Number.isFinite(team.earnings)) continue;
+
+        const memberId = memberIdByTourCardId.get(team.tourCardId);
+        if (!memberId) continue;
+
+        const byTournament = earningsByMemberByTournament.get(memberId);
+        if (!byTournament) {
+          earningsByMemberByTournament.set(
+            memberId,
+            new Map([[tournament._id, Math.trunc(team.earnings)]]),
+          );
+          continue;
+        }
+
+        byTournament.set(
+          tournament._id,
+          (byTournament.get(tournament._id) ?? 0) + Math.trunc(team.earnings),
+        );
+      }
+    }
+
+    const tournamentWinningsTransactionsAll = await ctx.db
+      .query("transactions")
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .collect();
+
+    const tournamentWinningsTransactions = tournamentWinningsTransactionsAll
+      .filter(
+        (t) =>
+          t.transactionType === "TournamentWinnings" &&
+          (t.status === undefined || t.status === "completed") &&
+          t.memberId,
+      )
+      .sort((a, b) => {
+        const aTime = a.processedAt ?? a._creationTime ?? 0;
+        const bTime = b.processedAt ?? b._creationTime ?? 0;
+        return bTime - aTime;
+      });
+
+    const transactionsByMember = new Map<
+      Id<"members">,
+      Array<Doc<"transactions">>
+    >();
+    const transactionSumByMember = new Map<Id<"members">, number>();
+
+    for (const t of tournamentWinningsTransactions) {
+      const memberId = t.memberId as Id<"members">;
+      const list = transactionsByMember.get(memberId);
+      if (!list) {
+        transactionsByMember.set(memberId, [t]);
+      } else {
+        list.push(t);
+      }
+
+      transactionSumByMember.set(
+        memberId,
+        (transactionSumByMember.get(memberId) ?? 0) + t.amount,
+      );
+    }
+
+    const members = await ctx.db.query("members").collect();
+
+    const mismatches = [] as Array<{
+      member: {
+        _id: Id<"members">;
+        email: string;
+        firstname?: string;
+        lastname?: string;
+        role: string;
+        account: number;
+        clerkId?: string;
+      };
+      tournamentEarningsTotalCents: number;
+      tournamentEarningsByTournament: Array<{
+        tournamentId: Id<"tournaments">;
+        tournamentName: string;
+        earningsCents: number;
+      }>;
+      tournamentWinningsTransactionSumCents: number;
+      tournamentWinningsTransactions: Array<Doc<"transactions">>;
+      deltaCents: number;
+    }>;
+
+    for (const member of members) {
+      const byTournament =
+        earningsByMemberByTournament.get(member._id) ?? new Map();
+      const earningsByTournament = tournaments
+        .map((tournament) => ({
+          tournamentId: tournament._id,
+          tournamentName: tournament.name,
+          earningsCents: byTournament.get(tournament._id) ?? 0,
+        }))
+        .filter((row) => row.earningsCents !== 0);
+
+      const tournamentEarningsTotalCents = earningsByTournament.reduce(
+        (sum, row) => sum + row.earningsCents,
+        0,
+      );
+
+      const txSum = transactionSumByMember.get(member._id) ?? 0;
+
+      const hasAnyRelevantData =
+        tournamentEarningsTotalCents !== 0 || txSum !== 0;
+
+      if (!hasAnyRelevantData) continue;
+      if (tournamentEarningsTotalCents === txSum) continue;
+
+      mismatches.push({
+        member: {
+          _id: member._id,
+          email: member.email,
+          firstname: member.firstname,
+          lastname: member.lastname,
+          role: member.role,
+          account: member.account,
+          clerkId: member.clerkId,
+        },
+        tournamentEarningsTotalCents,
+        tournamentEarningsByTournament: earningsByTournament,
+        tournamentWinningsTransactionSumCents: txSum,
+        tournamentWinningsTransactions:
+          transactionsByMember.get(member._id) ?? [],
+        deltaCents: tournamentEarningsTotalCents - txSum,
+      });
+    }
+
+    mismatches.sort((a, b) => Math.abs(b.deltaCents) - Math.abs(a.deltaCents));
+
+    return {
+      seasonId: args.seasonId,
+      seasonLabel: `${season.year} #${season.number}`,
+      tournamentCount: tournaments.length,
+      memberCount: members.length,
+      mismatchCount: mismatches.length,
+      mismatches,
+      tournaments: tournaments.map((t) => ({
+        _id: t._id,
+        name: t.name,
+        startDate: t.startDate,
+        endDate: t.endDate,
+      })),
+    };
   },
 });
 

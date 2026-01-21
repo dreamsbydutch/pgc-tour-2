@@ -43,6 +43,7 @@ function validateMemberData(data: {
   firstname?: string;
   lastname?: string;
   displayName?: string;
+  isActive?: boolean;
   role?: "admin" | "moderator" | "regular";
   account?: number;
   friends?: (string | Id<"members">)[];
@@ -227,6 +228,7 @@ export const createMembers = mutation({
       email: v.string(),
       firstname: v.optional(v.string()),
       lastname: v.optional(v.string()),
+      isActive: v.optional(v.boolean()),
       role: v.optional(
         v.union(
           v.literal("admin"),
@@ -305,6 +307,7 @@ export const createMembers = mutation({
       email: data.email,
       firstname: data.firstname,
       lastname: data.lastname,
+      ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
       role: data.role || ("regular" as const),
       account: accountBalance,
       friends: data.friends || [],
@@ -903,6 +906,7 @@ export const updateMembers = mutation({
       firstname: v.optional(v.string()),
       lastname: v.optional(v.string()),
       displayName: v.optional(v.string()),
+      isActive: v.optional(v.boolean()),
       role: v.optional(
         v.union(
           v.literal("admin"),
@@ -948,6 +952,9 @@ export const updateMembers = mutation({
       }
       if (args.data.account !== undefined) {
         throw new Error("Forbidden: Only admins can modify account balances");
+      }
+      if (args.data.isActive !== undefined) {
+        throw new Error("Forbidden: Only admins can change active status");
       }
     }
 
@@ -1101,6 +1108,80 @@ export const getMyTournamentHistory = query({
       });
 
     return limit !== undefined ? rows.slice(0, limit) : rows;
+  },
+});
+
+/**
+ * Recomputes `members.isActive` based on recent participation.
+ *
+ * Definition:
+ * - Active if the member has no tourCards (signed up but never played)
+ * - Active if the member has a tourCard in either of the two most recent seasons BEFORE the current season
+ * - Otherwise inactive
+ */
+export const recomputeMemberActiveFlags = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+
+    const seasons = await ctx.db.query("seasons").collect();
+
+    const sortedSeasons = seasons.slice().sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year;
+      if (a.number !== b.number) return b.number - a.number;
+
+      const aStart = a.startDate ?? 0;
+      const bStart = b.startDate ?? 0;
+      if (aStart !== bStart) return bStart - aStart;
+
+      return b._creationTime - a._creationTime;
+    });
+
+    const currentSeason = sortedSeasons[0] ?? null;
+    const previousTwoSeasons = sortedSeasons.slice(1, 3);
+    const activeSeasonIds = new Set(previousTwoSeasons.map((s) => s._id));
+
+    const tourCards = await ctx.db.query("tourCards").collect();
+    const membersWithAnyTourCard = new Set<string>();
+    const membersWithRecentTourCard = new Set<string>();
+
+    for (const tc of tourCards) {
+      membersWithAnyTourCard.add(tc.memberId);
+      if (activeSeasonIds.has(tc.seasonId)) {
+        membersWithRecentTourCard.add(tc.memberId);
+      }
+    }
+
+    const members = await ctx.db.query("members").collect();
+
+    let updated = 0;
+    let activeCount = 0;
+    let inactiveCount = 0;
+    const now = Date.now();
+
+    for (const m of members) {
+      const hasAny = membersWithAnyTourCard.has(m._id);
+      const hasRecent = membersWithRecentTourCard.has(m._id);
+      const nextIsActive = hasRecent || !hasAny;
+
+      if (m.isActive !== nextIsActive) {
+        await ctx.db.patch(m._id, { isActive: nextIsActive, updatedAt: now });
+        updated += 1;
+      }
+
+      if (nextIsActive) activeCount += 1;
+      else inactiveCount += 1;
+    }
+
+    return {
+      ok: true,
+      currentSeasonId: currentSeason?._id ?? null,
+      activeSeasonIds: [...activeSeasonIds],
+      membersTotal: members.length,
+      updated,
+      activeCount,
+      inactiveCount,
+    } as const;
   },
 });
 

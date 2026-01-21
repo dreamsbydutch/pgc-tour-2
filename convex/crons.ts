@@ -37,4 +37,11 @@ crons.cron(
   {},
 );
 
+// crons.cron(
+// "send_missing_team_reminders",
+// "0 1 * * 4", // Runs every Thursday at 1:00 AM UTC (~8:00 PM Wednesday US/Eastern in standard time)
+// internal.functions.emails.sendMissingTeamReminderForUpcomingTournament,
+// {},
+// );
+
 export default crons;

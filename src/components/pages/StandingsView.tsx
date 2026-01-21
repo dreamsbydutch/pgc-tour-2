@@ -32,19 +32,20 @@ import type {
 } from "@/lib";
 import { cn, includesPlayoff } from "@/lib";
 import { api, useQuery } from "@/convex";
-import type { Doc } from "@/convex";
+import type { Doc, Id } from "@/convex";
 
 /**
  * Displays the standings screen (tour standings + playoff view) with friend filtering.
  *
  * Data sources:
- * - Convex queries for the current season, standings dataset, and current member.
+ * - Convex queries for the selected season (defaults to current), standings dataset, and current member.
  * - `useFriendManagement()` for adding/removing friends.
  *
  * Major render states:
  * - Loading: renders an internal skeleton.
  * - Error: renders a card with retry.
  * - Ready: renders a header, tour toggles (including Playoffs), and the chosen standings view.
+ * - Season selection: supports choosing past seasons via `initialSeasonId`/`onSeasonChange`.
  *
  * @param props - `StandingsViewProps`.
  * @returns Standings UI.
@@ -70,9 +71,11 @@ export function StandingsView(props: StandingsViewProps) {
 
   const formatMoney = (cents: number) => {
     const dollars = cents / 100;
-    return dollars.toLocaleString(undefined, {
+    return dollars.toLocaleString("en-US", {
       style: "currency",
       currency: "USD",
+      currencyDisplay: "symbol",
+      minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     });
   };
@@ -189,7 +192,7 @@ export function StandingsView(props: StandingsViewProps) {
 
     const wrapperClass =
       variant === "gold"
-        ? "mt-4 rounded-xl bg-gradient-to-b from-champ-400"
+        ? "mt-4 rounded-xl bg-gradient-to-b from-yellow-200"
         : variant === "silver"
           ? "mt-12 rounded-xl bg-gradient-to-b from-zinc-300"
           : variant === "bumped"
@@ -198,7 +201,7 @@ export function StandingsView(props: StandingsViewProps) {
 
     const titleTextClass =
       variant === "gold"
-        ? "text-champ-900"
+        ? "text-yellow-900"
         : variant === "silver"
           ? "text-zinc-600"
           : variant === "bumped"
@@ -602,6 +605,25 @@ export function StandingsView(props: StandingsViewProps) {
         <p className="font-varela text-sm text-muted-foreground">
           Click a player to see stats and history
         </p>
+        {model.seasonOptions.length ? (
+          <div className="mx-auto flex w-fit items-center justify-center gap-2">
+            <span className="font-varela text-xs text-muted-foreground">
+              Season
+            </span>
+            <select
+              aria-label="Season"
+              value={model.activeSeasonId ?? ""}
+              onChange={(e) => model.setActiveSeasonId(e.target.value)}
+              className="h-8 rounded-md border bg-background px-2 text-xs"
+            >
+              {model.seasonOptions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
       </div>
 
       <ToursToggle
@@ -735,6 +757,9 @@ function useStandingsView(props: StandingsViewProps) {
     | { status: "error"; errorMessage: string }
     | {
         status: "ready";
+        activeSeasonId: string | null;
+        setActiveSeasonId: (nextSeasonId: string) => void;
+        seasonOptions: Array<{ id: string; label: string }>;
         activeView: ViewMode;
         setActiveView: (next: ViewMode) => void;
         displayedTourName: string | null;
@@ -875,17 +900,27 @@ function useStandingsView(props: StandingsViewProps) {
         pastPointsById.set(tc._id as string, tc.points - delta);
       }
 
-      const overallPastOrder = args.cards
-        .slice()
-        .sort(
-          (a, b) =>
-            (pastPointsById.get(b._id as string) ?? 0) -
-            (pastPointsById.get(a._id as string) ?? 0),
+      const overallPastOrder = args.cards.slice().sort((a, b) => {
+        const delta =
+          (pastPointsById.get(b._id as string) ?? 0) -
+          (pastPointsById.get(a._id as string) ?? 0);
+        if (delta !== 0) return delta;
+        const nameDelta = String(a.displayName ?? "").localeCompare(
+          String(b.displayName ?? ""),
         );
+        if (nameDelta !== 0) return nameDelta;
+        return String(a._id).localeCompare(String(b._id));
+      });
 
-      const overallCurrentOrder = args.cards
-        .slice()
-        .sort((a, b) => b.points - a.points);
+      const overallCurrentOrder = args.cards.slice().sort((a, b) => {
+        const delta = b.points - a.points;
+        if (delta !== 0) return delta;
+        const nameDelta = String(a.displayName ?? "").localeCompare(
+          String(b.displayName ?? ""),
+        );
+        if (nameDelta !== 0) return nameDelta;
+        return String(a._id).localeCompare(String(b._id));
+      });
 
       const overallPastRank = new Map<string, number>();
       const overallCurrentRank = new Map<string, number>();
@@ -903,17 +938,27 @@ function useStandingsView(props: StandingsViewProps) {
       for (const tour of args.tours) {
         const tourCards = args.cards.filter((c) => c.tourId === tour._id);
 
-        const pastSorted = tourCards
-          .slice()
-          .sort(
-            (a, b) =>
-              (pastPointsById.get(b._id as string) ?? 0) -
-              (pastPointsById.get(a._id as string) ?? 0),
+        const pastSorted = tourCards.slice().sort((a, b) => {
+          const delta =
+            (pastPointsById.get(b._id as string) ?? 0) -
+            (pastPointsById.get(a._id as string) ?? 0);
+          if (delta !== 0) return delta;
+          const nameDelta = String(a.displayName ?? "").localeCompare(
+            String(b.displayName ?? ""),
           );
+          if (nameDelta !== 0) return nameDelta;
+          return String(a._id).localeCompare(String(b._id));
+        });
 
-        const currentSorted = tourCards
-          .slice()
-          .sort((a, b) => b.points - a.points);
+        const currentSorted = tourCards.slice().sort((a, b) => {
+          const delta = b.points - a.points;
+          if (delta !== 0) return delta;
+          const nameDelta = String(a.displayName ?? "").localeCompare(
+            String(b.displayName ?? ""),
+          );
+          if (nameDelta !== 0) return nameDelta;
+          return String(a._id).localeCompare(String(b._id));
+        });
 
         const pastMap = new Map<string, number>();
         const currentMap = new Map<string, number>();
@@ -961,9 +1006,21 @@ function useStandingsView(props: StandingsViewProps) {
 
   const currentSeason = useQuery(api.functions.seasons.getCurrentSeason);
 
+  const seasons = useQuery(api.functions.seasons.getSeasons, {
+    options: {
+      sort: { sortBy: "year", sortOrder: "desc" },
+    },
+  });
+
+  const selectedSeasonId = useMemo(() => {
+    if (props.initialSeasonId) return props.initialSeasonId as Id<"seasons">;
+    if (currentSeason) return currentSeason._id;
+    return null;
+  }, [currentSeason, props.initialSeasonId]);
+
   const standingsData = useQuery(
     api.functions.standings.getStandingsViewData,
-    currentSeason ? { seasonId: currentSeason._id } : "skip",
+    selectedSeasonId ? { seasonId: selectedSeasonId } : "skip",
   ) as
     | {
         tours: Doc<"tours">[];
@@ -983,21 +1040,32 @@ function useStandingsView(props: StandingsViewProps) {
     ? currentMember
     : null;
 
+  const needsCurrentSeason = !props.initialSeasonId;
+
   const isLoading =
-    currentSeason === undefined ||
-    standingsData === undefined ||
+    (needsCurrentSeason && currentSeason === undefined) ||
+    (selectedSeasonId ? standingsData === undefined : false) ||
     (clerkId ? currentMember === undefined : false);
 
   const error = useMemo(() => {
     if (isLoading) return null;
-    if (!currentSeason) return new Error("No active season found");
+    if (!selectedSeasonId) {
+      return new Error(
+        needsCurrentSeason ? "No active season found" : "Season not found",
+      );
+    }
     if (!standingsData?.tours?.length) return new Error("No tours found");
     return null;
-  }, [currentSeason, isLoading, standingsData?.tours?.length]);
+  }, [
+    isLoading,
+    needsCurrentSeason,
+    selectedSeasonId,
+    standingsData?.tours?.length,
+  ]);
 
   const data = useMemo(() => {
     if (isLoading) return null;
-    if (!currentSeason || !standingsData) return null;
+    if (!standingsData) return null;
 
     const tours = standingsData.tours as unknown as StandingsTour[];
     const tiers = standingsData.tiers as unknown as StandingsTier[];
@@ -1059,7 +1127,7 @@ function useStandingsView(props: StandingsViewProps) {
       currentMember: currentMemberDoc,
       teams,
       tournaments,
-      currentSeason,
+      currentSeason: currentSeason ?? null,
     };
   }, [
     computePositionChangeByTour,
@@ -1092,17 +1160,34 @@ function useStandingsView(props: StandingsViewProps) {
   useEffect(() => {
     if (!props.initialTourId) return;
     setActiveViewState(props.initialTourId);
-  }, [props.initialTourId]);
+  }, [props.initialSeasonId, props.initialTourId]);
 
   useEffect(() => {
-    if (activeView) return;
+    if (activeView === "playoffs") return;
     if (!tours.length) return;
+    const exists = tours.some((t) => t._id === activeView);
+    if (activeView && exists) return;
     setActiveViewState(tours[0]!._id);
   }, [activeView, tours]);
 
   const setActiveView = (next: ViewMode) => {
     setActiveViewState(next);
     props.onTourChange?.(next);
+  };
+
+  const seasonOptions = useMemo(() => {
+    if (!Array.isArray(seasons)) return [];
+    return seasons.map((s) => {
+      const label =
+        s.number && s.number > 1 ? `${s.year} (S${s.number})` : `${s.year}`;
+      return { id: String(s._id), label };
+    });
+  }, [seasons]);
+
+  const activeSeasonId = selectedSeasonId ? String(selectedSeasonId) : null;
+
+  const setActiveSeasonId = (nextSeasonId: string) => {
+    props.onSeasonChange?.(nextSeasonId);
   };
 
   const currentMemberId =
@@ -1154,35 +1239,108 @@ function useStandingsView(props: StandingsViewProps) {
     return Number.POSITIVE_INFINITY;
   };
 
+  const activeTourPlayoffSpots = useMemo(() => {
+    if (!activeView || activeView === "playoffs") return null;
+    const tour = tours.find((t) => t._id === activeView);
+    if (!tour) return null;
+    const spots = Array.isArray(tour.playoffSpots) ? tour.playoffSpots : [];
+    return {
+      gold: spots[0] ?? 0,
+      silver: spots[1] ?? 0,
+    };
+  }, [activeView, tours]);
+
   const tourGroups = useMemo(() => {
+    const goldCut = activeTourPlayoffSpots?.gold ?? 0;
+    const silverCount = activeTourPlayoffSpots?.silver ?? 0;
+    const silverCut = goldCut + silverCount;
+
     const goldCutCards = filteredTourCards.filter(
-      (card) => parsePosition(card.currentPosition) <= 15,
+      (card) => parsePosition(card.currentPosition) <= goldCut,
     );
     const silverCutCards = filteredTourCards.filter((card) => {
       const pos = parsePosition(card.currentPosition);
-      return pos >= 16 && pos <= 35;
+      return pos > goldCut && pos <= silverCut;
     });
     const remainingCards = filteredTourCards.filter(
-      (card) => parsePosition(card.currentPosition) > 35,
+      (card) => parsePosition(card.currentPosition) > silverCut,
     );
     return { goldCutCards, silverCutCards, remainingCards };
-  }, [filteredTourCards]);
+  }, [
+    activeTourPlayoffSpots?.gold,
+    activeTourPlayoffSpots?.silver,
+    filteredTourCards,
+  ]);
 
   const playoffGroups = useMemo(() => {
-    const all = allTourCards;
-    const goldTeams = all.filter(
-      (card) => parsePosition(card.currentPosition) <= 15,
-    );
-    const silverTeams = all.filter((card) => {
-      const pos = parsePosition(card.currentPosition);
-      return pos <= 35 && pos > 15;
-    });
-    const bumpedTeams = all.filter((card) => {
-      const pos = parsePosition(card.currentPosition);
-      return pos > 35 && pos + (card.posChange ?? 0) <= 35;
-    });
+    const sortCards = (
+      a: ExtendedStandingsTourCard,
+      b: ExtendedStandingsTourCard,
+    ) => {
+      const delta = b.points - a.points;
+      if (delta !== 0) return delta;
+      const nameDelta = String(a.displayName ?? "").localeCompare(
+        String(b.displayName ?? ""),
+      );
+      if (nameDelta !== 0) return nameDelta;
+      return String(a._id).localeCompare(String(b._id));
+    };
+
+    const goldTeams: ExtendedStandingsTourCard[] = [];
+    const silverTeams: ExtendedStandingsTourCard[] = [];
+    const bumpedTeams: ExtendedStandingsTourCard[] = [];
+
+    for (const tour of tours) {
+      const spots = Array.isArray(tour.playoffSpots) ? tour.playoffSpots : [];
+      const goldCount = spots[0] ?? 0;
+      const silverCount = spots[1] ?? 0;
+      const cutoff = goldCount + silverCount;
+      if (cutoff <= 0) continue;
+
+      const cardsInTour = allTourCards
+        .filter((c) => c.tourId === tour._id)
+        .slice()
+        .sort(sortCards);
+
+      if (goldCount > 0) {
+        goldTeams.push(...cardsInTour.slice(0, goldCount));
+      }
+      if (silverCount > 0) {
+        silverTeams.push(
+          ...cardsInTour.slice(goldCount, goldCount + silverCount),
+        );
+      }
+
+      if (cutoff > 0) {
+        for (let i = cutoff; i < cardsInTour.length; i++) {
+          const card = cardsInTour[i]!;
+          const currentRankInTour = i + 1;
+          const posChangeInTour = card.posChange ?? 0;
+          const pastRankInTour = currentRankInTour + posChangeInTour;
+          if (currentRankInTour > cutoff && pastRankInTour <= cutoff) {
+            bumpedTeams.push(card);
+          }
+        }
+      }
+    }
+
+    goldTeams.sort(sortCards);
+    silverTeams.sort(sortCards);
+    bumpedTeams.sort(sortCards);
+
     return { goldTeams, silverTeams, bumpedTeams };
-  }, [allTourCards]);
+  }, [allTourCards, tours]);
+
+  const playoffSpotTotals = useMemo(() => {
+    let goldTotal = 0;
+    let silverTotal = 0;
+    for (const tour of tours) {
+      const spots = Array.isArray(tour.playoffSpots) ? tour.playoffSpots : [];
+      goldTotal += spots[0] ?? 0;
+      silverTotal += spots[1] ?? 0;
+    }
+    return { goldTotal, silverTotal };
+  }, [tours]);
 
   const tierById = useMemo(() => {
     const map = new Map<string, StandingsTier>();
@@ -1203,30 +1361,33 @@ function useStandingsView(props: StandingsViewProps) {
   const playoffGold = useMemo(() => {
     if (!playoffTier) return null;
     return {
-      points: playoffTier.points.slice(0, 30),
-      payouts: playoffTier.payouts.slice(0, 30),
+      points: playoffTier.points.slice(0, playoffSpotTotals.goldTotal),
+      payouts: playoffTier.payouts.slice(0, playoffSpotTotals.goldTotal),
     };
-  }, [playoffTier]);
+  }, [playoffTier, playoffSpotTotals.goldTotal]);
 
   const playoffSilver = useMemo(() => {
     if (!playoffTier) return null;
     return {
-      points: playoffTier.points.slice(0, 40),
-      payouts: playoffTier.payouts.slice(75, 115),
+      points: playoffTier.points.slice(0, playoffSpotTotals.silverTotal),
+      payouts: playoffTier.payouts.slice(
+        75,
+        75 + playoffSpotTotals.silverTotal,
+      ),
     };
-  }, [playoffTier]);
+  }, [playoffTier, playoffSpotTotals.silverTotal]);
 
   const playoffStrokesGold = useMemo(() => {
-    return playoffTier?.points.slice(0, 30) ?? [];
-  }, [playoffTier]);
+    return playoffTier?.points.slice(0, playoffSpotTotals.goldTotal) ?? [];
+  }, [playoffTier, playoffSpotTotals.goldTotal]);
 
   const playoffStrokesSilver = useMemo(() => {
-    return playoffTier?.points.slice(0, 40) ?? [];
-  }, [playoffTier]);
+    return playoffTier?.points.slice(0, playoffSpotTotals.silverTotal) ?? [];
+  }, [playoffTier, playoffSpotTotals.silverTotal]);
 
   if (isLoading) return { status: "loading" } as const satisfies Model;
 
-  if (error || !data?.currentSeason) {
+  if (error) {
     return {
       status: "error",
       errorMessage: error?.message ?? "No active season found.",
@@ -1235,6 +1396,9 @@ function useStandingsView(props: StandingsViewProps) {
 
   return {
     status: "ready",
+    activeSeasonId,
+    setActiveSeasonId,
+    seasonOptions,
     activeView,
     setActiveView,
     displayedTourName,
