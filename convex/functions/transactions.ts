@@ -153,6 +153,23 @@ function requireValidEmail(value: string, label: string) {
   return trimmed;
 }
 
+async function getPendingWithdrawalSumCents(
+  ctx: Parameters<typeof requireOwnResource>[0],
+  memberId: Id<"members">,
+): Promise<number> {
+  const pending = await ctx.db
+    .query("transactions")
+    .withIndex("by_member_status_type", (q) =>
+      q
+        .eq("memberId", memberId)
+        .eq("status", "pending")
+        .eq("transactionType", "Withdrawal"),
+    )
+    .collect();
+
+  return pending.reduce((sum, t) => sum + t.amount, 0);
+}
+
 export const createTransactions = mutation({
   args: {
     data: v.object({
@@ -218,8 +235,13 @@ export const createMyDonationTransaction = mutation({
       amountCents,
     });
 
-    if (member.account + signedAmount < 0) {
-      throw new Error("Insufficient balance");
+    const pendingWithdrawalSum = await getPendingWithdrawalSumCents(
+      ctx,
+      member._id,
+    );
+
+    if (member.account + pendingWithdrawalSum + signedAmount < 0) {
+      throw new Error("Insufficient available balance");
     }
 
     const now = Date.now();
@@ -258,8 +280,13 @@ export const createMyWithdrawalRequest = mutation({
       amountCents,
     });
 
-    if (member.account + signedAmount < 0) {
-      throw new Error("Insufficient balance");
+    const pendingWithdrawalSum = await getPendingWithdrawalSumCents(
+      ctx,
+      member._id,
+    );
+
+    if (member.account + pendingWithdrawalSum + signedAmount < 0) {
+      throw new Error("Insufficient available balance");
     }
 
     const now = Date.now();

@@ -114,32 +114,6 @@ export function AccountPage() {
 
               <div className="mt-6 grid gap-6 md:grid-cols-2">
                 <div className="space-y-3">
-                  <div className="text-sm font-medium">Donate</div>
-                  <div className="space-y-2">
-                    <input
-                      value={vm.charityDonationAmount}
-                      onChange={(e) =>
-                        vm.setCharityDonationAmount(e.target.value)
-                      }
-                      className="w-full rounded-md border px-3 py-2 text-sm"
-                      placeholder="Charity Donation (CAD)"
-                      inputMode="decimal"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <input
-                      value={vm.leagueDonationAmount}
-                      onChange={(e) =>
-                        vm.setLeagueDonationAmount(e.target.value)
-                      }
-                      className="w-full rounded-md border px-3 py-2 text-sm"
-                      placeholder="PGC Donation (CAD)"
-                      inputMode="decimal"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-3">
                   <div className="flex flex-wrap items-center justify-start gap-2">
                     <div className="text-lg font-semibold">
                       Available balance
@@ -156,7 +130,19 @@ export function AccountPage() {
                       value={vm.withdrawAmount}
                       onChange={(e) => vm.setWithdrawAmount(e.target.value)}
                       className="w-full rounded-md border px-3 py-2 text-sm"
-                      placeholder="$0.00 (CAD)"
+                      placeholder="Amount (CAD)"
+                      inputMode="decimal"
+                    />
+                  </div>
+                  <div className="text-sm font-medium">Donate to the PGC</div>
+                  <div className="space-y-2">
+                    <input
+                      value={vm.leagueDonationAmount}
+                      onChange={(e) =>
+                        vm.setLeagueDonationAmount(e.target.value)
+                      }
+                      className="w-full rounded-md border px-3 py-2 text-sm"
+                      placeholder="PGC Donation (CAD)"
                       inputMode="decimal"
                     />
                   </div>

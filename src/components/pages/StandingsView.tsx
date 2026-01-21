@@ -389,9 +389,14 @@ export function StandingsView(props: StandingsViewProps) {
       .sort((a, b) => a.startDate - b.startDate);
 
     const count = Math.max(1, nonPlayoffTournaments.length);
-    const gridStyle = {
-      display: "grid",
+    const desktopGridStyle = {
       gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))`,
+    } as const;
+
+    const mobileCols = Math.max(1, Math.ceil(count / 2));
+    const mobileGridStyle = {
+      gridTemplateColumns: `repeat(${mobileCols}, minmax(0, 1fr))`,
+      gridTemplateRows: "repeat(2, minmax(0, 1fr))",
     } as const;
 
     return (
@@ -520,7 +525,72 @@ export function StandingsView(props: StandingsViewProps) {
                 </div>
               ) : (
                 <div className="mt-2 overflow-x-auto rounded-md border">
-                  <div style={gridStyle}>
+                  <div className="grid sm:hidden" style={mobileGridStyle}>
+                    {nonPlayoffTournaments.map((t) => {
+                      const tier = tierById.get(String(t.tierId));
+                      const isMajor = tier?.name === "Major";
+                      const team = teamsForCard.find(
+                        (x) => x.tournamentId === t._id,
+                      );
+                      const isPastEvent = t.endDate < Date.now();
+                      const didNotMakeCut = team?.position === "CUT";
+                      const didNotPlay = !team && isPastEvent;
+                      const numericFinish = team?.position
+                        ? parseRank(team.position)
+                        : Number.POSITIVE_INFINITY;
+                      const isWinner = numericFinish === 1;
+
+                      return (
+                        <div
+                          key={t._id}
+                          className={cn(
+                            "flex flex-col items-center justify-center gap-1 border-r border-dashed p-2 text-center text-xs",
+                            isMajor && "bg-yellow-50",
+                            didNotPlay && "opacity-40",
+                            didNotMakeCut && "opacity-60",
+                            isWinner && "font-semibold",
+                          )}
+                        >
+                          <Link
+                            to="/tournament"
+                            search={{
+                              tournamentId: t._id,
+                              tourId: card.tourId,
+                              variant: null,
+                            }}
+                            className="flex flex-col items-center gap-1"
+                          >
+                            {t.logoUrl ? (
+                              <img
+                                src={t.logoUrl}
+                                alt={t.name}
+                                className="h-8 w-8 object-contain"
+                              />
+                            ) : (
+                              <div className="h-8 w-8 rounded bg-muted" />
+                            )}
+                            <div
+                              className={cn(
+                                "whitespace-nowrap",
+                                didNotPlay && "text-red-700",
+                                didNotMakeCut && "text-muted-foreground",
+                                isWinner && "text-yellow-700",
+                              )}
+                            >
+                              {!isPastEvent
+                                ? "-"
+                                : !team
+                                  ? "DNP"
+                                  : team.position === "CUT"
+                                    ? "CUT"
+                                    : team.position}
+                            </div>
+                          </Link>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="hidden sm:grid" style={desktopGridStyle}>
                     {nonPlayoffTournaments.map((t) => {
                       const tier = tierById.get(String(t.tierId));
                       const isMajor = tier?.name === "Major";
