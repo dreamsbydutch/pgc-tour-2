@@ -211,7 +211,7 @@ export function AccountPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b text-left">
-                        <th className="py-2 pr-4">
+                        <th className="hidden py-2 pr-4 sm:table-cell">
                           <button
                             type="button"
                             className="hover:underline"
@@ -297,7 +297,7 @@ export function AccountPage() {
                           key={row.teamId}
                           className="border-b last:border-b-0"
                         >
-                          <td className="py-2 pr-4">
+                          <td className="hidden py-2 pr-4 sm:table-cell">
                             {vm.formatDateTime(row.tournamentStartDate)}
                           </td>
                           <td className="py-2 pr-4">

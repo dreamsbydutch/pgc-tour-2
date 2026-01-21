@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Shield, Star } from "lucide-react";
 import { api, useQuery } from "@/convex";
+import { useUser } from "@clerk/tanstack-react-start";
 
 import { LeagueSchedule } from "@/components/internal/LeagueSchedule";
 import { TourCardForm } from "@/components/internal/TourCardForm";
@@ -8,6 +9,7 @@ import { TourCardOutput } from "@/components/internal/TourCardOutput";
 import { TournamentCountdown } from "@/components/internal/TournamentCountdown";
 import { Skeleton } from "@/ui";
 import { useRoleAccess } from "@/hooks";
+import { formatMoney } from "@/lib";
 import type { TournamentCountdownTourney } from "@/lib";
 
 /**
@@ -42,8 +44,10 @@ export function HomePage() {
           {model.roleBadge}
         </div>
 
+
         {model.beforeFirstTournament ? <TourCardOutput /> : null}
         {model.registrationOpen ? <TourCardForm /> : null}
+        {model.accountAlert}
         <TournamentCountdown tourney={tourney} />
         <LeagueSchedule />
       </div>
@@ -72,8 +76,15 @@ function useHomePage():
       beforeFirstTournament: boolean;
       firstTournament: TournamentCountdownTourney | null;
       roleBadge: React.ReactNode;
+      accountAlert: React.ReactNode;
     } {
-  const { isAdmin, role, isLoading } = useRoleAccess();
+  const { role, isLoading } = useRoleAccess();
+  const { user: clerkUser } = useUser();
+
+  const memberRaw = useQuery(
+    api.functions.members.getMembers,
+    clerkUser ? { options: { clerkId: clerkUser.id } } : "skip",
+  );
 
   const currentSeason = useQuery(api.functions.seasons.getCurrentSeason);
   const firstTournamentResult = useQuery(
@@ -126,6 +137,7 @@ function useHomePage():
         {normalizedRole === "admin" ? (
           <Link
             to="/admin"
+            search={{ section: "seasons" }}
             className="inline-flex items-center gap-1 rounded-full bg-red-100 px-3 py-1 text-sm font-medium text-red-800"
           >
             <Shield className="h-4 w-4" />
@@ -141,6 +153,29 @@ function useHomePage():
       </div>
     ) : null;
 
+  const memberAccountCents =
+    memberRaw &&
+    typeof memberRaw === "object" &&
+    "account" in memberRaw &&
+    typeof (memberRaw as { account?: unknown }).account === "number"
+      ? (memberRaw as { account: number }).account
+      : null;
+
+  const accountAlert =
+    typeof memberAccountCents === "number" && memberAccountCents > 0 ? (
+      <Link
+        to="/account"
+        className="block rounded-lg border bg-amber-50 p-4 text-sm"
+      >
+        <div className="font-medium text-amber-900">
+          You have {formatMoney(memberAccountCents)} in your account.
+        </div>
+        <div className="mt-1 text-amber-900/80">
+          Go to Account to request an e-transfer or donate.
+        </div>
+      </Link>
+    ) : null;
+
   if (isLoading) {
     return { kind: "loading" };
   }
@@ -151,6 +186,7 @@ function useHomePage():
     beforeFirstTournament,
     firstTournament,
     roleBadge,
+    accountAlert,
   };
 }
 
