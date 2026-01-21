@@ -12,19 +12,23 @@ import type { Doc, Id } from "@/convex";
 
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/ui";
 import { formatMoney } from "@/lib";
+import { useSeasonIdOrCurrent } from "@/hooks";
 
 /**
  * Renders the `/account` screen.
  *
  * This page handles:
  * - Sign-in/sign-out entry points (Clerk)
- * - Editing the member profile (first/last name + preferred email)
+ * - Updating the member profile and optionally submitting donations and/or an e-transfer request
+ *   through a single combined form
  * - Showing the current account balance
  * - Listing the signed-in member’s tournament history (season filter + sortable columns)
  *
  * Data sources:
  * - `api.functions.members.getMembers` (member record by Clerk id)
  * - `api.functions.members.updateMembers` (profile updates)
+ * - `api.functions.transactions.createMyDonationTransaction` (donations)
+ * - `api.functions.transactions.createMyWithdrawalRequest` (withdrawal requests)
  * - `api.functions.seasons.getSeasons` (season labels)
  * - `api.functions.members.getMyTournamentHistory` (history rows)
  *
@@ -93,7 +97,7 @@ export function AccountPage() {
                   />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
-                  <label className="text-sm font-medium">Preferred email</label>
+                  <label className="text-sm font-medium">Email</label>
                   <input
                     value={vm.email}
                     onChange={(e) => vm.setEmail(e.target.value)}
@@ -102,31 +106,78 @@ export function AccountPage() {
                     inputMode="email"
                     autoComplete="email"
                   />
+                  <div className="text-xs text-muted-foreground">
+                    Used as your preferred email and e-transfer payout email.
+                  </div>
                 </div>
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center gap-3">
+              <div className="mt-6 grid gap-6 md:grid-cols-2">
+                <div className="space-y-3">
+                  <div className="text-sm font-medium">Donate</div>
+                  <div className="space-y-2">
+                    <input
+                      value={vm.charityDonationAmount}
+                      onChange={(e) =>
+                        vm.setCharityDonationAmount(e.target.value)
+                      }
+                      className="w-full rounded-md border px-3 py-2 text-sm"
+                      placeholder="Charity Donation (CAD)"
+                      inputMode="decimal"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <input
+                      value={vm.leagueDonationAmount}
+                      onChange={(e) =>
+                        vm.setLeagueDonationAmount(e.target.value)
+                      }
+                      className="w-full rounded-md border px-3 py-2 text-sm"
+                      placeholder="PGC Donation (CAD)"
+                      inputMode="decimal"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-start gap-2">
+                    <div className="text-lg font-semibold">
+                      Available balance
+                    </div>
+                    <div className="text-lg font-semibold">
+                      {vm.memberAccountCents !== undefined
+                        ? formatMoney(vm.memberAccountCents)
+                        : "—"}
+                    </div>
+                  </div>
+                  <div className="text-sm font-medium">Request e-transfer</div>
+                  <div className="space-y-2">
+                    <input
+                      value={vm.withdrawAmount}
+                      onChange={(e) => vm.setWithdrawAmount(e.target.value)}
+                      className="w-full rounded-md border px-3 py-2 text-sm"
+                      placeholder="$0.00 (CAD)"
+                      inputMode="decimal"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 flex flex-wrap items-center gap-3">
                 <Button
-                  onClick={vm.onSaveProfile}
-                  disabled={vm.saving || !vm.memberRaw}
+                  onClick={vm.onSubmitAccountForm}
+                  disabled={vm.submitting || !vm.memberRaw}
                 >
-                  {vm.saving ? "Saving…" : "Save"}
+                  {vm.submitting ? "Submitting…" : "Submit"}
                 </Button>
 
-                {vm.memberAccountCents !== undefined ? (
-                  <div className="text-sm text-muted-foreground">
-                    Balance:{" "}
-                    <span className="font-medium">
-                      {formatMoney(vm.memberAccountCents)}
-                    </span>
+                {vm.submitError ? (
+                  <div className="text-sm text-red-600">{vm.submitError}</div>
+                ) : null}
+                {vm.submitSuccess ? (
+                  <div className="text-sm text-green-700">
+                    {vm.submitSuccess}
                   </div>
-                ) : null}
-
-                {vm.saveError ? (
-                  <div className="text-sm text-red-600">{vm.saveError}</div>
-                ) : null}
-                {vm.saveSuccess ? (
-                  <div className="text-sm text-green-700">{vm.saveSuccess}</div>
                 ) : null}
               </div>
             </CardContent>
@@ -414,6 +465,14 @@ function useAccountPage() {
   );
 
   const updateMember = useMutation(api.functions.members.updateMembers);
+  const createMyDonationTransaction = useMutation(
+    api.functions.transactions.createMyDonationTransaction,
+  );
+  const createMyWithdrawalRequest = useMutation(
+    api.functions.transactions.createMyWithdrawalRequest,
+  );
+
+  const seasonIdForTransactions = useSeasonIdOrCurrent();
 
   const memberForAccount = useMemo<MemberForAccount | null>(() => {
     return isMemberForAccount(memberRaw) ? memberRaw : null;
@@ -422,9 +481,14 @@ function useAccountPage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
+
+  const [charityDonationAmount, setCharityDonationAmount] = useState("");
+  const [leagueDonationAmount, setLeagueDonationAmount] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
 
   useEffect(() => {
     if (!memberForAccount) return;
@@ -465,30 +529,121 @@ function useAccountPage() {
     dir: "desc",
   });
 
-  async function onSaveProfile() {
-    if (!memberForAccount) return;
+  function dollarsToCents(input: string): number | null {
+    const trimmed = input.trim();
+    if (!trimmed) return 0;
+    const n = Number(trimmed);
+    if (!Number.isFinite(n)) return null;
+    if (n < 0) return null;
+    return Math.round(n * 100);
+  }
 
-    setSaving(true);
-    setSaveError(null);
-    setSaveSuccess(null);
+  async function onSubmitAccountForm() {
+    setSubmitError(null);
+    setSubmitSuccess(null);
 
+    if (!memberForAccount) {
+      setSubmitError("You must be signed in");
+      return;
+    }
+    if (!seasonIdForTransactions) {
+      setSubmitError("No season is available for this transaction");
+      return;
+    }
+
+    const charityCents = dollarsToCents(charityDonationAmount);
+    const leagueCents = dollarsToCents(leagueDonationAmount);
+    const withdrawCents = dollarsToCents(withdrawAmount);
+
+    if (
+      charityCents === null ||
+      leagueCents === null ||
+      withdrawCents === null
+    ) {
+      setSubmitError("Enter valid amounts");
+      return;
+    }
+
+    const donationTotal = charityCents + leagueCents;
+    const withdrawalTotal = withdrawCents;
+    const totalDebit = donationTotal + withdrawalTotal;
+
+    if (totalDebit > 0 && memberForAccount.account < totalDebit) {
+      setSubmitError("Total requested exceeds your available balance");
+      return;
+    }
+
+    const payoutEmail = email.trim();
+    if (withdrawalTotal > 0 && !payoutEmail) {
+      setSubmitError("Enter an email address for e-transfer payout");
+      return;
+    }
+
+    const profileChanged =
+      (firstName ?? "") !== (memberForAccount.firstname ?? "") ||
+      (lastName ?? "") !== (memberForAccount.lastname ?? "") ||
+      (email ?? "") !== (memberForAccount.email ?? "");
+
+    if (!profileChanged && donationTotal === 0 && withdrawalTotal === 0) {
+      setSubmitError("Nothing to submit");
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      await updateMember({
-        memberId: memberForAccount._id,
-        data: {
-          firstname: firstName,
-          lastname: lastName,
-          email,
-        },
-        options: {
-          returnEnhanced: false,
-        },
-      });
-      setSaveSuccess("Saved");
+      if (profileChanged) {
+        await updateMember({
+          memberId: memberForAccount._id,
+          data: {
+            firstname: firstName,
+            lastname: lastName,
+            email,
+          },
+          options: {
+            returnEnhanced: false,
+          },
+        });
+      }
+
+      if (charityCents > 0) {
+        await createMyDonationTransaction({
+          seasonId: seasonIdForTransactions,
+          donationType: "CharityDonation",
+          amountCents: charityCents,
+        });
+      }
+      if (leagueCents > 0) {
+        await createMyDonationTransaction({
+          seasonId: seasonIdForTransactions,
+          donationType: "LeagueDonation",
+          amountCents: leagueCents,
+        });
+      }
+      if (withdrawalTotal > 0) {
+        await createMyWithdrawalRequest({
+          seasonId: seasonIdForTransactions,
+          payoutEmail,
+          amountCents: withdrawalTotal,
+        });
+      }
+
+      if (donationTotal > 0) {
+        setCharityDonationAmount("");
+        setLeagueDonationAmount("");
+      }
+      if (withdrawalTotal > 0) {
+        setWithdrawAmount("");
+      }
+
+      const parts: string[] = [];
+      if (profileChanged) parts.push("Profile updated");
+      if (donationTotal > 0) parts.push("Donation submitted");
+      if (withdrawalTotal > 0) parts.push("E-transfer requested (pending)");
+      setSubmitSuccess(parts.join(" • "));
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "Failed to save");
+      setSubmitError(e instanceof Error ? e.message : "Submit failed");
     } finally {
-      setSaving(false);
+      setSubmitting(false);
     }
   }
 
@@ -555,10 +710,18 @@ function useAccountPage() {
     setLastName,
     email,
     setEmail,
-    saving,
-    saveError,
-    saveSuccess,
+    submitting,
+    submitError,
+    submitSuccess,
     memberAccountCents,
+    seasonIdForTransactions,
+    charityDonationAmount,
+    setCharityDonationAmount,
+    leagueDonationAmount,
+    setLeagueDonationAmount,
+    withdrawAmount,
+    setWithdrawAmount,
+    onSubmitAccountForm,
     seasonLabelById,
     tSeasonFilter,
     setTSeasonFilter,
@@ -566,7 +729,6 @@ function useAccountPage() {
     setTSort,
     toggleSort,
     sortIndicator,
-    onSaveProfile,
     historyKind,
     filteredHistoryRows,
     formatDateTime,

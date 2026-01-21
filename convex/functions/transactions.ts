@@ -110,6 +110,49 @@ async function getMemberIdByClerkId(
   return member?._id ?? null;
 }
 
+async function requireSignedInClerkId(
+  ctx: Parameters<typeof requireOwnResource>[0],
+): Promise<string> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    throw new Error("Unauthorized: You must be signed in");
+  }
+  return identity.subject;
+}
+
+async function getActingMember(
+  ctx: Parameters<typeof requireOwnResource>[0],
+): Promise<Doc<"members">> {
+  const clerkId = await requireSignedInClerkId(ctx);
+  const member = await ctx.db
+    .query("members")
+    .withIndex("by_clerk_id", (q) => q.eq("clerkId", clerkId))
+    .first();
+
+  if (!member) {
+    throw new Error(
+      "Member profile not found. Please contact an administrator.",
+    );
+  }
+
+  return member;
+}
+
+function requirePositiveIntegerCents(value: number, label: string) {
+  if (!Number.isFinite(value)) throw new Error(`${label} must be a number`);
+  const cents = Math.trunc(value);
+  if (cents !== value) throw new Error(`${label} must be an integer (cents)`);
+  if (cents <= 0) throw new Error(`${label} must be greater than 0`);
+  return cents;
+}
+
+function requireValidEmail(value: string, label: string) {
+  const trimmed = value.trim();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(trimmed)) throw new Error(`${label} is invalid`);
+  return trimmed;
+}
+
 export const createTransactions = mutation({
   args: {
     data: v.object({
@@ -152,6 +195,83 @@ export const createTransactions = mutation({
         updatedAt: Date.now(),
       });
     }
+
+    return await ctx.db.get(transactionId);
+  },
+});
+
+export const createMyDonationTransaction = mutation({
+  args: {
+    seasonId: v.id("seasons"),
+    donationType: v.union(
+      v.literal("LeagueDonation"),
+      v.literal("CharityDonation"),
+    ),
+    amountCents: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const member = await getActingMember(ctx);
+
+    const amountCents = requirePositiveIntegerCents(args.amountCents, "Amount");
+    const signedAmount = toSignedAmountCents({
+      transactionType: args.donationType,
+      amountCents,
+    });
+
+    if (member.account + signedAmount < 0) {
+      throw new Error("Insufficient balance");
+    }
+
+    const now = Date.now();
+    const transactionId = await ctx.db.insert("transactions", {
+      memberId: member._id,
+      seasonId: args.seasonId,
+      amount: signedAmount,
+      transactionType: args.donationType,
+      status: "completed",
+      processedAt: now,
+      updatedAt: now,
+    });
+
+    await ctx.db.patch(member._id, {
+      account: member.account + signedAmount,
+      updatedAt: now,
+    });
+
+    return await ctx.db.get(transactionId);
+  },
+});
+
+export const createMyWithdrawalRequest = mutation({
+  args: {
+    seasonId: v.id("seasons"),
+    payoutEmail: v.string(),
+    amountCents: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const member = await getActingMember(ctx);
+
+    const payoutEmail = requireValidEmail(args.payoutEmail, "E-transfer email");
+    const amountCents = requirePositiveIntegerCents(args.amountCents, "Amount");
+    const signedAmount = toSignedAmountCents({
+      transactionType: "Withdrawal",
+      amountCents,
+    });
+
+    if (member.account + signedAmount < 0) {
+      throw new Error("Insufficient balance");
+    }
+
+    const now = Date.now();
+    const transactionId = await ctx.db.insert("transactions", {
+      memberId: member._id,
+      seasonId: args.seasonId,
+      amount: signedAmount,
+      transactionType: "Withdrawal",
+      status: "pending",
+      payoutEmail,
+      updatedAt: now,
+    });
 
     return await ctx.db.get(transactionId);
   },

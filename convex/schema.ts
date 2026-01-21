@@ -310,6 +310,8 @@ const schema = defineSchema({
     seasonId: v.id("seasons"),
     amount: v.number(), // Amount in cents (positive = credit, negative = debit)
 
+    payoutEmail: v.optional(v.string()),
+
     transactionType: v.union(
       v.literal("TourCardFee"),
       v.literal("TournamentWinnings"),

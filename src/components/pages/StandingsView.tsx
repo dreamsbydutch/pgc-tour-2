@@ -628,7 +628,14 @@ export function StandingsView(props: StandingsViewProps) {
 
       <ToursToggle
         tours={model.toursForToggle}
-        extraToggles={[{ id: "playoffs", shortForm: "Playoffs" }]}
+        extraToggles={[
+          {
+            id: "playoffs",
+            shortForm: "Playoffs",
+            logoUrl:
+              "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPJiXqZRs47Fgtd9BSMeHQ2WnVuLfP8IaTAp6E",
+          },
+        ]}
         activeTourId={model.activeView}
         onChangeTourId={(next) => model.setActiveView(next)}
       />
