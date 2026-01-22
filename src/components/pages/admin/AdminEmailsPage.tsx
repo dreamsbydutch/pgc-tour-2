@@ -309,6 +309,17 @@ function useAdminEmailsPage() {
     api.functions.emails.adminSendSeasonStartEmailToActiveMembers,
   );
 
+  /** Converts an unknown thrown value into a user-readable error message. */
+  function toErrorMessage(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    if (typeof err === "string") return err;
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return "Unknown error";
+    }
+  }
+
   async function sendTest() {
     if (!tournamentId) return;
 
@@ -319,6 +330,8 @@ function useAdminEmailsPage() {
         customBlurb,
       });
       setResult(res);
+    } catch (err) {
+      setResult({ ok: false, error: toErrorMessage(err) });
     } finally {
       setIsBusy(false);
     }
@@ -335,6 +348,8 @@ function useAdminEmailsPage() {
         force,
       });
       setResult(res);
+    } catch (err) {
+      setResult({ ok: false, error: toErrorMessage(err) });
     } finally {
       setIsBusy(false);
     }
@@ -349,6 +364,8 @@ function useAdminEmailsPage() {
         clubhouseUrl: openerClubhouseUrl,
       });
       setOpenerResult(res);
+    } catch (err) {
+      setOpenerResult({ ok: false, error: toErrorMessage(err) });
     } finally {
       setIsBusy(false);
     }
@@ -363,6 +380,8 @@ function useAdminEmailsPage() {
         clubhouseUrl: openerClubhouseUrl,
       });
       setOpenerResult(res);
+    } catch (err) {
+      setOpenerResult({ ok: false, error: toErrorMessage(err) });
     } finally {
       setIsBusy(false);
     }

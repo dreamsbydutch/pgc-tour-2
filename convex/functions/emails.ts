@@ -47,7 +47,7 @@ function getAppBaseUrl(args: { allowLocalhostFallback: boolean }): string {
   }
 
   throw new Error(
-    "Missing APP_BASE_URL (set to your site origin, e.g. https://pgc.yourdomain.com)",
+    "Missing APP_BASE_URL (set this in your Convex env vars to your site origin, e.g. https://pgc.yourdomain.com)",
   );
 }
 
