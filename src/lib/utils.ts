@@ -60,6 +60,15 @@ export function formatMoney(amount: number): string {
   }).format(amount / 100);
 }
 
+export function formatMoneyWithCents(amountCents: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amountCents / 100);
+}
+
 export function formatBuyIn(cents?: number): string {
   if (typeof cents !== "number") {
     return "$0";

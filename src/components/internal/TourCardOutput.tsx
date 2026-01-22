@@ -9,7 +9,7 @@ import type {
 } from "convex/types/types";
 import { TourCardChangeButton } from "@/components/internal/TourCardChangeButton";
 import { Skeleton } from "@/ui";
-import { formatMoney } from "@/lib/utils";
+import { formatMoneyWithCents } from "@/lib/utils";
 import { api } from "@/convex";
 
 /**
@@ -91,7 +91,7 @@ export function TourCardOutput() {
       <TourCardChangeButton tourCardId={tourCard._id} />
       {member && member.account < 0 && (
         <div className="mb-2 max-w-2xl rounded-md border border-red-200 bg-red-50 px-3 py-2 text-center text-sm text-red-800">
-          {`You currently owe ${formatMoney(Math.abs(member.account))}. Please send payment to puregolfcollectivetour@gmail.com before the start of the next tournament to make picks.`}
+          {`You currently owe ${formatMoneyWithCents(Math.abs(member.account))}. Please send payment to puregolfcollectivetour@gmail.com before the start of the next tournament to make picks.`}
         </div>
       )}
     </div>
