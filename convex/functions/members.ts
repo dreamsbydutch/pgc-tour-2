@@ -1662,3 +1662,292 @@ async function generateAnalytics(
     ),
   };
 }
+
+/**
+ * Returns counts for all documents that reference a member and would be moved during a merge.
+ */
+export const adminGetMemberMergePreview = query({
+  args: {
+    sourceMemberId: v.id("members"),
+    targetMemberId: v.optional(v.id("members")),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const source = await ctx.db.get(args.sourceMemberId);
+    if (!source) {
+      throw new Error("Source member not found");
+    }
+
+    const target = args.targetMemberId
+      ? await ctx.db.get(args.targetMemberId)
+      : null;
+
+    const tourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    const transactions = await ctx.db
+      .query("transactions")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    const pushSubscriptions = await ctx.db
+      .query("pushSubscriptions")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    const auditLogs = await ctx.db
+      .query("auditLogs")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    const allMembers = await ctx.db.query("members").collect();
+    const sourceId = String(args.sourceMemberId);
+
+    let friendRefCount = 0;
+    for (const m of allMembers) {
+      if (String(m._id) === sourceId) continue;
+      if (m.friends.some((f) => String(f) === sourceId)) {
+        friendRefCount += 1;
+      }
+    }
+
+    const sourceClerkId =
+      typeof source.clerkId === "string" ? source.clerkId : null;
+    const clerkIdOwner = sourceClerkId
+      ? await ctx.db
+          .query("members")
+          .withIndex("by_clerk_id", (q) => q.eq("clerkId", sourceClerkId))
+          .first()
+      : null;
+
+    return {
+      ok: true,
+      source: {
+        _id: source._id,
+        clerkId: source.clerkId ?? null,
+        email: source.email,
+        displayName: (source as any).displayName ?? null,
+        firstname: source.firstname ?? null,
+        lastname: source.lastname ?? null,
+        role: source.role,
+        isActive: source.isActive ?? null,
+        account: source.account,
+      },
+      target: target
+        ? {
+            _id: target._id,
+            clerkId: target.clerkId ?? null,
+            email: target.email,
+            displayName: (target as any).displayName ?? null,
+            firstname: target.firstname ?? null,
+            lastname: target.lastname ?? null,
+            role: target.role,
+            isActive: target.isActive ?? null,
+            account: target.account,
+          }
+        : null,
+      counts: {
+        tourCards: tourCards.length,
+        transactions: transactions.length,
+        pushSubscriptions: pushSubscriptions.length,
+        auditLogs: auditLogs.length,
+        membersReferencingAsFriend: friendRefCount,
+      },
+      warnings: {
+        sourceMissingClerkId: !sourceClerkId,
+        clerkIdAlsoOnDifferentMember:
+          !!sourceClerkId &&
+          !!clerkIdOwner &&
+          String(clerkIdOwner._id) !== String(source._id),
+        targetAlreadyHasDifferentClerkId:
+          !!target &&
+          !!sourceClerkId &&
+          !!target.clerkId &&
+          target.clerkId !== sourceClerkId,
+      },
+    } as const;
+  },
+});
+
+/**
+ * Merges two member records by moving all `memberId` references from the source member to the target member,
+ * copying the source `clerkId` onto the target member, then deleting the source member.
+ */
+export const adminMergeMembers = mutation({
+  args: {
+    sourceMemberId: v.id("members"),
+    targetMemberId: v.id("members"),
+    options: v.optional(
+      v.object({
+        overwriteTargetClerkId: v.optional(v.boolean()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    if (String(args.sourceMemberId) === String(args.targetMemberId)) {
+      throw new Error("Source and target members must be different");
+    }
+
+    const source = await ctx.db.get(args.sourceMemberId);
+    if (!source) {
+      throw new Error("Source member not found");
+    }
+
+    const target = await ctx.db.get(args.targetMemberId);
+    if (!target) {
+      throw new Error("Target member not found");
+    }
+
+    const sourceClerkId =
+      typeof source.clerkId === "string" ? source.clerkId.trim() : "";
+    if (!sourceClerkId) {
+      throw new Error("Source member has no clerkId to merge");
+    }
+
+    const overwriteTargetClerkId = !!args.options?.overwriteTargetClerkId;
+
+    if (
+      target.clerkId &&
+      target.clerkId !== sourceClerkId &&
+      !overwriteTargetClerkId
+    ) {
+      throw new Error(
+        "Target member already has a different clerkId. Enable overwriteTargetClerkId to replace it.",
+      );
+    }
+
+    const clerkIdOwner = await ctx.db
+      .query("members")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", sourceClerkId))
+      .first();
+
+    if (clerkIdOwner && String(clerkIdOwner._id) !== String(source._id)) {
+      throw new Error("Another member already has the source clerkId");
+    }
+
+    const targetPatch: Record<string, unknown> = {
+      clerkId: sourceClerkId,
+      account: target.account + source.account,
+      isActive: (target.isActive ?? false) || (source.isActive ?? false),
+      updatedAt: Date.now(),
+    };
+
+    if (!target.firstname && source.firstname) {
+      targetPatch.firstname = source.firstname;
+    }
+    if (!target.lastname && source.lastname) {
+      targetPatch.lastname = source.lastname;
+    }
+    if (!(target as any).displayName && (source as any).displayName) {
+      targetPatch.displayName = (source as any).displayName;
+    }
+
+    await ctx.db.patch(args.targetMemberId, targetPatch);
+
+    const tourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    for (const tc of tourCards) {
+      await ctx.db.patch(tc._id, { memberId: args.targetMemberId });
+    }
+
+    const transactions = await ctx.db
+      .query("transactions")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    for (const tx of transactions) {
+      await ctx.db.patch(tx._id, { memberId: args.targetMemberId });
+    }
+
+    const pushSubscriptions = await ctx.db
+      .query("pushSubscriptions")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    for (const ps of pushSubscriptions) {
+      await ctx.db.patch(ps._id, { memberId: args.targetMemberId });
+    }
+
+    const auditLogs = await ctx.db
+      .query("auditLogs")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    for (const al of auditLogs) {
+      await ctx.db.patch(al._id, { memberId: args.targetMemberId });
+    }
+
+    const allMembers = await ctx.db.query("members").collect();
+    const sourceId = String(args.sourceMemberId);
+    const targetId = String(args.targetMemberId);
+
+    let membersUpdatedForFriends = 0;
+    for (const m of allMembers) {
+      if (String(m._id) === sourceId) continue;
+
+      if (!m.friends.some((f) => String(f) === sourceId)) continue;
+
+      const nextFriends = m.friends
+        .map((f) => (String(f) === sourceId ? targetId : f))
+        .filter(
+          (f, idx, arr) =>
+            arr.findIndex((x) => String(x) === String(f)) === idx,
+        );
+
+      await ctx.db.patch(m._id, {
+        friends: nextFriends,
+        updatedAt: Date.now(),
+      });
+      membersUpdatedForFriends += 1;
+    }
+
+    const remainingTourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+    const remainingTransactions = await ctx.db
+      .query("transactions")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+    const remainingPushSubscriptions = await ctx.db
+      .query("pushSubscriptions")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+    const remainingAuditLogs = await ctx.db
+      .query("auditLogs")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    if (
+      remainingTourCards.length > 0 ||
+      remainingTransactions.length > 0 ||
+      remainingPushSubscriptions.length > 0 ||
+      remainingAuditLogs.length > 0
+    ) {
+      throw new Error("Merge incomplete: source member still has references");
+    }
+
+    await ctx.db.delete(args.sourceMemberId);
+
+    return {
+      ok: true,
+      sourceMemberId: args.sourceMemberId,
+      targetMemberId: args.targetMemberId,
+      moved: {
+        tourCards: tourCards.length,
+        transactions: transactions.length,
+        pushSubscriptions: pushSubscriptions.length,
+        auditLogs: auditLogs.length,
+        membersUpdatedForFriends,
+      },
+    } as const;
+  },
+});

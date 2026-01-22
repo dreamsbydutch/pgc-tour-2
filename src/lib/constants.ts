@@ -22,6 +22,7 @@ export const ADMIN_DASHBOARD_SECTIONS: readonly AdminDashboardSection[] = [
   "tiers",
   "courses",
   "members",
+  "member-merge",
   "account-audit",
   "transactions",
   "emails",

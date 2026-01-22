@@ -317,6 +317,7 @@ export type AdminDashboardSection =
   | "tiers"
   | "courses"
   | "members"
+  | "member-merge"
   | "account-audit"
   | "transactions"
   | "emails"

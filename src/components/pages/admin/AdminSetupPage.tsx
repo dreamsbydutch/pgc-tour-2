@@ -36,6 +36,7 @@ import { AdminTeamsPage } from "@/components/pages/admin/AdminTeamsPage";
 import { AdminTourCardsPage } from "@/components/pages/admin/AdminTourCardsPage";
 import { AdminTournamentsPage } from "@/components/pages/admin/AdminTournamentsPage";
 import { MemberAccountAuditPage } from "@/components/pages/admin/MemberAccountAuditPage";
+import { AdminMemberMergePage } from "@/components/pages/admin/AdminMemberMergePage";
 
 /**
  * Admin page for league setup.
@@ -57,6 +58,7 @@ export function AdminSetupPage(props: {
       { label: "Tiers", value: "tiers" as const },
       { label: "Courses", value: "courses" as const },
       { label: "Members", value: "members" as const },
+      { label: "Member Merge", value: "member-merge" as const },
       { label: "Account Audit", value: "account-audit" as const },
       { label: "Transactions", value: "transactions" as const },
       { label: "Emails", value: "emails" as const },
@@ -167,6 +169,9 @@ export function AdminSetupPage(props: {
                 ) : null}
                 {props.section === "courses" ? <CoursesSection /> : null}
                 {props.section === "members" ? <MembersManager /> : null}
+                {props.section === "member-merge" ? (
+                  <AdminMemberMergePage />
+                ) : null}
                 {props.section === "account-audit" ? (
                   <MemberAccountAuditPage />
                 ) : null}
