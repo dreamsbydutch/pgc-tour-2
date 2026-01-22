@@ -24,71 +24,59 @@ import {
   TableRow,
 } from "@/ui";
 
-import {
-  ADMIN_FORM_CONTROL_CLASSNAME,
-  formatCentsAsDollars,
-  normalizeList,
-} from "@/lib";
+import { ADMIN_FORM_CONTROL_CLASSNAME, formatCentsAsDollars } from "@/lib";
 
 /**
  * Renders the Admin Dashboard "Account Audit" section.
  *
- * This screen reconciles each member's stored `members.account` balance (cents) against a computed sum of their transactions.
- * It lists only the members where the two numbers do not match, and lets an admin open a dialog to inspect the full
- * transaction history for that member.
+ * Reconciles each member's stored `members.account` balance (cents) against a computed sum of their transactions.
+ * It shows:
+ * - Any discrepancies (account != transaction sum)
+ * - Any non-zero balances (outstanding)
  *
  * Data sources:
- * - `api.functions.transactions.adminGetMemberAccountAudit` (mismatch detection + transaction lists)
+ * - `api.functions.transactions.adminGetMemberAccountAudit`
+ * - `api.functions.transactions.adminGetMemberLedgerForAudit`
  *
- * Major render states:
- * - Loading (query pending)
- * - No mismatches
- * - Mismatch table + per-member transaction dialog
+ * @returns The account audit admin UI.
  */
 export function MemberAccountAuditPage() {
-  const vm = useMemberAccountAuditPage();
-  const [openMemberId, setOpenMemberId] = useState<string | null>(null);
+  const [sumMode, setSumMode] = useState<"completed" | "all">("all");
+  const [openMemberId, setOpenMemberId] = useState<Id<"members"> | null>(null);
 
-  const audit = useQuery(
-    api.functions.transactions.adminGetTournamentWinningsAudit,
-    vm.seasonId ? { seasonId: vm.seasonId } : "skip",
-  );
+  const audit = useQuery(api.functions.transactions.adminGetMemberAccountAudit, {
+    options: { sumMode },
+  });
 
   const mismatches = audit?.mismatches ?? [];
+  const outstanding = audit?.outstandingBalances ?? [];
 
-  const selected = useMemo(() => {
+  const ledger = useQuery(
+    api.functions.transactions.adminGetMemberLedgerForAudit,
+    openMemberId ? { memberId: openMemberId, options: { sumMode } } : "skip",
+  );
+
+  const openLabel = useMemo(() => {
     if (!openMemberId) return null;
-    return mismatches.find((m) => m.member._id === openMemberId) ?? null;
-  }, [mismatches, openMemberId]);
 
-  if (!vm.seasonsLoaded) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Account Audit</CardTitle>
-          <CardDescription>Loading seasons…</CardDescription>
-        </CardHeader>
-      </Card>
-    );
-  }
+    const row =
+      mismatches.find((m) => m.member._id === openMemberId) ??
+      outstanding.find((m) => m.member._id === openMemberId) ??
+      null;
 
-  if (!vm.seasonId) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Account Audit</CardTitle>
-          <CardDescription>No seasons found.</CardDescription>
-        </CardHeader>
-      </Card>
-    );
-  }
+    if (!row) return null;
+    const name = [row.member.firstname, row.member.lastname]
+      .filter(Boolean)
+      .join(" ");
+    return name || row.member.email;
+  }, [mismatches, openMemberId, outstanding]);
 
   if (!audit) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>Account Audit</CardTitle>
-          <CardDescription>Loading tournament winnings audit…</CardDescription>
+          <CardDescription>Loading account reconciliation…</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -100,28 +88,24 @@ export function MemberAccountAuditPage() {
         <CardHeader>
           <CardTitle>Account Audit</CardTitle>
           <CardDescription>
-            Audits tournament-by-tournament earnings vs Tournament Winnings
-            transactions.
+            Checks each member’s stored balance against the sum of transactions
+            and lists non-zero balances.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="text-sm text-muted-foreground">
-            {audit.mismatchCount} mismatch(es) across {audit.memberCount}{" "}
-            member(s) · {audit.tournamentCount} tournament(s)
+            {audit.mismatchCount} discrepancy(ies) · {audit.outstandingCount} outstanding · {audit.memberCount} total
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="text-sm font-medium">Season</div>
+            <div className="text-sm font-medium">Sum mode</div>
             <select
-              value={vm.seasonId}
-              onChange={(e) => vm.setSeasonId(e.target.value as Id<"seasons">)}
+              value={sumMode}
+              onChange={(e) => setSumMode(e.target.value as "completed" | "all")}
               className={ADMIN_FORM_CONTROL_CLASSNAME}
             >
-              {vm.seasons.map((s) => (
-                <option key={s._id} value={s._id}>
-                  {s.year} #{s.number}
-                </option>
-              ))}
+              <option value="all">All transactions</option>
+              <option value="completed">Completed only</option>
             </select>
           </div>
         </CardContent>
@@ -130,19 +114,18 @@ export function MemberAccountAuditPage() {
       {mismatches.length === 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>All good</CardTitle>
+            <CardTitle>No discrepancies</CardTitle>
             <CardDescription>
-              No members found where computed tournament earnings differ from
-              Tournament Winnings transactions for this season.
+              No members found where the stored account differs from the transaction sum.
             </CardDescription>
           </CardHeader>
         </Card>
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>Mismatched Members</CardTitle>
+            <CardTitle>Discrepancies</CardTitle>
             <CardDescription>
-              Click “View transactions” to inspect the full ledger.
+              Members where stored account balance does not match the transaction sum.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -150,8 +133,8 @@ export function MemberAccountAuditPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Member</TableHead>
-                  <TableHead className="text-right">Earnings</TableHead>
-                  <TableHead className="text-right">Winnings Txns</TableHead>
+                  <TableHead className="text-right">Account</TableHead>
+                  <TableHead className="text-right">Txn sum</TableHead>
                   <TableHead className="text-right">Delta</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -172,12 +155,10 @@ export function MemberAccountAuditPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        {formatCentsAsDollars(row.tournamentEarningsTotalCents)}
+                        {formatCentsAsDollars(row.accountCents)}
                       </TableCell>
                       <TableCell className="text-right">
-                        {formatCentsAsDollars(
-                          row.tournamentWinningsTransactionSumCents,
-                        )}
+                        {formatCentsAsDollars(row.includedSumCents)}
                       </TableCell>
                       <TableCell
                         className={
@@ -196,8 +177,7 @@ export function MemberAccountAuditPage() {
                           variant="outline"
                           onClick={() => setOpenMemberId(row.member._id)}
                         >
-                          View details (
-                          {row.tournamentWinningsTransactions.length})
+                          View transactions ({row.transactions.length})
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -209,99 +189,146 @@ export function MemberAccountAuditPage() {
         </Card>
       )}
 
-      <Dialog
-        open={openMemberId !== null}
-        onOpenChange={() => setOpenMemberId(null)}
-      >
+      {outstanding.length === 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>No outstanding balances</CardTitle>
+            <CardDescription>All member balances are $0.00.</CardDescription>
+          </CardHeader>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Outstanding balances</CardTitle>
+            <CardDescription>Members with a non-zero stored account balance.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Member</TableHead>
+                  <TableHead className="text-right">Balance</TableHead>
+                  <TableHead className="text-right">Txn sum</TableHead>
+                  <TableHead className="text-right">Delta</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {outstanding.map((row) => {
+                  const name = [row.member.firstname, row.member.lastname]
+                    .filter(Boolean)
+                    .join(" ");
+                  const memberLabel = name || row.member.email;
+
+                  return (
+                    <TableRow key={row.member._id}>
+                      <TableCell>
+                        <div className="font-medium">{memberLabel}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {row.member.email} · {row.member.role}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCentsAsDollars(row.accountCents)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCentsAsDollars(row.includedSumCents)}
+                      </TableCell>
+                      <TableCell
+                        className={
+                          row.deltaCents === 0
+                            ? "text-right"
+                            : row.deltaCents > 0
+                              ? "text-right text-amber-700"
+                              : "text-right text-red-700"
+                        }
+                      >
+                        {formatCentsAsDollars(row.deltaCents)}
+                      </TableCell>
+                      <TableCell>
+                        {row.isMismatch ? (
+                          <span className="text-red-700">Mismatch</span>
+                        ) : (
+                          <span className="text-muted-foreground">OK</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setOpenMemberId(row.member._id)}
+                        >
+                          View transactions
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={openMemberId !== null} onOpenChange={() => setOpenMemberId(null)}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
-            <DialogTitle>Member Audit Details</DialogTitle>
-            {selected ? (
+            <DialogTitle>{openLabel ? `${openLabel} — Ledger` : "Ledger"}</DialogTitle>
+            {ledger ? (
               <DialogDescription>
-                {selected.member.email} — Earnings{" "}
-                {formatCentsAsDollars(selected.tournamentEarningsTotalCents)} ·
-                Winnings Txns{" "}
-                {formatCentsAsDollars(
-                  selected.tournamentWinningsTransactionSumCents,
-                )}{" "}
-                · Delta {formatCentsAsDollars(selected.deltaCents)}
+                Account {formatCentsAsDollars(ledger.accountCents)} · Txn sum {formatCentsAsDollars(ledger.includedSumCents)} · Delta {formatCentsAsDollars(ledger.deltaCents)}
               </DialogDescription>
             ) : (
-              <DialogDescription>Loading member details…</DialogDescription>
+              <DialogDescription>Loading transactions…</DialogDescription>
             )}
           </DialogHeader>
 
           <div className="px-6 pb-4">
-            {selected ? (
-              <div className="space-y-6">
-                <div>
-                  <div className="pb-2 text-sm font-medium">
-                    Tournament earnings
-                  </div>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Tournament</TableHead>
-                        <TableHead className="text-right">Earnings</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {selected.tournamentEarningsByTournament.map((row) => (
-                        <TableRow key={row.tournamentId}>
-                          <TableCell>{row.tournamentName}</TableCell>
-                          <TableCell className="text-right">
-                            {formatCentsAsDollars(row.earningsCents)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+            {ledger ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Season</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {ledger.transactions.map((t) => {
+                    const dateValue = t.processedAt ?? t._creationTime;
+                    const dateLabel = dateValue
+                      ? new Date(dateValue).toLocaleString()
+                      : "—";
+                    const seasonLabel =
+                      (t as unknown as { seasonLabel?: string }).seasonLabel ??
+                      String(t.seasonId);
 
-                <div>
-                  <div className="pb-2 text-sm font-medium">
-                    Tournament Winnings transactions
-                  </div>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
+                    return (
+                      <TableRow key={t._id}>
+                        <TableCell className="whitespace-nowrap">
+                          {dateLabel}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {seasonLabel}
+                        </TableCell>
+                        <TableCell>{t.transactionType}</TableCell>
+                        <TableCell>{t.status ?? "—"}</TableCell>
+                        <TableCell className="text-right">
+                          {formatCentsAsDollars(t.amount)}
+                        </TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {selected.tournamentWinningsTransactions.map((t) => {
-                        const dateValue = t.processedAt ?? t._creationTime;
-                        const dateLabel = dateValue
-                          ? new Date(dateValue).toLocaleString()
-                          : "—";
-
-                        return (
-                          <TableRow key={t._id}>
-                            <TableCell className="whitespace-nowrap">
-                              {dateLabel}
-                            </TableCell>
-                            <TableCell>{t.status ?? "—"}</TableCell>
-                            <TableCell className="text-right">
-                              {formatCentsAsDollars(t.amount)}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              </div>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             ) : null}
           </div>
 
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setOpenMemberId(null)}
-            >
+            <Button type="button" variant="outline" onClick={() => setOpenMemberId(null)}>
               Close
             </Button>
           </DialogFooter>
@@ -309,52 +336,4 @@ export function MemberAccountAuditPage() {
       </Dialog>
     </div>
   );
-}
-
-/**
- * Hook backing the tournament-winnings audit UI.
- *
- * Fetches seasons to drive the season selector and manages the selected season id.
- * The audit data itself is fetched in the component via `useQuery` so it can be skipped until a season is selected.
- */
-function useMemberAccountAuditPage() {
-  const seasonsResult = useQuery(api.functions.seasons.getSeasons, {
-    options: {
-      pagination: { limit: 50 },
-      sort: { sortBy: "year", sortOrder: "desc" },
-    },
-  });
-
-  const seasons = useMemo(() => {
-    const list = normalizeList<
-      { _id: Id<"seasons">; year: number; number: number },
-      "seasons"
-    >(seasonsResult as unknown, "seasons");
-
-    return [...list].sort((a, b) => {
-      if (a.year !== b.year) return b.year - a.year;
-      return b.number - a.number;
-    });
-  }, [seasonsResult]);
-
-  const seasonsLoaded = seasonsResult !== undefined;
-
-  const [seasonId, setSeasonId] = useState<Id<"seasons"> | null>(() => {
-    const first = seasons[0]?._id;
-    return first ?? null;
-  });
-
-  const effectiveSeasonId = useMemo(() => {
-    if (!seasonsLoaded) return null;
-    if (!seasonId) return seasons[0]?._id ?? null;
-    const stillExists = seasons.some((s) => s._id === seasonId);
-    return stillExists ? seasonId : (seasons[0]?._id ?? null);
-  }, [seasonId, seasons, seasonsLoaded]);
-
-  return {
-    seasonsLoaded,
-    seasons,
-    seasonId: effectiveSeasonId,
-    setSeasonId,
-  };
 }

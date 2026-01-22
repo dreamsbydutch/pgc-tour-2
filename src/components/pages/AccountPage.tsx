@@ -130,7 +130,7 @@ export function AccountPage() {
                       value={vm.withdrawAmount}
                       onChange={(e) => vm.setWithdrawAmount(e.target.value)}
                       className="w-full rounded-md border px-3 py-2 text-sm"
-                      placeholder="Amount (CAD)"
+                      placeholder="Amount (CAD, e.g. 25.00)"
                       inputMode="decimal"
                     />
                   </div>
@@ -142,7 +142,7 @@ export function AccountPage() {
                         vm.setLeagueDonationAmount(e.target.value)
                       }
                       className="w-full rounded-md border px-3 py-2 text-sm"
-                      placeholder="PGC Donation (CAD)"
+                      placeholder="PGC Donation (CAD, e.g. 10.00)"
                       inputMode="decimal"
                     />
                   </div>
@@ -518,7 +518,9 @@ function useAccountPage() {
   function dollarsToCents(input: string): number | null {
     const trimmed = input.trim();
     if (!trimmed) return 0;
-    const n = Number(trimmed);
+    const cleaned = trimmed.replace(/[$,\s]/g, "");
+    if (!/^\d+(?:\.\d{1,2})?$/.test(cleaned)) return null;
+    const n = Number(cleaned);
     if (!Number.isFinite(n)) return null;
     if (n < 0) return null;
     return Math.round(n * 100);
@@ -546,7 +548,7 @@ function useAccountPage() {
       leagueCents === null ||
       withdrawCents === null
     ) {
-      setSubmitError("Enter valid amounts");
+      setSubmitError("Enter valid amounts (e.g. 25.00)");
       return;
     }
 
@@ -595,21 +597,21 @@ function useAccountPage() {
         await createMyDonationTransaction({
           seasonId: seasonIdForTransactions,
           donationType: "CharityDonation",
-          amountCents: charityCents,
+          amountDollars: charityDonationAmount,
         });
       }
       if (leagueCents > 0) {
         await createMyDonationTransaction({
           seasonId: seasonIdForTransactions,
           donationType: "LeagueDonation",
-          amountCents: leagueCents,
+          amountDollars: leagueDonationAmount,
         });
       }
       if (withdrawalTotal > 0) {
         await createMyWithdrawalRequest({
           seasonId: seasonIdForTransactions,
           payoutEmail,
-          amountCents: withdrawalTotal,
+          amountDollars: withdrawAmount,
         });
       }
 

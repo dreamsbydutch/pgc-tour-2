@@ -34,13 +34,13 @@ export const ruleList: {
       {
         ruleText: "Elevated Events",
         details: [
-          "Arnold Palmer Invitational, The Players Championship, RBC Heritage, Truist Championship, The Memorial Tournament, Travelers Championship",
+          "The Genesis Invitational, Arnold Palmer Invitational, The Players Championship, RBC Heritage, The Memorial Tournament, Travelers Championship",
         ],
       },
       {
         ruleText: "Standard Events",
         details: [
-          "Waste Management Open, The Genesis Invitational, Texas Children's Houston Open, RBC Canadian Open, Rocket Mortgage Classic, Genesis Scottish Open",
+          "Waste Management Open, Texas Children's Houston Open, Truist Championship, RBC Canadian Open, Rocket Mortgage Classic, Genesis Scottish Open",
         ],
       },
       {
@@ -69,7 +69,7 @@ export const ruleList: {
       },
       {
         ruleText:
-          "If a golfer withdraws prior to hitting their first tee shot of the tournament and remains on your roster when the tournament begins, that golfer will be replaced with the highest available world-ranked golfer from their group.",
+          "If a golfer withdraws prior to hitting their first tee shot of the tournament and remains on your roster when the tournament begins, that golfer will be replaced with the best available golfer from the same group, based on world ranking.",
       },
     ],
   },
@@ -88,15 +88,15 @@ export const ruleList: {
       },
       {
         ruleText:
-          "Teams must have 5 golfers make the weekend cut or that team will be cut from the PGC tournament.",
+          "Teams must have 5 golfers make the weekend PGA cut or that team will be cut from the PGC tournament.",
       },
       {
         ruleText:
-          "Any golfer that withdraws from the tournament prior to cut day will receive a score of 8-over par until cut day. Any golfer that withdraws after cut day receives a score of 8-over par if they do not finish the round and then are considered CUT on the days they do not participate at all.",
+          "Any golfer that withdraws from the tournament prior to cut day will receive a score of 8-over par for any round they did not complete up until cut day. Any golfer that withdraws after cut day receives a score of 8-over par for any incomplete rounds and then are considered CUT on the days they do not participate at all.",
       },
       {
         ruleText:
-          "After each tournament throughout the season, the top 35 finishers will receive PGC Cup Points. Each tournament will distribute points based on the tournament's tier.",
+          "After each tournament throughout the season, the top 35 finishers will receive PGC Playoff Points. Each tournament will distribute points based on the tournament's tier.",
       },
     ],
   },
@@ -109,7 +109,7 @@ export const ruleList: {
       },
       {
         ruleText:
-          "The winner of the PGC Gold Playoff will be crowned PGC Champion for the year. The PGC Silver Playoff is for bonus money and bragging rights.",
+          "The winner of the PGC Gold Playoff will be crowned PGC Champion for the year. The PGC Silver Playoff is just for bonus money and bragging rights.",
       },
       {
         ruleText:
@@ -117,11 +117,11 @@ export const ruleList: {
       },
       {
         ruleText:
-          "Players that qualify will pick their 10-golfer team for the entire three-week playoffs prior to the first event.",
+          "Players that qualify will pick their 10-golfer team for the entire three-week tournament prior to the first event.",
       },
       {
         ruleText:
-          "Each team will start the playoffs with strokes based on their position in the PGC standings. Scores will then carry over throughout the three playoff tournaments.",
+          "Each team will start the playoffs with a set number of strokes based on their point total in the PGC standings.",
       },
       {
         ruleText:
@@ -147,6 +147,10 @@ export const ruleList: {
       {
         ruleText:
           "Payout structures for each tournament are based on the tournament's tier and will be finalized once sign-ups are completed.",
+      },
+      {
+        ruleText:
+          "Once the season has completed you are able to request your winnings via e-transfer within your member page. The member page can be found by clicking on your profile icon on the nav bar.",
       },
     ],
   },

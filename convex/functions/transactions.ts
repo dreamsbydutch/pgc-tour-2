@@ -146,6 +146,47 @@ function requirePositiveIntegerCents(value: number, label: string) {
   return cents;
 }
 
+function requirePositiveCentsFromDollarsString(value: string, label: string) {
+  const trimmed = value.trim();
+  const cleaned = trimmed.replace(/[$,\s]/g, "");
+  if (!cleaned) throw new Error(`${label} is required`);
+  if (!/^\d+(?:\.\d{1,2})?$/.test(cleaned)) {
+    throw new Error(`${label} must be a dollar amount like 25.00`);
+  }
+
+  const [dollarsPart, centsPartRaw] = cleaned.split(".");
+  const dollars = Number.parseInt(dollarsPart, 10);
+  const centsPart = (centsPartRaw ?? "").padEnd(2, "0");
+  const cents = centsPart ? Number.parseInt(centsPart, 10) : 0;
+
+  if (!Number.isFinite(dollars) || dollars < 0) {
+    throw new Error(`${label} must be a dollar amount like 25.00`);
+  }
+  if (!Number.isFinite(cents) || cents < 0 || cents > 99) {
+    throw new Error(`${label} must be a dollar amount like 25.00`);
+  }
+
+  const total = dollars * 100 + cents;
+  if (!Number.isFinite(total) || total <= 0) {
+    throw new Error(`${label} must be greater than 0`);
+  }
+  return total;
+}
+
+function requirePositiveCents(args: {
+  amountCents?: number;
+  amountDollars?: string;
+}) {
+  const amountDollars = args.amountDollars?.trim();
+  if (amountDollars) {
+    return requirePositiveCentsFromDollarsString(amountDollars, "Amount");
+  }
+  if (typeof args.amountCents === "number") {
+    return requirePositiveIntegerCents(args.amountCents, "Amount");
+  }
+  throw new Error("Amount is required");
+}
+
 function requireValidEmail(value: string, label: string) {
   const trimmed = value.trim();
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -224,12 +265,16 @@ export const createMyDonationTransaction = mutation({
       v.literal("LeagueDonation"),
       v.literal("CharityDonation"),
     ),
-    amountCents: v.number(),
+    amountCents: v.optional(v.number()),
+    amountDollars: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const member = await getActingMember(ctx);
 
-    const amountCents = requirePositiveIntegerCents(args.amountCents, "Amount");
+    const amountCents = requirePositiveCents({
+      amountCents: args.amountCents,
+      amountDollars: args.amountDollars,
+    });
     const signedAmount = toSignedAmountCents({
       transactionType: args.donationType,
       amountCents,
@@ -268,13 +313,17 @@ export const createMyWithdrawalRequest = mutation({
   args: {
     seasonId: v.id("seasons"),
     payoutEmail: v.string(),
-    amountCents: v.number(),
+    amountCents: v.optional(v.number()),
+    amountDollars: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const member = await getActingMember(ctx);
 
     const payoutEmail = requireValidEmail(args.payoutEmail, "E-transfer email");
-    const amountCents = requirePositiveIntegerCents(args.amountCents, "Amount");
+    const amountCents = requirePositiveCents({
+      amountCents: args.amountCents,
+      amountDollars: args.amountDollars,
+    });
     const signedAmount = toSignedAmountCents({
       transactionType: "Withdrawal",
       amountCents,
@@ -513,7 +562,7 @@ export const adminGetMemberAccountAudit = query({
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 
-    const sumMode = args.options?.sumMode ?? "completed";
+    const sumMode = args.options?.sumMode ?? "all";
 
     const members = await ctx.db.query("members").collect();
 
@@ -565,9 +614,47 @@ export const adminGetMemberAccountAudit = query({
       transactions: Array<Doc<"transactions">>;
     }>;
 
+    const outstandingBalances = [] as Array<{
+      member: {
+        _id: Id<"members">;
+        email: string;
+        firstname?: string;
+        lastname?: string;
+        role: string;
+        account: number;
+        clerkId?: string;
+      };
+      accountCents: number;
+      includedSumCents: number;
+      deltaCents: number;
+      isMismatch: boolean;
+    }>;
+
     for (const member of members) {
       const includedSumCents = includedByMember.get(member._id)?.sumCents ?? 0;
-      if (includedSumCents === member.account) continue;
+
+      const deltaCents = member.account - includedSumCents;
+      const isMismatch = deltaCents !== 0;
+
+      if (member.account !== 0) {
+        outstandingBalances.push({
+          member: {
+            _id: member._id,
+            email: member.email,
+            firstname: member.firstname,
+            lastname: member.lastname,
+            role: member.role,
+            account: member.account,
+            clerkId: member.clerkId,
+          },
+          accountCents: member.account,
+          includedSumCents,
+          deltaCents,
+          isMismatch,
+        });
+      }
+
+      if (!isMismatch) continue;
 
       const allTransactions =
         sumMode === "all"
@@ -595,18 +682,88 @@ export const adminGetMemberAccountAudit = query({
         },
         accountCents: member.account,
         includedSumCents,
-        deltaCents: member.account - includedSumCents,
+        deltaCents,
         transactions: transactionsSorted,
       });
     }
 
     mismatches.sort((a, b) => Math.abs(b.deltaCents) - Math.abs(a.deltaCents));
 
+    outstandingBalances.sort(
+      (a, b) => Math.abs(b.accountCents) - Math.abs(a.accountCents),
+    );
+
     return {
       sumMode,
       memberCount: members.length,
       mismatchCount: mismatches.length,
       mismatches,
+      outstandingCount: outstandingBalances.length,
+      outstandingBalances,
+    };
+  },
+});
+
+export const adminGetMemberLedgerForAudit = query({
+  args: {
+    memberId: v.id("members"),
+    options: v.optional(
+      v.object({
+        sumMode: v.optional(v.union(v.literal("completed"), v.literal("all"))),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const sumMode = args.options?.sumMode ?? "all";
+
+    const member = await ctx.db.get(args.memberId);
+    if (!member) throw new Error("Member not found");
+
+    const seasons = await ctx.db.query("seasons").collect();
+    const seasonLabelById = new Map<Id<"seasons">, string>();
+    for (const s of seasons) {
+      seasonLabelById.set(s._id, `${s.year} #${s.number}`);
+    }
+
+    const transactions = await ctx.db
+      .query("transactions")
+      .withIndex("by_member", (q) => q.eq("memberId", args.memberId))
+      .collect();
+
+    const transactionsSorted = [...transactions].sort((a, b) => {
+      const aTime = a.processedAt ?? a._creationTime ?? 0;
+      const bTime = b.processedAt ?? b._creationTime ?? 0;
+      return bTime - aTime;
+    });
+
+    const includedSumCents = transactions.reduce((sum, t) => {
+      if (sumMode === "completed" && t.status !== "completed") return sum;
+      return sum + t.amount;
+    }, 0);
+
+    const accountCents = member.account;
+    const deltaCents = accountCents - includedSumCents;
+
+    return {
+      sumMode,
+      member: {
+        _id: member._id,
+        email: member.email,
+        firstname: member.firstname,
+        lastname: member.lastname,
+        role: member.role,
+        account: member.account,
+        clerkId: member.clerkId,
+      },
+      accountCents,
+      includedSumCents,
+      deltaCents,
+      transactions: transactionsSorted.map((t) => ({
+        ...t,
+        seasonLabel: seasonLabelById.get(t.seasonId) ?? String(t.seasonId),
+      })),
     };
   },
 });

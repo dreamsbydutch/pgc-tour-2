@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQuery } from "convex/react";
 
@@ -346,6 +346,10 @@ function useTransactionsManager() {
     "cancelled",
   ];
 
+  const DEFAULT_AMOUNT_CENTS = "10000";
+  const DEFAULT_TRANSACTION_TYPE: TransactionType = "Payment";
+  const DEFAULT_STATUS: TransactionStatus = "completed";
+
   const msToDateTimeLocal = (ms: number | undefined): string => {
     if (!ms) return "";
     const d = new Date(ms);
@@ -487,11 +491,48 @@ function useTransactionsManager() {
     transactionId: "",
     memberId: "",
     seasonId: "",
-    amountCents: "",
-    transactionType: "",
-    status: "",
+    amountCents: DEFAULT_AMOUNT_CENTS,
+    transactionType: DEFAULT_TRANSACTION_TYPE,
+    status: DEFAULT_STATUS,
     processedAt: "",
   });
+
+  const isEditing = Boolean(form.transactionId);
+
+  useEffect(() => {
+    if (isEditing) return;
+    const defaultSeasonId = seasons[0]?._id ?? "";
+    if (!defaultSeasonId) return;
+
+    setForm((prev) => {
+      if (prev.transactionId) return prev;
+
+      let changed = false;
+      const next: TransactionFormState = { ...prev };
+
+      if (!next.seasonId) {
+        next.seasonId = defaultSeasonId;
+        changed = true;
+      }
+
+      if (!next.amountCents) {
+        next.amountCents = DEFAULT_AMOUNT_CENTS;
+        changed = true;
+      }
+
+      if (!next.transactionType) {
+        next.transactionType = DEFAULT_TRANSACTION_TYPE;
+        changed = true;
+      }
+
+      if (!next.status) {
+        next.status = DEFAULT_STATUS;
+        changed = true;
+      }
+
+      return changed ? next : prev;
+    });
+  }, [DEFAULT_AMOUNT_CENTS, DEFAULT_STATUS, DEFAULT_TRANSACTION_TYPE, isEditing, seasons]);
 
   const [memberSearch, setMemberSearch] = useState("");
   const filteredMembers = useMemo(() => {
@@ -510,8 +551,6 @@ function useTransactionsManager() {
       );
     });
   }, [members, memberSearch]);
-
-  const isEditing = Boolean(form.transactionId);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -535,13 +574,14 @@ function useTransactionsManager() {
   };
 
   const resetForm = () => {
+    const defaultSeasonId = seasons[0]?._id ?? "";
     setForm({
       transactionId: "",
       memberId: "",
-      seasonId: "",
-      amountCents: "",
-      transactionType: "",
-      status: "",
+      seasonId: defaultSeasonId,
+      amountCents: DEFAULT_AMOUNT_CENTS,
+      transactionType: DEFAULT_TRANSACTION_TYPE,
+      status: DEFAULT_STATUS,
       processedAt: "",
     });
     setError(null);

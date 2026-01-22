@@ -84,8 +84,13 @@ function validateMemberData(data: {
   );
   if (displayNameErr) errors.push(displayNameErr);
 
-  const accountErr = validators.positiveNumber(data.account, "Account balance");
-  if (accountErr) errors.push(accountErr);
+  if (data.account !== undefined) {
+    if (!Number.isFinite(data.account)) {
+      errors.push("Account balance must be a finite number of cents");
+    } else if (Math.trunc(data.account) !== data.account) {
+      errors.push("Account balance must be an integer number of cents");
+    }
+  }
 
   if (data.friends && data.friends.length > 500) {
     errors.push("Too many friends (maximum 500)");
