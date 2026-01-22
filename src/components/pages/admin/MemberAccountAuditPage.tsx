@@ -44,9 +44,12 @@ export function MemberAccountAuditPage() {
   const [sumMode, setSumMode] = useState<"completed" | "all">("all");
   const [openMemberId, setOpenMemberId] = useState<Id<"members"> | null>(null);
 
-  const audit = useQuery(api.functions.transactions.adminGetMemberAccountAudit, {
-    options: { sumMode },
-  });
+  const audit = useQuery(
+    api.functions.transactions.adminGetMemberAccountAudit,
+    {
+      options: { sumMode },
+    },
+  );
 
   const mismatches = audit?.mismatches ?? [];
   const outstanding = audit?.outstandingBalances ?? [];
@@ -94,14 +97,17 @@ export function MemberAccountAuditPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="text-sm text-muted-foreground">
-            {audit.mismatchCount} discrepancy(ies) · {audit.outstandingCount} outstanding · {audit.memberCount} total
+            {audit.mismatchCount} discrepancy(ies) · {audit.outstandingCount}{" "}
+            outstanding · {audit.memberCount} total
           </div>
 
           <div className="flex items-center gap-2">
             <div className="text-sm font-medium">Sum mode</div>
             <select
               value={sumMode}
-              onChange={(e) => setSumMode(e.target.value as "completed" | "all")}
+              onChange={(e) =>
+                setSumMode(e.target.value as "completed" | "all")
+              }
               className={ADMIN_FORM_CONTROL_CLASSNAME}
             >
               <option value="all">All transactions</option>
@@ -116,7 +122,8 @@ export function MemberAccountAuditPage() {
           <CardHeader>
             <CardTitle>No discrepancies</CardTitle>
             <CardDescription>
-              No members found where the stored account differs from the transaction sum.
+              No members found where the stored account differs from the
+              transaction sum.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -125,7 +132,8 @@ export function MemberAccountAuditPage() {
           <CardHeader>
             <CardTitle>Discrepancies</CardTitle>
             <CardDescription>
-              Members where stored account balance does not match the transaction sum.
+              Members where stored account balance does not match the
+              transaction sum.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -200,7 +208,9 @@ export function MemberAccountAuditPage() {
         <Card>
           <CardHeader>
             <CardTitle>Outstanding balances</CardTitle>
-            <CardDescription>Members with a non-zero stored account balance.</CardDescription>
+            <CardDescription>
+              Members with a non-zero stored account balance.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
@@ -271,13 +281,20 @@ export function MemberAccountAuditPage() {
         </Card>
       )}
 
-      <Dialog open={openMemberId !== null} onOpenChange={() => setOpenMemberId(null)}>
+      <Dialog
+        open={openMemberId !== null}
+        onOpenChange={() => setOpenMemberId(null)}
+      >
         <DialogContent className="max-w-4xl">
           <DialogHeader>
-            <DialogTitle>{openLabel ? `${openLabel} — Ledger` : "Ledger"}</DialogTitle>
+            <DialogTitle>
+              {openLabel ? `${openLabel} — Ledger` : "Ledger"}
+            </DialogTitle>
             {ledger ? (
               <DialogDescription>
-                Account {formatCentsAsDollars(ledger.accountCents)} · Txn sum {formatCentsAsDollars(ledger.includedSumCents)} · Delta {formatCentsAsDollars(ledger.deltaCents)}
+                Account {formatCentsAsDollars(ledger.accountCents)} · Txn sum{" "}
+                {formatCentsAsDollars(ledger.includedSumCents)} · Delta{" "}
+                {formatCentsAsDollars(ledger.deltaCents)}
               </DialogDescription>
             ) : (
               <DialogDescription>Loading transactions…</DialogDescription>
@@ -328,7 +345,11 @@ export function MemberAccountAuditPage() {
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpenMemberId(null)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpenMemberId(null)}
+            >
               Close
             </Button>
           </DialogFooter>

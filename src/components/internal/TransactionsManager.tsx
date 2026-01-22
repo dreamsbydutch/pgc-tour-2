@@ -532,7 +532,13 @@ function useTransactionsManager() {
 
       return changed ? next : prev;
     });
-  }, [DEFAULT_AMOUNT_CENTS, DEFAULT_STATUS, DEFAULT_TRANSACTION_TYPE, isEditing, seasons]);
+  }, [
+    DEFAULT_AMOUNT_CENTS,
+    DEFAULT_STATUS,
+    DEFAULT_TRANSACTION_TYPE,
+    isEditing,
+    seasons,
+  ]);
 
   const [memberSearch, setMemberSearch] = useState("");
   const filteredMembers = useMemo(() => {
