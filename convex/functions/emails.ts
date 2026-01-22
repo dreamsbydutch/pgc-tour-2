@@ -195,7 +195,7 @@ async function sendGroupsEmailImpl(args: {
 
   const apiKey = getBrevoApiKey();
   const templateId = parseNumericEnv("BREVO_GROUPS_FINALIZED_TEMPLATE_ID");
-  const customBlurb = (args.customBlurb ?? "").trim();
+  const customBlurb = (args.customBlurb ?? "").trim().replace(/\n/g, "<br>");
 
   const baseUrl = getAppBaseUrl({ allowLocalhostFallback: false });
   const nextUpUrl = buildTournamentUrl({
@@ -640,7 +640,7 @@ export const sendGroupsEmailTest: ReturnType<typeof action> = action({
 
     const tournament = context.tournament as any;
 
-    const customBlurb = (args.customBlurb ?? "").trim();
+    const customBlurb = (args.customBlurb ?? "").trim().replace(/\n/g, "<br>");
 
     const baseUrl = getAppBaseUrl({ allowLocalhostFallback: true });
     const nextUpUrl = buildTournamentUrl({
@@ -787,7 +787,7 @@ export const sendSeasonStartEmailTest: ReturnType<typeof action> = action({
     const templateId = parseNumericEnv("BREVO_SEASON_START_TEMPLATE_ID");
     const testTo = getBrevoTestTo();
 
-    const customBlurb = (args.customBlurb ?? "").trim();
+    const customBlurb = (args.customBlurb ?? "").trim().replace(/\n/g, "<br>");
     const reigningChampion = (args.reigningChampion ?? "").trim();
 
     const defaultClubhouseUrl = getAppBaseUrl({ allowLocalhostFallback: true });
@@ -863,7 +863,7 @@ export const adminSendSeasonStartEmailToActiveMembers: ReturnType<
     const apiKey = getBrevoApiKey();
     const templateId = parseNumericEnv("BREVO_SEASON_START_TEMPLATE_ID");
 
-    const customBlurb = (args.customBlurb ?? "").trim();
+    const customBlurb = (args.customBlurb ?? "").trim().replace(/\n/g, "<br>");
     const reigningChampion = (args.reigningChampion ?? "").trim();
 
     const defaultClubhouseUrl = getAppBaseUrl({
