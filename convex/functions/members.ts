@@ -1009,8 +1009,10 @@ export const updateMembers = mutation({
     await ctx.db.patch(args.memberId, updateData);
 
     const didNameChange =
-      (updateData.firstname !== undefined && updateData.firstname !== member.firstname) ||
-      (updateData.lastname !== undefined && updateData.lastname !== member.lastname);
+      (updateData.firstname !== undefined &&
+        updateData.firstname !== member.firstname) ||
+      (updateData.lastname !== undefined &&
+        updateData.lastname !== member.lastname);
 
     if (didNameChange) {
       const effectiveEmail = updateData.email ?? member.email;
@@ -1020,7 +1022,9 @@ export const updateMembers = mutation({
         (updateData as any).displayName ?? (member as any).displayName;
 
       const nextTourCardDisplayName = generateDisplayName(
-        typeof effectiveDisplayName === "string" ? effectiveDisplayName : undefined,
+        typeof effectiveDisplayName === "string"
+          ? effectiveDisplayName
+          : undefined,
         effectiveFirst,
         effectiveLast,
         effectiveEmail,
@@ -1034,7 +1038,9 @@ export const updateMembers = mutation({
 
       const currentSeason =
         seasonsForYear.length > 0
-          ? seasonsForYear.reduce((best, s) => (s.number > best.number ? s : best))
+          ? seasonsForYear.reduce((best, s) =>
+              s.number > best.number ? s : best,
+            )
           : null;
 
       const tourCardsToUpdate = currentSeason
