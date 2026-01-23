@@ -1008,6 +1008,66 @@ export const updateMembers = mutation({
 
     await ctx.db.patch(args.memberId, updateData);
 
+    const didNameChange =
+      (updateData.firstname !== undefined && updateData.firstname !== member.firstname) ||
+      (updateData.lastname !== undefined && updateData.lastname !== member.lastname);
+
+    if (didNameChange) {
+      const effectiveEmail = updateData.email ?? member.email;
+      const effectiveFirst = updateData.firstname ?? member.firstname;
+      const effectiveLast = updateData.lastname ?? member.lastname;
+      const effectiveDisplayName =
+        (updateData as any).displayName ?? (member as any).displayName;
+
+      const nextTourCardDisplayName = generateDisplayName(
+        typeof effectiveDisplayName === "string" ? effectiveDisplayName : undefined,
+        effectiveFirst,
+        effectiveLast,
+        effectiveEmail,
+      );
+
+      const currentYear = new Date().getFullYear();
+      const seasonsForYear = await ctx.db
+        .query("seasons")
+        .withIndex("by_year", (q) => q.eq("year", currentYear))
+        .collect();
+
+      const currentSeason =
+        seasonsForYear.length > 0
+          ? seasonsForYear.reduce((best, s) => (s.number > best.number ? s : best))
+          : null;
+
+      const tourCardsToUpdate = currentSeason
+        ? await ctx.db
+            .query("tourCards")
+            .withIndex("by_member_season", (q) =>
+              q.eq("memberId", args.memberId).eq("seasonId", currentSeason._id),
+            )
+            .collect()
+        : await ctx.db
+            .query("tourCards")
+            .withIndex("by_member", (q) => q.eq("memberId", args.memberId))
+            .collect();
+
+      if (tourCardsToUpdate.length > 0) {
+        const candidates = currentSeason
+          ? tourCardsToUpdate
+          : [
+              tourCardsToUpdate.reduce((best, tc) =>
+                tc._creationTime > best._creationTime ? tc : best,
+              ),
+            ];
+
+        for (const tc of candidates) {
+          if (tc.displayName === nextTourCardDisplayName) continue;
+          await ctx.db.patch(tc._id, {
+            displayName: nextTourCardDisplayName,
+            updatedAt: Date.now(),
+          });
+        }
+      }
+    }
+
     const changes = computeChanges(member, updateData);
     if (Object.keys(changes).length > 0) {
       await logAudit(ctx, {
