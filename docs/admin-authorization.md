@@ -115,13 +115,6 @@ Users can only access their own resources. Admins can access all.
 
 ### System Tables (Admin Only Writes)
 
-#### `settings`
-
-- **Create**: Admin only
-- **Read**: Public settings (isPublic: true) anyone, private settings admin only
-- **Update**: Admin only
-- **Delete**: Admin only
-
 #### `auditLogs`
 
 - **Create**: System only (automated)

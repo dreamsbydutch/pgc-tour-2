@@ -27,8 +27,14 @@ Convex concepts to know:
   - Some tables include legacy/back-compat fields for historical data.
 
 - `convex/functions/*.ts`
-  - Domain modules: `members`, `seasons`, `tours`, `tiers`, `courses`, `tournaments`, `teams`, `golfers`, `tourCards`.
+  - Domain modules: `members`, `seasons`, `tours`, `tiers`, `courses`, `tournaments`, `teams`, `golfers`, `tourCards`, `transactions`.
   - Each module generally follows a **single CRUD API per resource** with a rich `options` object.
+
+- `convex/functions/cronJobs.ts`
+  - Scheduled job implementations (DataGolf live sync, create groups, update teams, recompute standings) plus the admin cron runner.
+
+- `convex/functions/emails.ts`
+  - Email workflows and Brevo integration helpers.
 
 - `convex/functions/datagolf.ts`
   - DataGolf API integration.
@@ -92,7 +98,6 @@ Convex concepts to know:
 - `transactions`: ledger of account movements (amount in cents)
 - `pushSubscriptions`: web push endpoints keyed to a member
 - `auditLogs`: change tracking
-- `settings`: stringified JSON config values
 
 ---
 
@@ -173,17 +178,9 @@ This keeps the main query/mutation handlers readable, and makes it easier to add
 
 **Convention: No duplicate function definitions across files**
 
-- **`convex/functions.ts`** = canonical location for top-level backward-compatibility shims (e.g., `getMember`)
-- **`convex/functions/index.ts`** = re-exports only (e.g., `export * as tourCards from "./tourCards"`)
 - **`convex/functions/*.ts`** = domain modules with primary CRUD functions
 
-**Do NOT duplicate function definitions across files.** If you need a compatibility shim:
-
-1. Add it to `convex/functions.ts` with clear JSDoc explaining the old path and preferred new path
-2. Do NOT add a duplicate export in any `convex/functions/*.ts` file
-3. Update `convex/functions/index.ts` header comment if needed, but keep it as re-exports only
-
-This prevents maintenance drift where the same function exists in multiple files but could diverge over time.
+**Do NOT duplicate function definitions across files.** When a function needs to move/rename, prefer a coordinated change (update the callers + docs) instead of leaving long-lived “shim” exports.
 
 ---
 
