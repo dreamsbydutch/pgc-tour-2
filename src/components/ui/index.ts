@@ -8,7 +8,6 @@ export * from "./admin-row-actions";
 export * from "./button";
 export * from "./card";
 export * from "./dialog";
-export * from "./dropdown-row";
 export * from "./dropdown";
 export * from "./hard-gate-signed-in";
 export * from "./field";

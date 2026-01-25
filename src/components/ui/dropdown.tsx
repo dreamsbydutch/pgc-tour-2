@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
-import { cn } from "@/lib";
-import { Skeleton } from "./skeleton";
+import type { DropdownItem, DropdownSection } from "@/lib/types";
+import { cn, isNonEmptyString } from "@/lib";
 
 /**
  * Lightweight dropdown container (trigger + floating content).
@@ -16,7 +16,11 @@ import { Skeleton } from "./skeleton";
  * @param props.open - Whether the dropdown is expanded.
  * @param props.onOpenChange - Called to request open-state changes.
  * @param props.triggerContent - The trigger button content.
- * @param props.children - The dropdown panel content.
+ * @param props.header - Optional content rendered at the top of the panel.
+ * @param props.items - Optional flat list of selectable rows.
+ * @param props.sections - Optional grouped list of selectable rows.
+ * @param props.emptyState - Optional empty-state content when no rows exist.
+ * @param props.children - Optional custom panel content (used when no rows are provided).
  * @returns A trigger button plus an optional floating panel.
  */
 export function Dropdown({
@@ -26,6 +30,10 @@ export function Dropdown({
   triggerContent,
   triggerClassName,
   contentClassName,
+  header,
+  items,
+  sections,
+  emptyState,
   children,
 }: {
   open: boolean;
@@ -34,9 +42,26 @@ export function Dropdown({
   triggerContent: ReactNode;
   triggerClassName?: string;
   contentClassName?: string;
-  children: ReactNode;
+  header?: ReactNode;
+  items?: DropdownItem[];
+  sections?: DropdownSection[];
+  emptyState?: ReactNode;
+  children?: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+
+  const resolvedSections = useMemo(() => {
+    if (sections && sections.length > 0) return sections;
+    if (items && items.length > 0) {
+      return [{ key: "items", items } satisfies DropdownSection];
+    }
+    return null;
+  }, [items, sections]);
+
+  const rowCount = useMemo(() => {
+    if (!resolvedSections) return 0;
+    return resolvedSections.reduce((acc, section) => acc + section.items.length, 0);
+  }, [resolvedSections]);
 
   useEffect(() => {
     if (!open) return;
@@ -75,7 +100,37 @@ export function Dropdown({
             contentClassName,
           )}
         >
-          {children}
+          {header}
+
+          {resolvedSections ? (
+            rowCount > 0 ? (
+              <div className="max-h-72 overflow-y-auto">
+                {resolvedSections.map((section) => (
+                  <div key={section.key}>
+                    {isNonEmptyString(section.title) && (
+                      <div className="bg-gray-700 px-4 py-1 text-xs font-semibold uppercase tracking-wide text-gray-50">
+                        {section.title}
+                      </div>
+                    )}
+                    {section.items.map((item) => (
+                      <DropdownRow
+                        key={item.key}
+                        item={item}
+                        onSelect={() => {
+                          onOpenChange(false);
+                          item.onSelect();
+                        }}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              emptyState ?? null
+            )
+          ) : (
+            children
+          )}
         </div>
       )}
     </div>
@@ -83,8 +138,34 @@ export function Dropdown({
 }
 
 /**
- * Loading state for the `Dropdown` trigger.
+ * Standardized row/button for dropdown lists with optional icon, title, and subtitle.
  */
-export function DropdownSkeleton({ className }: { className?: string }) {
-  return <Skeleton className={cn("h-8 w-40 rounded-md", className)} />;
+function DropdownRow({
+  item,
+  onSelect,
+}: {
+  item: DropdownItem;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "flex w-full items-center gap-2 px-4 py-2 text-left text-sm hover:bg-gray-50",
+        item.isActive && "bg-blue-50",
+        item.className,
+      )}
+    >
+      {isNonEmptyString(item.iconUrl) && (
+        <img src={item.iconUrl} alt="" className="h-6 w-6 object-contain" />
+      )}
+      <div>
+        <div className="font-medium">{item.title}</div>
+        {isNonEmptyString(item.subtitle) && (
+          <div className="text-xs text-gray-500">{item.subtitle}</div>
+        )}
+      </div>
+    </button>
+  );
 }

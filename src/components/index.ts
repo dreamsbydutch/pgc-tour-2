@@ -28,8 +28,7 @@ export {
   DialogHeader,
   DialogTitle,
 } from "./ui/dialog";
-export { Dropdown, DropdownSkeleton } from "./ui/dropdown";
-export { DropdownRow, DropdownRowSkeleton } from "./ui/dropdown-row";
+export { Dropdown } from "./ui/dropdown";
 export { FormFeedback } from "./ui/form-feedback";
 export { Skeleton, SVGSkeleton } from "./ui/skeleton";
 export {

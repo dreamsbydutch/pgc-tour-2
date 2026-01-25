@@ -241,6 +241,28 @@ export interface NavigationItemConfig {
   label: string;
 }
 
+/**
+ * Generic dropdown list item used by the `Dropdown` UI primitive.
+ */
+export type DropdownItem = {
+  key: string;
+  title: string;
+  subtitle?: string;
+  iconUrl?: string | null;
+  isActive?: boolean;
+  onSelect: () => void;
+  className?: string;
+};
+
+/**
+ * Optional grouping for dropdown lists.
+ */
+export type DropdownSection = {
+  key: string;
+  title?: string;
+  items: DropdownItem[];
+};
+
 export interface NavigationError {
   code: string;
   message: string;

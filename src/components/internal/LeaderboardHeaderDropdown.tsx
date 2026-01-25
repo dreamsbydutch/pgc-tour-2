@@ -7,8 +7,8 @@ import type {
   LeaderboardHeaderDropdownProps,
   LeaderboardHeaderGroupMode,
 } from "@/lib/types";
-import { DropdownRow } from "@/ui";
-import { Dropdown, DropdownSkeleton } from "@/ui";
+import type { DropdownItem, DropdownSection } from "@/lib/types";
+import { Dropdown, Skeleton } from "@/ui";
 
 /**
  * LeaderboardHeaderDropdown Component
@@ -50,6 +50,38 @@ function LeaderboardHeaderDropdownLoaded(
     handleTournamentSelect,
   } = useLeaderboardHeaderDropdown(props);
 
+  const scheduleItems: DropdownItem[] = useMemo(() => {
+    return tournamentsForYear.map((tournament) => ({
+      key: tournament._id,
+      title: tournament.name,
+      subtitle: formatTournamentDateRange(
+        tournament.startDate,
+        tournament.endDate,
+      ),
+      iconUrl: tournament.logoUrl ?? null,
+      isActive: tournament._id === props.activeTourney._id,
+      onSelect: () => handleTournamentSelect(tournament._id),
+    }));
+  }, [handleTournamentSelect, props.activeTourney._id, tournamentsForYear]);
+
+  const tierSections: DropdownSection[] = useMemo(() => {
+    return tierGroups.map(([tierName, tierTournaments]) => ({
+      key: tierName,
+      title: tierName,
+      items: tierTournaments.map((tournament) => ({
+        key: tournament._id,
+        title: tournament.name,
+        subtitle: formatTournamentDateRange(
+          tournament.startDate,
+          tournament.endDate,
+        ),
+        iconUrl: tournament.logoUrl ?? null,
+        isActive: tournament._id === props.activeTourney._id,
+        onSelect: () => handleTournamentSelect(tournament._id),
+      })),
+    }));
+  }, [handleTournamentSelect, props.activeTourney._id, tierGroups]);
+
   return (
     <Dropdown
       open={isOpen}
@@ -63,102 +95,65 @@ function LeaderboardHeaderDropdownLoaded(
         </>
       }
       contentClassName="w-72"
-    >
-      <div className="border-b border-gray-200 px-3 py-2 text-xs uppercase tracking-wide text-gray-500">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 text-[11px] font-semibold">
-            <span>Year:</span>
-            <select
-              className="rounded border border-gray-300 bg-white px-2 py-1 text-xs lowercase text-gray-700"
-              value={selectedYear?.toString() ?? ""}
-              onChange={(event) => {
-                const value = event.target.value;
-                setSelectedYear(value ? Number(value) : null);
-              }}
-            >
-              {availableYears.map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="ml-auto flex gap-1 text-[11px]">
-            <button
-              type="button"
-              onClick={() => setGroupMode("schedule")}
-              className={cn(
-                "rounded border px-2 py-1",
-                groupMode === "schedule"
-                  ? "border-blue-500 bg-blue-50 text-blue-700"
-                  : "border-gray-300 text-gray-600",
-              )}
-            >
-              Schedule
-            </button>
-            <button
-              type="button"
-              onClick={() => setGroupMode("tier")}
-              className={cn(
-                "rounded border px-2 py-1",
-                groupMode === "tier"
-                  ? "border-blue-500 bg-blue-50 text-blue-700"
-                  : "border-gray-300 text-gray-600",
-              )}
-            >
-              By Tier
-            </button>
+      header={
+        <div className="border-b border-gray-200 px-3 py-2 text-xs uppercase tracking-wide text-gray-500">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 text-[11px] font-semibold">
+              <span>Year:</span>
+              <select
+                className="rounded border border-gray-300 bg-white px-2 py-1 text-xs lowercase text-gray-700"
+                value={selectedYear?.toString() ?? ""}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setSelectedYear(value ? Number(value) : null);
+                }}
+              >
+                {availableYears.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="ml-auto flex gap-1 text-[11px]">
+              <button
+                type="button"
+                onClick={() => setGroupMode("schedule")}
+                className={cn(
+                  "rounded border px-2 py-1",
+                  groupMode === "schedule"
+                    ? "border-blue-500 bg-blue-50 text-blue-700"
+                    : "border-gray-300 text-gray-600",
+                )}
+              >
+                Schedule
+              </button>
+              <button
+                type="button"
+                onClick={() => setGroupMode("tier")}
+                className={cn(
+                  "rounded border px-2 py-1",
+                  groupMode === "tier"
+                    ? "border-blue-500 bg-blue-50 text-blue-700"
+                    : "border-gray-300 text-gray-600",
+                )}
+              >
+                By Tier
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-      <div className="max-h-72 overflow-y-auto">
-        {groupMode === "schedule" ? (
-          tournamentsForYear.length > 0 ? (
-            tournamentsForYear.map((tournament) => (
-              <DropdownRow
-                key={tournament._id}
-                title={tournament.name}
-                subtitle={formatTournamentDateRange(
-                  tournament.startDate,
-                  tournament.endDate,
-                )}
-                iconUrl={tournament.logoUrl ?? null}
-                isActive={tournament._id === props.activeTourney._id}
-                onSelect={() => handleTournamentSelect(tournament._id)}
-              />
-            ))
-          ) : (
-            <div className="px-4 py-3 text-sm text-gray-500">
-              No tournaments for {selectedYear ?? "the selected year"}.
-            </div>
-          )
-        ) : tierGroups.length > 0 ? (
-          tierGroups.map(([tierName, tierTournaments]) => (
-            <div key={tierName}>
-              <div className="bg-gray-700 px-4 py-1 text-xs font-semibold uppercase tracking-wide text-gray-50">
-                {tierName}
-              </div>
-              {tierTournaments.map((tournament) => (
-                <DropdownRow
-                  key={tournament._id}
-                  title={tournament.name}
-                  subtitle={formatTournamentDateRange(
-                    tournament.startDate,
-                    tournament.endDate,
-                  )}
-                  iconUrl={tournament.logoUrl ?? null}
-                  isActive={tournament._id === props.activeTourney._id}
-                  onSelect={() => handleTournamentSelect(tournament._id)}
-                />
-              ))}
-            </div>
-          ))
-        ) : (
-          <div className="px-4 py-3 text-sm text-gray-500">
-            No tournaments available for this selection.
-          </div>
-        )}
-      </div>
+      }
+      items={groupMode === "schedule" ? scheduleItems : undefined}
+      sections={groupMode === "tier" ? tierSections : undefined}
+      emptyState={
+        <div className="px-4 py-3 text-sm text-gray-500">
+          {groupMode === "schedule"
+            ? `No tournaments for ${selectedYear ?? "the selected year"}.`
+            : "No tournaments available for this selection."}
+        </div>
+      }
+    >
     </Dropdown>
   );
 }
@@ -258,7 +253,7 @@ function LeaderboardHeaderDropdownSkeleton({
 >) {
   return (
     <div className={cn("relative", className)}>
-      <DropdownSkeleton />
+      <Skeleton className="h-8 w-40 rounded-md" />
       <div className="mt-2 hidden w-72 rounded-md border border-gray-200 bg-white shadow-lg" />
     </div>
   );
