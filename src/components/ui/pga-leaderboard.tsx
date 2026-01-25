@@ -8,8 +8,7 @@ import type {
   LeaderboardViewerContext,
 } from "@/lib/types";
 import { sortPgaRows } from "@/lib/utils";
-
-import { LeaderboardListing } from "@/components/internal/LeaderboardListing";
+import { LeaderboardListing } from "@/ui";
 
 /**
  * Renders the PGA leaderboard listing for the current tournament.

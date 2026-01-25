@@ -3,11 +3,11 @@
 import { useMemo } from "react";
 
 import { ToursToggle } from "@/ui";
-import { LeaderboardHeaderRow } from "@/components/internal/LeaderboardHeaderRow";
-import { PGALeaderboard } from "@/components/internal/PGALeaderboard";
-import { PGCLeaderboard } from "@/components/internal/PGCLeaderboard";
 import { Skeleton } from "@/ui";
 import type { LeaderboardViewProps } from "@/lib/types";
+import { LeaderboardHeaderRow } from "@/ui";
+import { PGALeaderboard } from "@/ui";
+import { PGCLeaderboard } from "@/ui";
 
 /**
  * Renders the tournament leaderboard body (tour toggle + column header + rows).

@@ -10,8 +10,7 @@ import type {
   LeaderboardViewerContext,
 } from "@/lib/types";
 import { filterTeamRowsByTour } from "@/lib/utils";
-
-import { LeaderboardListing } from "@/components/internal/LeaderboardListing";
+import { LeaderboardListing } from "@/ui";
 
 /**
  * Renders the PGC leaderboard listing for the active tour (or playoff bracket).

@@ -18,8 +18,7 @@ import {
   isPlayerCut,
 } from "@/lib/utils";
 
-import { PGADropdown } from "@/components/internal/PGADropdown";
-import { TeamGolfersTable } from "@/ui";
+import { PGADropdown, TeamGolfersTable } from "@/ui";
 
 function ScoreCell(args: {
   value: ReactNode;

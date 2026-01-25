@@ -3,7 +3,7 @@ import { TanstackDevtools } from "@tanstack/react-devtools";
 import { useEffect } from "react";
 
 import { Providers } from "@/providers";
-import { PWAInstallPrompt } from "../components/internal/PWAInstallPrompt";
+import { PWAInstallPrompt } from "@/components";
 import { SignedOutPersistentSignIn } from "@/ui";
 
 import "../styles.css";

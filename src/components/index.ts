@@ -50,6 +50,17 @@ export { TierDistributionsTable } from "./ui/tier-distributions-table";
 export { MemberHeader } from "./ui/member-header";
 export { TeamGolfersList } from "./ui/team-golfers-list";
 export { TeamGolfersTable } from "./ui/team-golfers-table";
+export { HomePageListingsContainer } from "./ui/home-page-listings-container";
+export { LeaderboardHeader } from "./ui/leaderboard-header";
+export { LeaderboardHeaderDropdown } from "./ui/leaderboard-header-dropdown";
+export { LeaderboardHeaderRow } from "./ui/leaderboard-header-row";
+export { LeaderboardListing } from "./ui/leaderboard-listing";
+export { LeaderboardView } from "./ui/leaderboard-view";
+export { ModeratorTools } from "./ui/moderator-tools";
+export { PGADropdown } from "./ui/pga-dropdown";
+export { PGALeaderboard } from "./ui/pga-leaderboard";
+export { PGCLeaderboard } from "./ui/pgc-leaderboard";
+export { PWAInstallPrompt } from "./ui/pwa-install-prompt";
 
 // Public: route page components (used by routes; typically data-fetching)
 export { AccountPage } from "./pages/AccountPage";
@@ -74,8 +85,6 @@ export { StandingsView } from "./pages/StandingsView";
 export { AdminCrudSection } from "./ui/admin-crud-section";
 export { AdminDataTable } from "./ui/admin-data-table";
 export { Field } from "./ui/field";
-export { LeaderboardListing } from "./internal/LeaderboardListing";
-export { LeaderboardHeader } from "./internal/LeaderboardHeader";
 export { ToursToggle } from "./ui/tours-toggle";
 
 // Internal: shared + data-fetching (multi-use)
@@ -97,14 +106,5 @@ export { TransactionsManager } from "./internal/TransactionsManager";
 // Internal: feature/leaf presentational/composition components (no Convex hooks)
 export { AdminPanel } from "./ui/admin-panel";
 export { ChampionsPopup } from "./internal/ChampionsPopup";
-export { HomePageListingsContainer } from "./internal/HomePageListingsContainer";
-export { LeaderboardHeaderDropdown } from "./internal/LeaderboardHeaderDropdown";
-export { LeaderboardHeaderRow } from "./internal/LeaderboardHeaderRow";
-export { LeaderboardView } from "./internal/LeaderboardView";
-export { ModeratorTools } from "./internal/ModeratorTools";
-export { PGADropdown } from "./internal/PGADropdown";
-export { PGALeaderboard } from "./internal/PGALeaderboard";
-export { PGCLeaderboard } from "./internal/PGCLeaderboard";
 export { PreTournamentContent } from "./internal/PreTournamentContent";
-export { PWAInstallPrompt } from "./internal/PWAInstallPrompt";
 export { TeamPickForm } from "./internal/TeamPickForm";

@@ -2,8 +2,8 @@
 
 import { formatMoney, formatTournamentDateRange } from "@/lib/utils";
 import { Skeleton } from "@/ui";
-import { LeaderboardHeaderDropdown } from "@/components/internal/LeaderboardHeaderDropdown";
 import type { LeaderboardHeaderProps } from "@/lib/types";
+import { LeaderboardHeaderDropdown } from "@/ui";
 
 /**
  * LeaderboardHeader Component
