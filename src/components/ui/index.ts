@@ -20,5 +20,6 @@ export * from "./table";
 export * from "./tours-toggle";
 export * from "./tournament-countdown";
 export * from "./little-fucker";
-export * from "./points-table";
-export * from "./payouts-table";
+export * from "./tier-distributions-table";
+export * from "./team-golfers-list";
+export * from "./team-golfers-table";

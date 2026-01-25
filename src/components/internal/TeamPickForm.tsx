@@ -8,7 +8,7 @@ import { Button } from "@/ui";
 import { cn, formatMoney } from "@/lib/utils";
 
 import { MemberHeader } from "@/ui";
-import { TeamGolfersList } from "@/components/internal/TeamGolfersList";
+import { TeamGolfersList } from "@/ui";
 
 /**
  * Renders the "Create/Change Your Team" call-to-action for pre-tournament picks.

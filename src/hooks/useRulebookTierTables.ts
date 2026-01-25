@@ -3,9 +3,7 @@ import { useMemo } from "react";
 import type { TierDoc } from "../../convex/types/types";
 import { api, useQuery } from "@/convex";
 import { useSeasonIdOrCurrent } from "./useSeasonIdOrCurrent";
-
-type TierPointsRow = { key: string; name: string; points: number[] };
-type TierPayoutsRow = { key: string; name: string; payouts: number[] };
+import type { TierPayoutsRow, TierPointsRow } from "@/lib/types";
 
 function normalizeTierDocs(tiersResult: unknown): TierDoc[] | undefined {
   if (tiersResult === undefined) return undefined;
@@ -30,7 +28,7 @@ function normalizeTierDocs(tiersResult: unknown): TierDoc[] | undefined {
 }
 
 /**
- * Fetches and prepares tier data for the rulebook `PayoutsTable` and `PointsTable`.
+ * Fetches and prepares tier data for the rulebook tier distribution tables.
  *
  * The UI tables live in `src/components/ui/*` and are purely prop-driven.
  * This hook owns the Convex query + tier normalization/sorting.

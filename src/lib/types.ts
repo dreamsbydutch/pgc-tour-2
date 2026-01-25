@@ -66,20 +66,37 @@ export interface TourCardChangeButtonProps {
 }
 
 /**
+ * Tier row shape for points distributions.
+ */
+export type TierPointsRow = { key: string; name: string; points: number[] };
+
+/**
+ * Tier row shape for payouts distributions.
+ */
+export type TierPayoutsRow = { key: string; name: string; payouts: number[] };
+
+/**
  * Props for `PointsTable`.
  */
-export interface PointsTableProps {
-  tiers?: Array<{ key: string; name: string; points: number[] }>;
+export type PointsTableProps = {
+  tiers?: TierPointsRow[];
   loading?: boolean;
-}
+};
 
 /**
  * Props for `PayoutsTable`.
  */
-export interface PayoutsTableProps {
-  tiers?: Array<{ key: string; name: string; payouts: number[] }>;
+export type PayoutsTableProps = {
+  tiers?: TierPayoutsRow[];
   loading?: boolean;
-}
+};
+
+/**
+ * Props for `TierDistributionsTable`.
+ */
+export type TierDistributionsTableProps =
+  | { kind: "points"; tiers?: TierPointsRow[]; loading?: boolean }
+  | { kind: "payouts"; tiers?: TierPayoutsRow[]; loading?: boolean };
 
 type TourCardFormButtonLoadedProps = {
   tour: Doc<"tours">;

@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 
 import { LeagueSchedule } from "@/components/internal/LeagueSchedule";
 import { useRulebookTierTables } from "@/hooks";
-import { PayoutsTable, PointsTable } from "@/ui";
+import { TierDistributionsTable } from "@/ui";
 import { ruleList } from "@/lib/rules";
 import { cn } from "@/lib/utils";
 
@@ -81,7 +81,8 @@ export function RulebookPage() {
 
                 {section.category === "Payouts" ? (
                   <div className="mt-6">
-                    <PayoutsTable
+                    <TierDistributionsTable
+                      kind="payouts"
                       tiers={tiersModel.payoutsTiers}
                       loading={tiersModel.isLoading}
                     />
@@ -90,7 +91,8 @@ export function RulebookPage() {
 
                 {section.category === "Scoring" ? (
                   <div className="mt-6">
-                    <PointsTable
+                    <TierDistributionsTable
+                      kind="points"
                       tiers={tiersModel.pointsTiers}
                       loading={tiersModel.isLoading}
                     />

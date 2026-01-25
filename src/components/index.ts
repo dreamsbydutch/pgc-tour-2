@@ -48,9 +48,10 @@ export { AdminRowActions } from "./ui/admin-row-actions";
 export { AdminLoadMore } from "./ui/admin-load-more";
 export { TournamentCountdown } from "./ui/tournament-countdown";
 export { LittleFucker } from "./ui/little-fucker";
-export { PointsTable } from "./ui/points-table";
-export { PayoutsTable } from "./ui/payouts-table";
+export { TierDistributionsTable } from "./ui/tier-distributions-table";
 export { MemberHeader } from "./ui/member-header";
+export { TeamGolfersList } from "./ui/team-golfers-list";
+export { TeamGolfersTable } from "./ui/team-golfers-table";
 
 // Public: route page components (used by routes; typically data-fetching)
 export { AccountPage } from "./pages/AccountPage";
@@ -108,6 +109,4 @@ export { PGALeaderboard } from "./internal/PGALeaderboard";
 export { PGCLeaderboard } from "./internal/PGCLeaderboard";
 export { PreTournamentContent } from "./internal/PreTournamentContent";
 export { PWAInstallPrompt } from "./internal/PWAInstallPrompt";
-export { TeamGolfersList } from "./internal/TeamGolfersList";
-export { TeamGolfersTable } from "./internal/TeamGolfersTable";
 export { TeamPickForm } from "./internal/TeamPickForm";

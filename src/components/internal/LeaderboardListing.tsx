@@ -19,7 +19,7 @@ import {
 } from "@/lib/utils";
 
 import { PGADropdown } from "@/components/internal/PGADropdown";
-import { TeamGolfersTable } from "@/components/internal/TeamGolfersTable";
+import { TeamGolfersTable } from "@/ui";
 
 function ScoreCell(args: {
   value: ReactNode;
