@@ -10,8 +10,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "./table";
-import { Skeleton } from "./skeleton";
+} from "../primitives/table";
+import { Skeleton } from "../primitives/skeleton";
 
 /**
  * Renders the rulebook tier distribution tables (points or payouts).

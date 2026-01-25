@@ -3,7 +3,7 @@ import { Shield, Star } from "lucide-react";
 import { api, useQuery } from "@/convex";
 import { useUser } from "@clerk/tanstack-react-start";
 
-import { LeagueSchedule } from "@/components/internal/LeagueSchedule";
+import { LeagueSchedule } from "@/ui";
 import { TourCardForm } from "@/components/internal/TourCardForm";
 import { TourCardOutput } from "@/components/internal/TourCardOutput";
 import { useTournamentCountdown } from "@/hooks";

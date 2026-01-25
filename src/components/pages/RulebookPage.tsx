@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
-import { LeagueSchedule } from "@/components/internal/LeagueSchedule";
+import { LeagueSchedule } from "@/ui";
 import { useRulebookTierTables } from "@/hooks";
 import { TierDistributionsTable } from "@/ui";
 import { ruleList } from "@/lib/rules";

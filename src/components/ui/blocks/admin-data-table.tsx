@@ -5,8 +5,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "./table";
-import { Skeleton } from "./skeleton";
+} from "../primitives/table";
+import { Skeleton } from "../primitives/skeleton";
 import { cn } from "@/lib/utils";
 
 import type { AdminDataTableColumn } from "@/lib/types";

@@ -7,10 +7,15 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "./card";
-import { Button } from "./button";
-import { Skeleton } from "./skeleton";
+} from "../primitives/card";
+import { Button } from "../primitives/button";
+import { Skeleton } from "../primitives/skeleton";
 import type { AdminPanelProps } from "@/lib/types";
+
+const AnyLink = Link as unknown as (props: {
+  to: string;
+  children: React.ReactNode;
+}) => React.ReactNode;
 
 /**
  * AdminPanel
@@ -68,10 +73,10 @@ export function AdminPanel({ loading = false }: AdminPanelProps) {
                   className="justify-start"
                   size="sm"
                 >
-                  <Link to={item.to}>
+                  <AnyLink to={item.to}>
                     <item.Icon className="mr-2 h-4 w-4" />
                     {item.label}
-                  </Link>
+                  </AnyLink>
                 </Button>
               );
             }
@@ -101,41 +106,16 @@ export function AdminPanel({ loading = false }: AdminPanelProps) {
 function useAdminPanel() {
   const items = [
     { label: "System Settings", to: undefined, Icon: Settings },
-    {
-      label: "Tournaments",
-      to: "/admin/tournaments",
-      Icon: Database,
-    },
-    {
-      label: "League Setup",
-      to: "/admin/setup",
-      Icon: Database,
-    },
-    {
-      label: "Account Audit",
-      to: undefined,
-      Icon: Database,
-    },
-    {
-      label: "Seasons",
-      to: "/admin/seasons",
-      Icon: Database,
-    },
-    {
-      label: "Teams",
-      to: "/admin/teams",
-      Icon: Database,
-    },
-    {
-      label: "Manage Golfers",
-      to: "/admin/golfers",
-      Icon: Database,
-    },
-    {
-      label: "Crons",
-      to: "/admin/crons",
-      Icon: Timer,
-    },
+    { label: "League Setup", to: "/admin/setup", Icon: Database },
+    { label: "Missing Tour Cards", to: "/admin/missing-tour-cards", Icon: Database },
+    { label: "Tournaments", to: "/admin/tournaments", Icon: Database },
+    { label: "Tour Cards", to: "/admin/tour-cards", Icon: Database },
+    { label: "Seasons", to: "/admin/seasons", Icon: Database },
+    { label: "Teams", to: "/admin/teams", Icon: Database },
+    { label: "Manage Golfers", to: "/admin/golfers", Icon: Database },
+    { label: "Member Merge", to: "/admin/member-merge", Icon: Database },
+    { label: "Account Audit", to: "/admin/account-audit", Icon: Database },
+    { label: "Crons", to: "/admin/crons", Icon: Timer },
     { label: "View Audit Logs", to: undefined, Icon: Shield },
   ] as const;
 

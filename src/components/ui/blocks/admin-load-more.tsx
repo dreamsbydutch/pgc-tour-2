@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 
 import { cn } from "@/lib/utils";
-import { Button } from "./button";
+import { Button } from "../primitives/button";
 
 type PaginationStatus =
   | "LoadingFirstPage"

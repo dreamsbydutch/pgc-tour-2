@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 
-import { Button } from "./button";
-import { Skeleton } from "./skeleton";
+import { Button } from "../primitives/button";
+import { Skeleton } from "../primitives/skeleton";
 import { cn } from "@/lib/utils";
 import type { ToursToggleProps } from "@/lib/types";
 

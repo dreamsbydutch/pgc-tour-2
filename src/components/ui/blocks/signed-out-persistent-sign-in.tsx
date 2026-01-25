@@ -2,8 +2,8 @@
 
 import { SignedOut, SignInButton } from "@clerk/tanstack-react-start";
 
-import { Button } from "./button";
-import { Card, CardContent } from "./card";
+import { Button } from "../primitives/button";
+import { Card, CardContent } from "../primitives/card";
 
 /**
  * Shows a persistent sign-in call-to-action when the user is signed out.

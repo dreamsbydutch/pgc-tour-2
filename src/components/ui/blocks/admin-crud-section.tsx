@@ -1,16 +1,16 @@
 import type { FormEvent, ReactNode } from "react";
 
 import { AdminDataTable } from "./admin-data-table";
-import { Button } from "./button";
+import { Button } from "../primitives/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "./card";
-import { FormFeedback } from "./form-feedback";
-import { Skeleton } from "./skeleton";
+} from "../primitives/card";
+import { FormFeedback } from "../primitives/form-feedback";
+import { Skeleton } from "../primitives/skeleton";
 import type { AdminDataTableColumn } from "@/lib/types";
 import { cn } from "@/lib";
 

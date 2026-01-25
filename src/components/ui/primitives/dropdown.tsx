@@ -60,7 +60,10 @@ export function Dropdown({
 
   const rowCount = useMemo(() => {
     if (!resolvedSections) return 0;
-    return resolvedSections.reduce((acc, section) => acc + section.items.length, 0);
+    return resolvedSections.reduce(
+      (acc, section) => acc + section.items.length,
+      0,
+    );
   }, [resolvedSections]);
 
   useEffect(() => {
@@ -126,7 +129,7 @@ export function Dropdown({
                 ))}
               </div>
             ) : (
-              emptyState ?? null
+              (emptyState ?? null)
             )
           ) : (
             children

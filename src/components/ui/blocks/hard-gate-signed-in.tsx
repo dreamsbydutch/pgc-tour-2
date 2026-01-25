@@ -2,8 +2,8 @@
 
 import { SignedIn, SignedOut, SignInButton } from "@clerk/tanstack-react-start";
 
-import { Button } from "./button";
-import { Card, CardContent, CardHeader, CardTitle } from "./card";
+import { Button } from "../primitives/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../primitives/card";
 
 /**
  * Hard-gates a page behind Clerk authentication.

@@ -3,7 +3,7 @@
 import type { ChampionshipWinTournament, LittleFuckerProps } from "@/lib/types";
 import { cn, hasItems, isNonEmptyString } from "@/lib/utils";
 
-import { Skeleton } from "./skeleton";
+import { Skeleton } from "../primitives/skeleton";
 
 /**
  * Renders a compact row of championship badges.

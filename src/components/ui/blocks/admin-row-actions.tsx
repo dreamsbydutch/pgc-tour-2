@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 
-import { Button, type ButtonProps } from "./button";
-import { Skeleton } from "./skeleton";
+import { Button, type ButtonProps } from "../primitives/button";
+import { Skeleton } from "../primitives/skeleton";
 import { cn } from "@/lib";
 
 /**

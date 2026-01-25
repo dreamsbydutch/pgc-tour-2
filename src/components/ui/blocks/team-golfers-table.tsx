@@ -14,7 +14,7 @@ import {
   isPlayerCut,
 } from "@/lib/utils";
 
-import { Table, TableBody, TableHeader, TableRow } from "./table";
+import { Table, TableBody, TableHeader, TableRow } from "../primitives/table";
 
 /**
  * Renders a table of PGA golfers for a selected PGC team.
@@ -92,9 +92,11 @@ export function TeamGolfersTable(props: {
         {model.rows.map((golfer, i) => {
           const borderClasses: string[] = [];
           if (props.tournament.name === "TOUR Championship") {
-            if (i === 2 || i === 9) borderClasses.push("border-b border-gray-700");
+            if (i === 2 || i === 9)
+              borderClasses.push("border-b border-gray-700");
           } else if (props.tournament.name === "BMW Championship") {
-            if (i === 4 || i === 9) borderClasses.push("border-b border-gray-700");
+            if (i === 4 || i === 9)
+              borderClasses.push("border-b border-gray-700");
           } else {
             if (i === 9) borderClasses.push("border-b border-gray-700");
           }
@@ -108,7 +110,9 @@ export function TeamGolfersTable(props: {
               )}
             >
               <td className="px-1 text-xs">{golfer.position ?? "-"}</td>
-              <td className="whitespace-nowrap px-1 text-sm">{golfer.playerName}</td>
+              <td className="whitespace-nowrap px-1 text-sm">
+                {golfer.playerName}
+              </td>
               <td className="px-1 text-sm">{formatToPar(golfer.score)}</td>
               <GolferScoreCells golfer={golfer} />
               <td className="hidden border-l border-gray-300 text-xs md:table-cell">

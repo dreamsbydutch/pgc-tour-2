@@ -7,7 +7,7 @@ import type {
 } from "@/lib/types";
 import { formatTwoDigits } from "@/lib/utils";
 
-import { Skeleton } from "./skeleton";
+import { Skeleton } from "../primitives/skeleton";
 
 /**
  * Displays a tournament countdown UI given tournament metadata and a computed timer.
