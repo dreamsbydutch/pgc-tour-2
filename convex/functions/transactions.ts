@@ -305,7 +305,7 @@ export const getTransactionsPage = query({
     if (!memberId && filter.clerkId) {
       memberId = (await getMemberIdByClerkId(ctx, filter.clerkId)) ?? undefined;
       if (!memberId) {
-        return { page: [], isDone: true, continueCursor: null };
+        return { page: [], isDone: true, continueCursor: "" };
       }
     }
 
@@ -501,5 +501,162 @@ export const deleteTransactions = mutation({
     if (!existing) return null;
     await ctx.db.delete(args.transactionId);
     return existing;
+  },
+});
+
+export const adminGetMemberAccountAudit = query({
+  args: {
+    options: v.optional(
+      v.object({
+        sumMode: v.optional(v.union(v.literal("completed"), v.literal("all"))),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const sumMode = args.options?.sumMode ?? "all";
+    const include = (status: TransactionStatus | undefined) => {
+      if (sumMode === "completed") {
+        return status === undefined || status === "completed";
+      }
+      return true;
+    };
+
+    const members = await ctx.db.query("members").collect();
+
+    const mismatches: Array<{
+      member: (typeof members)[number];
+      accountCents: number;
+      includedSumCents: number;
+      deltaCents: number;
+      transactions: Id<"transactions">[];
+    }> = [];
+
+    const outstandingBalances: Array<{
+      member: (typeof members)[number];
+      accountCents: number;
+      includedSumCents: number;
+      deltaCents: number;
+      isMismatch: boolean;
+      transactions: Id<"transactions">[];
+    }> = [];
+
+    for (const member of members) {
+      const txns = await ctx.db
+        .query("transactions")
+        .withIndex("by_member", (q) => q.eq("memberId", member._id))
+        .collect();
+
+      const included = txns.filter((t) =>
+        include(t.status as TransactionStatus | undefined),
+      );
+      const includedSumCents = included.reduce((sum, t) => sum + t.amount, 0);
+      const deltaCents = member.account - includedSumCents;
+
+      const rowBase = {
+        member,
+        accountCents: member.account,
+        includedSumCents,
+        deltaCents,
+        transactions: included.map((t) => t._id),
+      };
+
+      if (deltaCents !== 0) {
+        mismatches.push(rowBase);
+      }
+
+      if (member.account !== 0) {
+        outstandingBalances.push({
+          ...rowBase,
+          isMismatch: deltaCents !== 0,
+        });
+      }
+    }
+
+    const sortKey = (row: { member: { email: string } }) =>
+      row.member.email.toLowerCase();
+    mismatches.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+    outstandingBalances.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+
+    return {
+      memberCount: members.length,
+      mismatchCount: mismatches.length,
+      outstandingCount: outstandingBalances.length,
+      mismatches,
+      outstandingBalances,
+    };
+  },
+});
+
+export const adminGetMemberLedgerForAudit = query({
+  args: {
+    memberId: v.id("members"),
+    options: v.optional(
+      v.object({
+        sumMode: v.optional(v.union(v.literal("completed"), v.literal("all"))),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const member = await ctx.db.get(args.memberId);
+    if (!member) throw new Error("Member not found");
+
+    const sumMode = args.options?.sumMode ?? "all";
+    const include = (status: TransactionStatus | undefined) => {
+      if (sumMode === "completed") {
+        return status === undefined || status === "completed";
+      }
+      return true;
+    };
+
+    const txns = await ctx.db
+      .query("transactions")
+      .withIndex("by_member", (q) => q.eq("memberId", member._id))
+      .order("desc")
+      .collect();
+
+    const seasonsById = new Map<
+      string,
+      { year: number; number?: number | undefined }
+    >();
+    for (const t of txns) {
+      const key = String(t.seasonId);
+      if (seasonsById.has(key)) continue;
+      const season = await ctx.db.get(t.seasonId);
+      if (season) {
+        seasonsById.set(key, { year: season.year, number: season.number });
+      }
+    }
+
+    const included = txns.filter((t) =>
+      include(t.status as TransactionStatus | undefined),
+    );
+    const includedSumCents = included.reduce((sum, t) => sum + t.amount, 0);
+    const deltaCents = member.account - includedSumCents;
+
+    const transactions = txns.map((t) => {
+      const season = seasonsById.get(String(t.seasonId));
+      const seasonLabel = season
+        ? season.number && season.number > 1
+          ? `${season.year} (S${season.number})`
+          : `${season.year}`
+        : undefined;
+
+      return {
+        ...t,
+        seasonLabel,
+      };
+    });
+
+    return {
+      member,
+      accountCents: member.account,
+      includedSumCents,
+      deltaCents,
+      transactions,
+    };
   },
 });

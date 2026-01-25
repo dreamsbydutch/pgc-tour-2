@@ -6,11 +6,12 @@
  * through flexible configuration rather than multiple specialized functions.
  */
 
-import { query, mutation } from "../_generated/server";
+import { query, mutation, action } from "../_generated/server";
 import { v } from "convex/values";
 import { requireAdmin } from "../auth";
 import type { Id } from "../_generated/dataModel";
 import type { AuthCtx } from "../types/functionUtils";
+import { requireAdminByClerkId } from "./_authByClerkId";
 import {
   processData,
   formatCents,
@@ -20,6 +21,7 @@ import {
 } from "./_utils";
 import { TIME } from "./_constants";
 import { logAudit, computeChanges, extractDeleteMetadata } from "./_auditLog";
+import { fetchWithRetry } from "./_externalFetch";
 import type {
   ValidationResult,
   AnalyticsResult,
@@ -34,6 +36,86 @@ import type {
   MemberSortOptions,
 } from "../types/types";
 
+type ClerkEmail = {
+  email_address?: string;
+};
+
+type ClerkUser = {
+  id: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  full_name?: string | null;
+  email_addresses?: ClerkEmail[];
+};
+
+type ClerkUserRow = {
+  clerkId: string;
+  email: string | null;
+  fullName: string;
+};
+
+function buildFullName(user: ClerkUser): string {
+  const fromFull = (user.full_name ?? "").trim();
+  if (fromFull) return fromFull;
+  const first = (user.first_name ?? "").trim();
+  const last = (user.last_name ?? "").trim();
+  return `${first} ${last}`.trim().replace(/\s+/g, " ");
+}
+
+function pickPrimaryEmail(user: ClerkUser): string | null {
+  const emails = Array.isArray(user.email_addresses)
+    ? user.email_addresses
+    : [];
+  const first = emails[0]?.email_address;
+  return typeof first === "string" && first.trim() ? first.trim() : null;
+}
+
+async function fetchClerkUsers(options: {
+  limit: number;
+  offset: number;
+}): Promise<ClerkUser[]> {
+  const secret = process.env.CLERK_SECRET_KEY;
+  if (!secret) {
+    throw new Error(
+      "Missing CLERK_SECRET_KEY in Convex environment variables.",
+    );
+  }
+
+  const url = new URL("https://api.clerk.com/v1/users");
+  url.searchParams.set("limit", String(options.limit));
+  url.searchParams.set("offset", String(options.offset));
+
+  const result = await fetchWithRetry<ClerkUser[]>(
+    url.toString(),
+    {
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        "Content-Type": "application/json",
+      },
+    },
+    {
+      timeout: 30000,
+      retries: 3,
+      validateResponse: (json): json is ClerkUser[] =>
+        Array.isArray(json) &&
+        json.every(
+          (u) =>
+            u &&
+            typeof u === "object" &&
+            "id" in u &&
+            typeof u.id === "string",
+        ),
+      logPrefix: "Clerk API",
+    },
+  );
+
+  if (!result.ok) {
+    throw new Error(`Clerk API error: ${result.error}`);
+  }
+
+  return result.data;
+}
+
 /**
  * Validate member data
  */
@@ -43,6 +125,7 @@ function validateMemberData(data: {
   firstname?: string;
   lastname?: string;
   displayName?: string;
+  isActive?: boolean;
   role?: "admin" | "moderator" | "regular";
   account?: number;
   friends?: (string | Id<"members">)[];
@@ -83,8 +166,13 @@ function validateMemberData(data: {
   );
   if (displayNameErr) errors.push(displayNameErr);
 
-  const accountErr = validators.positiveNumber(data.account, "Account balance");
-  if (accountErr) errors.push(accountErr);
+  if (data.account !== undefined) {
+    if (!Number.isFinite(data.account)) {
+      errors.push("Account balance must be a finite number of cents");
+    } else if (Math.trunc(data.account) !== data.account) {
+      errors.push("Account balance must be an integer number of cents");
+    }
+  }
 
   if (data.friends && data.friends.length > 500) {
     errors.push("Too many friends (maximum 500)");
@@ -148,6 +236,41 @@ function generateFullName(firstname?: string, lastname?: string): string {
   } else {
     return "";
   }
+}
+
+function normalizeNameToken(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  let out = "";
+  let shouldCapitalize = true;
+
+  for (const ch of trimmed) {
+    const isLetter = /[A-Za-z]/.test(ch);
+    if (isLetter) {
+      out += shouldCapitalize ? ch.toUpperCase() : ch.toLowerCase();
+      shouldCapitalize = false;
+      continue;
+    }
+
+    out += ch;
+    shouldCapitalize = ch === "-" || ch === "'" || ch === "’";
+  }
+
+  return out;
+}
+
+function normalizePersonName(value: string | undefined): string {
+  const raw = (value ?? "").trim();
+  if (!raw) return "";
+
+  const tokens = raw
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map(normalizeNameToken);
+
+  return tokens.join(" ");
 }
 
 /**
@@ -227,6 +350,7 @@ export const createMembers = mutation({
       email: v.string(),
       firstname: v.optional(v.string()),
       lastname: v.optional(v.string()),
+      isActive: v.optional(v.boolean()),
       role: v.optional(
         v.union(
           v.literal("admin"),
@@ -305,6 +429,7 @@ export const createMembers = mutation({
       email: data.email,
       firstname: data.firstname,
       lastname: data.lastname,
+      ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
       role: data.role || ("regular" as const),
       account: accountBalance,
       friends: data.friends || [],
@@ -903,6 +1028,7 @@ export const updateMembers = mutation({
       firstname: v.optional(v.string()),
       lastname: v.optional(v.string()),
       displayName: v.optional(v.string()),
+      isActive: v.optional(v.boolean()),
       role: v.optional(
         v.union(
           v.literal("admin"),
@@ -948,6 +1074,9 @@ export const updateMembers = mutation({
       }
       if (args.data.account !== undefined) {
         throw new Error("Forbidden: Only admins can modify account balances");
+      }
+      if (args.data.isActive !== undefined) {
+        throw new Error("Forbidden: Only admins can change active status");
       }
     }
 
@@ -995,6 +1124,72 @@ export const updateMembers = mutation({
     }
 
     await ctx.db.patch(args.memberId, updateData);
+
+    const didNameChange =
+      (updateData.firstname !== undefined &&
+        updateData.firstname !== member.firstname) ||
+      (updateData.lastname !== undefined &&
+        updateData.lastname !== member.lastname);
+
+    if (didNameChange) {
+      const effectiveEmail = updateData.email ?? member.email;
+      const effectiveFirst = updateData.firstname ?? member.firstname;
+      const effectiveLast = updateData.lastname ?? member.lastname;
+      const effectiveDisplayName =
+        (updateData as any).displayName ?? (member as any).displayName;
+
+      const nextTourCardDisplayName = generateDisplayName(
+        typeof effectiveDisplayName === "string"
+          ? effectiveDisplayName
+          : undefined,
+        effectiveFirst,
+        effectiveLast,
+        effectiveEmail,
+      );
+
+      const currentYear = new Date().getFullYear();
+      const seasonsForYear = await ctx.db
+        .query("seasons")
+        .withIndex("by_year", (q) => q.eq("year", currentYear))
+        .collect();
+
+      const currentSeason =
+        seasonsForYear.length > 0
+          ? seasonsForYear.reduce((best, s) =>
+              s.number > best.number ? s : best,
+            )
+          : null;
+
+      const tourCardsToUpdate = currentSeason
+        ? await ctx.db
+            .query("tourCards")
+            .withIndex("by_member_season", (q) =>
+              q.eq("memberId", args.memberId).eq("seasonId", currentSeason._id),
+            )
+            .collect()
+        : await ctx.db
+            .query("tourCards")
+            .withIndex("by_member", (q) => q.eq("memberId", args.memberId))
+            .collect();
+
+      if (tourCardsToUpdate.length > 0) {
+        const candidates = currentSeason
+          ? tourCardsToUpdate
+          : [
+              tourCardsToUpdate.reduce((best, tc) =>
+                tc._creationTime > best._creationTime ? tc : best,
+              ),
+            ];
+
+        for (const tc of candidates) {
+          if (tc.displayName === nextTourCardDisplayName) continue;
+          await ctx.db.patch(tc._id, {
+            displayName: nextTourCardDisplayName,
+            updatedAt: Date.now(),
+          });
+        }
+      }
+    }
 
     const changes = computeChanges(member, updateData);
     if (Object.keys(changes).length > 0) {
@@ -1101,6 +1296,181 @@ export const getMyTournamentHistory = query({
       });
 
     return limit !== undefined ? rows.slice(0, limit) : rows;
+  },
+});
+
+/**
+ * Recomputes `members.isActive` based on recent participation.
+ *
+ * Definition:
+ * - Active if the member has no tourCards (signed up but never played)
+ * - Active if the member has a tourCard in either of the two most recent seasons BEFORE the current season
+ * - Otherwise inactive
+ */
+export const recomputeMemberActiveFlags = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+
+    const seasons = await ctx.db.query("seasons").collect();
+
+    const sortedSeasons = seasons.slice().sort((a, b) => {
+      if (a.year !== b.year) return b.year - a.year;
+      if (a.number !== b.number) return b.number - a.number;
+
+      const aStart = a.startDate ?? 0;
+      const bStart = b.startDate ?? 0;
+      if (aStart !== bStart) return bStart - aStart;
+
+      return b._creationTime - a._creationTime;
+    });
+
+    const currentSeason = sortedSeasons[0] ?? null;
+    const previousTwoSeasons = sortedSeasons.slice(1, 3);
+    const activeSeasonIds = new Set(previousTwoSeasons.map((s) => s._id));
+
+    const tourCards = await ctx.db.query("tourCards").collect();
+    const membersWithAnyTourCard = new Set<string>();
+    const membersWithRecentTourCard = new Set<string>();
+
+    for (const tc of tourCards) {
+      membersWithAnyTourCard.add(tc.memberId);
+      if (activeSeasonIds.has(tc.seasonId)) {
+        membersWithRecentTourCard.add(tc.memberId);
+      }
+    }
+
+    const members = await ctx.db.query("members").collect();
+
+    let updated = 0;
+    let activeCount = 0;
+    let inactiveCount = 0;
+    const now = Date.now();
+
+    for (const m of members) {
+      const hasAny = membersWithAnyTourCard.has(m._id);
+      const hasRecent = membersWithRecentTourCard.has(m._id);
+      const nextIsActive = hasRecent || !hasAny;
+
+      if (m.isActive !== nextIsActive) {
+        await ctx.db.patch(m._id, { isActive: nextIsActive, updatedAt: now });
+        updated += 1;
+      }
+
+      if (nextIsActive) activeCount += 1;
+      else inactiveCount += 1;
+    }
+
+    return {
+      ok: true,
+      currentSeasonId: currentSeason?._id ?? null,
+      activeSeasonIds: [...activeSeasonIds],
+      membersTotal: members.length,
+      updated,
+      activeCount,
+      inactiveCount,
+    } as const;
+  },
+});
+
+export const normalizeMemberNamesAndTourCardDisplayNames = mutation({
+  args: {
+    options: v.optional(
+      v.object({
+        dryRun: v.optional(v.boolean()),
+        limit: v.optional(v.number()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const dryRun = args.options?.dryRun ?? false;
+    const limit = args.options?.limit;
+
+    const membersAll = await ctx.db.query("members").collect();
+    const members =
+      typeof limit === "number" ? membersAll.slice(0, limit) : membersAll;
+
+    const tourCards = await ctx.db.query("tourCards").collect();
+    const tourCardsByMemberId = new Map<string, (typeof tourCards)[number][]>();
+
+    for (const tc of tourCards) {
+      const list = tourCardsByMemberId.get(tc.memberId);
+      if (list) list.push(tc);
+      else tourCardsByMemberId.set(tc.memberId, [tc]);
+    }
+
+    let membersUpdated = 0;
+    let tourCardsUpdated = 0;
+    const now = Date.now();
+
+    const examples: Array<{
+      memberId: string;
+      email: string;
+      before: { firstname: string; lastname: string };
+      after: { firstname: string; lastname: string };
+      tourCardsUpdated: number;
+    }> = [];
+
+    for (const m of members) {
+      const beforeFirst = m.firstname ?? "";
+      const beforeLast = m.lastname ?? "";
+
+      const afterFirst = normalizePersonName(beforeFirst);
+      const afterLast = normalizePersonName(beforeLast);
+
+      const memberChanged =
+        beforeFirst !== afterFirst || beforeLast !== afterLast;
+      if (memberChanged) {
+        if (!dryRun) {
+          await ctx.db.patch(m._id, {
+            firstname: afterFirst || undefined,
+            lastname: afterLast || undefined,
+            updatedAt: now,
+          });
+        }
+        membersUpdated += 1;
+      }
+
+      const fullName = generateFullName(afterFirst, afterLast);
+      if (!fullName) continue;
+
+      const memberTourCards = tourCardsByMemberId.get(m._id) ?? [];
+      let memberTourCardsUpdated = 0;
+
+      for (const tc of memberTourCards) {
+        if (tc.displayName === fullName) continue;
+        if (!dryRun) {
+          await ctx.db.patch(tc._id, { displayName: fullName, updatedAt: now });
+        }
+        tourCardsUpdated += 1;
+        memberTourCardsUpdated += 1;
+      }
+
+      if (
+        (memberChanged || memberTourCardsUpdated > 0) &&
+        examples.length < 15
+      ) {
+        examples.push({
+          memberId: m._id,
+          email: m.email,
+          before: { firstname: beforeFirst, lastname: beforeLast },
+          after: { firstname: afterFirst, lastname: afterLast },
+          tourCardsUpdated: memberTourCardsUpdated,
+        });
+      }
+    }
+
+    return {
+      ok: true,
+      dryRun,
+      membersScanned: members.length,
+      membersUpdated,
+      tourCardsScanned: tourCards.length,
+      tourCardsUpdated,
+      examples,
+    } as const;
   },
 });
 
@@ -1581,3 +1951,361 @@ async function generateAnalytics(
     ),
   };
 }
+
+/**
+ * Returns counts for all documents that reference a member and would be moved during a merge.
+ */
+export const adminGetMemberMergePreview = query({
+  args: {
+    sourceMemberId: v.id("members"),
+    targetMemberId: v.optional(v.id("members")),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const source = await ctx.db.get(args.sourceMemberId);
+    if (!source) {
+      return {
+        ok: false,
+        error: "Source member not found",
+      } as const;
+    }
+
+    const target = args.targetMemberId
+      ? await ctx.db.get(args.targetMemberId)
+      : null;
+
+    if (args.targetMemberId && !target) {
+      return {
+        ok: false,
+        error: "Target member not found",
+      } as const;
+    }
+
+    const tourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    const transactions = await ctx.db
+      .query("transactions")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    const pushSubscriptions = await ctx.db
+      .query("pushSubscriptions")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    const auditLogs = await ctx.db
+      .query("auditLogs")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    const allMembers = await ctx.db.query("members").collect();
+    const sourceId = String(args.sourceMemberId);
+
+    let friendRefCount = 0;
+    for (const m of allMembers) {
+      if (String(m._id) === sourceId) continue;
+      if (m.friends.some((f) => String(f) === sourceId)) {
+        friendRefCount += 1;
+      }
+    }
+
+    const sourceClerkId =
+      typeof source.clerkId === "string" ? source.clerkId : null;
+    const clerkIdOwner = sourceClerkId
+      ? await ctx.db
+          .query("members")
+          .withIndex("by_clerk_id", (q) => q.eq("clerkId", sourceClerkId))
+          .first()
+      : null;
+
+    return {
+      ok: true,
+      source: {
+        _id: source._id,
+        clerkId: source.clerkId ?? null,
+        email: source.email,
+        displayName: (source as any).displayName ?? null,
+        firstname: source.firstname ?? null,
+        lastname: source.lastname ?? null,
+        role: source.role,
+        isActive: source.isActive ?? null,
+        account: source.account,
+      },
+      target: target
+        ? {
+            _id: target._id,
+            clerkId: target.clerkId ?? null,
+            email: target.email,
+            displayName: (target as any).displayName ?? null,
+            firstname: target.firstname ?? null,
+            lastname: target.lastname ?? null,
+            role: target.role,
+            isActive: target.isActive ?? null,
+            account: target.account,
+          }
+        : null,
+      counts: {
+        tourCards: tourCards.length,
+        transactions: transactions.length,
+        pushSubscriptions: pushSubscriptions.length,
+        auditLogs: auditLogs.length,
+        membersReferencingAsFriend: friendRefCount,
+      },
+      warnings: {
+        sourceMissingClerkId: !sourceClerkId,
+        clerkIdAlsoOnDifferentMember:
+          !!sourceClerkId &&
+          !!clerkIdOwner &&
+          String(clerkIdOwner._id) !== String(source._id),
+        targetAlreadyHasDifferentClerkId:
+          !!target &&
+          !!sourceClerkId &&
+          !!target.clerkId &&
+          target.clerkId !== sourceClerkId,
+      },
+    } as const;
+  },
+});
+
+/**
+ * Merges two member records by moving all `memberId` references from the source member to the target member,
+ * copying the source `clerkId` onto the target member, then deleting the source member.
+ */
+export const adminMergeMembers = mutation({
+  args: {
+    sourceMemberId: v.id("members"),
+    targetMemberId: v.id("members"),
+    options: v.optional(
+      v.object({
+        overwriteTargetClerkId: v.optional(v.boolean()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    if (String(args.sourceMemberId) === String(args.targetMemberId)) {
+      throw new Error("Source and target members must be different");
+    }
+
+    const source = await ctx.db.get(args.sourceMemberId);
+    if (!source) {
+      throw new Error("Source member not found");
+    }
+
+    const target = await ctx.db.get(args.targetMemberId);
+    if (!target) {
+      throw new Error("Target member not found");
+    }
+
+    const sourceClerkId =
+      typeof source.clerkId === "string" ? source.clerkId.trim() : "";
+    if (!sourceClerkId) {
+      throw new Error("Source member has no clerkId to merge");
+    }
+
+    const overwriteTargetClerkId = !!args.options?.overwriteTargetClerkId;
+
+    if (
+      target.clerkId &&
+      target.clerkId !== sourceClerkId &&
+      !overwriteTargetClerkId
+    ) {
+      throw new Error(
+        "Target member already has a different clerkId. Enable overwriteTargetClerkId to replace it.",
+      );
+    }
+
+    const clerkIdOwner = await ctx.db
+      .query("members")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", sourceClerkId))
+      .first();
+
+    if (clerkIdOwner && String(clerkIdOwner._id) !== String(source._id)) {
+      throw new Error("Another member already has the source clerkId");
+    }
+
+    const targetPatch: Record<string, unknown> = {
+      clerkId: sourceClerkId,
+      account: target.account + source.account,
+      isActive: (target.isActive ?? false) || (source.isActive ?? false),
+      updatedAt: Date.now(),
+    };
+
+    if (!target.firstname && source.firstname) {
+      targetPatch.firstname = source.firstname;
+    }
+    if (!target.lastname && source.lastname) {
+      targetPatch.lastname = source.lastname;
+    }
+    if (!(target as any).displayName && (source as any).displayName) {
+      targetPatch.displayName = (source as any).displayName;
+    }
+
+    await ctx.db.patch(args.targetMemberId, targetPatch);
+
+    const tourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    for (const tc of tourCards) {
+      await ctx.db.patch(tc._id, { memberId: args.targetMemberId });
+    }
+
+    const transactions = await ctx.db
+      .query("transactions")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    for (const tx of transactions) {
+      await ctx.db.patch(tx._id, { memberId: args.targetMemberId });
+    }
+
+    const pushSubscriptions = await ctx.db
+      .query("pushSubscriptions")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    for (const ps of pushSubscriptions) {
+      await ctx.db.patch(ps._id, { memberId: args.targetMemberId });
+    }
+
+    const auditLogs = await ctx.db
+      .query("auditLogs")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    for (const al of auditLogs) {
+      await ctx.db.patch(al._id, { memberId: args.targetMemberId });
+    }
+
+    const allMembers = await ctx.db.query("members").collect();
+    const sourceId = String(args.sourceMemberId);
+    const targetId = String(args.targetMemberId);
+
+    let membersUpdatedForFriends = 0;
+    for (const m of allMembers) {
+      if (String(m._id) === sourceId) continue;
+
+      if (!m.friends.some((f) => String(f) === sourceId)) continue;
+
+      const nextFriends = m.friends
+        .map((f) => (String(f) === sourceId ? targetId : f))
+        .filter(
+          (f, idx, arr) =>
+            arr.findIndex((x) => String(x) === String(f)) === idx,
+        );
+
+      await ctx.db.patch(m._id, {
+        friends: nextFriends,
+        updatedAt: Date.now(),
+      });
+      membersUpdatedForFriends += 1;
+    }
+
+    const remainingTourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+    const remainingTransactions = await ctx.db
+      .query("transactions")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+    const remainingPushSubscriptions = await ctx.db
+      .query("pushSubscriptions")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+    const remainingAuditLogs = await ctx.db
+      .query("auditLogs")
+      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
+      .collect();
+
+    if (
+      remainingTourCards.length > 0 ||
+      remainingTransactions.length > 0 ||
+      remainingPushSubscriptions.length > 0 ||
+      remainingAuditLogs.length > 0
+    ) {
+      throw new Error("Merge incomplete: source member still has references");
+    }
+
+    await ctx.db.delete(args.sourceMemberId);
+
+    return {
+      ok: true,
+      sourceMemberId: args.sourceMemberId,
+      targetMemberId: args.targetMemberId,
+      moved: {
+        tourCards: tourCards.length,
+        transactions: transactions.length,
+        pushSubscriptions: pushSubscriptions.length,
+        auditLogs: auditLogs.length,
+        membersUpdatedForFriends,
+      },
+    } as const;
+  },
+});
+
+/**
+ * Returns Clerk users for admin tooling.
+ *
+ * Email is the authoritative key for linking Clerk users to `members`.
+ * Joining and "unlinked" detection happens in the frontend.
+ */
+export const listClerkUsers = action({
+  args: {
+    clerkId: v.optional(v.string()),
+    options: v.optional(
+      v.object({
+        limit: v.optional(v.number()),
+        offset: v.optional(v.number()),
+      }),
+    ),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    ok: true;
+    offset: number;
+    limit: number;
+    fetched: number;
+    users: ClerkUserRow[];
+  }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    const actingClerkId = args.clerkId?.trim();
+
+    if (identity && actingClerkId && identity.subject !== actingClerkId) {
+      throw new Error("Unauthorized: Clerk ID mismatch");
+    }
+
+    if (!identity) {
+      await requireAdminByClerkId(ctx as unknown as AuthCtx, actingClerkId);
+    }
+
+    const limit = Math.max(1, Math.min(args.options?.limit ?? 50, 200));
+    const offset = Math.max(0, args.options?.offset ?? 0);
+
+    const clerkUsers = await fetchClerkUsers({ limit, offset });
+    const users: ClerkUserRow[] = clerkUsers
+      .filter((u): u is ClerkUser => !!u && typeof u.id === "string")
+      .map((u) => ({
+        clerkId: u.id,
+        email: pickPrimaryEmail(u),
+        fullName: buildFullName(u),
+      }));
+
+    return {
+      ok: true,
+      offset,
+      limit,
+      fetched: clerkUsers.length,
+      users,
+    };
+  },
+});

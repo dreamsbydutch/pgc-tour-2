@@ -6,7 +6,7 @@
 
 import { query, mutation } from "../_generated/server";
 import { v } from "convex/values";
-import { requireOwnResource, getCurrentMember } from "../auth";
+import { requireAdmin, requireOwnResource, getCurrentMember } from "../auth";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { ValidationResult } from "../types/types";
@@ -507,6 +507,98 @@ export const deleteTourCards = mutation({
 
     await ctx.db.delete(args.id);
     return tourCard;
+  },
+});
+
+export const recomputeTourCardsForSeasonAsAdmin = mutation({
+  args: {
+    seasonId: v.id("seasons"),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const completedTournaments = await ctx.db
+      .query("tournaments")
+      .withIndex("by_season_status", (q) =>
+        q.eq("seasonId", args.seasonId).eq("status", "completed"),
+      )
+      .collect();
+
+    const totalsByTourCard = new Map<
+      Id<"tourCards">,
+      {
+        points: number;
+        earnings: number;
+        appearances: number;
+        madeCut: number;
+        wins: number;
+        topTen: number;
+        topFive: number;
+      }
+    >();
+
+    for (const tournament of completedTournaments) {
+      const teams = await ctx.db
+        .query("teams")
+        .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
+        .collect();
+
+      for (const team of teams) {
+        const prev = totalsByTourCard.get(team.tourCardId) ?? {
+          points: 0,
+          earnings: 0,
+          appearances: 0,
+          madeCut: 0,
+          wins: 0,
+          topTen: 0,
+          topFive: 0,
+        };
+
+        totalsByTourCard.set(team.tourCardId, {
+          points: prev.points + (team.points ?? 0),
+          earnings: prev.earnings + (team.earnings ?? 0),
+          appearances: prev.appearances + 1,
+          madeCut: prev.madeCut + (team.makeCut ?? 0),
+          wins: prev.wins + (team.win ?? 0),
+          topTen: prev.topTen + (team.topTen ?? 0),
+          topFive: prev.topFive + (team.topFive ?? 0),
+        });
+      }
+    }
+
+    const tourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .collect();
+
+    const updatedAt = Date.now();
+    for (const card of tourCards) {
+      const totals = totalsByTourCard.get(card._id) ?? {
+        points: 0,
+        earnings: 0,
+        appearances: 0,
+        madeCut: 0,
+        wins: 0,
+        topTen: 0,
+        topFive: 0,
+      };
+
+      await ctx.db.patch(card._id, {
+        points: totals.points,
+        earnings: totals.earnings,
+        appearances: totals.appearances,
+        madeCut: totals.madeCut,
+        wins: totals.wins,
+        topTen: totals.topTen,
+        topFive: totals.topFive,
+        updatedAt,
+      });
+    }
+
+    return {
+      tourCardsUpdated: tourCards.length,
+      completedTournamentCount: completedTournaments.length,
+    };
   },
 });
 

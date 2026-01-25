@@ -29,6 +29,7 @@ const schema = defineSchema({
     email: v.string(),
     firstname: v.optional(v.string()),
     lastname: v.optional(v.string()),
+    isActive: v.optional(v.boolean()),
     role: v.union(
       v.literal("admin"),
       v.literal("moderator"),
@@ -126,6 +127,9 @@ const schema = defineSchema({
     seasonId: v.id("seasons"),
     logoUrl: v.optional(v.string()),
     apiId: v.optional(v.string()), // External API identifier
+
+    groupsEmailSentAt: v.optional(v.number()),
+    reminderEmailSentAt: v.optional(v.number()),
 
     // Tournament status and live data
     status: v.optional(
