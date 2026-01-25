@@ -1,7 +1,7 @@
 import type { FormEvent, ReactNode } from "react";
 
 import { AdminDataTable } from "./admin-data-table";
-import { AdminFormActions } from "./admin-form-actions";
+import { Button } from "./button";
 import {
   Card,
   CardContent,
@@ -12,6 +12,7 @@ import {
 import { FormFeedback } from "./form-feedback";
 import { Skeleton } from "./skeleton";
 import type { AdminDataTableColumn } from "@/lib/types";
+import { cn } from "@/lib";
 
 /**
  * AdminCrudSection
@@ -208,6 +209,34 @@ function AdminCrudSectionSkeleton() {
           <Skeleton className="h-40 w-full" />
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+/**
+ * Renders the standard admin form footer actions: a primary submit button and a
+ * secondary outline action (usually Reset or Cancel).
+ */
+function AdminFormActions(props: {
+  primaryLabel: string;
+  secondaryLabel: string;
+  onSecondary: () => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex gap-2", props.className)}>
+      <Button type="submit" disabled={props.disabled}>
+        {props.primaryLabel}
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={props.onSecondary}
+        disabled={props.disabled}
+      >
+        {props.secondaryLabel}
+      </Button>
     </div>
   );
 }

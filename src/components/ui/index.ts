@@ -2,7 +2,6 @@ export * from "./admin-edit-delete-actions";
 export * from "./admin-crud-section";
 export * from "./admin-data-table";
 export * from "./admin-load-more";
-export * from "./admin-form-actions";
 export * from "./admin-panel";
 export * from "./admin-row-actions";
 export * from "./button";

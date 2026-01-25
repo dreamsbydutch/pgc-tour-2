@@ -76,22 +76,6 @@ export type TierPointsRow = { key: string; name: string; points: number[] };
 export type TierPayoutsRow = { key: string; name: string; payouts: number[] };
 
 /**
- * Props for `PointsTable`.
- */
-export type PointsTableProps = {
-  tiers?: TierPointsRow[];
-  loading?: boolean;
-};
-
-/**
- * Props for `PayoutsTable`.
- */
-export type PayoutsTableProps = {
-  tiers?: TierPayoutsRow[];
-  loading?: boolean;
-};
-
-/**
  * Props for `TierDistributionsTable`.
  */
 export type TierDistributionsTableProps =

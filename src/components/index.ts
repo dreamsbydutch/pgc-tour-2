@@ -42,7 +42,6 @@ export {
   TableRow,
 } from "./ui/table";
 export { AdminEditDeleteActions } from "./ui/admin-edit-delete-actions";
-export { AdminFormActions } from "./ui/admin-form-actions";
 export { AdminRowActions } from "./ui/admin-row-actions";
 export { AdminLoadMore } from "./ui/admin-load-more";
 export { TournamentCountdown } from "./ui/tournament-countdown";
