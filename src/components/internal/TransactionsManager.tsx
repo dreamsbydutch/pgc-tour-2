@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQuery } from "convex/react";
 
@@ -10,10 +10,16 @@ import type {
   TransactionDoc,
 } from "../../../convex/types/types";
 
-import { AdminEditDeleteActions } from "@/ui";
-import { AdminCrudSection } from "@/components/internal/AdminCrudSection";
-import { Card, CardContent, CardHeader, Skeleton } from "@/ui";
-import { Field } from "@/components/internal/AdminField";
+import {
+  AdminCrudSection,
+  AdminEditDeleteActions,
+  Card,
+  CardContent,
+  CardHeader,
+  Field,
+  Skeleton,
+} from "@/ui";
+import { AdminLoadMore } from "@/ui";
 import { ADMIN_FORM_CONTROL_CLASSNAME } from "@/lib/constants";
 import { adminActionsColumn } from "@/lib/adminTable";
 
@@ -224,6 +230,15 @@ export function TransactionsManager() {
       }
       tableRows={model.filteredTransactions}
       tableEmptyMessage="No transactions found."
+      tableFooter={
+        <div className="pt-2">
+          <AdminLoadMore
+            status={model.transactionsPaginationStatus}
+            onLoadMore={model.loadMoreTransactions}
+            auto
+          />
+        </div>
+      }
       tableColumns={[
         { id: "type", header: "Type", cell: (t) => t.transactionType },
         {
@@ -306,7 +321,13 @@ function useTransactionsManager() {
         setTypeFilter: (next: string) => void;
         statusFilter: TransactionStatus | "";
         setStatusFilter: (next: string) => void;
-        filteredTransactions: TransactionDoc[];
+        filteredTransactions: TransactionDoc[] | undefined;
+        transactionsPaginationStatus:
+          | "LoadingFirstPage"
+          | "CanLoadMore"
+          | "LoadingMore"
+          | "Exhausted";
+        loadMoreTransactions: (pageSize: number) => void;
         form: TransactionFormState;
         updateField: <K extends keyof TransactionFormState>(
           key: K,
@@ -438,6 +459,12 @@ function useTransactionsManager() {
     "",
   );
 
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [pageSize, setPageSize] = useState<number>(100);
+  const [allTransactions, setAllTransactions] = useState<TransactionDoc[]>([]);
+  const [isDone, setIsDone] = useState<boolean>(false);
+  const [shouldFetch, setShouldFetch] = useState<boolean>(true);
+
   const isTransactionType = (value: string): value is TransactionType => {
     return (TRANSACTION_TYPES as string[]).includes(value);
   };
@@ -454,34 +481,86 @@ function useTransactionsManager() {
     setStatusFilterState(isTransactionStatus(next) ? next : "");
   };
 
-  const transactionsResult = useQuery(
-    api.functions.transactions.getTransactions,
-    {
-      options: {
-        ...(seasonFilter ? { filter: { seasonId: seasonFilter } } : {}),
-        limit: 100,
-      },
-    },
-  );
+  useEffect(() => {
+    setCursor(null);
+    setAllTransactions([]);
+    setIsDone(false);
+    setShouldFetch(true);
+  }, [seasonFilter, statusFilter, typeFilter]);
+
+  const pageResult = useQuery(
+    api.functions.transactions.getTransactionsPage as any,
+    shouldFetch
+      ? ({
+          paginationOpts: { numItems: pageSize, cursor },
+          filter: {
+            ...(seasonFilter ? { seasonId: seasonFilter } : {}),
+            ...(typeFilter ? { transactionType: typeFilter } : {}),
+            ...(statusFilter ? { status: statusFilter } : {}),
+          },
+        } as any)
+      : "skip",
+  ) as
+    | {
+        page: TransactionDoc[];
+        isDone: boolean;
+        continueCursor: string | null;
+      }
+    | undefined;
+
+  const isLoadingPage = shouldFetch && pageResult === undefined;
+
+  useEffect(() => {
+    if (!shouldFetch) return;
+    if (!pageResult) return;
+
+    setAllTransactions((prev) => {
+      if (!pageResult.page.length) return prev;
+      const seen = new Set<string>(prev.map((t) => t._id));
+      const next = [...prev];
+      for (const tx of pageResult.page) {
+        if (!seen.has(tx._id)) {
+          seen.add(tx._id);
+          next.push(tx);
+        }
+      }
+      return next;
+    });
+
+    setCursor(pageResult.continueCursor);
+    setIsDone(pageResult.isDone);
+    setShouldFetch(false);
+  }, [pageResult, shouldFetch]);
+
+  const transactionsPaginationStatus = useMemo(() => {
+    if (isLoadingPage && allTransactions.length === 0)
+      return "LoadingFirstPage";
+    if (isLoadingPage) return "LoadingMore";
+    if (isDone) return "Exhausted";
+    return "CanLoadMore";
+  }, [allTransactions.length, isDone, isLoadingPage]);
 
   const transactions = useMemo(() => {
-    const raw = transactionsResult as unknown;
-    const list = Array.isArray(raw)
-      ? (raw as Array<TransactionDoc | null>).filter(
-          (t): t is TransactionDoc => t !== null,
-        )
-      : [];
-
-    return [...list].sort((a, b) => b._creationTime - a._creationTime);
-  }, [transactionsResult]);
+    return [...allTransactions].sort(
+      (a, b) => b._creationTime - a._creationTime,
+    );
+  }, [allTransactions]);
 
   const filteredTransactions = useMemo(() => {
+    if (transactionsPaginationStatus === "LoadingFirstPage") return undefined;
     return transactions.filter((tx) => {
       if (typeFilter && tx.transactionType !== typeFilter) return false;
       if (statusFilter && (tx.status ?? "") !== statusFilter) return false;
       return true;
     });
-  }, [transactions, typeFilter, statusFilter]);
+  }, [statusFilter, transactions, transactionsPaginationStatus, typeFilter]);
+
+  const loadMoreTransactions = (nextPageSize: number) => {
+    if (isDone) return;
+    setPageSize(nextPageSize);
+    if (allTransactions.length > 0 && cursor === null) return;
+    setShouldFetch(true);
+  };
 
   const [form, setForm] = useState<TransactionFormState>({
     transactionId: "",
@@ -656,7 +735,7 @@ function useTransactionsManager() {
   const isStillLoading =
     membersResult === undefined ||
     seasonsResult === undefined ||
-    transactionsResult === undefined;
+    transactionsPaginationStatus === "LoadingFirstPage";
 
   if (isStillLoading) return { status: "loading" } as const satisfies Model;
 
@@ -673,6 +752,8 @@ function useTransactionsManager() {
     statusFilter,
     setStatusFilter,
     filteredTransactions,
+    transactionsPaginationStatus,
+    loadMoreTransactions,
     form,
     updateField,
     setTransactionType,

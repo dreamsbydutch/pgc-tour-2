@@ -20,7 +20,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/ui";
-import { Field } from "@/components/internal/AdminField";
+import { Field } from "@/ui";
 import { normalizeList } from "@/lib";
 import { CoursesSection } from "@/components/internal/CoursesSection";
 import { MembersManager } from "@/components/internal/MembersManager";

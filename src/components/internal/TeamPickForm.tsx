@@ -7,7 +7,7 @@ import { useRouter } from "@tanstack/react-router";
 import { Button } from "@/ui";
 import { cn, formatMoney } from "@/lib/utils";
 
-import { MemberHeader } from "@/components/internal/MemberHeader";
+import { MemberHeader } from "@/ui";
 import { TeamGolfersList } from "@/components/internal/TeamGolfersList";
 
 /**

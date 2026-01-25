@@ -45,6 +45,12 @@ export {
 export { AdminEditDeleteActions } from "./ui/admin-edit-delete-actions";
 export { AdminFormActions } from "./ui/admin-form-actions";
 export { AdminRowActions } from "./ui/admin-row-actions";
+export { AdminLoadMore } from "./ui/admin-load-more";
+export { TournamentCountdown } from "./ui/tournament-countdown";
+export { LittleFucker } from "./ui/little-fucker";
+export { PointsTable } from "./ui/points-table";
+export { PayoutsTable } from "./ui/payouts-table";
+export { MemberHeader } from "./ui/member-header";
 
 // Public: route page components (used by routes; typically data-fetching)
 export { AccountPage } from "./pages/AccountPage";
@@ -66,12 +72,12 @@ export { NavigationContainer } from "./pages/NavigationContainer";
 export { StandingsView } from "./pages/StandingsView";
 
 // Internal: shared building blocks (multi-use)
-export { AdminCrudSection } from "./internal/AdminCrudSection";
-export { AdminDataTable } from "./internal/AdminDataTable";
-export { Field } from "./internal/AdminField";
+export { AdminCrudSection } from "./ui/admin-crud-section";
+export { AdminDataTable } from "./ui/admin-data-table";
+export { Field } from "./ui/field";
 export { LeaderboardListing } from "./internal/LeaderboardListing";
 export { LeaderboardHeader } from "./internal/LeaderboardHeader";
-export { ToursToggle } from "./internal/ToursToggle";
+export { ToursToggle } from "./ui/tours-toggle";
 
 // Internal: shared + data-fetching (multi-use)
 export { LeagueSchedule } from "./internal/LeagueSchedule";
@@ -79,10 +85,7 @@ export { LeagueSchedule } from "./internal/LeagueSchedule";
 // Internal: feature/leaf smart components (Convex hooks)
 export { ClerkUsersManager } from "./internal/ClerkUsersManager";
 export { CoursesSection } from "./internal/CoursesSection";
-export { LittleFucker } from "./internal/LittleFucker";
 export { MembersManager } from "./internal/MembersManager";
-export { PayoutsTable } from "./internal/PayoutsTable";
-export { PointsTable } from "./internal/PointsTable";
 export { SeasonsSection } from "./internal/SeasonsSection";
 export { TiersSection } from "./internal/TiersSection";
 export { TourCardChangeButton } from "./internal/TourCardChangeButton";
@@ -93,7 +96,7 @@ export { ToursSection } from "./internal/ToursSection";
 export { TransactionsManager } from "./internal/TransactionsManager";
 
 // Internal: feature/leaf presentational/composition components (no Convex hooks)
-export { AdminPanel } from "./internal/AdminPanel";
+export { AdminPanel } from "./ui/admin-panel";
 export { ChampionsPopup } from "./internal/ChampionsPopup";
 export { HomePageListingsContainer } from "./internal/HomePageListingsContainer";
 export { LeaderboardHeaderDropdown } from "./internal/LeaderboardHeaderDropdown";
@@ -108,5 +111,3 @@ export { PWAInstallPrompt } from "./internal/PWAInstallPrompt";
 export { TeamGolfersList } from "./internal/TeamGolfersList";
 export { TeamGolfersTable } from "./internal/TeamGolfersTable";
 export { TeamPickForm } from "./internal/TeamPickForm";
-export { MemberHeader } from "./internal/MemberHeader";
-export { TournamentCountdown } from "./internal/TournamentCountdown";

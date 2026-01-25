@@ -1,7 +1,9 @@
-import { Button, Skeleton } from "@/ui";
+import { useMemo } from "react";
+
+import { Button } from "./button";
+import { Skeleton } from "./skeleton";
 import { cn } from "@/lib/utils";
 import type { ToursToggleProps } from "@/lib/types";
-import { useMemo } from "react";
 
 /**
  * ToursToggle
@@ -100,16 +102,6 @@ export function ToursToggle({
 
 /**
  * Builds a combined, display-ready list of tour toggle items.
- *
- * This hook is responsible for shaping the input lists into a single array used by the UI.
- * It handles sorting of base tours, a deterministic ordering for common “extra” toggles
- * (`Gold`, `Silver`, `PGA`), and preserves the original order for unknown extras.
- *
- * @param input - Hook inputs.
- * @param input.tours - Base tours that can be optionally sorted.
- * @param input.extraToggles - Optional extra toggle items appended after base tours.
- * @param input.sort - Whether to sort base tours by `shortForm`.
- * @returns An object containing `combinedToggles`, the final ordered list.
  */
 function useToursToggle({
   tours,

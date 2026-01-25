@@ -1,9 +1,8 @@
-import { useMemo } from "react";
+"use client";
 
-import { api, useQuery } from "@/convex";
-import type { TierDoc } from "../../../convex/types/types";
-import { useSeasonIdOrCurrent } from "@/hooks";
-import type { PointsTableProps } from "@/lib";
+import type { PointsTableProps } from "@/lib/types";
+import { formatNumber, formatRank } from "@/lib";
+
 import {
   Table,
   TableBody,
@@ -11,29 +10,22 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/ui";
-import { Skeleton } from "@/ui";
-import { formatNumber, formatRank } from "@/lib";
+} from "./table";
+import { Skeleton } from "./skeleton";
 
 /**
  * Displays the points distribution table used in the Rulebook Scoring section.
  *
- * Data source:
- * - Convex query `api.functions.tiers.getTiers`, filtered by `seasonId`.
- * - `seasonId` defaults via `useSeasonIdOrCurrent` when omitted.
- *
- * Render states:
- * - When `loading` is true (or data is not yet ready), renders the internal skeleton.
- * - When tiers are available, renders a 35-row points table for Standard/Elevated/Major.
+ * This is a leaf/pure UI component. Fetch/prepare tiers outside (e.g.
+ * `useRulebookTierTables`) and pass them in as `tiers`.
  *
  * @param props - `PointsTableProps`.
  * @returns A points distribution table or a skeleton while loading.
  */
-export function PointsTable({ seasonId, loading }: PointsTableProps) {
-  const { sortedTiers, isLoading } = usePointsTable({ seasonId });
-
-  if (loading || isLoading) return <PointsTableSkeleton />;
-  if (!sortedTiers || sortedTiers.length === 0) return <PointsTableSkeleton />;
+export function PointsTable(props: PointsTableProps) {
+  if (props.loading) return <PointsTableSkeleton />;
+  const tiers = props.tiers;
+  if (!tiers || tiers.length === 0) return <PointsTableSkeleton />;
 
   return (
     <>
@@ -46,7 +38,7 @@ export function PointsTable({ seasonId, loading }: PointsTableProps) {
             <TableHead className="h-8 px-2 py-1 text-center text-xs font-bold">
               Finish
             </TableHead>
-            {sortedTiers.map((tier) => (
+            {tiers.map((tier) => (
               <TableHead
                 className="h-8 px-2 py-1 text-center text-xs font-bold"
                 key={`points-${tier.key}`}
@@ -64,7 +56,7 @@ export function PointsTable({ seasonId, loading }: PointsTableProps) {
                 <TableCell className="px-2 py-1 text-sm font-bold">
                   {formatRank(i + 1)}
                 </TableCell>
-                {sortedTiers.map((tier) => (
+                {tiers.map((tier) => (
                   <TableCell
                     className="border-l px-2 py-1 text-center text-xs"
                     key={`points-${tier.key}`}
@@ -78,71 +70,6 @@ export function PointsTable({ seasonId, loading }: PointsTableProps) {
       </Table>
     </>
   );
-}
-
-/**
- * Fetches and normalizes tier data for `PointsTable`.
- *
- * @param params - `seasonId` to filter tiers; falls back to the current season when omitted.
- * @returns Derived table data ordered by tier name and a loading flag.
- */
-function usePointsTable({ seasonId }: Pick<PointsTableProps, "seasonId">) {
-  const resolvedSeasonId = useSeasonIdOrCurrent(seasonId);
-
-  const tiersResult = useQuery(
-    api.functions.tiers.getTiers,
-    resolvedSeasonId
-      ? { options: { filter: { seasonId: resolvedSeasonId } } }
-      : "skip",
-  );
-
-  const tiers = useMemo(() => {
-    const fallback: TierDoc[] = [];
-
-    if (tiersResult === undefined) return undefined;
-
-    if (Array.isArray(tiersResult)) {
-      return tiersResult.filter((tier) => tier !== null) as TierDoc[];
-    }
-
-    if (
-      tiersResult &&
-      typeof tiersResult === "object" &&
-      "tiers" in tiersResult
-    ) {
-      return (tiersResult as { tiers: TierDoc[] }).tiers;
-    }
-
-    if (
-      tiersResult &&
-      typeof tiersResult === "object" &&
-      "_id" in tiersResult
-    ) {
-      return [tiersResult as TierDoc];
-    }
-
-    return fallback;
-  }, [tiersResult]);
-
-  const sortedTiers = useMemo(() => {
-    if (!tiers || tiers.length === 0) return [];
-
-    const tierRows = tiers.map((tier) => ({
-      key: tier._id,
-      name: tier.name,
-      points: tier.points,
-    }));
-
-    const tierOrder = ["Standard", "Elevated", "Major"];
-    return [...tierRows]
-      .filter((tier) => tierOrder.includes(tier.name))
-      .sort((a, b) => tierOrder.indexOf(a.name) - tierOrder.indexOf(b.name));
-  }, [tiers]);
-
-  return {
-    sortedTiers,
-    isLoading: tiers === undefined,
-  };
 }
 
 /**

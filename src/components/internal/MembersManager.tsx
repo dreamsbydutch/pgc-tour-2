@@ -1,17 +1,23 @@
 import { useCallback, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, usePaginatedQuery } from "convex/react";
 
 import { api } from "@/convex";
 import type { Id } from "@/convex";
 import type { MemberDoc } from "../../../convex/types/types";
-import { AdminEditDeleteActions } from "@/ui";
-import { AdminCrudSection } from "@/components/internal/AdminCrudSection";
-import { Card, CardContent, CardHeader, Skeleton } from "@/ui";
-
-import { Field } from "@/components/internal/AdminField";
+import {
+  AdminCrudSection,
+  AdminEditDeleteActions,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  Field,
+  Skeleton,
+} from "@/ui";
+import { AdminLoadMore } from "@/ui";
 import { ADMIN_FORM_CONTROL_CLASSNAME } from "@/lib/constants";
-import { formatCentsAsDollars, normalizeList } from "@/lib/utils";
+import { formatCentsAsDollars } from "@/lib/utils";
 import { adminActionsColumn } from "@/lib/adminTable";
 
 /**
@@ -136,17 +142,81 @@ export function MembersManager() {
       tableTitle="Members"
       tableDescription="Search, edit, or remove members."
       tableControls={
-        <Field label="Search">
-          <input
-            value={model.searchTerm}
-            onChange={(e) => model.setSearchTerm(e.target.value)}
-            className={ADMIN_FORM_CONTROL_CLASSNAME}
-            placeholder="Search by name, email, or Clerk ID"
-          />
-        </Field>
+        <div className="space-y-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <Field label="Search">
+              <input
+                value={model.searchTerm}
+                onChange={(e) => model.setSearchTerm(e.target.value)}
+                className={ADMIN_FORM_CONTROL_CLASSNAME}
+                placeholder="Search by name, email, or Clerk ID"
+              />
+            </Field>
+
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={model.submitting || model.isRecomputingActiveFlags}
+                onClick={() => void model.recomputeActiveFlags()}
+              >
+                {model.isRecomputingActiveFlags
+                  ? "Updating active flags…"
+                  : "Recompute active flags"}
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                disabled={
+                  model.submitting ||
+                  model.isNormalizingNames ||
+                  !model.normalizeNamesConfirm
+                }
+                onClick={() => void model.normalizeNamesAndTourCards()}
+              >
+                {model.isNormalizingNames
+                  ? "Normalizing names…"
+                  : "Normalize names + tour cards"}
+              </Button>
+
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={model.normalizeNamesConfirm}
+                  onChange={(e) =>
+                    model.setNormalizeNamesConfirm(e.target.checked)
+                  }
+                />
+                Confirm
+              </label>
+            </div>
+          </div>
+
+          {model.activeFlagsResult ? (
+            <pre className="max-h-40 overflow-auto rounded-md border bg-muted p-3 text-xs">
+              {JSON.stringify(model.activeFlagsResult, null, 2)}
+            </pre>
+          ) : null}
+
+          {model.normalizeNamesResult ? (
+            <pre className="max-h-40 overflow-auto rounded-md border bg-muted p-3 text-xs">
+              {JSON.stringify(model.normalizeNamesResult, null, 2)}
+            </pre>
+          ) : null}
+        </div>
       }
       tableRows={model.filteredMembers}
       tableEmptyMessage="No members match your search."
+      tableFooter={
+        <div className="pt-2">
+          <AdminLoadMore
+            status={model.membersPaginationStatus}
+            onLoadMore={model.loadMoreMembers}
+            auto
+          />
+        </div>
+      }
       tableColumns={[
         {
           id: "name",
@@ -203,6 +273,12 @@ function useMembersManager() {
     | {
         status: "ready";
         members: MemberDoc[];
+        membersPaginationStatus:
+          | "LoadingFirstPage"
+          | "CanLoadMore"
+          | "LoadingMore"
+          | "Exhausted";
+        loadMoreMembers: (pageSize: number) => void;
         searchTerm: string;
         setSearchTerm: (next: string) => void;
         filteredMembers: MemberDoc[];
@@ -224,6 +300,14 @@ function useMembersManager() {
           lastname?: string,
           fallbackEmail?: string,
         ) => string;
+        recomputeActiveFlags: () => Promise<void>;
+        isRecomputingActiveFlags: boolean;
+        activeFlagsResult: unknown | null;
+        normalizeNamesAndTourCards: () => Promise<void>;
+        isNormalizingNames: boolean;
+        normalizeNamesResult: unknown | null;
+        normalizeNamesConfirm: boolean;
+        setNormalizeNamesConfirm: (next: boolean) => void;
       };
 
   const capitalizeWord = useCallback((value: string): string => {
@@ -256,22 +340,54 @@ function useMembersManager() {
   const createMember = useMutation(api.functions.members.createMembers);
   const updateMember = useMutation(api.functions.members.updateMembers);
   const deleteMember = useMutation(api.functions.members.deleteMembers);
+  const recomputeActiveFlagsMutation = useMutation(
+    api.functions.members.recomputeMemberActiveFlags,
+  );
 
-  const membersResult = useQuery(api.functions.members.getMembers, {
-    options: {
-      pagination: { limit: 500 },
-      sort: { sortBy: "lastname", sortOrder: "asc" },
-    },
-  });
+  const normalizeNamesMutation = useMutation(
+    api.functions.members.normalizeMemberNamesAndTourCardDisplayNames,
+  );
 
-  const members = useMemo(() => {
-    return normalizeList<MemberDoc, "members">(
-      membersResult as unknown,
-      "members",
-    );
-  }, [membersResult]);
+  const [isRecomputingActiveFlags, setIsRecomputingActiveFlags] =
+    useState<boolean>(false);
+  const [activeFlagsResult, setActiveFlagsResult] = useState<unknown | null>(
+    null,
+  );
+
+  const [isNormalizingNames, setIsNormalizingNames] = useState<boolean>(false);
+  const [normalizeNamesResult, setNormalizeNamesResult] = useState<
+    unknown | null
+  >(null);
+  const [normalizeNamesConfirm, setNormalizeNamesConfirm] =
+    useState<boolean>(false);
 
   const [searchTerm, setSearchTerm] = useState("");
+
+  const membersPageArgs = useMemo(() => {
+    const term = searchTerm.trim();
+    if (!term) return {};
+    return { options: { filter: { searchTerm: term } } };
+  }, [searchTerm]);
+
+  const membersPagination = usePaginatedQuery(
+    api.functions.members.getMembersPage,
+    membersPageArgs,
+    { initialNumItems: 200 },
+  );
+
+  const members = useMemo(() => {
+    return [...membersPagination.results].sort((a, b) => {
+      const aLast = (a.lastname ?? "").toLowerCase();
+      const bLast = (b.lastname ?? "").toLowerCase();
+      if (aLast !== bLast) return aLast.localeCompare(bLast);
+      const aFirst = (a.firstname ?? "").toLowerCase();
+      const bFirst = (b.firstname ?? "").toLowerCase();
+      if (aFirst !== bFirst) return aFirst.localeCompare(bFirst);
+      return (a.email ?? "")
+        .toLowerCase()
+        .localeCompare((b.email ?? "").toLowerCase());
+    });
+  }, [membersPagination.results]);
   const filteredMembers = useMemo(() => {
     if (!searchTerm.trim()) return members;
     const term = searchTerm.toLowerCase();
@@ -313,6 +429,17 @@ function useMembersManager() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const membersPaginationStatus = membersPagination.status as Model extends {
+    status: "ready";
+  }
+    ? Model["membersPaginationStatus"]
+    : never;
+
+  const loadMoreMembers = (pageSize: number) => {
+    if (membersPagination.status !== "CanLoadMore") return;
+    membersPagination.loadMore(pageSize);
+  };
 
   const updateField = <K extends keyof MemberFormState>(
     key: K,
@@ -475,12 +602,35 @@ function useMembersManager() {
     }
   };
 
-  const isStillLoading = membersResult === undefined;
+  const isStillLoading = membersPagination.status === "LoadingFirstPage";
   if (isStillLoading) return { status: "loading" } as const satisfies Model;
+
+  async function recomputeActiveFlags() {
+    setIsRecomputingActiveFlags(true);
+    try {
+      const res = await recomputeActiveFlagsMutation({});
+      setActiveFlagsResult(res);
+    } finally {
+      setIsRecomputingActiveFlags(false);
+    }
+  }
+
+  async function normalizeNamesAndTourCards() {
+    setIsNormalizingNames(true);
+    try {
+      const res = await normalizeNamesMutation({});
+      setNormalizeNamesResult(res);
+      setNormalizeNamesConfirm(false);
+    } finally {
+      setIsNormalizingNames(false);
+    }
+  }
 
   return {
     status: "ready",
     members,
+    membersPaginationStatus,
+    loadMoreMembers,
     searchTerm,
     setSearchTerm,
     filteredMembers,
@@ -495,6 +645,14 @@ function useMembersManager() {
     onSubmit,
     onDelete,
     formatMemberDisplayName,
+    recomputeActiveFlags,
+    isRecomputingActiveFlags,
+    activeFlagsResult,
+    normalizeNamesAndTourCards,
+    isNormalizingNames,
+    normalizeNamesResult,
+    normalizeNamesConfirm,
+    setNormalizeNamesConfirm,
   } as const satisfies Model;
 }
 

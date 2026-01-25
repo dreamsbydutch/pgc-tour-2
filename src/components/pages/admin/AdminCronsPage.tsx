@@ -239,7 +239,7 @@ function useAdminCronsPage():
 
   const { isModerator, isLoading: isRoleLoading } = useRoleAccess();
 
-  const runCronJob = useAction(api.functions.adminCron.adminRunCronJob);
+  const runCronJob = useAction(api.functions.cronJobs.adminRunCronJob);
 
   const tournamentsResult = useQuery(api.functions.tournaments.getTournaments, {
     options: {

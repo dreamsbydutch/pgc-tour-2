@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { Skeleton } from "@/ui";
+import { Skeleton } from "./skeleton";
 
 /**
  * Shared label + control wrapper for admin forms.

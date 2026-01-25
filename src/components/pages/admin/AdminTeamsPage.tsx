@@ -6,8 +6,7 @@ import type { Id } from "@/convex";
 import type { TeamDoc, TournamentDoc } from "../../../../convex/types/types";
 
 import { useRoleAccess } from "@/hooks";
-import { AdminDataTable } from "@/components/internal/AdminDataTable";
-import { Button } from "@/ui";
+import { AdminDataTable, Button, Field } from "@/ui";
 import {
   Card,
   CardContent,
@@ -25,21 +24,6 @@ export function AdminTeamsPage() {
   const { isModerator, isRoleLoading, vm } = useAdminTeamsPage();
   const Skeleton = AdminTeamsPageSkeleton;
   const roleLoadingNode = isRoleLoading ? Skeleton() : null;
-
-  function Field({
-    label,
-    children,
-  }: {
-    label: string;
-    children: React.ReactNode;
-  }) {
-    return (
-      <label className="grid gap-1">
-        <span className="text-sm font-medium">{label}</span>
-        {children}
-      </label>
-    );
-  }
 
   return (
     <div className="container mx-auto px-4 py-8 pb-20 lg:pb-8 lg:pt-20">

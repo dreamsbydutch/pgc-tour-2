@@ -3,6 +3,9 @@
 import { useState, useEffect } from "react";
 import { X, Download } from "lucide-react";
 
+const DISMISS_KEY = "pwa-prompt-dismissed";
+const DISMISS_COOLDOWN_DAYS = 7;
+
 interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
   readonly userChoice: Promise<{
@@ -28,13 +31,42 @@ export function PWAInstallPrompt() {
     useState<BeforeInstallPromptEvent | null>(null);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
+  const [platform, setPlatform] = useState<"ios" | "other">("other");
+  const [isMobile, setIsMobile] = useState(false);
+  const [cooldownActive, setCooldownActive] = useState(false);
 
   useEffect(() => {
+    const userAgent = navigator.userAgent ?? "";
+    const isIos = /iPad|iPhone|iPod/i.test(userAgent);
+    setPlatform(isIos ? "ios" : "other");
+    setIsMobile(
+      /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent) ||
+        window.matchMedia("(pointer: coarse)").matches,
+    );
+
+    try {
+      const lastDismissed = localStorage.getItem(DISMISS_KEY);
+      if (!lastDismissed) {
+        setCooldownActive(false);
+      } else {
+        const dismissedTime = Number.parseInt(lastDismissed, 10);
+        const daysSinceDismissed =
+          (Date.now() - dismissedTime) / (1000 * 60 * 60 * 24);
+        setCooldownActive(daysSinceDismissed < DISMISS_COOLDOWN_DAYS);
+      }
+    } catch {
+      setCooldownActive(false);
+    }
+
     if (
       window.matchMedia("(display-mode: standalone)").matches ||
       (window.navigator as Navigator & { standalone?: boolean }).standalone
     ) {
       setIsInstalled(true);
+      return;
+    }
+
+    if (/iPad|iPhone|iPod/i.test(navigator.userAgent ?? "")) {
       return;
     }
 
@@ -70,38 +102,31 @@ export function PWAInstallPrompt() {
     try {
       await deferredPrompt.prompt();
 
-      const { outcome } = await deferredPrompt.userChoice;
-
-      if (outcome === "accepted") {
-        console.log("User accepted the install prompt");
-      } else {
-        console.log("User dismissed the install prompt");
-      }
+      await deferredPrompt.userChoice;
 
       setDeferredPrompt(null);
       setShowInstallPrompt(false);
     } catch (error) {
-      console.error("Error showing install prompt:", error);
+      setDeferredPrompt(null);
+      setShowInstallPrompt(false);
     }
   };
 
   const handleDismiss = () => {
     setShowInstallPrompt(false);
-    localStorage.setItem("pwa-prompt-dismissed", Date.now().toString());
+    try {
+      localStorage.setItem(DISMISS_KEY, Date.now().toString());
+    } catch {
+      // ignore
+    }
   };
 
-  if (isInstalled || !showInstallPrompt || !deferredPrompt) {
+  if (isInstalled || cooldownActive || !isMobile) {
     return null;
   }
 
-  const lastDismissed = localStorage.getItem("pwa-prompt-dismissed");
-  if (lastDismissed) {
-    const dismissedTime = parseInt(lastDismissed);
-    const daysSinceDismissed =
-      (Date.now() - dismissedTime) / (1000 * 60 * 60 * 24);
-    if (daysSinceDismissed < 7) {
-      return null;
-    }
+  if (platform === "other" && (!showInstallPrompt || !deferredPrompt)) {
+    return null;
   }
 
   return (
@@ -117,7 +142,9 @@ export function PWAInstallPrompt() {
                 Install PGC Tour
               </h3>
               <p className="text-xs text-gray-500">
-                Add to your home screen for a better experience
+                {platform === "ios"
+                  ? "Tap Share, then Add to Home Screen"
+                  : "Add to your home screen for a better experience"}
               </p>
             </div>
           </div>
@@ -131,12 +158,21 @@ export function PWAInstallPrompt() {
         </div>
 
         <div className="mt-3 flex space-x-2">
-          <button
-            onClick={handleInstallClick}
-            className="flex-1 rounded-md bg-green-600 px-3 py-2 text-xs font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
-          >
-            Install App
-          </button>
+          {platform === "ios" ? (
+            <button
+              onClick={handleDismiss}
+              className="flex-1 rounded-md bg-green-600 px-3 py-2 text-xs font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+            >
+              Got it
+            </button>
+          ) : (
+            <button
+              onClick={handleInstallClick}
+              className="flex-1 rounded-md bg-green-600 px-3 py-2 text-xs font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+            >
+              Install App
+            </button>
+          )}
           <button
             onClick={handleDismiss}
             className="flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"

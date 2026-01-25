@@ -1,13 +1,15 @@
 import { Shield, Settings, Database, Timer } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/ui";
-import { Button, Skeleton } from "@/ui";
+} from "./card";
+import { Button } from "./button";
+import { Skeleton } from "./skeleton";
 import type { AdminPanelProps } from "@/lib/types";
 
 /**
@@ -66,7 +68,7 @@ export function AdminPanel({ loading = false }: AdminPanelProps) {
                   className="justify-start"
                   size="sm"
                 >
-                  <Link to={item.to} search={{}}>
+                  <Link to={item.to}>
                     <item.Icon className="mr-2 h-4 w-4" />
                     {item.label}
                   </Link>
@@ -94,27 +96,46 @@ export function AdminPanel({ loading = false }: AdminPanelProps) {
 }
 
 /**
- * useAdminPanel
- *
  * Provides the list of admin shortcut items rendered by `AdminPanel`.
- *
- * This hook is intentionally responsible only for shaping UI-ready data (labels, icons, and
- * optional route targets). It does not perform any fetching or authorization.
- *
- * @returns An object containing `items`, where each item includes:
- * - `label`: Button text.
- * - `Icon`: Lucide icon component used in the button.
- * - `to` (optional): TanStack Router path string; if absent, the button renders disabled.
  */
 function useAdminPanel() {
   const items = [
     { label: "System Settings", to: undefined, Icon: Settings },
-    { label: "Tournaments", to: "/admin/tournaments", Icon: Database },
-    { label: "League Setup", to: "/admin/setup", Icon: Database },
-    { label: "Seasons", to: "/admin/seasons", Icon: Database },
-    { label: "Teams", to: "/admin/teams", Icon: Database },
-    { label: "Manage Golfers", to: "/admin/golfers", Icon: Database },
-    { label: "Cron Test", to: "/admin/crons", Icon: Timer },
+    {
+      label: "Tournaments",
+      to: "/admin/tournaments",
+      Icon: Database,
+    },
+    {
+      label: "League Setup",
+      to: "/admin/setup",
+      Icon: Database,
+    },
+    {
+      label: "Account Audit",
+      to: undefined,
+      Icon: Database,
+    },
+    {
+      label: "Seasons",
+      to: "/admin/seasons",
+      Icon: Database,
+    },
+    {
+      label: "Teams",
+      to: "/admin/teams",
+      Icon: Database,
+    },
+    {
+      label: "Manage Golfers",
+      to: "/admin/golfers",
+      Icon: Database,
+    },
+    {
+      label: "Crons",
+      to: "/admin/crons",
+      Icon: Timer,
+    },
     { label: "View Audit Logs", to: undefined, Icon: Shield },
   ] as const;
 

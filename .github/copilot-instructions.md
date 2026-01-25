@@ -35,6 +35,23 @@ You are working in the **PGC** repo (Vite/React + Convex backend). Follow these 
   - Components should import from `@/lib/types`, `@/lib/utils`, and `@/lib/constants`.
 - **Skeleton UI**: use existing primitives from `src/components/ui/*` (e.g. `Skeleton`) rather than inventing new loading styles.
 
+## Frontend: `src/components/ui/*` (UI Primitives)
+
+`src/components/ui/*` is reserved for **UI primitives**: reusable, prop-driven components that are the end of the chain for _app concerns_.
+
+- Components in `src/components/ui/*` may use **local UI state and DOM effects** strictly for presentation/interaction (e.g., Escape key handling, outside click handling, focus management, measuring/layout observers).
+- Still forbidden in `src/components/ui/*`:
+  - Convex hooks (`useQuery`, `useMutation`, `useAction`).
+  - Auth/role hooks (Clerk, `useUser`, `useRoleAccess`, etc.).
+  - Navigation and URL syncing (`useNavigate`, router reads/writes).
+  - Business logic / app orchestration.
+  - Side effects that change app data (mutations, analytics events, etc.).
+- Prefer moving app data fetching and view-model construction into:
+  - hooks under `src/hooks/*`, and/or
+  - “smart” components under `src/components/pages/*` or `src/components/internal/*`.
+- UI components may compose other UI primitives (Button/Card/Table/Skeleton) and use `@/lib/*` utilities/types.
+- **Skeleton UI**: use existing primitives from `src/components/ui/*` (e.g. `Skeleton`) rather than inventing new loading styles.
+
 ## Frontend: How src/ works in this repo
 
 This repo’s frontend is **TanStack Start** + **TanStack Router** (file-based routes), built with Vite.

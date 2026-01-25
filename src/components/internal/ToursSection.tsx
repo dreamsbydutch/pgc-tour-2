@@ -5,12 +5,15 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex";
 import type { Id } from "@/convex";
 import type { SeasonDoc, TourDoc } from "../../../convex/types/types";
-import { AdminCrudSection } from "@/components/internal/AdminCrudSection";
-import { AdminEditDeleteActions } from "../ui/admin-edit-delete-actions";
-import { Card, CardContent, CardHeader } from "../ui/card";
-import { Skeleton } from "../ui/skeleton";
-
-import { Field } from "@/components/internal/AdminField";
+import {
+  AdminCrudSection,
+  AdminEditDeleteActions,
+  Card,
+  CardContent,
+  CardHeader,
+  Field,
+  Skeleton,
+} from "@/ui";
 import {
   formatCentsAsDollars,
   normalizeList,

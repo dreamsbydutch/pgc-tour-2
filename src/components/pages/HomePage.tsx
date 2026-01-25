@@ -1,14 +1,16 @@
-import { SignedIn } from "@clerk/tanstack-react-start";
+import { Link } from "@tanstack/react-router";
 import { Shield, Star } from "lucide-react";
 import { api, useQuery } from "@/convex";
+import { useUser } from "@clerk/tanstack-react-start";
 
-import { AdminPanel } from "@/components/internal/AdminPanel";
 import { LeagueSchedule } from "@/components/internal/LeagueSchedule";
 import { TourCardForm } from "@/components/internal/TourCardForm";
 import { TourCardOutput } from "@/components/internal/TourCardOutput";
-import { TournamentCountdown } from "@/components/internal/TournamentCountdown";
+import { useTournamentCountdown } from "@/hooks";
+import { TournamentCountdown } from "@/ui";
 import { Skeleton } from "@/ui";
 import { useRoleAccess } from "@/hooks";
+import { formatMoney } from "@/lib";
 import type { TournamentCountdownTourney } from "@/lib";
 
 /**
@@ -19,19 +21,21 @@ import type { TournamentCountdownTourney } from "@/lib";
  * - fetching the current season and the first tournament for that season via Convex,
  * - gating the registration UI (tour card output/form) based on season/tournament dates,
  * - showing a countdown for the next tournament and the league schedule,
- * - optionally rendering the admin panel for admins.
+ * - showing a role badge (admins can click through to the admin dashboard).
  *
  * @returns The home page UI for the `/` route.
  */
 export function HomePage() {
   const model = useHomePage();
 
+  const tourney: TournamentCountdownTourney | undefined =
+    model.kind === "ready" ? (model.firstTournament ?? undefined) : undefined;
+
+  const { timeLeft } = useTournamentCountdown(tourney);
+
   if (model.kind === "loading") {
     return <HomePageSkeleton />;
   }
-
-  const tourney: TournamentCountdownTourney | undefined =
-    model.firstTournament ?? undefined;
 
   return (
     <div className="container mx-auto px-4 py-8 pb-20 lg:pb-8 lg:pt-20">
@@ -45,10 +49,9 @@ export function HomePage() {
 
         {model.beforeFirstTournament ? <TourCardOutput /> : null}
         {model.registrationOpen ? <TourCardForm /> : null}
-        <TournamentCountdown tourney={tourney} />
+        {model.accountAlert}
+        <TournamentCountdown tourney={tourney} timeLeft={timeLeft} />
         <LeagueSchedule />
-
-        <SignedIn>{model.isAdmin ? <AdminPanel /> : null}</SignedIn>
       </div>
     </div>
   );
@@ -71,13 +74,19 @@ function useHomePage():
     }
   | {
       kind: "ready";
-      isAdmin: boolean;
       registrationOpen: boolean;
       beforeFirstTournament: boolean;
       firstTournament: TournamentCountdownTourney | null;
       roleBadge: React.ReactNode;
+      accountAlert: React.ReactNode;
     } {
-  const { isAdmin, role, isLoading } = useRoleAccess();
+  const { role, isLoading } = useRoleAccess();
+  const { user: clerkUser } = useUser();
+
+  const memberRaw = useQuery(
+    api.functions.members.getMembers,
+    clerkUser ? { options: { clerkId: clerkUser.id } } : "skip",
+  );
 
   const currentSeason = useQuery(api.functions.seasons.getCurrentSeason);
   const firstTournamentResult = useQuery(
@@ -128,10 +137,13 @@ function useHomePage():
     !isLoading && normalizedRole ? (
       <div className="flex items-center justify-center gap-2">
         {normalizedRole === "admin" ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-3 py-1 text-sm font-medium text-red-800">
+          <Link
+            to="/admin/seasons"
+            className="inline-flex items-center gap-1 rounded-full bg-red-100 px-3 py-1 text-sm font-medium text-red-800"
+          >
             <Shield className="h-4 w-4" />
             Administrator
-          </span>
+          </Link>
         ) : null}
         {normalizedRole === "moderator" ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-800">
@@ -142,17 +154,40 @@ function useHomePage():
       </div>
     ) : null;
 
+  const memberAccountCents =
+    memberRaw &&
+    typeof memberRaw === "object" &&
+    "account" in memberRaw &&
+    typeof (memberRaw as { account?: unknown }).account === "number"
+      ? (memberRaw as { account: number }).account
+      : null;
+
+  const accountAlert =
+    typeof memberAccountCents === "number" && memberAccountCents > 0 ? (
+      <Link
+        to="/account"
+        className="block rounded-lg border bg-amber-50 p-4 text-sm"
+      >
+        <div className="font-medium text-amber-900">
+          You have {formatMoney(memberAccountCents)} in your account.
+        </div>
+        <div className="mt-1 text-amber-900/80">
+          Go to Account to request an e-transfer or donate.
+        </div>
+      </Link>
+    ) : null;
+
   if (isLoading) {
     return { kind: "loading" };
   }
 
   return {
     kind: "ready",
-    isAdmin,
     registrationOpen,
     beforeFirstTournament,
     firstTournament,
     roleBadge,
+    accountAlert,
   };
 }
 

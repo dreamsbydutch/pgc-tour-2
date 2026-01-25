@@ -43,7 +43,7 @@ export function isValidationError(error: unknown): boolean {
 /**
  * Get user-friendly error message
  */
-export function getErrorMessage(error: unknown): string {
+function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     if (isAuthError(error)) {
       if (error.message.includes("Unauthorized")) {

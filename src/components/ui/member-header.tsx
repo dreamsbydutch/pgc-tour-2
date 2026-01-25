@@ -3,15 +3,15 @@
 import { useMemo } from "react";
 
 /**
- * Displays the member's display name for the pre-tournament pick flow.
+ * Displays a member display name.
  *
  * Behavior:
  * - Prefers `member.displayName`.
  * - Falls back to `firstname` + `lastname`.
  * - Falls back to `email`.
  *
- * @param props.member - The currently signed-in member.
- * @returns A bold header with the member display name.
+ * @param props.member - Member fields used to compute the display name.
+ * @returns A bold header with the resolved member display name.
  */
 export function MemberHeader(props: {
   member: {
@@ -32,9 +32,6 @@ export function MemberHeader(props: {
 
 /**
  * Derives a stable display name for a member.
- *
- * @param args.member - Member fields used to compute the display name.
- * @returns The final display name string.
  */
 function useMemberHeader(args: {
   member: {

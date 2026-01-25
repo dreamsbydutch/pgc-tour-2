@@ -1,7 +1,20 @@
-import { cn } from "@/lib";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 
+import { cn } from "@/lib";
+
+/**
+ * Minimal dialog overlay.
+ *
+ * This is a UI primitive that uses a DOM effect for interaction (Escape-to-close).
+ * It should remain free of app hooks (Convex/auth/router) and app data side effects.
+ *
+ * @param props - Dialog props.
+ * @param props.open - Whether the dialog is visible.
+ * @param props.onOpenChange - Called to request open-state changes.
+ * @param props.children - Dialog body content.
+ * @returns The overlay and dialog container when open; otherwise `null`.
+ */
 export function Dialog({
   open,
   onOpenChange,

@@ -2,14 +2,22 @@
 
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
+
 import { cn } from "@/lib";
 import { Skeleton } from "./skeleton";
 
 /**
- * Dropdown Component
+ * Lightweight dropdown container (trigger + floating content).
  *
- * Lightweight, dependency-free dropdown container (trigger + floating content).
- * Designed for complex dropdown content where a native <select> is not suitable.
+ * This is a UI primitive that uses DOM effects for interaction (outside-click to close).
+ * It should remain free of app hooks (Convex/auth/router) and app data side effects.
+ *
+ * @param props - Dropdown props.
+ * @param props.open - Whether the dropdown is expanded.
+ * @param props.onOpenChange - Called to request open-state changes.
+ * @param props.triggerContent - The trigger button content.
+ * @param props.children - The dropdown panel content.
+ * @returns A trigger button plus an optional floating panel.
  */
 export function Dropdown({
   open,
@@ -75,8 +83,6 @@ export function Dropdown({
 }
 
 /**
- * DropdownSkeleton Component
- *
  * Loading state for the `Dropdown` trigger.
  */
 export function DropdownSkeleton({ className }: { className?: string }) {

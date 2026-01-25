@@ -5,32 +5,26 @@ import type {
   TournamentCountdownProps,
   TournamentCountdownTourney,
 } from "@/lib/types";
-import { calculateCountdownTimeLeft, formatTwoDigits } from "@/lib/utils";
-import { Skeleton } from "@/ui";
-import { useEffect, useState } from "react";
+import { formatTwoDigits } from "@/lib/utils";
+
+import { Skeleton } from "./skeleton";
 
 /**
- * TournamentCountdown
+ * Displays a tournament countdown UI given tournament metadata and a computed timer.
  *
- * Displays a live countdown to a tournament's `startDate` and optionally shows the tournament
- * logo alongside a `DD:HH:MM:SS` timer.
- *
- * Data sources:
- * - None. The tournament value is provided by the parent (typically from a query/hook).
- *
- * Major render states:
- * - No `tourney` or timer not initialized yet: renders `TournamentCountdownSkeleton`.
- * - Otherwise: renders the countdown card.
+ * This component is intentionally leaf/pure: it does not own timers/intervals.
+ * Use `useTournamentCountdown()` (in `src/hooks/*`) to compute `timeLeft`.
  *
  * @param props - Component props.
- * @param props.tourney - Tournament details used for display and timing.
+ * @param props.tourney - Tournament details used for display.
+ * @param props.timeLeft - Precomputed countdown time left.
  * @returns A countdown card or a skeleton state.
- *
- * @example
- * <TournamentCountdown tourney={tournament} />
  */
-export function TournamentCountdown({ tourney }: TournamentCountdownProps) {
-  const { timeLeft } = useTournamentCountdown({ tourney });
+export function TournamentCountdown(
+  props: TournamentCountdownProps & { timeLeft?: TimeLeftType },
+) {
+  const tourney: TournamentCountdownTourney | undefined = props.tourney;
+  const timeLeft = props.timeLeft ?? null;
 
   if (!tourney || timeLeft === null) {
     return <TournamentCountdownSkeleton />;
@@ -55,43 +49,15 @@ export function TournamentCountdown({ tourney }: TournamentCountdownProps) {
             )}
           </div>
           <div className="text-2xl xs:text-3xl md:text-4xl">
-            {formatTwoDigits(timeLeft?.days ?? 0)}:
-            {formatTwoDigits(timeLeft?.hours ?? 0)}:
-            {formatTwoDigits(timeLeft?.minutes ?? 0)}:
-            {formatTwoDigits(timeLeft?.seconds ?? 0)}
+            {formatTwoDigits(timeLeft.days)}:{formatTwoDigits(timeLeft.hours)}:
+            {formatTwoDigits(timeLeft.minutes)}:
+            {formatTwoDigits(timeLeft.seconds)}
             <div className="text-xs md:text-sm">Days : Hrs : Mins : Secs</div>
           </div>
         </div>
       </div>
     </div>
   );
-}
-
-/**
- * useTournamentCountdown
- *
- * Derives and updates the countdown time left for the provided tournament.
- *
- * @param input - Hook inputs.
- * @param input.tourney - Tournament used to determine the countdown start time.
- * @returns An object containing `timeLeft`, updated every second.
- */
-function useTournamentCountdown({
-  tourney,
-}: {
-  tourney?: TournamentCountdownTourney;
-}) {
-  const [timeLeft, setTimeLeft] = useState<TimeLeftType>(null);
-
-  useEffect(() => {
-    setTimeLeft(calculateCountdownTimeLeft(tourney?.startDate ?? Date.now()));
-    const timer = setInterval(() => {
-      setTimeLeft(calculateCountdownTimeLeft(tourney?.startDate ?? Date.now()));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [tourney?.startDate]);
-
-  return { timeLeft };
 }
 
 /**

@@ -69,7 +69,7 @@ export interface TourCardChangeButtonProps {
  * Props for `PointsTable`.
  */
 export interface PointsTableProps {
-  seasonId?: Id<"seasons">;
+  tiers?: Array<{ key: string; name: string; points: number[] }>;
   loading?: boolean;
 }
 
@@ -77,7 +77,7 @@ export interface PointsTableProps {
  * Props for `PayoutsTable`.
  */
 export interface PayoutsTableProps {
-  seasonId?: Id<"seasons">;
+  tiers?: Array<{ key: string; name: string; payouts: number[] }>;
   loading?: boolean;
 }
 
@@ -109,8 +109,7 @@ export interface ChampionshipWinTournament {
 }
 
 export interface LittleFuckerProps {
-  memberId: Id<"members">;
-  seasonId?: Id<"seasons">;
+  wins?: ChampionshipWinTournament[];
   showSeasonText?: boolean;
   className?: string;
   loading?: boolean;
@@ -247,7 +246,9 @@ export interface NavigationData {
  * Props for `StandingsView`.
  */
 export interface StandingsViewProps {
+  initialSeasonId?: string;
   initialTourId?: string;
+  onSeasonChange?: (seasonId: string) => void;
   onTourChange?: (tourId: string) => void;
 }
 

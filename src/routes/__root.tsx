@@ -4,7 +4,7 @@ import { useEffect } from "react";
 
 import { Providers } from "@/providers";
 import { PWAInstallPrompt } from "../components/internal/PWAInstallPrompt";
-import { SignedOutPersistentSignIn } from "@/components/internal/SignedOutPersistentSignIn";
+import { SignedOutPersistentSignIn } from "@/ui";
 
 import "../styles.css";
 import { NavigationContainer } from "@/components/pages/NavigationContainer";

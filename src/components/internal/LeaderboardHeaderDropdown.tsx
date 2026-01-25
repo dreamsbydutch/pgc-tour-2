@@ -7,7 +7,8 @@ import type {
   LeaderboardHeaderDropdownProps,
   LeaderboardHeaderGroupMode,
 } from "@/lib/types";
-import { Dropdown, DropdownRow, DropdownSkeleton } from "@/ui";
+import { DropdownRow } from "@/ui";
+import { Dropdown, DropdownSkeleton } from "@/ui";
 
 /**
  * LeaderboardHeaderDropdown Component

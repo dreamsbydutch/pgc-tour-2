@@ -18,9 +18,7 @@ import type {
 } from "../../../../convex/types/types";
 
 import { useRoleAccess } from "@/hooks";
-import { Field } from "@/components";
-import { AdminDataTable } from "@/components/internal/AdminDataTable";
-import { Button } from "@/ui";
+import { AdminDataTable, Button, Field } from "@/ui";
 import {
   Card,
   CardContent,

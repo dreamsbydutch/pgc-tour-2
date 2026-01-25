@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { api, useAction, useMutation, useQuery } from "@/convex";
+import { api, useAction, useMutation, usePaginatedQuery } from "@/convex";
 import { SignedIn, SignedOut, SignInButton } from "@clerk/tanstack-react-start";
 import { useUser } from "@clerk/tanstack-react-start";
 
@@ -7,8 +7,8 @@ import type { Id } from "@/convex";
 import type { GolferDoc } from "../../../../convex/types/types";
 
 import { useRoleAccess } from "@/hooks";
-import { AdminDataTable } from "@/components/internal/AdminDataTable";
-import { Button } from "@/ui";
+import { AdminDataTable, Button, Field } from "@/ui";
+import { AdminLoadMore } from "@/ui";
 import {
   Card,
   CardContent,
@@ -26,21 +26,6 @@ import {
  */
 export function AdminGolfersPage() {
   const { isModerator, isRoleLoading, member, vm } = useAdminGolfersPage();
-
-  function Field({
-    label,
-    children,
-  }: {
-    label: string;
-    children: React.ReactNode;
-  }) {
-    return (
-      <label className="grid gap-1">
-        <span className="text-sm font-medium">{label}</span>
-        {children}
-      </label>
-    );
-  }
 
   return (
     <div className="container mx-auto px-4 py-8 pb-20 lg:pb-8 lg:pt-20">
@@ -244,6 +229,14 @@ export function AdminGolfersPage() {
                       },
                     ]}
                   />
+
+                  <div className="pt-4">
+                    <AdminLoadMore
+                      status={vm.golfersPaginationStatus}
+                      onLoadMore={vm.loadMoreGolfers}
+                      auto
+                    />
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -273,9 +266,7 @@ function useAdminGolfersPage() {
 
   const createGolfer = useMutation(api.functions.golfers.createGolfers);
   const updateGolfer = useMutation(api.functions.golfers.updateGolfers);
-  const syncGolfers = useAction(
-    api.functions.golfersSync.syncGolfersFromDataGolf,
-  );
+  const syncGolfers = useAction(api.functions.golfers.syncGolfersFromDataGolf);
   const normalizeGolferNames = useMutation(
     api.functions.golfers.adminNormalizeGolferNames,
   );
@@ -283,22 +274,17 @@ function useAdminGolfersPage() {
     api.functions.golfers.adminDedupeGolfersByName,
   );
 
-  const golfersResult = useQuery(api.functions.golfers.getGolfers, {
-    options: {
-      pagination: { limit: 100 },
-      sort: { sortBy: "playerName", sortOrder: "asc" },
-    },
-  });
+  const golfersPagination = usePaginatedQuery(
+    api.functions.golfers.getGolfersPage,
+    {},
+    { initialNumItems: 200 },
+  );
 
   const golfers = useMemo(() => {
-    const raw = golfersResult as unknown;
-    const list = Array.isArray(raw)
-      ? (raw as Array<GolferDoc | null>).filter(
-          (g): g is GolferDoc => g !== null,
-        )
-      : [];
-    return list;
-  }, [golfersResult]);
+    return [...golfersPagination.results].sort((a, b) =>
+      a.playerName.localeCompare(b.playerName),
+    );
+  }, [golfersPagination.results]);
 
   const [form, setForm] = useState<GolferFormState>({
     golferId: "",
@@ -483,6 +469,15 @@ function useAdminGolfersPage() {
     isRoleLoading,
     vm: {
       golfers,
+      golfersPaginationStatus: golfersPagination.status as
+        | "LoadingFirstPage"
+        | "CanLoadMore"
+        | "LoadingMore"
+        | "Exhausted",
+      loadMoreGolfers: (pageSize: number) => {
+        if (golfersPagination.status !== "CanLoadMore") return;
+        golfersPagination.loadMore(pageSize);
+      },
       form,
       isEditing,
       updateField,

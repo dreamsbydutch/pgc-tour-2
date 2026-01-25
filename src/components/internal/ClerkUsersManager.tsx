@@ -5,7 +5,7 @@ import { useUser } from "@clerk/tanstack-react-start";
 import { api } from "@/convex";
 import type { Id } from "@/convex";
 
-import { AdminRowActions, Button } from "@/ui";
+import { AdminDataTable, AdminRowActions, Button } from "@/ui";
 import {
   Card,
   CardContent,
@@ -15,7 +15,6 @@ import {
 } from "@/ui";
 import { FormFeedback, Skeleton } from "@/ui";
 
-import { AdminDataTable } from "@/components/internal/AdminDataTable";
 import type { AdminDataTableColumn } from "@/lib/types";
 import { adminActionsColumn } from "@/lib/adminTable";
 
@@ -125,7 +124,7 @@ function useClerkUsersManager() {
   const { user } = useUser();
   const convex = useConvex();
 
-  const listClerkUsers = useAction(api.functions.clerk.listClerkUsers);
+  const listClerkUsers = useAction(api.functions.members.listClerkUsers);
   const linkMember = useMutation(
     api.functions.members.adminLinkMemberToClerkUser,
   );

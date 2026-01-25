@@ -3,7 +3,8 @@
 import { SignedIn, SignedOut, SignInButton } from "@clerk/tanstack-react-start";
 
 import { useRoleAccess } from "@/hooks";
-import { Button, Card, CardContent, CardHeader, CardTitle } from "@/ui";
+import { Button } from "@/ui";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui";
 
 /**
  * Hard-gates a page behind Clerk authentication and an admin role.

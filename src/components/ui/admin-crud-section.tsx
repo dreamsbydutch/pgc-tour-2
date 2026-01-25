@@ -1,15 +1,16 @@
 import type { FormEvent, ReactNode } from "react";
 
-import { AdminDataTable } from "@/components/internal/AdminDataTable";
-import { AdminFormActions } from "@/ui";
+import { AdminDataTable } from "./admin-data-table";
+import { AdminFormActions } from "./admin-form-actions";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/ui";
-import { FormFeedback, Skeleton } from "@/ui";
+} from "./card";
+import { FormFeedback } from "./form-feedback";
+import { Skeleton } from "./skeleton";
 import type { AdminDataTableColumn } from "@/lib/types";
 
 /**
@@ -48,6 +49,7 @@ export function AdminCrudSection<T extends { _id: string }>(props: {
   tableRows?: T[];
   tableColumns?: Array<AdminDataTableColumn<T>>;
   tableEmptyMessage?: string;
+  tableFooter?: ReactNode;
 }) {
   const model = useAdminCrudSection(props);
 
@@ -98,6 +100,7 @@ export function AdminCrudSection<T extends { _id: string }>(props: {
               columns={model.tableColumns}
               emptyMessage={model.tableEmptyMessage}
             />
+            {model.tableFooter}
           </CardContent>
         </Card>
       ) : null}
@@ -133,6 +136,7 @@ function useAdminCrudSection<T extends { _id: string }>(props: {
   tableRows?: T[];
   tableColumns?: Array<AdminDataTableColumn<T>>;
   tableEmptyMessage?: string;
+  tableFooter?: ReactNode;
 }) {
   if (props.loading) {
     return { status: "loading" as const };
@@ -158,6 +162,7 @@ function useAdminCrudSection<T extends { _id: string }>(props: {
     tableRows: props.tableRows,
     tableColumns: props.tableColumns,
     tableEmptyMessage: props.tableEmptyMessage,
+    tableFooter: props.tableFooter,
   };
 }
 
