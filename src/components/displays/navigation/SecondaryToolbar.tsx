@@ -1,8 +1,57 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { cn } from "@/lib";
+
+function useIsHorizontallyOverflowing(ref: RefObject<HTMLElement | null>) {
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  const update = useCallback(() => {
+    const el = ref.current;
+
+    if (!el) {
+      setIsOverflowing(false);
+      return;
+    }
+
+    setIsOverflowing(el.scrollWidth > el.clientWidth + 1);
+  }, [ref]);
+
+  useLayoutEffect(() => {
+    update();
+  });
+
+  useEffect(() => {
+    update();
+
+    const el = ref.current;
+    let ro: ResizeObserver | null = null;
+
+    if (typeof ResizeObserver !== "undefined" && el) {
+      ro = new ResizeObserver(() => {
+        update();
+      });
+      ro.observe(el);
+    }
+
+    window.addEventListener("resize", update);
+
+    return () => {
+      window.removeEventListener("resize", update);
+      ro?.disconnect();
+    };
+  }, [ref, update]);
+
+  return isOverflowing;
+}
 
 /**
  * Renders a fixed, layered “secondary” toolbar for page-level navigation.
@@ -10,6 +59,7 @@ import { cn } from "@/lib";
  * Behavior:
  * - Fixed positioning above the primary bottom nav (default offset matches the primary nav height).
  * - Supports a tertiary layer via `level="tertiary"` for stacked navigation.
+ * - Centers contents when they fit; switches to left-aligned horizontal scrolling when contents overflow.
  *
  * Intended usage:
  * - Use in the app shell (or page facilitators) when a screen needs a second row of navigation.
@@ -26,9 +76,11 @@ export function SecondaryToolbar(props: {
   level?: "secondary" | "tertiary";
 }) {
   const level = props.level ?? "secondary";
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const isOverflowing = useIsHorizontallyOverflowing(contentRef);
 
   const baseClasses =
-    "fixed left-0 right-0 flex items-center justify-center transition-all duration-200 shadow-lg bg-gray-100";
+    "fixed left-0 right-0 transition-all duration-200 shadow-lg bg-gray-100";
 
   const positionClasses =
     level === "tertiary"
@@ -49,7 +101,15 @@ export function SecondaryToolbar(props: {
         props.className,
       )}
     >
-      {props.children}
+      <div
+        ref={contentRef}
+        className={cn(
+          "flex h-full w-full items-center overflow-x-auto",
+          isOverflowing ? "justify-start" : "justify-center",
+        )}
+      >
+        {props.children}
+      </div>
     </div>
   );
 }

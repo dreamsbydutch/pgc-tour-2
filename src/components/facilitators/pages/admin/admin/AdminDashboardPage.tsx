@@ -70,7 +70,7 @@ export function AdminDashboardPage(props: {
       </div>
 
       <SecondaryToolbar className="px-2">
-        <div className="flex w-full items-center justify-start gap-2 overflow-x-auto">
+        <div className="flex items-center gap-2">
           {items.map((item) => {
             const isActive = item.view === props.view;
 
