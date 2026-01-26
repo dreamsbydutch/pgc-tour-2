@@ -6,6 +6,14 @@ import type {
   LeaderboardTeamRow,
   LeaderboardVariant,
 } from "./types";
+import type {
+  ExtendedStandingsTourCard,
+  StandingsTeam,
+  StandingsTier,
+  StandingsTour,
+  StandingsTourCard,
+  StandingsTournament,
+} from "./types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -201,6 +209,213 @@ export function isNonEmptyString(
 export function includesPlayoff(value: string | null | undefined): boolean {
   if (!isNonEmptyString(value)) return false;
   return value.toLowerCase().includes("playoff");
+}
+
+/**
+ * Parses a rank from a position string like "T3", "3", or "CUT".
+ *
+ * @param pos - Position string.
+ * @returns Parsed rank, or `Infinity` when not parseable.
+ */
+export function parseRankFromPositionString(
+  pos: string | null | undefined,
+): number {
+  if (!pos) return Number.POSITIVE_INFINITY;
+  const match = /\d+/.exec(pos);
+  if (!match) return Number.POSITIVE_INFINITY;
+  const n = Number.parseInt(match[0], 10);
+  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Normalizes a position value into a sortable numeric rank.
+ *
+ * @param pos - Position number or string like "T12".
+ * @returns Parsed rank, or `Infinity` when not parseable.
+ */
+export function parsePositionToNumber(
+  pos: string | number | null | undefined,
+): number {
+  if (typeof pos === "number") return pos;
+  if (typeof pos === "string") return parseRankFromPositionString(pos);
+  return Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Adds `standingsPosition` and `currentPosition` to a points-sorted standings list.
+ *
+ * @param cardsSorted - Cards sorted in descending points order.
+ * @returns Cards with computed position fields.
+ */
+export function computeStandingsPositionStrings(
+  cardsSorted: ExtendedStandingsTourCard[],
+): ExtendedStandingsTourCard[] {
+  const pointsToRanks = new Map<number, { rank: number; tieCount: number }>();
+
+  for (let i = 0; i < cardsSorted.length; i++) {
+    const points = cardsSorted[i]!.points;
+    const existing = pointsToRanks.get(points);
+    if (existing) {
+      existing.tieCount += 1;
+    } else {
+      pointsToRanks.set(points, { rank: i + 1, tieCount: 1 });
+    }
+  }
+
+  return cardsSorted.map((card) => {
+    const info = pointsToRanks.get(card.points);
+    const rank = info?.rank ?? 999;
+    const isTie = (info?.tieCount ?? 0) > 1;
+    const currentPosition = isTie ? `T${rank}` : String(rank);
+
+    return {
+      ...card,
+      standingsPosition: rank,
+      currentPosition,
+    };
+  });
+}
+
+/**
+ * Computes position deltas by comparing current points to points before the most recent completed non-playoff tournament.
+ *
+ * @param args - Standings datasets for the current season.
+ * @returns Map keyed by tourCard id with per-tour and overall position deltas.
+ */
+export function computeStandingsPositionChangeByTour(args: {
+  cards: StandingsTourCard[];
+  tours: StandingsTour[];
+  teams: StandingsTeam[];
+  tournaments: StandingsTournament[];
+  tiers: StandingsTier[];
+}): Map<string, { posChange: number; posChangePO: number; pastPoints: number }> {
+  const now = Date.now();
+
+  const playoffTierIds = new Set(
+    args.tiers
+      .filter((t) => includesPlayoff(t.name))
+      .map((t) => t._id as string),
+  );
+
+  const pastTournament = args.tournaments
+    .filter((t) => !playoffTierIds.has(t.tierId as string))
+    .filter((t) => t.endDate < now)
+    .slice()
+    .sort((a, b) => b.endDate - a.endDate)[0];
+
+  if (!pastTournament) return new Map();
+
+  const pointsFromPastTournamentByTourCardId = new Map<string, number>();
+  for (const team of args.teams) {
+    if (team.tournamentId !== pastTournament._id) continue;
+    pointsFromPastTournamentByTourCardId.set(
+      team.tourCardId as string,
+      team.points ?? 0,
+    );
+  }
+
+  const pastPointsById = new Map<string, number>();
+  for (const tc of args.cards) {
+    const delta = pointsFromPastTournamentByTourCardId.get(tc._id as string) ?? 0;
+    pastPointsById.set(tc._id as string, tc.points - delta);
+  }
+
+  const overallPastOrder = args.cards.slice().sort((a, b) => {
+    const delta =
+      (pastPointsById.get(b._id as string) ?? 0) -
+      (pastPointsById.get(a._id as string) ?? 0);
+    if (delta !== 0) return delta;
+    const nameDelta = String(a.displayName ?? "").localeCompare(
+      String(b.displayName ?? ""),
+    );
+    if (nameDelta !== 0) return nameDelta;
+    return String(a._id).localeCompare(String(b._id));
+  });
+
+  const overallCurrentOrder = args.cards.slice().sort((a, b) => {
+    const delta = b.points - a.points;
+    if (delta !== 0) return delta;
+    const nameDelta = String(a.displayName ?? "").localeCompare(
+      String(b.displayName ?? ""),
+    );
+    if (nameDelta !== 0) return nameDelta;
+    return String(a._id).localeCompare(String(b._id));
+  });
+
+  const overallPastRank = new Map<string, number>();
+  const overallCurrentRank = new Map<string, number>();
+
+  overallPastOrder.forEach((tc, idx) =>
+    overallPastRank.set(tc._id as string, idx + 1),
+  );
+  overallCurrentOrder.forEach((tc, idx) =>
+    overallCurrentRank.set(tc._id as string, idx + 1),
+  );
+
+  const perTourPastRank = new Map<string, Map<string, number>>();
+  const perTourCurrentRank = new Map<string, Map<string, number>>();
+
+  for (const tour of args.tours) {
+    const tourCards = args.cards.filter((c) => c.tourId === tour._id);
+
+    const pastSorted = tourCards.slice().sort((a, b) => {
+      const delta =
+        (pastPointsById.get(b._id as string) ?? 0) -
+        (pastPointsById.get(a._id as string) ?? 0);
+      if (delta !== 0) return delta;
+      const nameDelta = String(a.displayName ?? "").localeCompare(
+        String(b.displayName ?? ""),
+      );
+      if (nameDelta !== 0) return nameDelta;
+      return String(a._id).localeCompare(String(b._id));
+    });
+
+    const currentSorted = tourCards.slice().sort((a, b) => {
+      const delta = b.points - a.points;
+      if (delta !== 0) return delta;
+      const nameDelta = String(a.displayName ?? "").localeCompare(
+        String(b.displayName ?? ""),
+      );
+      if (nameDelta !== 0) return nameDelta;
+      return String(a._id).localeCompare(String(b._id));
+    });
+
+    const pastMap = new Map<string, number>();
+    const currentMap = new Map<string, number>();
+
+    pastSorted.forEach((tc, idx) => pastMap.set(tc._id as string, idx + 1));
+    currentSorted.forEach((tc, idx) =>
+      currentMap.set(tc._id as string, idx + 1),
+    );
+
+    perTourPastRank.set(tour._id as string, pastMap);
+    perTourCurrentRank.set(tour._id as string, currentMap);
+  }
+
+  const out = new Map<
+    string,
+    { posChange: number; posChangePO: number; pastPoints: number }
+  >();
+
+  for (const tc of args.cards) {
+    const id = tc._id as string;
+    const tourId = tc.tourId as string;
+    const pastRankInTour = perTourPastRank.get(tourId)?.get(id) ?? 999;
+    const currentRankInTour = perTourCurrentRank.get(tourId)?.get(id) ?? 999;
+    const posChange = pastRankInTour - currentRankInTour;
+
+    const pastPO = overallPastRank.get(id) ?? 999;
+    const currentPO = overallCurrentRank.get(id) ?? 999;
+    const posChangePO = pastPO - currentPO;
+
+    out.set(id, {
+      posChange: Number.isFinite(posChange) ? posChange : 0,
+      posChangePO: Number.isFinite(posChangePO) ? posChangePO : 0,
+      pastPoints: pastPointsById.get(id) ?? tc.points,
+    });
+  }
+
+  return out;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useUser } from "@clerk/clerk-react";
 import {
   ChevronDown,
@@ -30,7 +30,15 @@ import type {
   StandingsTournament,
   StandingsViewProps,
 } from "@/lib";
-import { cn, includesPlayoff } from "@/lib";
+import {
+  cn,
+  computeStandingsPositionChangeByTour,
+  computeStandingsPositionStrings,
+  formatMoney,
+  includesPlayoff,
+  parsePositionToNumber,
+  parseRankFromPositionString,
+} from "@/lib";
 import { api, useQuery } from "@/convex";
 import type { Doc, Id } from "@/convex";
 
@@ -69,24 +77,7 @@ export function StandingsView(props: StandingsViewProps) {
     );
   }
 
-  const formatMoney = (cents: number) => {
-    const dollars = cents / 100;
-    return dollars.toLocaleString("en-US", {
-      style: "currency",
-      currency: "USD",
-      currencyDisplay: "symbol",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    });
-  };
-
-  const parseRank = (pos: string | undefined) => {
-    if (!pos) return Number.POSITIVE_INFINITY;
-    const match = /\d+/.exec(pos);
-    if (!match) return Number.POSITIVE_INFINITY;
-    const n = Number.parseInt(match[0], 10);
-    return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
-  };
+  const parseRank = parseRankFromPositionString;
 
   const PositionChange = ({ posChange }: { posChange: number }) => {
     if (posChange === 0) {
@@ -901,182 +892,8 @@ function useStandingsView(props: StandingsViewProps) {
     return true;
   };
 
-  const computePositionStrings = useCallback(
-    (cardsSorted: ExtendedStandingsTourCard[]): ExtendedStandingsTourCard[] => {
-      const pointsToRanks = new Map<
-        number,
-        { rank: number; tieCount: number }
-      >();
-
-      for (let i = 0; i < cardsSorted.length; i++) {
-        const points = cardsSorted[i]!.points;
-        const existing = pointsToRanks.get(points);
-        if (existing) {
-          existing.tieCount += 1;
-        } else {
-          pointsToRanks.set(points, { rank: i + 1, tieCount: 1 });
-        }
-      }
-
-      return cardsSorted.map((card) => {
-        const info = pointsToRanks.get(card.points);
-        const rank = info?.rank ?? 999;
-        const isTie = (info?.tieCount ?? 0) > 1;
-        const currentPosition = isTie ? `T${rank}` : String(rank);
-
-        return {
-          ...card,
-          standingsPosition: rank,
-          currentPosition,
-        };
-      });
-    },
-    [],
-  );
-
-  const computePositionChangeByTour = useCallback(
-    (args: {
-      cards: StandingsTourCard[];
-      tours: StandingsTour[];
-      teams: StandingsTeam[];
-      tournaments: StandingsTournament[];
-      tiers: StandingsTier[];
-    }): Map<
-      string,
-      { posChange: number; posChangePO: number; pastPoints: number }
-    > => {
-      const now = Date.now();
-
-      const playoffTierIds = new Set(
-        args.tiers
-          .filter((t) => includesPlayoff(t.name))
-          .map((t) => t._id as string),
-      );
-
-      const pastTournament = args.tournaments
-        .filter((t) => !playoffTierIds.has(t.tierId as string))
-        .filter((t) => t.endDate < now)
-        .slice()
-        .sort((a, b) => b.endDate - a.endDate)[0];
-
-      if (!pastTournament) return new Map();
-
-      const pointsFromPastTournamentByTourCardId = new Map<string, number>();
-      for (const team of args.teams) {
-        if (team.tournamentId !== pastTournament._id) continue;
-        pointsFromPastTournamentByTourCardId.set(
-          team.tourCardId as string,
-          team.points ?? 0,
-        );
-      }
-
-      const pastPointsById = new Map<string, number>();
-      for (const tc of args.cards) {
-        const delta =
-          pointsFromPastTournamentByTourCardId.get(tc._id as string) ?? 0;
-        pastPointsById.set(tc._id as string, tc.points - delta);
-      }
-
-      const overallPastOrder = args.cards.slice().sort((a, b) => {
-        const delta =
-          (pastPointsById.get(b._id as string) ?? 0) -
-          (pastPointsById.get(a._id as string) ?? 0);
-        if (delta !== 0) return delta;
-        const nameDelta = String(a.displayName ?? "").localeCompare(
-          String(b.displayName ?? ""),
-        );
-        if (nameDelta !== 0) return nameDelta;
-        return String(a._id).localeCompare(String(b._id));
-      });
-
-      const overallCurrentOrder = args.cards.slice().sort((a, b) => {
-        const delta = b.points - a.points;
-        if (delta !== 0) return delta;
-        const nameDelta = String(a.displayName ?? "").localeCompare(
-          String(b.displayName ?? ""),
-        );
-        if (nameDelta !== 0) return nameDelta;
-        return String(a._id).localeCompare(String(b._id));
-      });
-
-      const overallPastRank = new Map<string, number>();
-      const overallCurrentRank = new Map<string, number>();
-
-      overallPastOrder.forEach((tc, idx) =>
-        overallPastRank.set(tc._id as string, idx + 1),
-      );
-      overallCurrentOrder.forEach((tc, idx) =>
-        overallCurrentRank.set(tc._id as string, idx + 1),
-      );
-
-      const perTourPastRank = new Map<string, Map<string, number>>();
-      const perTourCurrentRank = new Map<string, Map<string, number>>();
-
-      for (const tour of args.tours) {
-        const tourCards = args.cards.filter((c) => c.tourId === tour._id);
-
-        const pastSorted = tourCards.slice().sort((a, b) => {
-          const delta =
-            (pastPointsById.get(b._id as string) ?? 0) -
-            (pastPointsById.get(a._id as string) ?? 0);
-          if (delta !== 0) return delta;
-          const nameDelta = String(a.displayName ?? "").localeCompare(
-            String(b.displayName ?? ""),
-          );
-          if (nameDelta !== 0) return nameDelta;
-          return String(a._id).localeCompare(String(b._id));
-        });
-
-        const currentSorted = tourCards.slice().sort((a, b) => {
-          const delta = b.points - a.points;
-          if (delta !== 0) return delta;
-          const nameDelta = String(a.displayName ?? "").localeCompare(
-            String(b.displayName ?? ""),
-          );
-          if (nameDelta !== 0) return nameDelta;
-          return String(a._id).localeCompare(String(b._id));
-        });
-
-        const pastMap = new Map<string, number>();
-        const currentMap = new Map<string, number>();
-
-        pastSorted.forEach((tc, idx) => pastMap.set(tc._id as string, idx + 1));
-        currentSorted.forEach((tc, idx) =>
-          currentMap.set(tc._id as string, idx + 1),
-        );
-
-        perTourPastRank.set(tour._id as string, pastMap);
-        perTourCurrentRank.set(tour._id as string, currentMap);
-      }
-
-      const out = new Map<
-        string,
-        { posChange: number; posChangePO: number; pastPoints: number }
-      >();
-
-      for (const tc of args.cards) {
-        const id = tc._id as string;
-        const tourId = tc.tourId as string;
-        const pastRankInTour = perTourPastRank.get(tourId)?.get(id) ?? 999;
-        const currentRankInTour =
-          perTourCurrentRank.get(tourId)?.get(id) ?? 999;
-        const posChange = pastRankInTour - currentRankInTour;
-
-        const pastPO = overallPastRank.get(id) ?? 999;
-        const currentPO = overallCurrentRank.get(id) ?? 999;
-        const posChangePO = pastPO - currentPO;
-
-        out.set(id, {
-          posChange: Number.isFinite(posChange) ? posChange : 0,
-          posChangePO: Number.isFinite(posChangePO) ? posChangePO : 0,
-          pastPoints: pastPointsById.get(id) ?? tc.points,
-        });
-      }
-
-      return out;
-    },
-    [],
-  );
+  const computePositionStrings = computeStandingsPositionStrings;
+  const computePositionChangeByTour = computeStandingsPositionChangeByTour;
 
   const { user } = useUser();
   const clerkId = user?.id;
@@ -1321,14 +1138,7 @@ function useStandingsView(props: StandingsViewProps) {
     return allTourCards.filter((c) => c.tourId === activeView);
   }, [activeView, allTourCards]);
 
-  const parsePosition = (pos: string | number | undefined | null) => {
-    if (typeof pos === "number") return pos;
-    if (typeof pos === "string") {
-      const match = /\d+/.exec(pos);
-      if (match) return Number.parseInt(match[0], 10);
-    }
-    return Number.POSITIVE_INFINITY;
-  };
+  const parsePosition = parsePositionToNumber;
 
   const activeTourPlayoffSpots = useMemo(() => {
     if (!activeView || activeView === "playoffs") return null;
