@@ -252,6 +252,95 @@ export const getActiveMembersMissingTourCards = query({
       return currentCount === 0;
     });
 
+    const duplicateNameGroups = (() => {
+      function normalizeNamePart(value: string | null | undefined) {
+        return (value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+      }
+
+      const groups = new Map<
+        string,
+        {
+          firstname: string;
+          lastname: string;
+          members: Array<{
+            memberId: Id<"members">;
+            email: string;
+            firstname: string | null;
+            lastname: string | null;
+            lastLoginAt: number | null;
+            currentSeasonTourCardsCount: number;
+            previousSeasonTourCardsCount: number;
+            isMissingThisSeason: boolean;
+          }>;
+        }
+      >();
+
+      for (const m of activeMembers) {
+        const first = normalizeNamePart(m.firstname);
+        const last = normalizeNamePart(m.lastname);
+        if (!first || !last) continue;
+
+        const key = `${first}|${last}`;
+
+        const currentSeasonTourCardsCount =
+          currentCountsByMember.get(m._id) ?? 0;
+        const previousSeasonTourCardsCount =
+          previousCountsByMember.get(m._id) ?? 0;
+
+        const group =
+          groups.get(key) ??
+          ({
+            firstname: (m.firstname ?? "").trim(),
+            lastname: (m.lastname ?? "").trim(),
+            members: [],
+          } satisfies {
+            firstname: string;
+            lastname: string;
+            members: Array<{
+              memberId: Id<"members">;
+              email: string;
+              firstname: string | null;
+              lastname: string | null;
+              lastLoginAt: number | null;
+              currentSeasonTourCardsCount: number;
+              previousSeasonTourCardsCount: number;
+              isMissingThisSeason: boolean;
+            }>;
+          });
+
+        group.members.push({
+          memberId: m._id,
+          email: m.email,
+          firstname: m.firstname ?? null,
+          lastname: m.lastname ?? null,
+          lastLoginAt: m.lastLoginAt ?? null,
+          currentSeasonTourCardsCount,
+          previousSeasonTourCardsCount,
+          isMissingThisSeason: currentSeasonTourCardsCount === 0,
+        });
+
+        groups.set(key, group);
+      }
+
+      return [...groups.values()]
+        .filter(
+          (g) =>
+            g.members.length >= 2 &&
+            g.members.some((m) => m.isMissingThisSeason),
+        )
+        .map((g) => ({
+          firstname: g.firstname,
+          lastname: g.lastname,
+          members: [...g.members].sort((a, b) => a.email.localeCompare(b.email)),
+        }))
+        .sort((a, b) => {
+          const aName = `${a.lastname} ${a.firstname}`.trim();
+          const bName = `${b.lastname} ${b.firstname}`.trim();
+          if (aName !== bName) return aName.localeCompare(bName);
+          return b.members.length - a.members.length;
+        });
+    })();
+
     const rows = missingMembers
       .map((m) => {
         const previousSeasonTourCardsCount =
@@ -287,6 +376,7 @@ export const getActiveMembersMissingTourCards = query({
       missingCount: rows.length,
       returningMissingCount,
       members: rows,
+      duplicateNameGroups,
     };
   },
 });

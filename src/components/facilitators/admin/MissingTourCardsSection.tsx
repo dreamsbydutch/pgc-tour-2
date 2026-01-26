@@ -160,6 +160,61 @@ export function MissingTourCardsSection() {
             )}
           </TableBody>
         </Table>
+
+        <div className="space-y-2">
+          <div className="text-sm font-medium">
+            Duplicate member names (same first + last)
+          </div>
+          <div className="text-sm text-muted-foreground">
+            Only includes active duplicate-name groups where at least one member
+            is missing a tour card for the selected season.
+          </div>
+
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead className="text-right">Members</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {model.duplicateNameGroups.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={2} className="text-muted-foreground">
+                    {model.seasonId
+                      ? "No duplicate-name groups to show."
+                      : "Select a season to view results."}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                model.duplicateNameGroups.map((group) => (
+                  <TableRow key={group.key}>
+                    <TableCell className="font-medium">
+                      {group.displayName}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="space-y-1">
+                        {group.members.map((m) => (
+                          <div key={m.memberId} className="text-xs">
+                            <span className="font-medium">{m.email}</span>
+                            <span className="text-muted-foreground">
+                              {` (${String(m.memberId).slice(-6)})`}
+                            </span>
+                            {m.isMissingThisSeason ? (
+                              <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-900">
+                                missing
+                              </span>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </CardContent>
     </Card>
   );
@@ -263,6 +318,15 @@ function useMissingTourCardsSection() {
           lastLoginLabel: string | null;
           previousSeasonTourCardsCount: number;
         }>,
+        duplicateNameGroups: [] as Array<{
+          key: string;
+          displayName: string;
+          members: Array<{
+            memberId: Id<"members">;
+            email: string;
+            isMissingThisSeason: boolean;
+          }>;
+        }>,
       };
     }
 
@@ -280,6 +344,7 @@ function useMissingTourCardsSection() {
         missingCount: 0,
         returningMissingCount: 0,
         rows: [],
+        duplicateNameGroups: [],
       };
     }
 
@@ -297,6 +362,7 @@ function useMissingTourCardsSection() {
         missingCount: 0,
         returningMissingCount: 0,
         rows: [],
+        duplicateNameGroups: [],
       };
     }
 
@@ -311,6 +377,20 @@ function useMissingTourCardsSection() {
         lastname: string | null;
         lastLoginAt: number | null;
         previousSeasonTourCardsCount: number;
+      }>;
+      duplicateNameGroups?: Array<{
+        firstname: string;
+        lastname: string;
+        members: Array<{
+          memberId: Id<"members">;
+          email: string;
+          firstname: string | null;
+          lastname: string | null;
+          lastLoginAt: number | null;
+          currentSeasonTourCardsCount: number;
+          previousSeasonTourCardsCount: number;
+          isMissingThisSeason: boolean;
+        }>;
       }>;
     };
 
@@ -348,6 +428,35 @@ function useMissingTourCardsSection() {
         );
       });
 
+    const duplicateNameGroups = (data.duplicateNameGroups ?? [])
+      .map((g) => {
+        const name = `${g.firstname ?? ""} ${g.lastname ?? ""}`
+          .trim()
+          .replace(/\s+/g, " ");
+        const displayName = name || "(Unnamed)";
+        const key = `${displayName.toLowerCase()}|${g.members
+          .map((m) => String(m.memberId))
+          .join(",")}`;
+
+        return {
+          key,
+          displayName,
+          members: g.members.map((m) => ({
+            memberId: m.memberId,
+            email: m.email,
+            isMissingThisSeason: m.isMissingThisSeason === true,
+          })),
+        };
+      })
+      .filter((g) => {
+        const q = search.trim().toLowerCase();
+        if (!q) return true;
+        return (
+          g.displayName.toLowerCase().includes(q) ||
+          g.members.some((m) => m.email.toLowerCase().includes(q))
+        );
+      });
+
     return {
       status: "ready" as const,
       seasons,
@@ -361,6 +470,7 @@ function useMissingTourCardsSection() {
       missingCount: data.missingCount,
       returningMissingCount: data.returningMissingCount,
       rows,
+      duplicateNameGroups,
     };
   }, [report, search, seasonId, seasons, seasonsResult, viewMode]);
 
