@@ -3,6 +3,19 @@ import type { EnhancedTournamentDoc } from "convex/types/types";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { LucideIcon } from "lucide-react";
 
+export type AdminDashboardView =
+  | "dashboard"
+  | "leagueSetup"
+  | "missingTourCards"
+  | "tournaments"
+  | "tourCards"
+  | "seasons"
+  | "teams"
+  | "golfers"
+  | "memberMerge"
+  | "accountAudit"
+  | "crons";
+
 /**
  * Column definition used by `AdminDataTable`.
  */
@@ -39,6 +52,8 @@ export interface ToursToggleProps {
  */
 export interface AdminPanelProps {
   loading?: boolean;
+  activeView?: AdminDashboardView;
+  onViewChange?: (view: AdminDashboardView) => void;
 }
 
 /**

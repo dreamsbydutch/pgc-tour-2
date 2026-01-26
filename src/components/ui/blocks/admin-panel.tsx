@@ -1,5 +1,4 @@
 import { Shield, Settings, Database, Timer } from "lucide-react";
-import { Link } from "@tanstack/react-router";
 
 import {
   Card,
@@ -10,12 +9,7 @@ import {
 } from "../primitives/card";
 import { Button } from "../primitives/button";
 import { Skeleton } from "../primitives/skeleton";
-import type { AdminPanelProps } from "@/lib/types";
-
-const AnyLink = Link as unknown as (props: {
-  to: string;
-  children: React.ReactNode;
-}) => React.ReactNode;
+import type { AdminDashboardView, AdminPanelProps } from "@/lib/types.ts";
 
 /**
  * AdminPanel
@@ -31,8 +25,8 @@ const AnyLink = Link as unknown as (props: {
  * - Default: renders a grid of shortcut buttons.
  *
  * Navigation:
- * - Uses TanStack Router `Link` for route navigation.
- * - Some items are intentionally rendered as disabled placeholders until routes exist.
+ * - Uses `onViewChange(view)` to switch tools within the single `/admin` URL.
+ * - Items without a `view` are rendered as disabled placeholders.
  *
  * @param props - Component props.
  * @param props.loading - Whether to render the loading skeleton (default: `false`).
@@ -44,7 +38,11 @@ const AnyLink = Link as unknown as (props: {
  * @example
  * <AdminPanel loading />
  */
-export function AdminPanel({ loading = false }: AdminPanelProps) {
+export function AdminPanel({
+  loading = false,
+  activeView,
+  onViewChange,
+}: AdminPanelProps) {
   const { items } = useAdminPanel();
   if (loading) {
     return <AdminPanelSkeleton />;
@@ -64,30 +62,21 @@ export function AdminPanel({ loading = false }: AdminPanelProps) {
       <CardContent className="space-y-4">
         <div className="grid gap-3 md:grid-cols-2">
           {items.map((item) => {
-            if (item.to) {
-              return (
-                <Button
-                  key={item.label}
-                  asChild
-                  variant="outline"
-                  className="justify-start"
-                  size="sm"
-                >
-                  <AnyLink to={item.to}>
-                    <item.Icon className="mr-2 h-4 w-4" />
-                    {item.label}
-                  </AnyLink>
-                </Button>
-              );
-            }
+            const isActive =
+              item.view !== undefined && item.view === activeView;
 
             return (
               <Button
                 key={item.label}
-                variant="outline"
+                variant={isActive ? "default" : "outline"}
                 className="justify-start"
                 size="sm"
-                disabled
+                disabled={!item.view || !onViewChange}
+                onClick={() => {
+                  if (item.view && onViewChange) {
+                    onViewChange(item.view);
+                  }
+                }}
               >
                 <item.Icon className="mr-2 h-4 w-4" />
                 {item.label}
@@ -105,18 +94,46 @@ export function AdminPanel({ loading = false }: AdminPanelProps) {
  */
 function useAdminPanel() {
   const items = [
-    { label: "System Settings", to: undefined, Icon: Settings },
-    { label: "League Setup", to: "/admin/setup", Icon: Database },
-    { label: "Missing Tour Cards", to: "/admin/missing-tour-cards", Icon: Database },
-    { label: "Tournaments", to: "/admin/tournaments", Icon: Database },
-    { label: "Tour Cards", to: "/admin/tour-cards", Icon: Database },
-    { label: "Seasons", to: "/admin/seasons", Icon: Database },
-    { label: "Teams", to: "/admin/teams", Icon: Database },
-    { label: "Manage Golfers", to: "/admin/golfers", Icon: Database },
-    { label: "Member Merge", to: "/admin/member-merge", Icon: Database },
-    { label: "Account Audit", to: "/admin/account-audit", Icon: Database },
-    { label: "Crons", to: "/admin/crons", Icon: Timer },
-    { label: "View Audit Logs", to: undefined, Icon: Shield },
+    { label: "System Settings", view: undefined, Icon: Settings },
+    {
+      label: "League Setup",
+      view: "leagueSetup" as AdminDashboardView,
+      Icon: Database,
+    },
+    {
+      label: "Missing Tour Cards",
+      view: "missingTourCards" as AdminDashboardView,
+      Icon: Database,
+    },
+    {
+      label: "Tournaments",
+      view: "tournaments" as AdminDashboardView,
+      Icon: Database,
+    },
+    {
+      label: "Tour Cards",
+      view: "tourCards" as AdminDashboardView,
+      Icon: Database,
+    },
+    { label: "Seasons", view: "seasons" as AdminDashboardView, Icon: Database },
+    { label: "Teams", view: "teams" as AdminDashboardView, Icon: Database },
+    {
+      label: "Manage Golfers",
+      view: "golfers" as AdminDashboardView,
+      Icon: Database,
+    },
+    {
+      label: "Member Merge",
+      view: "memberMerge" as AdminDashboardView,
+      Icon: Database,
+    },
+    {
+      label: "Account Audit",
+      view: "accountAudit" as AdminDashboardView,
+      Icon: Database,
+    },
+    { label: "Crons", view: "crons" as AdminDashboardView, Icon: Timer },
+    { label: "View Audit Logs", view: undefined, Icon: Shield },
   ] as const;
 
   return { items };

@@ -14,3 +14,17 @@ export const NAV_ITEMS: NavigationItemConfig[] = [
   { href: "/standings", icon: Trophy, label: "STANDINGS" },
   { href: "/rulebook", icon: BookText, label: "RULEBOOK" },
 ] as const;
+
+export const ADMIN_DASHBOARD_VIEWS = [
+  "dashboard",
+  "leagueSetup",
+  "missingTourCards",
+  "tournaments",
+  "tourCards",
+  "seasons",
+  "teams",
+  "golfers",
+  "memberMerge",
+  "accountAudit",
+  "crons",
+] as const;

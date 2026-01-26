@@ -1,7 +1,5 @@
 export * from "./primitives/button";
 export * from "./primitives/card";
-export * from "./primitives/dialog";
-export * from "./primitives/dropdown";
 export * from "./primitives/field";
 export * from "./primitives/form-feedback";
 export * from "./primitives/skeleton";
@@ -13,6 +11,8 @@ export * from "./blocks/admin-edit-delete-actions";
 export * from "./blocks/admin-load-more";
 export * from "./blocks/admin-panel";
 export * from "./blocks/admin-row-actions";
+export * from "./blocks/dialog";
+export * from "./blocks/dropdown";
 export * from "./blocks/hard-gate-signed-in";
 export * from "./blocks/home-page-listings-container";
 export * from "./blocks/leaderboard-header";

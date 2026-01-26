@@ -27,8 +27,8 @@ export {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "./ui/primitives/dialog";
-export { Dropdown } from "./ui/primitives/dropdown";
+} from "./ui/blocks/dialog";
+export { Dropdown } from "./ui/blocks/dropdown";
 export { FormFeedback } from "./ui/primitives/form-feedback";
 export { Skeleton, SVGSkeleton } from "./ui/primitives/skeleton";
 export {

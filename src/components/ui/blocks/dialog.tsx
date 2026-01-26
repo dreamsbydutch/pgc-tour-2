@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 
-import { cn } from "@/lib";
+import { cn } from "@/lib/index.ts";
 
 /**
  * Minimal dialog overlay.

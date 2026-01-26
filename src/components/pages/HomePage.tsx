@@ -138,7 +138,8 @@ function useHomePage():
       <div className="flex items-center justify-center gap-2">
         {normalizedRole === "admin" ? (
           <Link
-            to="/admin/seasons"
+            to="/admin"
+            search={{ view: "seasons" }}
             className="inline-flex items-center gap-1 rounded-full bg-red-100 px-3 py-1 text-sm font-medium text-red-800"
           >
             <Shield className="h-4 w-4" />

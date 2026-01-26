@@ -1,6 +1,6 @@
 import type { FormEvent, ReactNode } from "react";
 
-import { AdminDataTable } from "./admin-data-table";
+import { AdminDataTable } from "./admin-data-table.tsx";
 import { Button } from "../primitives/button";
 import {
   Card,
@@ -11,8 +11,8 @@ import {
 } from "../primitives/card";
 import { FormFeedback } from "../primitives/form-feedback";
 import { Skeleton } from "../primitives/skeleton";
-import type { AdminDataTableColumn } from "@/lib/types";
-import { cn } from "@/lib";
+import type { AdminDataTableColumn } from "@/lib/types.ts";
+import { cn } from "@/lib/index.ts";
 
 /**
  * AdminCrudSection

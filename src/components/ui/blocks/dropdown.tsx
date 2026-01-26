@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
-import type { DropdownItem, DropdownSection } from "@/lib/types";
-import { cn, isNonEmptyString } from "@/lib";
+import type { DropdownItem, DropdownSection } from "@/lib/types.ts";
+import { cn, isNonEmptyString } from "@/lib/index.ts";
 
 /**
  * Lightweight dropdown container (trigger + floating content).

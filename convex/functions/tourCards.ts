@@ -208,6 +208,89 @@ export const getTourCards = query({
   },
 });
 
+export const getActiveMembersMissingTourCards = query({
+  args: {
+    seasonId: v.id("seasons"),
+    previousSeasonId: v.optional(v.id("seasons")),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const members = await ctx.db.query("members").collect();
+    const activeMembers = members.filter((m) => m.isActive === true);
+
+    const currentSeasonCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .collect();
+
+    const currentCountsByMember = new Map<Id<"members">, number>();
+    for (const card of currentSeasonCards) {
+      currentCountsByMember.set(
+        card.memberId,
+        (currentCountsByMember.get(card.memberId) ?? 0) + 1,
+      );
+    }
+
+    const previousCountsByMember = new Map<Id<"members">, number>();
+    if (args.previousSeasonId) {
+      const previousSeasonCards = await ctx.db
+        .query("tourCards")
+        .withIndex("by_season", (q) => q.eq("seasonId", args.previousSeasonId!))
+        .collect();
+
+      for (const card of previousSeasonCards) {
+        previousCountsByMember.set(
+          card.memberId,
+          (previousCountsByMember.get(card.memberId) ?? 0) + 1,
+        );
+      }
+    }
+
+    const missingMembers = activeMembers.filter((m) => {
+      const currentCount = currentCountsByMember.get(m._id) ?? 0;
+      return currentCount === 0;
+    });
+
+    const rows = missingMembers
+      .map((m) => {
+        const previousSeasonTourCardsCount =
+          previousCountsByMember.get(m._id) ?? 0;
+
+        return {
+          memberId: m._id,
+          email: m.email,
+          firstname: m.firstname ?? null,
+          lastname: m.lastname ?? null,
+          lastLoginAt: m.lastLoginAt ?? null,
+          previousSeasonTourCardsCount,
+        };
+      })
+      .sort((a, b) => {
+        if (a.previousSeasonTourCardsCount !== b.previousSeasonTourCardsCount) {
+          return (
+            b.previousSeasonTourCardsCount - a.previousSeasonTourCardsCount
+          );
+        }
+        const aName = `${a.lastname ?? ""} ${a.firstname ?? ""}`.trim();
+        const bName = `${b.lastname ?? ""} ${b.firstname ?? ""}`.trim();
+        if (aName !== bName) return aName.localeCompare(bName);
+        return a.email.localeCompare(b.email);
+      });
+
+    const returningMissingCount = rows.filter(
+      (r) => r.previousSeasonTourCardsCount > 0,
+    ).length;
+
+    return {
+      activeMembersCount: activeMembers.length,
+      missingCount: rows.length,
+      returningMissingCount,
+      members: rows,
+    };
+  },
+});
+
 export const getCurrentYearTourCard = query({
   args: {
     options: v.object({
