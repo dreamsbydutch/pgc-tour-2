@@ -286,7 +286,9 @@ function useAdminTourCardsPage() {
       const aPoints = a.points ?? 0;
       const bPoints = b.points ?? 0;
       if (aPoints !== bPoints) return bPoints - aPoints;
-      return a.displayName.localeCompare(b.displayName);
+      const aSortName = a.displayName.split(".")[1].trim();
+      const bSortName = b.displayName.split(".")[1].trim();
+      return aSortName.localeCompare(bSortName);
     });
   }, [tourCardsResult]);
 
