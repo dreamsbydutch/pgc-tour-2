@@ -6,7 +6,7 @@
 
 import { query, mutation } from "../_generated/server";
 import { v } from "convex/values";
-import { requireOwnResource, getCurrentMember, requireAdmin } from "../auth";
+import { requireAdmin, requireOwnResource, getCurrentMember } from "../auth";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { ValidationResult } from "../types/types";
@@ -205,6 +205,89 @@ export const getTourCards = query({
     }
 
     return await ctx.db.query("tourCards").collect();
+  },
+});
+
+export const getActiveMembersMissingTourCards = query({
+  args: {
+    seasonId: v.id("seasons"),
+    previousSeasonId: v.optional(v.id("seasons")),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const members = await ctx.db.query("members").collect();
+    const activeMembers = members.filter((m) => m.isActive === true);
+
+    const currentSeasonCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .collect();
+
+    const currentCountsByMember = new Map<Id<"members">, number>();
+    for (const card of currentSeasonCards) {
+      currentCountsByMember.set(
+        card.memberId,
+        (currentCountsByMember.get(card.memberId) ?? 0) + 1,
+      );
+    }
+
+    const previousCountsByMember = new Map<Id<"members">, number>();
+    if (args.previousSeasonId) {
+      const previousSeasonCards = await ctx.db
+        .query("tourCards")
+        .withIndex("by_season", (q) => q.eq("seasonId", args.previousSeasonId!))
+        .collect();
+
+      for (const card of previousSeasonCards) {
+        previousCountsByMember.set(
+          card.memberId,
+          (previousCountsByMember.get(card.memberId) ?? 0) + 1,
+        );
+      }
+    }
+
+    const missingMembers = activeMembers.filter((m) => {
+      const currentCount = currentCountsByMember.get(m._id) ?? 0;
+      return currentCount === 0;
+    });
+
+    const rows = missingMembers
+      .map((m) => {
+        const previousSeasonTourCardsCount =
+          previousCountsByMember.get(m._id) ?? 0;
+
+        return {
+          memberId: m._id,
+          email: m.email,
+          firstname: m.firstname ?? null,
+          lastname: m.lastname ?? null,
+          lastLoginAt: m.lastLoginAt ?? null,
+          previousSeasonTourCardsCount,
+        };
+      })
+      .sort((a, b) => {
+        if (a.previousSeasonTourCardsCount !== b.previousSeasonTourCardsCount) {
+          return (
+            b.previousSeasonTourCardsCount - a.previousSeasonTourCardsCount
+          );
+        }
+        const aName = `${a.lastname ?? ""} ${a.firstname ?? ""}`.trim();
+        const bName = `${b.lastname ?? ""} ${b.firstname ?? ""}`.trim();
+        if (aName !== bName) return aName.localeCompare(bName);
+        return a.email.localeCompare(b.email);
+      });
+
+    const returningMissingCount = rows.filter(
+      (r) => r.previousSeasonTourCardsCount > 0,
+    ).length;
+
+    return {
+      activeMembersCount: activeMembers.length,
+      missingCount: rows.length,
+      returningMissingCount,
+      members: rows,
+    };
   },
 });
 
@@ -513,160 +596,92 @@ export const deleteTourCards = mutation({
 export const recomputeTourCardsForSeasonAsAdmin = mutation({
   args: {
     seasonId: v.id("seasons"),
-    options: v.optional(
-      v.object({
-        dryRun: v.optional(v.boolean()),
-      }),
-    ),
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 
-    const dryRun = args.options?.dryRun ?? false;
-    const season = await ctx.db.get(args.seasonId);
-    if (!season) {
-      throw new Error("Season not found");
-    }
+    const completedTournaments = await ctx.db
+      .query("tournaments")
+      .withIndex("by_season_status", (q) =>
+        q.eq("seasonId", args.seasonId).eq("status", "completed"),
+      )
+      .collect();
 
-    const now = Date.now();
+    const totalsByTourCard = new Map<
+      Id<"tourCards">,
+      {
+        points: number;
+        earnings: number;
+        appearances: number;
+        madeCut: number;
+        wins: number;
+        topTen: number;
+        topFive: number;
+      }
+    >();
 
-    const [tours, tourCards, tournaments] = await Promise.all([
-      ctx.db
-        .query("tours")
-        .withIndex("by_season", (q) => q.eq("seasonId", season._id))
-        .collect(),
-      ctx.db
-        .query("tourCards")
-        .withIndex("by_season", (q) => q.eq("seasonId", season._id))
-        .collect(),
-      ctx.db
-        .query("tournaments")
-        .withIndex("by_season", (q) => q.eq("seasonId", season._id))
-        .collect(),
-    ]);
+    for (const tournament of completedTournaments) {
+      const teams = await ctx.db
+        .query("teams")
+        .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
+        .collect();
 
-    const completedTournamentIds = new Set<Id<"tournaments">>();
-    for (const t of tournaments) {
-      const isFinished = t.status === "completed" || t.endDate <= now;
-      if (isFinished) completedTournamentIds.add(t._id);
-    }
-
-    const tourById = new Map<string, (typeof tours)[number]>();
-    for (const t of tours) {
-      tourById.set(String(t._id), t);
-    }
-
-    const computations = await Promise.all(
-      tourCards.map(async (tc) => {
-        const teams = await ctx.db
-          .query("teams")
-          .withIndex("by_tour_card", (q) => q.eq("tourCardId", tc._id))
-          .collect();
-
-        const completed = teams.filter((t) =>
-          completedTournamentIds.has(t.tournamentId),
-        );
-
-        const win = completed.filter((t) => {
-          const pos = t.position ?? null;
-          if (!pos || pos === "CUT") return false;
-          const n = Number.parseInt(
-            pos.startsWith("T") ? pos.slice(1) : pos,
-            10,
-          );
-          return Number.isFinite(n) && n === 1;
-        }).length;
-
-        const topTen = completed.filter((t) => {
-          const pos = t.position ?? null;
-          if (!pos || pos === "CUT") return false;
-          const n = Number.parseInt(
-            pos.startsWith("T") ? pos.slice(1) : pos,
-            10,
-          );
-          return Number.isFinite(n) && n <= 10;
-        }).length;
-
-        const madeCut = completed.filter((t) => t.position !== "CUT").length;
-        const appearances = completed.length;
-
-        const earnings = completed.reduce(
-          (sum, t) => sum + (t.earnings ?? 0),
-          0,
-        );
-        const points = completed.reduce(
-          (sum, t) => sum + Math.round(t.points ?? 0),
-          0,
-        );
-
-        return {
-          tourCardId: tc._id,
-          tourId: tc.tourId,
-          win,
-          topTen,
-          madeCut,
-          appearances,
-          earnings,
-          points,
+      for (const team of teams) {
+        const prev = totalsByTourCard.get(team.tourCardId) ?? {
+          points: 0,
+          earnings: 0,
+          appearances: 0,
+          madeCut: 0,
+          wins: 0,
+          topTen: 0,
+          topFive: 0,
         };
-      }),
-    );
 
-    const byTour = new Map<Id<"tours">, typeof computations>();
-    for (const calc of computations) {
-      const list = byTour.get(calc.tourId) ?? [];
-      list.push(calc);
-      byTour.set(calc.tourId, list);
-    }
-
-    let updated = 0;
-    for (const [tourId, list] of byTour.entries()) {
-      const tour = tourById.get(String(tourId)) ?? null;
-      const spots = Array.isArray(tour?.playoffSpots) ? tour!.playoffSpots : [];
-      const goldCut = spots[0] ?? 0;
-      const silverCut = goldCut + (spots[1] ?? 0);
-
-      for (const calc of list) {
-        const samePointsCount = list.filter(
-          (a) => a.points === calc.points,
-        ).length;
-        const betterPointsCount = list.filter(
-          (a) => a.points > calc.points,
-        ).length;
-        const position = `${samePointsCount > 1 ? "T" : ""}${betterPointsCount + 1}`;
-
-        const playoff =
-          goldCut > 0 && betterPointsCount < goldCut
-            ? 1
-            : silverCut > goldCut && betterPointsCount < silverCut
-              ? 2
-              : 0;
-
-        if (!dryRun) {
-          await ctx.db.patch(calc.tourCardId, {
-            points: calc.points,
-            earnings: calc.earnings,
-            wins: calc.win,
-            topTen: calc.topTen,
-            madeCut: calc.madeCut,
-            appearances: calc.appearances,
-            currentPosition: position,
-            playoff,
-            updatedAt: Date.now(),
-          });
-        }
-
-        updated += 1;
+        totalsByTourCard.set(team.tourCardId, {
+          points: prev.points + (team.points ?? 0),
+          earnings: prev.earnings + (team.earnings ?? 0),
+          appearances: prev.appearances + 1,
+          madeCut: prev.madeCut + (team.makeCut ?? 0),
+          wins: prev.wins + (team.win ?? 0),
+          topTen: prev.topTen + (team.topTen ?? 0),
+          topFive: prev.topFive + (team.topFive ?? 0),
+        });
       }
     }
 
+    const tourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .collect();
+
+    const updatedAt = Date.now();
+    for (const card of tourCards) {
+      const totals = totalsByTourCard.get(card._id) ?? {
+        points: 0,
+        earnings: 0,
+        appearances: 0,
+        madeCut: 0,
+        wins: 0,
+        topTen: 0,
+        topFive: 0,
+      };
+
+      await ctx.db.patch(card._id, {
+        points: totals.points,
+        earnings: totals.earnings,
+        appearances: totals.appearances,
+        madeCut: totals.madeCut,
+        wins: totals.wins,
+        topTen: totals.topTen,
+        topFive: totals.topFive,
+        updatedAt,
+      });
+    }
+
     return {
-      ok: true,
-      dryRun,
-      seasonId: season._id,
-      completedTournamentCount: completedTournamentIds.size,
-      tourCardsUpdated: updated,
-    } as const;
+      tourCardsUpdated: tourCards.length,
+      completedTournamentCount: completedTournaments.length,
+    };
   },
 });
 

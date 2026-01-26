@@ -17,7 +17,7 @@ crons.interval(
 crons.interval(
   "update_teams",
   { minutes: 2 },
-  internal.functions.cronTeams.runUpdateTeamsForActiveTournament,
+  internal.functions.cronJobs.runUpdateTeamsForActiveTournament,
   {},
 );
 
@@ -33,7 +33,7 @@ crons.cron(
 crons.cron(
   "create_groups_for_next_tournament",
   "0 10 * * 1",
-  internal.functions.cronGroups.runCreateGroupsForNextTournament,
+  internal.functions.cronJobs.runCreateGroupsForNextTournament,
   {},
 );
 

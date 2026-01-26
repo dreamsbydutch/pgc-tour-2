@@ -6,11 +6,12 @@
  * through flexible configuration rather than multiple specialized functions.
  */
 
-import { query, mutation } from "../_generated/server";
+import { query, mutation, action } from "../_generated/server";
 import { v } from "convex/values";
 import { requireAdmin } from "../auth";
 import type { Id } from "../_generated/dataModel";
 import type { AuthCtx } from "../types/functionUtils";
+import { requireAdminByClerkId } from "./_authByClerkId";
 import {
   processData,
   formatCents,
@@ -20,6 +21,7 @@ import {
 } from "./_utils";
 import { TIME } from "./_constants";
 import { logAudit, computeChanges, extractDeleteMetadata } from "./_auditLog";
+import { fetchWithRetry } from "./_externalFetch";
 import type {
   ValidationResult,
   AnalyticsResult,
@@ -33,6 +35,83 @@ import type {
   MemberEnhancementOptions,
   MemberSortOptions,
 } from "../types/types";
+
+type ClerkEmail = {
+  email_address?: string;
+};
+
+type ClerkUser = {
+  id: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  full_name?: string | null;
+  email_addresses?: ClerkEmail[];
+};
+
+type ClerkUserRow = {
+  clerkId: string;
+  email: string | null;
+  fullName: string;
+};
+
+function buildFullName(user: ClerkUser): string {
+  const fromFull = (user.full_name ?? "").trim();
+  if (fromFull) return fromFull;
+  const first = (user.first_name ?? "").trim();
+  const last = (user.last_name ?? "").trim();
+  return `${first} ${last}`.trim().replace(/\s+/g, " ");
+}
+
+function pickPrimaryEmail(user: ClerkUser): string | null {
+  const emails = Array.isArray(user.email_addresses)
+    ? user.email_addresses
+    : [];
+  const first = emails[0]?.email_address;
+  return typeof first === "string" && first.trim() ? first.trim() : null;
+}
+
+async function fetchClerkUsers(options: {
+  limit: number;
+  offset: number;
+}): Promise<ClerkUser[]> {
+  const secret = process.env.CLERK_SECRET_KEY;
+  if (!secret) {
+    throw new Error(
+      "Missing CLERK_SECRET_KEY in Convex environment variables.",
+    );
+  }
+
+  const url = new URL("https://api.clerk.com/v1/users");
+  url.searchParams.set("limit", String(options.limit));
+  url.searchParams.set("offset", String(options.offset));
+
+  const result = await fetchWithRetry<ClerkUser[]>(
+    url.toString(),
+    {
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        "Content-Type": "application/json",
+      },
+    },
+    {
+      timeout: 30000,
+      retries: 3,
+      validateResponse: (json): json is ClerkUser[] =>
+        Array.isArray(json) &&
+        json.every(
+          (u) =>
+            u && typeof u === "object" && "id" in u && typeof u.id === "string",
+        ),
+      logPrefix: "Clerk API",
+    },
+  );
+
+  if (!result.ok) {
+    throw new Error(`Clerk API error: ${result.error}`);
+  }
+
+  return result.data;
+}
 
 /**
  * Validate member data
@@ -156,6 +235,41 @@ function generateFullName(firstname?: string, lastname?: string): string {
   }
 }
 
+function normalizeNameToken(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  let out = "";
+  let shouldCapitalize = true;
+
+  for (const ch of trimmed) {
+    const isLetter = /[A-Za-z]/.test(ch);
+    if (isLetter) {
+      out += shouldCapitalize ? ch.toUpperCase() : ch.toLowerCase();
+      shouldCapitalize = false;
+      continue;
+    }
+
+    out += ch;
+    shouldCapitalize = ch === "-" || ch === "'" || ch === "’";
+  }
+
+  return out;
+}
+
+function normalizePersonName(value: string | undefined): string {
+  const raw = (value ?? "").trim();
+  if (!raw) return "";
+
+  const tokens = raw
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map(normalizeNameToken);
+
+  return tokens.join(" ");
+}
+
 /**
  * Generate effective display name
  */
@@ -179,6 +293,12 @@ function generateDisplayName(
   }
 
   return "Anonymous User";
+}
+
+function readOptionalDisplayName(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const dn = (value as { displayName?: unknown }).displayName;
+  return typeof dn === "string" && dn.trim() ? dn.trim() : undefined;
 }
 
 /**
@@ -1019,7 +1139,7 @@ export const updateMembers = mutation({
       const effectiveFirst = updateData.firstname ?? member.firstname;
       const effectiveLast = updateData.lastname ?? member.lastname;
       const effectiveDisplayName =
-        (updateData as any).displayName ?? (member as any).displayName;
+        args.data.displayName ?? readOptionalDisplayName(member);
 
       const nextTourCardDisplayName = generateDisplayName(
         typeof effectiveDisplayName === "string"
@@ -1252,6 +1372,107 @@ export const recomputeMemberActiveFlags = mutation({
       updated,
       activeCount,
       inactiveCount,
+    } as const;
+  },
+});
+
+export const normalizeMemberNamesAndTourCardDisplayNames = mutation({
+  args: {
+    options: v.optional(
+      v.object({
+        dryRun: v.optional(v.boolean()),
+        limit: v.optional(v.number()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const dryRun = args.options?.dryRun ?? false;
+    const limit = args.options?.limit;
+
+    const membersAll = await ctx.db.query("members").collect();
+    const members =
+      typeof limit === "number" ? membersAll.slice(0, limit) : membersAll;
+
+    const tourCards = await ctx.db.query("tourCards").collect();
+    const tourCardsByMemberId = new Map<string, (typeof tourCards)[number][]>();
+
+    for (const tc of tourCards) {
+      const list = tourCardsByMemberId.get(tc.memberId);
+      if (list) list.push(tc);
+      else tourCardsByMemberId.set(tc.memberId, [tc]);
+    }
+
+    let membersUpdated = 0;
+    let tourCardsUpdated = 0;
+    const now = Date.now();
+
+    const examples: Array<{
+      memberId: string;
+      email: string;
+      before: { firstname: string; lastname: string };
+      after: { firstname: string; lastname: string };
+      tourCardsUpdated: number;
+    }> = [];
+
+    for (const m of members) {
+      const beforeFirst = m.firstname ?? "";
+      const beforeLast = m.lastname ?? "";
+
+      const afterFirst = normalizePersonName(beforeFirst);
+      const afterLast = normalizePersonName(beforeLast);
+
+      const memberChanged =
+        beforeFirst !== afterFirst || beforeLast !== afterLast;
+      if (memberChanged) {
+        if (!dryRun) {
+          await ctx.db.patch(m._id, {
+            firstname: afterFirst || undefined,
+            lastname: afterLast || undefined,
+            updatedAt: now,
+          });
+        }
+        membersUpdated += 1;
+      }
+
+      const fullName = generateFullName(afterFirst, afterLast);
+      if (!fullName) continue;
+
+      const memberTourCards = tourCardsByMemberId.get(m._id) ?? [];
+      let memberTourCardsUpdated = 0;
+
+      for (const tc of memberTourCards) {
+        if (tc.displayName === fullName) continue;
+        if (!dryRun) {
+          await ctx.db.patch(tc._id, { displayName: fullName, updatedAt: now });
+        }
+        tourCardsUpdated += 1;
+        memberTourCardsUpdated += 1;
+      }
+
+      if (
+        (memberChanged || memberTourCardsUpdated > 0) &&
+        examples.length < 15
+      ) {
+        examples.push({
+          memberId: m._id,
+          email: m.email,
+          before: { firstname: beforeFirst, lastname: beforeLast },
+          after: { firstname: afterFirst, lastname: afterLast },
+          tourCardsUpdated: memberTourCardsUpdated,
+        });
+      }
+    }
+
+    return {
+      ok: true,
+      dryRun,
+      membersScanned: members.length,
+      membersUpdated,
+      tourCardsScanned: tourCards.length,
+      tourCardsUpdated,
+      examples,
     } as const;
   },
 });
@@ -1747,12 +1968,22 @@ export const adminGetMemberMergePreview = query({
 
     const source = await ctx.db.get(args.sourceMemberId);
     if (!source) {
-      throw new Error("Source member not found");
+      return {
+        ok: false,
+        error: "Source member not found",
+      } as const;
     }
 
     const target = args.targetMemberId
       ? await ctx.db.get(args.targetMemberId)
       : null;
+
+    if (args.targetMemberId && !target) {
+      return {
+        ok: false,
+        error: "Target member not found",
+      } as const;
+    }
 
     const tourCards = await ctx.db
       .query("tourCards")
@@ -1800,7 +2031,7 @@ export const adminGetMemberMergePreview = query({
         _id: source._id,
         clerkId: source.clerkId ?? null,
         email: source.email,
-        displayName: (source as any).displayName ?? null,
+        displayName: readOptionalDisplayName(source) ?? null,
         firstname: source.firstname ?? null,
         lastname: source.lastname ?? null,
         role: source.role,
@@ -1812,7 +2043,7 @@ export const adminGetMemberMergePreview = query({
             _id: target._id,
             clerkId: target.clerkId ?? null,
             email: target.email,
-            displayName: (target as any).displayName ?? null,
+            displayName: readOptionalDisplayName(target) ?? null,
             firstname: target.firstname ?? null,
             lastname: target.lastname ?? null,
             role: target.role,
@@ -1914,8 +2145,10 @@ export const adminMergeMembers = mutation({
     if (!target.lastname && source.lastname) {
       targetPatch.lastname = source.lastname;
     }
-    if (!(target as any).displayName && (source as any).displayName) {
-      targetPatch.displayName = (source as any).displayName;
+    const targetDisplayName = readOptionalDisplayName(target);
+    const sourceDisplayName = readOptionalDisplayName(source);
+    if (!targetDisplayName && sourceDisplayName) {
+      targetPatch.displayName = sourceDisplayName;
     }
 
     await ctx.db.patch(args.targetMemberId, targetPatch);
@@ -2020,5 +2253,64 @@ export const adminMergeMembers = mutation({
         membersUpdatedForFriends,
       },
     } as const;
+  },
+});
+
+/**
+ * Returns Clerk users for admin tooling.
+ *
+ * Email is the authoritative key for linking Clerk users to `members`.
+ * Joining and "unlinked" detection happens in the frontend.
+ */
+export const listClerkUsers = action({
+  args: {
+    clerkId: v.optional(v.string()),
+    options: v.optional(
+      v.object({
+        limit: v.optional(v.number()),
+        offset: v.optional(v.number()),
+      }),
+    ),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    ok: true;
+    offset: number;
+    limit: number;
+    fetched: number;
+    users: ClerkUserRow[];
+  }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    const actingClerkId = args.clerkId?.trim();
+
+    if (identity && actingClerkId && identity.subject !== actingClerkId) {
+      throw new Error("Unauthorized: Clerk ID mismatch");
+    }
+
+    if (!identity) {
+      await requireAdminByClerkId(ctx as unknown as AuthCtx, actingClerkId);
+    }
+
+    const limit = Math.max(1, Math.min(args.options?.limit ?? 50, 200));
+    const offset = Math.max(0, args.options?.offset ?? 0);
+
+    const clerkUsers = await fetchClerkUsers({ limit, offset });
+    const users: ClerkUserRow[] = clerkUsers
+      .filter((u): u is ClerkUser => !!u && typeof u.id === "string")
+      .map((u) => ({
+        clerkId: u.id,
+        email: pickPrimaryEmail(u),
+        fullName: buildFullName(u),
+      }));
+
+    return {
+      ok: true,
+      offset,
+      limit,
+      fetched: clerkUsers.length,
+      users,
+    };
   },
 });

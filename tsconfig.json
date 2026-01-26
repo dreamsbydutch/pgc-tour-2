@@ -26,7 +26,12 @@
       "@/lib": ["./src/lib/index.ts"],
       "@/hooks": ["./src/hooks/index.ts"],
       "@/ui": ["./src/components/ui/index.ts"],
-      "@/providers": ["./src/providers/index.ts"],
+      "@/displays": ["./src/components/displays/index.ts"],
+      "@/displays/*": ["./src/components/displays/*"],
+      "@/widgets": ["./src/components/widgets/index.ts"],
+      "@/widgets/*": ["./src/components/widgets/*"],
+      "@/facilitators": ["./src/components/facilitators/index.ts"],
+      "@/facilitators/*": ["./src/components/facilitators/*"],
       "@/convex": ["./src/convex/index.ts"]
     }
   }

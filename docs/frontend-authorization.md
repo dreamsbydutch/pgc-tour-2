@@ -75,11 +75,11 @@ function TeamEditor({ team }) {
 
 ```tsx
 import { useMutation } from "convex/react";
-import { api } from "../convex/_generated/api";
+import { api } from "@/../convex/_generated/api";
 import { parseError, isAuthError } from "@/lib/errorHandling";
 
 function CreateSeasonButton() {
-  const createSeason = useMutation(api.functions.seasons.createSeason);
+  const createSeason = useMutation(api.functions.seasons.createSeasons);
   const [error, setError] = useState<string | null>(null);
 
   const handleCreate = async () => {
@@ -128,8 +128,8 @@ Queries may still accept `clerkId` as a filter parameter. This is safe because:
 ```tsx
 // ✅ CORRECT: clerkId used as filter
 const member = useQuery(
-  api.functions.members.getMember,
-  user ? { clerkId: user.id } : "skip",
+  api.functions.members.getMembers,
+  user ? { options: { clerkId: user.id } } : "skip",
 );
 
 const teams = useQuery(
@@ -144,7 +144,7 @@ Mutations derive identity server-side via `ctx.auth.getUserIdentity()`:
 
 ```tsx
 // ✅ CORRECT: No clerkId parameter
-const createTeam = useMutation(api.functions.teams.createTeam);
+const createTeam = useMutation(api.functions.teams.createTeams);
 
 await createTeam({
   data: {

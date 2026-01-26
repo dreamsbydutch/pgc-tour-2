@@ -1,7 +1,49 @@
 import type { Doc, Id } from "@/convex";
 import type { EnhancedTournamentDoc } from "convex/types/types";
-import type { Dispatch, ReactNode, SetStateAction } from "react";
+import type { ComponentType, Dispatch, ReactNode, SetStateAction } from "react";
 import type { LucideIcon } from "lucide-react";
+
+export type AdminDashboardView =
+  | "dashboard"
+  | "leagueSetup"
+  | "missingTourCards"
+  | "tournaments"
+  | "tourCards"
+  | "seasons"
+  | "teams"
+  | "golfers"
+  | "memberMerge"
+  | "accountAudit"
+  | "crons";
+
+export type TransactionType =
+  | "TourCardFee"
+  | "TournamentWinnings"
+  | "Withdrawal"
+  | "Deposit"
+  | "LeagueDonation"
+  | "CharityDonation"
+  | "Payment"
+  | "Refund"
+  | "Adjustment";
+
+export type TransactionStatus =
+  | "pending"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type Article = {
+  slug: string;
+  title: string;
+  excerpt: string;
+  author: string;
+  publishedAt: string;
+  tags?: string[];
+  Body: ComponentType;
+};
+
+export type ArticleModule = { article: Article };
 
 /**
  * Column definition used by `AdminDataTable`.
@@ -39,6 +81,8 @@ export interface ToursToggleProps {
  */
 export interface AdminPanelProps {
   loading?: boolean;
+  activeView?: AdminDashboardView;
+  onViewChange?: (view: AdminDashboardView) => void;
 }
 
 /**
@@ -66,20 +110,21 @@ export interface TourCardChangeButtonProps {
 }
 
 /**
- * Props for `PointsTable`.
+ * Tier row shape for points distributions.
  */
-export interface PointsTableProps {
-  seasonId?: Id<"seasons">;
-  loading?: boolean;
-}
+export type TierPointsRow = { key: string; name: string; points: number[] };
 
 /**
- * Props for `PayoutsTable`.
+ * Tier row shape for payouts distributions.
  */
-export interface PayoutsTableProps {
-  seasonId?: Id<"seasons">;
-  loading?: boolean;
-}
+export type TierPayoutsRow = { key: string; name: string; payouts: number[] };
+
+/**
+ * Props for `TierDistributionsTable`.
+ */
+export type TierDistributionsTableProps =
+  | { kind: "points"; tiers?: TierPointsRow[]; loading?: boolean }
+  | { kind: "payouts"; tiers?: TierPayoutsRow[]; loading?: boolean };
 
 type TourCardFormButtonLoadedProps = {
   tour: Doc<"tours">;
@@ -109,8 +154,7 @@ export interface ChampionshipWinTournament {
 }
 
 export interface LittleFuckerProps {
-  memberId: Id<"members">;
-  seasonId?: Id<"seasons">;
+  wins?: ChampionshipWinTournament[];
   showSeasonText?: boolean;
   className?: string;
   loading?: boolean;
@@ -225,10 +269,41 @@ export interface NavigationItemConfig {
   label: string;
 }
 
+/**
+ * Generic dropdown list item used by the `Dropdown` UI primitive.
+ */
+export type DropdownItem = {
+  key: string;
+  title: string;
+  subtitle?: string;
+  iconUrl?: string | null;
+  isActive?: boolean;
+  onSelect: () => void;
+  className?: string;
+};
+
+/**
+ * Optional grouping for dropdown lists.
+ */
+export type DropdownSection = {
+  key: string;
+  title?: string;
+  items: DropdownItem[];
+};
+
 export interface NavigationError {
   code: string;
   message: string;
   retry?: () => void;
+}
+
+export interface ErrorResponse {
+  isError: true;
+  isAuthError: boolean;
+  isNotFoundError: boolean;
+  isValidationError: boolean;
+  message: string;
+  originalError: unknown;
 }
 
 export interface NavigationData {
@@ -247,7 +322,9 @@ export interface NavigationData {
  * Props for `StandingsView`.
  */
 export interface StandingsViewProps {
+  initialSeasonId?: string;
   initialTourId?: string;
+  onSeasonChange?: (seasonId: string) => void;
   onTourChange?: (tourId: string) => void;
   initialSeasonId?: string;
   onSeasonChange?: (seasonId: string) => void;

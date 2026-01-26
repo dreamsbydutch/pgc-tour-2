@@ -1,14 +1,146 @@
+import type { ReactNode } from "react";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import type { NavigationError, TimeLeftType } from "./types";
+import type { Id } from "@/convex";
+import type {
+  AdminDataTableColumn,
+  Article,
+  ArticleModule,
+  ErrorResponse,
+  NavigationError,
+  TimeLeftType,
+} from "./types";
 import type {
   LeaderboardPgaRow,
   LeaderboardTeamRow,
   LeaderboardVariant,
 } from "./types";
+import type {
+  ExtendedStandingsTourCard,
+  StandingsMember,
+  StandingsTeam,
+  StandingsTier,
+  StandingsTour,
+  StandingsTourCard,
+  StandingsTournament,
+} from "./types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+/**
+ * Builds the standard AdminDataTable "actions" column used by CRUD screens.
+ */
+export function adminActionsColumn<T>(
+  cell: (row: T) => ReactNode,
+  options?: {
+    id?: string;
+    header?: ReactNode;
+    headClassName?: string;
+    cellClassName?: string;
+  },
+): AdminDataTableColumn<T> {
+  return {
+    id: options?.id ?? "actions",
+    header: options?.header ?? "",
+    headClassName: options?.headClassName ?? "w-[1%]",
+    cellClassName: options?.cellClassName,
+    cell,
+  };
+}
+
+const activeArticleModules = import.meta.glob<ArticleModule>(
+  "/src/lib/articles/active/*.tsx",
+  { eager: true },
+);
+
+const activeArticles: Article[] = Object.values(activeArticleModules).map(
+  (m) => m.article,
+);
+
+function sortByPublishedAtDesc(a: Article, b: Article) {
+  return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime();
+}
+
+export function getActiveArticles(): Article[] {
+  return [...activeArticles].sort(sortByPublishedAtDesc);
+}
+
+export function getActiveArticleBySlug(slug: string): Article | null {
+  return activeArticles.find((a) => a.slug === slug) ?? null;
+}
+
+export function isAuthError(error: unknown): boolean {
+  if (error instanceof Error) {
+    return (
+      error.message.includes("Forbidden") ||
+      error.message.includes("Unauthorized") ||
+      error.message.includes("permission") ||
+      error.message.includes("not authorized")
+    );
+  }
+  return false;
+}
+
+export function isNotFoundError(error: unknown): boolean {
+  if (error instanceof Error) {
+    return error.message.includes("not found");
+  }
+  return false;
+}
+
+export function isValidationError(error: unknown): boolean {
+  if (error instanceof Error) {
+    return (
+      error.message.includes("Validation failed") ||
+      error.message.includes("Invalid")
+    );
+  }
+  return false;
+}
+
+export function getFriendlyErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    if (isAuthError(error)) {
+      if (error.message.includes("Unauthorized")) {
+        return "Please sign in to continue";
+      }
+      if (error.message.includes("Admin")) {
+        return "This action requires administrator privileges";
+      }
+      if (error.message.includes("Moderator")) {
+        return "This action requires moderator or administrator privileges";
+      }
+      if (error.message.includes("own")) {
+        return "You can only modify your own resources";
+      }
+      return "You don't have permission to perform this action";
+    }
+
+    if (isNotFoundError(error)) {
+      return "The requested resource was not found";
+    }
+
+    if (isValidationError(error)) {
+      return error.message.replace("Validation failed: ", "");
+    }
+
+    return error.message;
+  }
+
+  return "An unexpected error occurred";
+}
+
+export function parseError(error: unknown): ErrorResponse {
+  return {
+    isError: true,
+    isAuthError: isAuthError(error),
+    isNotFoundError: isNotFoundError(error),
+    isValidationError: isValidationError(error),
+    message: getFriendlyErrorMessage(error),
+    originalError: error,
+  };
 }
 
 export function normalizeList<T, K extends string>(
@@ -26,6 +158,157 @@ export function normalizeList<T, K extends string>(
     }
   }
   return [];
+}
+
+/**
+ * Formats a unix ms timestamp into a short `en-US` date+time string.
+ */
+export function formatDateTime(ms: number | undefined): string {
+  if (!ms) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(ms);
+}
+
+/**
+ * Generic compare helper for mixed/unknown values.
+ */
+export function compareUnknown(a: unknown, b: unknown): number {
+  if (a === b) return 0;
+  if (a === undefined || a === null) return -1;
+  if (b === undefined || b === null) return 1;
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  return String(a).localeCompare(String(b));
+}
+
+/**
+ * Toggles sort direction for a table-style sort config.
+ */
+export function toggleSort<T extends string>(
+  current: { key: T; dir: "asc" | "desc" } | null,
+  nextKey: T,
+): { key: T; dir: "asc" | "desc" } {
+  if (!current || current.key !== nextKey) return { key: nextKey, dir: "desc" };
+  return { key: nextKey, dir: current.dir === "desc" ? "asc" : "desc" };
+}
+
+export function getSortIndicator(
+  sort: { key: string; dir: "asc" | "desc" } | null,
+  key: string,
+): string {
+  if (!sort || sort.key !== key) return "";
+  return sort.dir === "asc" ? " ▲" : " ▼";
+}
+
+/**
+ * Type guard: returns true when `candidate` is in the provided string union list.
+ */
+export function isOneOf<T extends string>(
+  values: readonly T[],
+  candidate: string,
+): candidate is T {
+  return (values as readonly string[]).includes(candidate);
+}
+
+export function isMemberForAccountValue(value: unknown): value is {
+  _id: Id<"members">;
+  firstname?: string | null;
+  lastname?: string | null;
+  account: number;
+} {
+  if (!value || typeof value !== "object") return false;
+  if (!("_id" in value) || !("account" in value)) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.account === "number";
+}
+
+export function isSeasonForLabelValue(
+  value: unknown,
+): value is { _id: Id<"seasons">; year: number; number: number } {
+  if (!value || typeof value !== "object") return false;
+  if (!("_id" in value) || !("year" in value) || !("number" in value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.year === "number" && typeof record.number === "number";
+}
+
+export function isStandingsMember(value: unknown): value is StandingsMember {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (!("_id" in value)) return false;
+  if (
+    !("email" in value) ||
+    typeof (value as Record<string, unknown>).email !== "string"
+  ) {
+    return false;
+  }
+  if (
+    !("role" in value) ||
+    typeof (value as Record<string, unknown>).role !== "string"
+  ) {
+    return false;
+  }
+  if (
+    !("account" in value) ||
+    typeof (value as Record<string, unknown>).account !== "number"
+  ) {
+    return false;
+  }
+  if (
+    !("friends" in value) ||
+    !Array.isArray((value as Record<string, unknown>).friends)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function pickLatestSeasonId<TId>(
+  seasons: Array<{ _id: TId; year: number; number: number }>,
+): TId | undefined {
+  let best: { _id: TId; year: number; number: number } | undefined;
+  for (const season of seasons) {
+    if (!best) {
+      best = season;
+      continue;
+    }
+
+    if (season.year > best.year) {
+      best = season;
+      continue;
+    }
+
+    if (season.year === best.year && season.number > best.number) {
+      best = season;
+    }
+  }
+  return best?._id;
+}
+
+export function findDocByStringId<T extends { _id: unknown }>(
+  docs: T[],
+  id?: string,
+): T | null {
+  if (!id) return null;
+  return docs.find((doc) => String(doc._id) === id) ?? null;
+}
+
+export function selectDefaultTournament<
+  T extends { startDate: number; endDate: number },
+>(tournaments: T[]): T | null {
+  if (tournaments.length === 0) return null;
+
+  const timeline = getTournamentTimeline([...tournaments]);
+
+  if (timeline.current) return timeline.current;
+  if (timeline.future.length > 0) return timeline.future[0];
+  if (timeline.past.length > 0) return timeline.past[timeline.past.length - 1];
+
+  return tournaments[0] ?? null;
 }
 
 export function formatCentsAsDollars(cents: number): string {
@@ -138,6 +421,47 @@ export function formatTwoDigits(num: number): string {
   return String(num).padStart(2, "0");
 }
 
+/**
+ * Converts a unix ms timestamp into a `YYYY-MM-DD` string for `<input type="date" />`.
+ */
+export function msToDateInputValue(ms: number | undefined): string {
+  if (!ms) return "";
+  const d = new Date(ms);
+  const year = d.getFullYear();
+  const month = formatTwoDigits(d.getMonth() + 1);
+  const day = formatTwoDigits(d.getDate());
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Converts a `YYYY-MM-DD` date input value into a unix ms timestamp.
+ */
+export function dateInputValueToMs(date: string, endOfDay = false): number {
+  const suffix = endOfDay ? "T23:59:59" : "T00:00:00";
+  return new Date(`${date}${suffix}`).getTime();
+}
+
+/**
+ * Converts a unix ms timestamp into a `YYYY-MM-DDTHH:mm` string for `<input type="datetime-local" />`.
+ */
+export function msToDateTimeLocalInputValue(ms: number | undefined): string {
+  if (!ms) return "";
+  const d = new Date(ms);
+  const year = d.getFullYear();
+  const month = formatTwoDigits(d.getMonth() + 1);
+  const day = formatTwoDigits(d.getDate());
+  const hours = formatTwoDigits(d.getHours());
+  const minutes = formatTwoDigits(d.getMinutes());
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+/**
+ * Converts a `datetime-local` input value into a unix ms timestamp.
+ */
+export function dateTimeLocalInputValueToMs(value: string): number {
+  return new Date(value).getTime();
+}
+
 export function calculateCountdownTimeLeft(
   startDateTime: number,
 ): TimeLeftType {
@@ -156,7 +480,6 @@ export function calculateCountdownTimeLeft(
 }
 export function getTournamentTimeline<
   T extends {
-    _id: string;
     startDate: number;
     endDate: number;
   },
@@ -198,6 +521,20 @@ export function getTournamentYear(tournament: {
   );
 }
 
+/**
+ * Formats a date value as `Mon D` (e.g. `Jan 3`) for concise UI labels.
+ */
+export function formatMonthDay(
+  value: Date | number | null | undefined,
+): string {
+  if (value === null || value === undefined) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
 export function isNonEmptyString(
   str: string | null | undefined,
 ): str is string {
@@ -210,6 +547,246 @@ export function isNonEmptyString(
 export function includesPlayoff(value: string | null | undefined): boolean {
   if (!isNonEmptyString(value)) return false;
   return value.toLowerCase().includes("playoff");
+}
+
+/**
+ * Parses a rank from a position string like "T3", "3", or "CUT".
+ *
+ * @param pos - Position string.
+ * @returns Parsed rank, or `Infinity` when not parseable.
+ */
+export function parseRankFromPositionString(
+  pos: string | null | undefined,
+): number {
+  if (!pos) return Number.POSITIVE_INFINITY;
+  const match = /\d+/.exec(pos);
+  if (!match) return Number.POSITIVE_INFINITY;
+  const n = Number.parseInt(match[0], 10);
+  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Normalizes a position value into a sortable numeric rank.
+ *
+ * @param pos - Position number or string like "T12".
+ * @returns Parsed rank, or `Infinity` when not parseable.
+ */
+export function parsePositionToNumber(
+  pos: string | number | null | undefined,
+): number {
+  if (typeof pos === "number") return pos;
+  if (typeof pos === "string") return parseRankFromPositionString(pos);
+  return Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Adds `standingsPosition` and `currentPosition` to a points-sorted standings list.
+ *
+ * @param cardsSorted - Cards sorted in descending points order.
+ * @returns Cards with computed position fields.
+ */
+export function computeStandingsPositionStrings(
+  cardsSorted: ExtendedStandingsTourCard[],
+): ExtendedStandingsTourCard[] {
+  const pointsToRanks = new Map<number, { rank: number; tieCount: number }>();
+
+  for (let i = 0; i < cardsSorted.length; i++) {
+    const points = cardsSorted[i]!.points;
+    const existing = pointsToRanks.get(points);
+    if (existing) {
+      existing.tieCount += 1;
+    } else {
+      pointsToRanks.set(points, { rank: i + 1, tieCount: 1 });
+    }
+  }
+
+  return cardsSorted.map((card) => {
+    const info = pointsToRanks.get(card.points);
+    const rank = info?.rank ?? 999;
+    const isTie = (info?.tieCount ?? 0) > 1;
+    const currentPosition = isTie ? `T${rank}` : String(rank);
+
+    return {
+      ...card,
+      standingsPosition: rank,
+      currentPosition,
+    };
+  });
+}
+
+/**
+ * Computes position deltas by comparing current points to points before the most recent completed non-playoff tournament.
+ *
+ * @param args - Standings datasets for the current season.
+ * @returns Map keyed by tourCard id with per-tour and overall position deltas.
+ */
+export function computeStandingsPositionChangeByTour(args: {
+  cards: StandingsTourCard[];
+  tours: StandingsTour[];
+  teams: StandingsTeam[];
+  tournaments: StandingsTournament[];
+  tiers: StandingsTier[];
+}): Map<
+  string,
+  { posChange: number; posChangePO: number; pastPoints: number }
+> {
+  const now = Date.now();
+
+  const playoffTierIds = new Set(
+    args.tiers
+      .filter((t) => includesPlayoff(t.name))
+      .map((t) => t._id as string),
+  );
+
+  const pastTournament = args.tournaments
+    .filter((t) => !playoffTierIds.has(t.tierId as string))
+    .filter((t) => t.endDate < now)
+    .slice()
+    .sort((a, b) => b.endDate - a.endDate)[0];
+
+  if (!pastTournament) return new Map();
+
+  const pointsFromPastTournamentByTourCardId = new Map<string, number>();
+  for (const team of args.teams) {
+    if (team.tournamentId !== pastTournament._id) continue;
+    pointsFromPastTournamentByTourCardId.set(
+      team.tourCardId as string,
+      team.points ?? 0,
+    );
+  }
+
+  const pastPointsById = new Map<string, number>();
+  for (const tc of args.cards) {
+    const delta =
+      pointsFromPastTournamentByTourCardId.get(tc._id as string) ?? 0;
+    pastPointsById.set(tc._id as string, tc.points - delta);
+  }
+
+  const overallPastOrder = args.cards.slice().sort((a, b) => {
+    const delta =
+      (pastPointsById.get(b._id as string) ?? 0) -
+      (pastPointsById.get(a._id as string) ?? 0);
+    if (delta !== 0) return delta;
+    const nameDelta = String(a.displayName ?? "").localeCompare(
+      String(b.displayName ?? ""),
+    );
+    if (nameDelta !== 0) return nameDelta;
+    return String(a._id).localeCompare(String(b._id));
+  });
+
+  const overallCurrentOrder = args.cards.slice().sort((a, b) => {
+    const delta = b.points - a.points;
+    if (delta !== 0) return delta;
+    const nameDelta = String(a.displayName ?? "").localeCompare(
+      String(b.displayName ?? ""),
+    );
+    if (nameDelta !== 0) return nameDelta;
+    return String(a._id).localeCompare(String(b._id));
+  });
+
+  const overallPastRank = new Map<string, number>();
+  const overallCurrentRank = new Map<string, number>();
+
+  overallPastOrder.forEach((tc, idx) =>
+    overallPastRank.set(tc._id as string, idx + 1),
+  );
+  overallCurrentOrder.forEach((tc, idx) =>
+    overallCurrentRank.set(tc._id as string, idx + 1),
+  );
+
+  const perTourPastRank = new Map<string, Map<string, number>>();
+  const perTourCurrentRank = new Map<string, Map<string, number>>();
+
+  for (const tour of args.tours) {
+    const tourCards = args.cards.filter((c) => c.tourId === tour._id);
+
+    const pastSorted = tourCards.slice().sort((a, b) => {
+      const delta =
+        (pastPointsById.get(b._id as string) ?? 0) -
+        (pastPointsById.get(a._id as string) ?? 0);
+      if (delta !== 0) return delta;
+      const nameDelta = String(a.displayName ?? "").localeCompare(
+        String(b.displayName ?? ""),
+      );
+      if (nameDelta !== 0) return nameDelta;
+      return String(a._id).localeCompare(String(b._id));
+    });
+
+    const currentSorted = tourCards.slice().sort((a, b) => {
+      const delta = b.points - a.points;
+      if (delta !== 0) return delta;
+      const nameDelta = String(a.displayName ?? "").localeCompare(
+        String(b.displayName ?? ""),
+      );
+      if (nameDelta !== 0) return nameDelta;
+      return String(a._id).localeCompare(String(b._id));
+    });
+
+    const pastMap = new Map<string, number>();
+    const currentMap = new Map<string, number>();
+
+    pastSorted.forEach((tc, idx) => pastMap.set(tc._id as string, idx + 1));
+    currentSorted.forEach((tc, idx) =>
+      currentMap.set(tc._id as string, idx + 1),
+    );
+
+    perTourPastRank.set(tour._id as string, pastMap);
+    perTourCurrentRank.set(tour._id as string, currentMap);
+  }
+
+  const out = new Map<
+    string,
+    { posChange: number; posChangePO: number; pastPoints: number }
+  >();
+
+  for (const tc of args.cards) {
+    const id = tc._id as string;
+    const tourId = tc.tourId as string;
+    const pastRankInTour = perTourPastRank.get(tourId)?.get(id) ?? 999;
+    const currentRankInTour = perTourCurrentRank.get(tourId)?.get(id) ?? 999;
+    const posChange = pastRankInTour - currentRankInTour;
+
+    const pastPO = overallPastRank.get(id) ?? 999;
+    const currentPO = overallCurrentRank.get(id) ?? 999;
+    const posChangePO = pastPO - currentPO;
+
+    out.set(id, {
+      posChange: Number.isFinite(posChange) ? posChange : 0,
+      posChangePO: Number.isFinite(posChangePO) ? posChangePO : 0,
+      pastPoints: pastPointsById.get(id) ?? tc.points,
+    });
+  }
+
+  return out;
+}
+
+/**
+ * Calculates a rounded (1 decimal) average score across the supplied teams.
+ *
+ * @param teams - Standings teams containing round score fields.
+ * @param type - "weekday" uses rounds 1+2, "weekend" uses rounds 3+4.
+ * @returns Average score rounded to 1 decimal.
+ */
+export function calculateAverageScore(
+  teams: StandingsTeam[] = [],
+  type: "weekday" | "weekend",
+): number {
+  const rounds =
+    type === "weekday"
+      ? teams.reduce((acc, t) => acc + (t.roundOne ?? 0) + (t.roundTwo ?? 0), 0)
+      : teams.reduce(
+          (acc, t) => acc + (t.roundThree ?? 0) + (t.roundFour ?? 0),
+          0,
+        );
+
+  const roundCount =
+    type === "weekday"
+      ? teams.filter((t) => t.roundOne !== undefined).length +
+        teams.filter((t) => t.roundTwo !== undefined).length
+      : teams.filter((t) => t.roundThree !== undefined).length +
+        teams.filter((t) => t.roundFour !== undefined).length;
+
+  return Math.round((rounds / (roundCount || 1)) * 10) / 10;
 }
 
 /**

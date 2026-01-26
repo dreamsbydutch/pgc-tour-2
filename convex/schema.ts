@@ -129,6 +129,9 @@ const schema = defineSchema({
     logoUrl: v.optional(v.string()),
     apiId: v.optional(v.string()), // External API identifier
 
+    groupsEmailSentAt: v.optional(v.number()),
+    reminderEmailSentAt: v.optional(v.number()),
+
     // Tournament status and live data
     status: v.optional(
       v.union(
