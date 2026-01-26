@@ -20,7 +20,7 @@ import type {
 import { useRoleAccess } from "@/hooks";
 import { AdminDataTable } from "@/displays";
 import { Button, Field } from "@/ui";
-import { dateInputValueToMs, msToDateInputValue } from "@/lib";
+import { dateInputValueToMs, msToDateInputValue, normalizeList } from "@/lib";
 import {
   Card,
   CardContent,
@@ -523,21 +523,6 @@ function useAdminTournamentsPage() {
   const msToDateInput = msToDateInputValue;
 
   const dateInputToMs = dateInputValueToMs;
-
-  function normalizeList<T, K extends string>(
-    result: Array<T | null> | Record<K, Array<T | null>> | undefined,
-    key: K,
-  ): T[] {
-    if (!result) return [];
-    if (Array.isArray(result)) {
-      return result.filter((x): x is T => x !== null);
-    }
-    const value = result[key];
-    if (Array.isArray(value)) {
-      return value.filter((x): x is T => x !== null);
-    }
-    return [];
-  }
 
   const createTournament = useMutation(
     api.functions.tournaments.createTournaments,
