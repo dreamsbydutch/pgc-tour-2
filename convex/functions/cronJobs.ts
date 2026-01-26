@@ -466,7 +466,7 @@ export const runCreateGroupsForNextTournament: ReturnType<
         };
 
     const target: CreateGroupsTarget = await ctx.runQuery(
-      (internal.functions.cronJobs as any).getCreateGroupsTarget,
+      internal.functions.cronJobs.getCreateGroupsTarget,
       { tournamentId: args.tournamentId },
     );
 
@@ -480,7 +480,7 @@ export const runCreateGroupsForNextTournament: ReturnType<
       target.firstPlayoffTournamentId
     ) {
       const createResult = await ctx.runMutation(
-        (internal.functions.cronJobs as any).copyFromFirstPlayoff,
+        internal.functions.cronJobs.copyFromFirstPlayoff,
         {
           tournamentId,
           firstPlayoffTournamentId: target.firstPlayoffTournamentId,
@@ -529,12 +529,14 @@ export const runCreateGroupsForNextTournament: ReturnType<
       }
     }
 
-    const field = Array.isArray((fieldUpdates as any).field)
-      ? ((fieldUpdates as any).field as FieldPlayer[])
+    const field = Array.isArray((fieldUpdates as { field?: unknown }).field)
+      ? ((fieldUpdates as { field: unknown[] }).field as FieldPlayer[])
       : [];
 
-    const rankingsList = Array.isArray((rankings as any).rankings)
-      ? ((rankings as any).rankings as RankedPlayer[])
+    const rankingsList = Array.isArray(
+      (rankings as { rankings?: unknown }).rankings,
+    )
+      ? ((rankings as { rankings: unknown[] }).rankings as RankedPlayer[])
       : [];
 
     const byDgId = new Map<number, RankedPlayer>();
@@ -556,7 +558,7 @@ export const runCreateGroupsForNextTournament: ReturnType<
     });
 
     const createResult = await ctx.runMutation(
-      (internal.functions.cronJobs as any).applyCreateGroups,
+      internal.functions.cronJobs.applyCreateGroups,
       {
         tournamentId,
         groups: groups.map((group, idx) => ({
@@ -566,13 +568,12 @@ export const runCreateGroupsForNextTournament: ReturnType<
             playerName: g.player_name,
             country: g.country,
             worldRank: g.ranking?.owgr_rank,
-            ...(typeof (g as any).r1_teetime === "string" &&
-            String((g as any).r1_teetime).trim().length
+            ...(typeof g.r1_teetime === "string" && g.r1_teetime.trim().length
               ? {
-                  r1TeeTime: (g as any).r1_teetime,
-                  ...(typeof (g as any).r2_teetime === "string" &&
-                  String((g as any).r2_teetime).trim().length
-                    ? { r2TeeTime: (g as any).r2_teetime }
+                  r1TeeTime: g.r1_teetime,
+                  ...(typeof g.r2_teetime === "string" &&
+                  g.r2_teetime.trim().length
+                    ? { r2TeeTime: g.r2_teetime }
                     : {}),
                 }
               : {}),

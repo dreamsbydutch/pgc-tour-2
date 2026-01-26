@@ -224,7 +224,11 @@ function useAdminMemberMergePage() {
   const members = useMemo(() => {
     const list = Array.isArray(membersResult)
       ? membersResult
-      : (membersResult as any)?.members;
+      : membersResult &&
+          typeof membersResult === "object" &&
+          "members" in membersResult
+        ? (membersResult as { members?: unknown }).members
+        : undefined;
 
     return Array.isArray(list) ? (list as Doc<"members">[]) : [];
   }, [membersResult]);
@@ -264,18 +268,19 @@ function useAdminMemberMergePage() {
     const needle = sourceSearch.trim().toLowerCase();
     const filtered = needle
       ? members.filter((m) => {
-          const label = `${m.email} ${(m as any).displayName ?? ""} ${String(
-            m._id,
-          )}`.toLowerCase();
+          const name = `${m.firstname ?? ""} ${m.lastname ?? ""}`
+            .trim()
+            .replace(/\s+/g, " ");
+          const label = `${m.email} ${name} ${String(m._id)}`.toLowerCase();
           return label.includes(needle);
         })
       : members;
 
     return filtered.slice(0, 200).map((m) => ({
       _id: m._id,
-      label: `${(m as any).displayName ?? ""} ${m.email} (${String(m._id).slice(
-        -6,
-      )})`,
+      label: `${`${m.firstname ?? ""} ${m.lastname ?? ""}`
+        .trim()
+        .replace(/\s+/g, " ")} ${m.email} (${String(m._id).slice(-6)})`,
     }));
   }, [members, sourceSearch]);
 
@@ -283,35 +288,40 @@ function useAdminMemberMergePage() {
     const needle = targetSearch.trim().toLowerCase();
     const filtered = needle
       ? members.filter((m) => {
-          const label = `${m.email} ${(m as any).displayName ?? ""} ${String(
-            m._id,
-          )}`.toLowerCase();
+          const name = `${m.firstname ?? ""} ${m.lastname ?? ""}`
+            .trim()
+            .replace(/\s+/g, " ");
+          const label = `${m.email} ${name} ${String(m._id)}`.toLowerCase();
           return label.includes(needle);
         })
       : members;
 
     return filtered.slice(0, 200).map((m) => ({
       _id: m._id,
-      label: `${(m as any).displayName ?? ""} ${m.email} (${String(m._id).slice(
-        -6,
-      )})`,
+      label: `${`${m.firstname ?? ""} ${m.lastname ?? ""}`
+        .trim()
+        .replace(/\s+/g, " ")} ${m.email} (${String(m._id).slice(-6)})`,
     }));
   }, [members, targetSearch]);
 
   const previewWarnings = useMemo(() => {
     const warnings: string[] = [];
 
-    if (!preview || typeof preview !== "object") return warnings;
+    if (!preview || typeof preview !== "object" || !("warnings" in preview)) {
+      return warnings;
+    }
 
-    const p = preview as any;
+    const w = (preview as { warnings?: unknown }).warnings;
+    const warningsObj =
+      w && typeof w === "object" ? (w as Record<string, unknown>) : {};
 
-    if (p?.warnings?.sourceMissingClerkId) {
+    if (warningsObj.sourceMissingClerkId === true) {
       warnings.push("Source member has no clerkId; merge will fail.");
     }
-    if (p?.warnings?.clerkIdAlsoOnDifferentMember) {
+    if (warningsObj.clerkIdAlsoOnDifferentMember === true) {
       warnings.push("Source clerkId is already on a different member.");
     }
-    if (p?.warnings?.targetAlreadyHasDifferentClerkId) {
+    if (warningsObj.targetAlreadyHasDifferentClerkId === true) {
       warnings.push(
         "Target member has a different clerkId (enable overwrite if you really mean it).",
       );
@@ -363,7 +373,13 @@ function useAdminMemberMergePage() {
     targetSelected,
     sourceOptions,
     targetOptions,
-    preview: preview && (preview as any).ok ? preview : null,
+    preview:
+      preview &&
+      typeof preview === "object" &&
+      "ok" in preview &&
+      (preview as { ok?: unknown }).ok === true
+        ? preview
+        : null,
     previewWarnings,
     confirm,
     setConfirm,

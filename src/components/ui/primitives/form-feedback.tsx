@@ -1,5 +1,3 @@
-import { useMemo } from "react";
-
 import { Skeleton } from "./skeleton";
 
 /**
@@ -19,56 +17,21 @@ export function FormFeedback(props: {
   loading?: boolean;
   className?: string;
 }) {
-  const model = useFormFeedback(props);
-
-  if (model.kind === "loading") {
+  if (props.loading) {
     return <FormFeedbackSkeleton />;
   }
 
-  if (!model.hasAny) return null;
+  const error = props.error ?? null;
+  const success = props.success ?? null;
+
+  if (!error && !success) return null;
 
   return (
-    <div className={model.className}>
-      {model.error ? (
-        <p className="text-sm text-red-600">{model.error}</p>
-      ) : null}
-      {model.success ? (
-        <p className="text-sm text-green-700">{model.success}</p>
-      ) : null}
+    <div className={props.className ?? "space-y-1"}>
+      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {success ? <p className="text-sm text-green-700">{success}</p> : null}
     </div>
   );
-}
-
-/**
- * Builds display state for `FormFeedback`.
- *
- * @param args - Component inputs.
- * @returns View-model used by the UI.
- */
-function useFormFeedback(args: {
-  error?: string | null;
-  success?: string | null;
-  loading?: boolean;
-  className?: string;
-}) {
-  return useMemo(() => {
-    if (args.loading) {
-      return { kind: "loading" as const };
-    }
-
-    const error = args.error ?? null;
-    const success = args.success ?? null;
-
-    const hasAny = Boolean(error || success);
-
-    return {
-      kind: "ready" as const,
-      error,
-      success,
-      hasAny,
-      className: args.className ?? "space-y-1",
-    };
-  }, [args.className, args.error, args.loading, args.success]);
 }
 
 /**

@@ -100,10 +100,7 @@ async function fetchClerkUsers(options: {
         Array.isArray(json) &&
         json.every(
           (u) =>
-            u &&
-            typeof u === "object" &&
-            "id" in u &&
-            typeof u.id === "string",
+            u && typeof u === "object" && "id" in u && typeof u.id === "string",
         ),
       logPrefix: "Clerk API",
     },
@@ -296,6 +293,12 @@ function generateDisplayName(
   }
 
   return "Anonymous User";
+}
+
+function readOptionalDisplayName(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const dn = (value as { displayName?: unknown }).displayName;
+  return typeof dn === "string" && dn.trim() ? dn.trim() : undefined;
 }
 
 /**
@@ -1136,7 +1139,7 @@ export const updateMembers = mutation({
       const effectiveFirst = updateData.firstname ?? member.firstname;
       const effectiveLast = updateData.lastname ?? member.lastname;
       const effectiveDisplayName =
-        (updateData as any).displayName ?? (member as any).displayName;
+        args.data.displayName ?? readOptionalDisplayName(member);
 
       const nextTourCardDisplayName = generateDisplayName(
         typeof effectiveDisplayName === "string"
@@ -2028,7 +2031,7 @@ export const adminGetMemberMergePreview = query({
         _id: source._id,
         clerkId: source.clerkId ?? null,
         email: source.email,
-        displayName: (source as any).displayName ?? null,
+        displayName: readOptionalDisplayName(source) ?? null,
         firstname: source.firstname ?? null,
         lastname: source.lastname ?? null,
         role: source.role,
@@ -2040,7 +2043,7 @@ export const adminGetMemberMergePreview = query({
             _id: target._id,
             clerkId: target.clerkId ?? null,
             email: target.email,
-            displayName: (target as any).displayName ?? null,
+            displayName: readOptionalDisplayName(target) ?? null,
             firstname: target.firstname ?? null,
             lastname: target.lastname ?? null,
             role: target.role,
@@ -2142,8 +2145,10 @@ export const adminMergeMembers = mutation({
     if (!target.lastname && source.lastname) {
       targetPatch.lastname = source.lastname;
     }
-    if (!(target as any).displayName && (source as any).displayName) {
-      targetPatch.displayName = (source as any).displayName;
+    const targetDisplayName = readOptionalDisplayName(target);
+    const sourceDisplayName = readOptionalDisplayName(source);
+    if (!targetDisplayName && sourceDisplayName) {
+      targetPatch.displayName = sourceDisplayName;
     }
 
     await ctx.db.patch(args.targetMemberId, targetPatch);

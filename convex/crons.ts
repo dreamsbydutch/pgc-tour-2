@@ -33,7 +33,7 @@ crons.cron(
 crons.cron(
   "create_groups_for_next_tournament",
   "0 10 * * 1",
-  (internal.functions.cronJobs as any).runCreateGroupsForNextTournament,
+  internal.functions.cronJobs.runCreateGroupsForNextTournament,
   {},
 );
 

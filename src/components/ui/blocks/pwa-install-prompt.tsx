@@ -106,7 +106,7 @@ export function PWAInstallPrompt() {
 
       setDeferredPrompt(null);
       setShowInstallPrompt(false);
-    } catch (error) {
+    } catch {
       setDeferredPrompt(null);
       setShowInstallPrompt(false);
     }
@@ -117,7 +117,7 @@ export function PWAInstallPrompt() {
     try {
       localStorage.setItem(DISMISS_KEY, Date.now().toString());
     } catch {
-      // ignore
+      void 0;
     }
   };
 

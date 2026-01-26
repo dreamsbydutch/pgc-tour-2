@@ -317,7 +317,7 @@ export const runUpdateTeamsForActiveTournament: ReturnType<
     const tournamentId =
       args.tournamentId ??
       (await ctx.runQuery(
-        (internal.functions as any).cronTeams.getActiveTournamentIdForTeamsCron,
+        internal.functions.cronTeams.getActiveTournamentIdForTeamsCron,
         {},
       ));
 
@@ -330,7 +330,7 @@ export const runUpdateTeamsForActiveTournament: ReturnType<
     }
 
     const snap = (await ctx.runQuery(
-      (internal.functions as any).cronTeams.getTournamentSnapshotForTeamsCron,
+      internal.functions.cronTeams.getTournamentSnapshotForTeamsCron,
       { tournamentId },
     )) as TournamentSnap;
 
@@ -346,7 +346,7 @@ export const runUpdateTeamsForActiveTournament: ReturnType<
     }
 
     const playoff = (await ctx.runQuery(
-      (internal.functions as any).cronTeams.computePlayoffContext,
+      internal.functions.cronTeams.computePlayoffContext,
       { tournamentId },
     )) as PlayoffContext;
 
@@ -868,7 +868,7 @@ export const runUpdateTeamsForActiveTournament: ReturnType<
     const cleanUpdates = updates.map(({ _isCut, ...rest }) => rest);
 
     return await ctx.runMutation(
-      (internal.functions as any).cronTeams.applyTeamsUpdate,
+      internal.functions.cronTeams.applyTeamsUpdate,
       { tournamentId, updates: cleanUpdates },
     );
   },

@@ -13,19 +13,20 @@ import { calculateCountdownTimeLeft } from "@/lib/utils";
  */
 export function useTournamentCountdown(tourney?: TournamentCountdownTourney) {
   const [timeLeft, setTimeLeft] = useState<TimeLeftType>(null);
+  const startDate = tourney?.startDate;
 
   useEffect(() => {
-    if (!tourney || typeof tourney.startDate !== "number") {
+    if (typeof startDate !== "number") {
       setTimeLeft(null);
       return;
     }
 
-    setTimeLeft(calculateCountdownTimeLeft(tourney.startDate));
+    setTimeLeft(calculateCountdownTimeLeft(startDate));
     const timer = setInterval(() => {
-      setTimeLeft(calculateCountdownTimeLeft(tourney.startDate));
+      setTimeLeft(calculateCountdownTimeLeft(startDate));
     }, 1000);
     return () => clearInterval(timer);
-  }, [tourney?.startDate]);
+  }, [startDate]);
 
   return { timeLeft };
 }

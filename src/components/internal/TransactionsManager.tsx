@@ -489,16 +489,16 @@ function useTransactionsManager() {
   }, [seasonFilter, statusFilter, typeFilter]);
 
   const pageResult = useQuery(
-    api.functions.transactions.getTransactionsPage as any,
+    api.functions.transactions.getTransactionsPage,
     shouldFetch
-      ? ({
+      ? {
           paginationOpts: { numItems: pageSize, cursor },
           filter: {
             ...(seasonFilter ? { seasonId: seasonFilter } : {}),
             ...(typeFilter ? { transactionType: typeFilter } : {}),
             ...(statusFilter ? { status: statusFilter } : {}),
           },
-        } as any)
+        }
       : "skip",
   ) as
     | {

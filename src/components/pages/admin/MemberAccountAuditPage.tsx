@@ -54,8 +54,8 @@ export function MemberAccountAuditPage() {
     },
   );
 
-  const mismatches = audit?.mismatches ?? [];
-  const outstanding = audit?.outstandingBalances ?? [];
+  const mismatches = useMemo(() => audit?.mismatches ?? [], [audit]);
+  const outstanding = useMemo(() => audit?.outstandingBalances ?? [], [audit]);
 
   const ledger = useQuery(
     api.functions.transactions.adminGetMemberLedgerForAudit,

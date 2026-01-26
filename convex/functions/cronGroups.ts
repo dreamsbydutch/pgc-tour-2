@@ -461,7 +461,7 @@ export const runCreateGroupsForNextTournament: ReturnType<
         };
 
     const target: CreateGroupsTarget = await ctx.runQuery(
-      (internal.functions as any).cronGroups.getCreateGroupsTarget,
+      internal.functions.cronGroups.getCreateGroupsTarget,
       { tournamentId: args.tournamentId },
     );
 
@@ -475,7 +475,7 @@ export const runCreateGroupsForNextTournament: ReturnType<
       target.firstPlayoffTournamentId
     ) {
       const createResult = await ctx.runMutation(
-        (internal.functions as any).cronGroups.copyFromFirstPlayoff,
+        internal.functions.cronGroups.copyFromFirstPlayoff,
         {
           tournamentId,
           firstPlayoffTournamentId: target.firstPlayoffTournamentId,
@@ -551,7 +551,7 @@ export const runCreateGroupsForNextTournament: ReturnType<
     });
 
     const createResult = await ctx.runMutation(
-      (internal.functions as any).cronGroups.applyCreateGroups,
+      internal.functions.cronGroups.applyCreateGroups,
       {
         tournamentId,
         groups: groups.map((group, idx) => ({

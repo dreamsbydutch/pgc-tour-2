@@ -4,6 +4,7 @@ import type { TierDoc } from "../../convex/types/types";
 import { api, useQuery } from "@/convex";
 import { useSeasonIdOrCurrent } from "./useSeasonIdOrCurrent";
 import type { TierPayoutsRow, TierPointsRow } from "@/lib/types";
+import type { Id } from "@/convex";
 
 function normalizeTierDocs(tiersResult: unknown): TierDoc[] | undefined {
   if (tiersResult === undefined) return undefined;
@@ -36,8 +37,8 @@ function normalizeTierDocs(tiersResult: unknown): TierDoc[] | undefined {
  * @param seasonId - Optional season id; defaults to the current season.
  * @returns Derived tier rows for payouts/points and a loading flag.
  */
-export function useRulebookTierTables(seasonId?: string) {
-  const resolvedSeasonId = useSeasonIdOrCurrent(seasonId as any);
+export function useRulebookTierTables(seasonId?: Id<"seasons">) {
+  const resolvedSeasonId = useSeasonIdOrCurrent(seasonId);
 
   const tiersResult = useQuery(
     api.functions.tiers.getTiers,
