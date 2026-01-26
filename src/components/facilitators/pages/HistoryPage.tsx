@@ -1,6 +1,6 @@
 import { api, useQuery } from "@/convex";
 
-import { LeaderboardHeader } from "@/components";
+import { LeaderboardHeader } from "@/facilitators";
 import type { EnhancedTournamentDoc } from "convex/types/types";
 
 /**

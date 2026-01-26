@@ -5,8 +5,7 @@ import { useUser } from "@clerk/tanstack-react-start";
 import { api } from "@/convex";
 import type { Id } from "@/convex";
 
-import { AdminDataTable } from "@/components/displays/admin/AdminDataTable";
-import { AdminRowActions } from "@/components/displays/admin/AdminRowActions";
+import { AdminDataTable, AdminRowActions } from "@/displays";
 import { Button } from "@/ui";
 import {
   Card,

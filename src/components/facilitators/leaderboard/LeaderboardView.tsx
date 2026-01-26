@@ -2,10 +2,10 @@
 
 import { useMemo } from "react";
 
-import { ToursToggle } from "@/components/displays/leaderboard/ToursToggle";
+import { ToursToggle } from "@/displays";
 import { Skeleton } from "@/ui";
 import type { LeaderboardViewProps } from "@/lib/types";
-import { LeaderboardHeaderRow } from "@/components/displays/leaderboard/LeaderboardHeaderRow";
+import { LeaderboardHeaderRow } from "@/displays";
 import { PGALeaderboard } from "./PGALeaderboard";
 import { PGCLeaderboard } from "./PGCLeaderboard";
 

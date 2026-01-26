@@ -7,7 +7,7 @@ import {
   LeaderboardHeader,
   LeaderboardView,
   PreTournamentContent,
-} from "@/components";
+} from "@/facilitators";
 import type {
   LeaderboardPgaRow,
   LeaderboardTeamRow,

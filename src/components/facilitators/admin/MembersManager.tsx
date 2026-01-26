@@ -5,17 +5,10 @@ import { useMutation, usePaginatedQuery } from "convex/react";
 import { api } from "@/convex";
 import type { Id } from "@/convex";
 import type { MemberDoc } from "../../../../convex/types/types";
-import { AdminEditDeleteActions } from "@/components/displays/admin/AdminEditDeleteActions";
-import { AdminLoadMore } from "@/components/widgets/admin/AdminLoadMore";
+import { AdminEditDeleteActions } from "@/displays";
+import { AdminLoadMore } from "@/widgets";
 import { AdminCrudSection } from "./AdminCrudSection";
-import {
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  Field,
-  Skeleton,
-} from "@/ui";
+import { Button, Card, CardContent, CardHeader, Field, Skeleton } from "@/ui";
 import { ADMIN_FORM_CONTROL_CLASSNAME } from "@/lib/constants";
 import { formatCentsAsDollars } from "@/lib/utils";
 import { adminActionsColumn } from "@/lib/adminTable";

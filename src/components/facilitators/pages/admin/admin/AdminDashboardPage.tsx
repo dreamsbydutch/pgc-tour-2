@@ -1,6 +1,6 @@
 import type { AdminDashboardView } from "@/lib/types";
 
-import { AdminPanel } from "@/components/displays/admin/AdminPanel";
+import { AdminPanel } from "@/displays";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui";
 
 import { AdminCronsPage } from "./AdminCronsPage";
@@ -12,7 +12,7 @@ import { AdminTeamsPage } from "./AdminTeamsPage";
 import { AdminTourCardsPage } from "./AdminTourCardsPage";
 import { AdminTournamentsPage } from "./AdminTournamentsPage";
 import { MemberAccountAuditPage } from "./MemberAccountAuditPage";
-import { MissingTourCardsSection } from "@/components/facilitators/admin/MissingTourCardsSection";
+import { MissingTourCardsSection } from "@/facilitators";
 
 /**
  * AdminDashboardPage

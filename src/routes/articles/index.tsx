@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { ArticlesIndexPage } from "@/components";
+import { ArticlesIndexPage } from "@/facilitators";
 
 export const Route = createFileRoute("/articles/")({
   component: ArticlesIndexRoute,

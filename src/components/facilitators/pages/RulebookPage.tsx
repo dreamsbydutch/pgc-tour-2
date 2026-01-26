@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
-import { LeagueSchedule } from "@/components/widgets/schedule/LeagueSchedule";
+import { TierDistributionsTable } from "@/displays";
+import { LeagueSchedule } from "@/widgets";
 import { useRulebookTierTables } from "@/hooks";
-import { TierDistributionsTable } from "@/components/displays/misc/TierDistributionsTable";
 import { ruleList } from "@/lib/rules";
 import { cn } from "@/lib/utils";
 

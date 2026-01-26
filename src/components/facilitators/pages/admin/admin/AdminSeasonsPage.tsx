@@ -6,7 +6,7 @@ import type { Id } from "@/convex";
 import type { SeasonDoc } from "../../../../../../convex/types/types";
 
 import { useRoleAccess } from "@/hooks";
-import { AdminDataTable } from "@/components/displays/admin/AdminDataTable";
+import { AdminDataTable } from "@/displays";
 import { Button, Field } from "@/ui";
 import {
   Card,

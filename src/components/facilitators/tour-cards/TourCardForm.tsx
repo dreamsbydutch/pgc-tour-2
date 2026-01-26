@@ -8,7 +8,7 @@ import { Loader2 } from "lucide-react";
 
 import { api } from "@/convex";
 import type { Doc, Id } from "@/convex";
-import { TourCardFormButton } from "@/components";
+import { TourCardFormButton } from "@/widgets";
 import { Skeleton } from "@/ui";
 import { DEFAULT_MAX_PARTICIPANTS } from "@/lib/constants";
 import { formatBuyIn, getMemberDisplayName } from "@/lib/utils";

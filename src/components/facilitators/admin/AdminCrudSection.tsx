@@ -1,6 +1,6 @@
 import type { FormEvent, ReactNode } from "react";
 
-import { AdminDataTable } from "@/components/displays/admin/AdminDataTable";
+import { AdminDataTable } from "@/displays";
 import { Button } from "@/ui";
 import {
   Card,

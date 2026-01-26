@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 
-import { ToursToggle } from "@/components/displays/leaderboard/ToursToggle";
+import { ToursToggle } from "@/displays";
 import {
   Button,
   Card,

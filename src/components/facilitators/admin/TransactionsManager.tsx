@@ -10,8 +10,8 @@ import type {
   TransactionDoc,
 } from "../../../../convex/types/types";
 
-import { AdminEditDeleteActions } from "@/components/displays/admin/AdminEditDeleteActions";
-import { AdminLoadMore } from "@/components/widgets/admin/AdminLoadMore";
+import { AdminEditDeleteActions } from "@/displays";
+import { AdminLoadMore } from "@/widgets";
 import { AdminCrudSection } from "./AdminCrudSection";
 
 import { Card, CardContent, CardHeader, Field, Skeleton } from "@/ui";

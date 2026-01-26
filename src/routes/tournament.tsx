@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { LeaderboardVariant } from "@/lib/types";
 
-import { TournamentPage } from "@/components";
+import { TournamentPage } from "@/facilitators";
 
 export const Route = createFileRoute("/tournament")({
   component: TournamentRoute,

@@ -7,8 +7,7 @@ import { useRouter } from "@tanstack/react-router";
 import { Button } from "@/ui";
 import { cn, formatMoney } from "@/lib/utils";
 
-import { MemberHeader } from "@/components/displays/tournament/MemberHeader";
-import { TeamGolfersList } from "@/components/displays/team/TeamGolfersList";
+import { MemberHeader, TeamGolfersList } from "@/displays";
 
 /**
  * Renders the "Create/Change Your Team" call-to-action for pre-tournament picks.
