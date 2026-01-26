@@ -15,7 +15,7 @@ import type {
   LeaderboardVariant,
   LeaderboardViewModel,
 } from "@/lib";
-import { getTournamentTimeline } from "@/lib";
+import { findDocByStringId, selectDefaultTournament } from "@/lib";
 import type { EnhancedTournamentDoc } from "convex/types/types";
 
 /**
@@ -259,29 +259,6 @@ function useTournamentPage(args: {
     };
   } | null;
 
-  function findTournamentById(
-    tournaments: EnhancedTournamentDoc[],
-    id?: string,
-  ) {
-    if (!id) return null;
-    return (
-      tournaments.find((tournament) => String(tournament._id) === id) ?? null
-    );
-  }
-
-  function selectDefaultTournament(tournaments: EnhancedTournamentDoc[]) {
-    if (tournaments.length === 0) return null;
-
-    const timeline = getTournamentTimeline([...tournaments]);
-
-    if (timeline.current) return timeline.current;
-    if (timeline.future.length > 0) return timeline.future[0];
-    if (timeline.past.length > 0)
-      return timeline.past[timeline.past.length - 1];
-
-    return tournaments[0] ?? null;
-  }
-
   const { user } = useUser();
 
   const tournaments = useQuery(api.functions.tournaments.getTournaments, {
@@ -300,7 +277,7 @@ function useTournamentPage(args: {
 
   const selectedTournament =
     tournaments && tournaments.length > 0
-      ? findTournamentById(tournaments, args.searchTournamentId) ||
+      ? findDocByStringId(tournaments, args.searchTournamentId) ||
         selectDefaultTournament(tournaments)
       : null;
 

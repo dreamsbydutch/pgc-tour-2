@@ -2,8 +2,8 @@ import { useMemo } from "react";
 
 import { Button } from "@/ui";
 import { Skeleton } from "@/ui";
-import { cn } from "@/lib/utils";
-import type { ToursToggleProps } from "@/lib/types";
+import { cn } from "@/lib";
+import type { ToursToggleProps } from "@/lib";
 
 /**
  * ToursToggle

@@ -9,8 +9,8 @@ import { AdminEditDeleteActions } from "@/displays";
 import { AdminCrudSection } from "./AdminCrudSection";
 import { Card, CardContent, CardHeader, Field, Skeleton } from "@/ui";
 import { ADMIN_FORM_CONTROL_CLASSNAME } from "@/lib/constants";
-import { adminActionsColumn } from "@/lib/adminTable";
-import { normalizeList } from "@/lib/utils";
+import { adminActionsColumn } from "@/lib";
+import { normalizeList } from "@/lib";
 
 /**
  * Admin UI for creating, updating, and deleting courses.

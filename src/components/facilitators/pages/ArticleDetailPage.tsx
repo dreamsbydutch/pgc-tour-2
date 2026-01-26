@@ -1,4 +1,4 @@
-import { getActiveArticleBySlug } from "@/lib/articles";
+import { getActiveArticleBySlug } from "@/lib";
 
 /**
  * Renders an individual article at `/articles/$slug`.
@@ -46,9 +46,7 @@ export function ArticleDetailPage(props: { slug: string }) {
 /**
  * Resolves the article for a given slug and returns the render state.
  */
-function useArticleDetailPage(args: {
-  slug: string;
-}):
+function useArticleDetailPage(args: { slug: string }):
   | { kind: "loading" }
   | { kind: "notFound" }
   | {

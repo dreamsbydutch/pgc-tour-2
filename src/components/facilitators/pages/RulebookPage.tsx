@@ -5,7 +5,7 @@ import { TierDistributionsTable } from "@/displays";
 import { LeagueSchedule } from "@/widgets";
 import { useRulebookTierTables } from "@/hooks";
 import { ruleList } from "@/lib/rules";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib";
 
 /**
  * Renders the league rulebook.

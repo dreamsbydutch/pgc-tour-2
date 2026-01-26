@@ -9,7 +9,7 @@ import type {
 } from "convex/types/types";
 import { TourCardChangeButton } from "@/widgets";
 import { Skeleton } from "@/ui";
-import { formatMonthDay, formatMoney } from "@/lib/utils";
+import { formatMonthDay, formatMoney } from "@/lib";
 import { api } from "@/convex";
 
 /**

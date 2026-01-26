@@ -4,7 +4,7 @@ import {
   formatScore,
   hasItems,
   isNonEmptyString,
-} from "@/lib/utils";
+} from "@/lib";
 import { Skeleton } from "@/ui";
 
 /**

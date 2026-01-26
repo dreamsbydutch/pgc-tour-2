@@ -7,8 +7,8 @@ import { Loader2 } from "lucide-react";
 import { api } from "@/convex";
 import type { Id } from "@/convex";
 import { Button, Skeleton } from "@/ui";
-import { cn } from "@/lib/utils";
-import type { TourCardFormButtonProps } from "@/lib/types";
+import { cn } from "@/lib";
+import type { TourCardFormButtonProps } from "@/lib";
 
 /**
  * TourCardFormButton

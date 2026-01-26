@@ -1,10 +1,10 @@
-﻿"use client";
+"use client";
 
 import { useMemo } from "react";
 
 import { ToursToggle } from "@/displays";
 import { Skeleton } from "@/ui";
-import type { LeaderboardViewProps } from "@/lib/types";
+import type { LeaderboardViewProps } from "@/lib";
 import { LeaderboardHeaderRow } from "@/displays";
 import { PGALeaderboard } from "./PGALeaderboard";
 import { PGCLeaderboard } from "./PGCLeaderboard";

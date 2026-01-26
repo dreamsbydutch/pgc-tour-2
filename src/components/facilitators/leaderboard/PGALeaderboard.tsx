@@ -6,8 +6,8 @@ import type {
   LeaderboardPgaRow,
   LeaderboardTournamentLite,
   LeaderboardViewerContext,
-} from "@/lib/types";
-import { sortPgaRows } from "@/lib/utils";
+} from "@/lib";
+import { sortPgaRows } from "@/lib";
 import { LeaderboardListing } from "./LeaderboardListing";
 
 /**

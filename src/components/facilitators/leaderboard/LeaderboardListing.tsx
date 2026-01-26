@@ -8,7 +8,7 @@ import type {
   LeaderboardListingProps,
   LeaderboardPgaRow,
   LeaderboardTeamRow,
-} from "@/lib/types";
+} from "@/lib";
 import {
   cn,
   formatMoneyUsd,
@@ -16,7 +16,7 @@ import {
   getLeaderboardRowClass,
   getPositionChangeForTeam,
   isPlayerCut,
-} from "@/lib/utils";
+} from "@/lib";
 
 import { PGADropdown, TeamGolfersTable } from "@/displays";
 

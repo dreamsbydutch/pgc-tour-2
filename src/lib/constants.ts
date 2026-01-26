@@ -1,5 +1,6 @@
 import { BookText, Home, List, Trophy } from "lucide-react";
 import type { NavigationItemConfig } from "./types";
+import type { TransactionStatus, TransactionType } from "./types";
 
 export const DEFAULT_MAX_PARTICIPANTS = 75;
 
@@ -28,3 +29,22 @@ export const ADMIN_DASHBOARD_VIEWS = [
   "accountAudit",
   "crons",
 ] as const;
+
+export const TRANSACTION_TYPES: TransactionType[] = [
+  "TourCardFee",
+  "TournamentWinnings",
+  "Withdrawal",
+  "Deposit",
+  "LeagueDonation",
+  "CharityDonation",
+  "Payment",
+  "Refund",
+  "Adjustment",
+];
+
+export const TRANSACTION_STATUSES: TransactionStatus[] = [
+  "pending",
+  "completed",
+  "failed",
+  "cancelled",
+];

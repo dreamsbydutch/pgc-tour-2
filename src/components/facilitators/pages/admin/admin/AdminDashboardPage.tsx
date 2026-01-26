@@ -1,4 +1,4 @@
-import type { AdminDashboardView } from "@/lib/types";
+import type { AdminDashboardView } from "@/lib";
 
 import { SecondaryToolbar } from "@/displays";
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/ui";

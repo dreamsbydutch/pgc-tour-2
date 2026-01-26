@@ -5,7 +5,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 
 import { Button } from "@/ui";
-import { cn, formatMoney } from "@/lib/utils";
+import { cn, formatMoney } from "@/lib";
 
 import { MemberHeader, TeamGolfersList } from "@/displays";
 

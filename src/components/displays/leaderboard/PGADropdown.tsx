@@ -2,13 +2,13 @@
 
 import { useMemo } from "react";
 
-import type { LeaderboardPgaRow } from "@/lib/types";
+import type { LeaderboardPgaRow } from "@/lib";
 import {
   cn,
   formatPercentageDisplay,
   getCountryFlagEmoji,
   isPlayerCut,
-} from "@/lib/utils";
+} from "@/lib";
 
 /**
  * Renders the expandable details panel for a single PGA golfer row.

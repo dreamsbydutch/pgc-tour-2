@@ -6,8 +6,8 @@ import type {
   TimeLeftType,
   TournamentCountdownProps,
   TournamentCountdownTourney,
-} from "@/lib/types";
-import { calculateCountdownTimeLeft, formatTwoDigits } from "@/lib/utils";
+} from "@/lib";
+import { calculateCountdownTimeLeft, formatTwoDigits } from "@/lib";
 
 import { Skeleton } from "@/ui";
 

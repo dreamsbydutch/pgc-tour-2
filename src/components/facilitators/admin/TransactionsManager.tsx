@@ -15,14 +15,20 @@ import { AdminLoadMore } from "@/widgets";
 import { AdminCrudSection } from "./AdminCrudSection";
 
 import { Card, CardContent, CardHeader, Field, Skeleton } from "@/ui";
-import { ADMIN_FORM_CONTROL_CLASSNAME } from "@/lib/constants";
-import { adminActionsColumn } from "@/lib/adminTable";
+import {
+  ADMIN_FORM_CONTROL_CLASSNAME,
+  TRANSACTION_STATUSES,
+  TRANSACTION_TYPES,
+} from "@/lib/constants";
+import { adminActionsColumn } from "@/lib";
 import {
   dateTimeLocalInputValueToMs,
   formatCentsAsDollars,
+  isOneOf,
   msToDateTimeLocalInputValue,
   normalizeList,
 } from "@/lib";
+import type { TransactionStatus, TransactionType } from "@/lib";
 
 /**
  * Admin UI for creating and editing ledger transactions.
@@ -285,19 +291,6 @@ export function TransactionsManager() {
  * @returns View-model used by the UI to render and to perform create/update actions.
  */
 function useTransactionsManager() {
-  type TransactionType =
-    | "TourCardFee"
-    | "TournamentWinnings"
-    | "Withdrawal"
-    | "Deposit"
-    | "LeagueDonation"
-    | "CharityDonation"
-    | "Payment"
-    | "Refund"
-    | "Adjustment";
-
-  type TransactionStatus = "pending" | "completed" | "failed" | "cancelled";
-
   type TransactionFormState = {
     transactionId: Id<"transactions"> | "";
     memberId: Id<"members"> | "";
@@ -348,29 +341,6 @@ function useTransactionsManager() {
         submitting: boolean;
         formatCentsAsDollars: (cents: number) => string;
       };
-
-  const TRANSACTION_TYPES: TransactionType[] = [
-    "TourCardFee",
-    "TournamentWinnings",
-    "Withdrawal",
-    "Deposit",
-    "LeagueDonation",
-    "CharityDonation",
-    "Payment",
-    "Refund",
-    "Adjustment",
-  ];
-
-  const TRANSACTION_STATUSES: TransactionStatus[] = [
-    "pending",
-    "completed",
-    "failed",
-    "cancelled",
-  ];
-
-  const msToDateTimeLocal = msToDateTimeLocalInputValue;
-
-  const dateTimeLocalToMs = dateTimeLocalInputValueToMs;
 
   const createTransaction = useMutation(
     api.functions.transactions.createTransactions,
@@ -434,20 +404,12 @@ function useTransactionsManager() {
   const [isDone, setIsDone] = useState<boolean>(false);
   const [shouldFetch, setShouldFetch] = useState<boolean>(true);
 
-  const isTransactionType = (value: string): value is TransactionType => {
-    return (TRANSACTION_TYPES as string[]).includes(value);
-  };
-
-  const isTransactionStatus = (value: string): value is TransactionStatus => {
-    return (TRANSACTION_STATUSES as string[]).includes(value);
-  };
-
   const setTypeFilter = (next: string) => {
-    setTypeFilterState(isTransactionType(next) ? next : "");
+    setTypeFilterState(isOneOf(TRANSACTION_TYPES, next) ? next : "");
   };
 
   const setStatusFilter = (next: string) => {
-    setStatusFilterState(isTransactionStatus(next) ? next : "");
+    setStatusFilterState(isOneOf(TRANSACTION_STATUSES, next) ? next : "");
   };
 
   useEffect(() => {
@@ -575,11 +537,14 @@ function useTransactionsManager() {
   };
 
   const setTransactionType = (next: string) => {
-    updateField("transactionType", isTransactionType(next) ? next : "");
+    updateField(
+      "transactionType",
+      isOneOf(TRANSACTION_TYPES, next) ? next : "",
+    );
   };
 
   const setFormStatus = (next: string) => {
-    updateField("status", isTransactionStatus(next) ? next : "");
+    updateField("status", isOneOf(TRANSACTION_STATUSES, next) ? next : "");
   };
 
   const resetForm = () => {
@@ -618,7 +583,7 @@ function useTransactionsManager() {
       amountCents: `${displayCents}`,
       transactionType: txType,
       status: (t.status ?? "") as TransactionFormState["status"],
-      processedAt: msToDateTimeLocal(t.processedAt),
+      processedAt: msToDateTimeLocalInputValue(t.processedAt),
     });
     setError(null);
     setSuccess(null);
@@ -657,7 +622,7 @@ function useTransactionsManager() {
       form.transactionType === "Adjustment" ? amount : Math.abs(amount);
 
     const processedAt = form.processedAt
-      ? dateTimeLocalToMs(form.processedAt)
+      ? dateTimeLocalInputValueToMs(form.processedAt)
       : undefined;
 
     setSubmitting(true);

@@ -10,8 +10,8 @@ import { AdminLoadMore } from "@/widgets";
 import { AdminCrudSection } from "./AdminCrudSection";
 import { Button, Card, CardContent, CardHeader, Field, Skeleton } from "@/ui";
 import { ADMIN_FORM_CONTROL_CLASSNAME } from "@/lib/constants";
-import { formatCentsAsDollars } from "@/lib/utils";
-import { adminActionsColumn } from "@/lib/adminTable";
+import { formatCentsAsDollars } from "@/lib";
+import { adminActionsColumn } from "@/lib";
 
 /**
  * Admin UI for managing members.

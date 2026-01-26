@@ -1,7 +1,7 @@
 "use client";
 
 import { Skeleton } from "@/ui";
-import type { HomePageListingsContainerProps } from "@/lib/types";
+import type { HomePageListingsContainerProps } from "@/lib";
 
 /**
  * Renders a small home-page listings area that can display either standings or leaderboard content.

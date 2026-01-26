@@ -11,7 +11,7 @@ import type { Doc, Id } from "@/convex";
 import { TourCardFormButton } from "@/widgets";
 import { Skeleton } from "@/ui";
 import { DEFAULT_MAX_PARTICIPANTS } from "@/lib/constants";
-import { formatBuyIn, getMemberDisplayName } from "@/lib/utils";
+import { formatBuyIn, getMemberDisplayName } from "@/lib";
 
 /**
  * TourCardForm

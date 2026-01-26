@@ -1,11 +1,11 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 
 import { TeamPickForm } from "./TeamPickForm";
 import { Button, Skeleton } from "@/ui";
 import { PRE_TOURNAMENT_PICK_WINDOW_MS } from "@/lib/constants";
-import { isPlayoffTournament } from "@/lib/utils";
+import { isPlayoffTournament } from "@/lib";
 import { TournamentCountdown } from "@/displays";
 
 /**

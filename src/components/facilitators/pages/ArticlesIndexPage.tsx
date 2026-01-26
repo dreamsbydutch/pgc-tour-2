@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 
-import { getActiveArticles } from "@/lib/articles";
+import { getActiveArticles } from "@/lib";
 
 /**
  * Renders the `/articles` index.

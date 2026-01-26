@@ -16,8 +16,8 @@ import {
 } from "@/ui";
 import { FormFeedback, Skeleton } from "@/ui";
 
-import type { AdminDataTableColumn } from "@/lib/types";
-import { adminActionsColumn } from "@/lib/adminTable";
+import type { AdminDataTableColumn } from "@/lib";
+import { adminActionsColumn } from "@/lib";
 
 /**
  * Admin UI for finding Clerk users that are not linked to a `members` row.

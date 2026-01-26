@@ -1,5 +1,10 @@
-import { cn, formatMonthDay, getTournamentTimeline } from "@/lib/utils";
-import type { LeagueScheduleProps } from "@/lib/types";
+import {
+  cn,
+  formatMonthDay,
+  getTournamentTimeline,
+  pickLatestSeasonId,
+} from "@/lib";
+import type { LeagueScheduleProps } from "@/lib";
 
 import {
   Table,
@@ -266,26 +271,6 @@ function useLeagueSchedule(
   args: Pick<LeagueScheduleProps, "seasonId">,
 ): LeagueScheduleState {
   type SeasonSortKey = { _id: Id<"seasons">; year: number; number: number };
-
-  const pickLatestSeasonId = (seasons: SeasonSortKey[]) => {
-    let best: SeasonSortKey | undefined;
-    for (const season of seasons) {
-      if (!best) {
-        best = season;
-        continue;
-      }
-
-      if (season.year > best.year) {
-        best = season;
-        continue;
-      }
-
-      if (season.year === best.year && season.number > best.number) {
-        best = season;
-      }
-    }
-    return best?._id;
-  };
 
   const currentSeason = useQuery(api.functions.seasons.getCurrentSeason);
 

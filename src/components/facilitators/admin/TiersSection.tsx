@@ -8,13 +8,9 @@ import type { SeasonDoc, TierDoc } from "../../../../convex/types/types";
 import { AdminEditDeleteActions } from "@/displays";
 import { AdminCrudSection } from "./AdminCrudSection";
 import { Card, CardContent, CardHeader, Field, Skeleton } from "@/ui";
-import {
-  formatCentsAsDollars,
-  normalizeList,
-  parseNumberList,
-} from "@/lib/utils";
+import { formatCentsAsDollars, normalizeList, parseNumberList } from "@/lib";
 import { ADMIN_FORM_CONTROL_CLASSNAME } from "@/lib/constants";
-import { adminActionsColumn } from "@/lib/adminTable";
+import { adminActionsColumn } from "@/lib";
 
 /**
  * Admin UI for creating, editing, and deleting Tiers.

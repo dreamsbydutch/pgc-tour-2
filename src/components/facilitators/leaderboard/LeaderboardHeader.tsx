@@ -1,8 +1,8 @@
 "use client";
 
-import { formatMoney, formatTournamentDateRange } from "@/lib/utils";
+import { formatMoney, formatTournamentDateRange } from "@/lib";
 import { Skeleton } from "@/ui";
-import type { LeaderboardHeaderProps } from "@/lib/types";
+import type { LeaderboardHeaderProps } from "@/lib";
 import { LeaderboardHeaderDropdown } from "@/widgets";
 
 /**

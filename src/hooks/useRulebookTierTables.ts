@@ -3,7 +3,7 @@ import { useMemo } from "react";
 import type { TierDoc } from "../../convex/types/types";
 import { api, useQuery } from "@/convex";
 import { useSeasonIdOrCurrent } from "./useSeasonIdOrCurrent";
-import type { TierPayoutsRow, TierPointsRow } from "@/lib/types";
+import type { TierPayoutsRow, TierPointsRow } from "@/lib";
 import type { Id } from "@/convex";
 
 function normalizeTierDocs(tiersResult: unknown): TierDoc[] | undefined {

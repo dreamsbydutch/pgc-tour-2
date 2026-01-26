@@ -7,9 +7,9 @@ import {
   TableRow,
 } from "@/ui";
 import { Skeleton } from "@/ui";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib";
 
-import type { AdminDataTableColumn } from "@/lib/types";
+import type { AdminDataTableColumn } from "@/lib";
 
 /**
  * Simple admin-friendly data table.

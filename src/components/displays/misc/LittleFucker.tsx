@@ -1,7 +1,7 @@
 "use client";
 
-import type { ChampionshipWinTournament, LittleFuckerProps } from "@/lib/types";
-import { cn, hasItems, isNonEmptyString } from "@/lib/utils";
+import type { ChampionshipWinTournament, LittleFuckerProps } from "@/lib";
+import { cn, hasItems, isNonEmptyString } from "@/lib";
 
 import { Skeleton } from "@/ui";
 

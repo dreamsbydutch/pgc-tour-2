@@ -16,8 +16,8 @@ import {
 } from "@/ui";
 import { Skeleton } from "@/ui";
 import { DEFAULT_MAX_PARTICIPANTS } from "@/lib/constants";
-import { formatBuyIn } from "@/lib/utils";
-import type { TourCardChangeButtonProps } from "@/lib/types";
+import { formatBuyIn } from "@/lib";
+import type { TourCardChangeButtonProps } from "@/lib";
 
 /**
  * TourCardChangeButton

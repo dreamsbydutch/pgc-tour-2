@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, RefreshCwIcon } from "lucide-react";
-import { cn, formatTournamentDateRange, getTournamentYear } from "@/lib/utils";
+import { cn, formatTournamentDateRange, getTournamentYear } from "@/lib";
 import type {
   LeaderboardHeaderDropdownProps,
   LeaderboardHeaderGroupMode,
-} from "@/lib/types";
-import type { DropdownItem, DropdownSection } from "@/lib/types";
+} from "@/lib";
+import type { DropdownItem, DropdownSection } from "@/lib";
 import { Dropdown, Skeleton } from "@/ui";
 
 /**

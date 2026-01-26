@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex";
-import type { FriendManagementHook, StandingsMember } from "@/lib/types";
+import type { FriendManagementHook, StandingsMember } from "@/lib";
 
 function getFriendIds(member: StandingsMember | null | undefined): string[] {
   if (!member?.friends?.length) return [];

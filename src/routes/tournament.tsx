@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import type { LeaderboardVariant } from "@/lib/types";
+import type { LeaderboardVariant } from "@/lib";
 
 import { TournamentPage } from "@/facilitators";
 

@@ -10,7 +10,7 @@ import { AdminCrudSection } from "./AdminCrudSection";
 import { Card, CardContent, CardHeader, Field, Skeleton } from "@/ui";
 import { ADMIN_FORM_CONTROL_CLASSNAME } from "@/lib/constants";
 import { dateInputValueToMs, msToDateInputValue } from "@/lib";
-import { adminActionsColumn } from "@/lib/adminTable";
+import { adminActionsColumn } from "@/lib";
 
 /**
  * Admin UI for creating and updating Seasons.

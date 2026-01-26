@@ -8,8 +8,8 @@ import type {
   LeaderboardTournamentLite,
   LeaderboardVariant,
   LeaderboardViewerContext,
-} from "@/lib/types";
-import { filterTeamRowsByTour } from "@/lib/utils";
+} from "@/lib";
+import { filterTeamRowsByTour } from "@/lib";
 import { LeaderboardListing } from "./LeaderboardListing";
 
 /**

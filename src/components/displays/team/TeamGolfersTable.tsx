@@ -6,13 +6,13 @@ import type {
   LeaderboardPgaRow,
   LeaderboardTeamRow,
   LeaderboardTournamentLite,
-} from "@/lib/types";
+} from "@/lib";
 import {
   cn,
   formatPercentageDisplay,
   formatToPar,
   isPlayerCut,
-} from "@/lib/utils";
+} from "@/lib";
 
 import { Table, TableBody, TableHeader, TableRow } from "@/ui";
 

@@ -22,7 +22,6 @@ import {
 import { useFriendManagement } from "@/hooks";
 import type {
   ExtendedStandingsTourCard,
-  StandingsMember,
   StandingsTeam,
   StandingsTier,
   StandingsTour,
@@ -36,6 +35,7 @@ import {
   computeStandingsPositionStrings,
   formatMoney,
   includesPlayoff,
+  isStandingsMember,
   parsePositionToNumber,
   parseRankFromPositionString,
 } from "@/lib";
@@ -865,36 +865,6 @@ function useStandingsView(props: StandingsViewProps) {
         playoffStrokesSilver: number[];
       };
 
-  const isStandingsMember = (value: unknown): value is StandingsMember => {
-    if (!value || typeof value !== "object" || Array.isArray(value))
-      return false;
-    if (!("_id" in value)) return false;
-    if (
-      !("email" in value) ||
-      typeof (value as Record<string, unknown>).email !== "string"
-    )
-      return false;
-    if (
-      !("role" in value) ||
-      typeof (value as Record<string, unknown>).role !== "string"
-    )
-      return false;
-    if (
-      !("account" in value) ||
-      typeof (value as Record<string, unknown>).account !== "number"
-    )
-      return false;
-    if (
-      !("friends" in value) ||
-      !Array.isArray((value as Record<string, unknown>).friends)
-    )
-      return false;
-    return true;
-  };
-
-  const computePositionStrings = computeStandingsPositionStrings;
-  const computePositionChangeByTour = computeStandingsPositionChangeByTour;
-
   const { user } = useUser();
   const clerkId = user?.id;
 
@@ -982,7 +952,7 @@ function useStandingsView(props: StandingsViewProps) {
       (currentMemberDoc?.friends ?? []).map((f) => String(f)),
     );
 
-    const posChangeById = computePositionChangeByTour({
+    const posChangeById = computeStandingsPositionChangeByTour({
       cards: tourCards,
       tours,
       teams,
@@ -1015,7 +985,7 @@ function useStandingsView(props: StandingsViewProps) {
     const extendedTourCards: ExtendedStandingsTourCard[] = [];
     for (const group of byTour.values()) {
       const sorted = group.slice().sort((a, b) => b.points - a.points);
-      extendedTourCards.push(...computePositionStrings(sorted));
+      extendedTourCards.push(...computeStandingsPositionStrings(sorted));
     }
 
     const currentTourCard = currentMemberDoc
@@ -1034,8 +1004,8 @@ function useStandingsView(props: StandingsViewProps) {
       currentSeason: currentSeason ?? null,
     };
   }, [
-    computePositionChangeByTour,
-    computePositionStrings,
+    computeStandingsPositionChangeByTour,
+    computeStandingsPositionStrings,
     currentMemberDoc,
     currentSeason,
     isLoading,

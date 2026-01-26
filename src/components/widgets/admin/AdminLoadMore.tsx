@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib";
 import { Button } from "@/ui";
 
 type PaginationStatus =

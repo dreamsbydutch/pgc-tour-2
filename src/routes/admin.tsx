@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { ADMIN_DASHBOARD_VIEWS } from "@/lib/constants";
-import type { AdminDashboardView } from "@/lib/types";
+import type { AdminDashboardView } from "@/lib";
 
 import { AdminDashboardPage, HardGateAdmin } from "@/facilitators";
 

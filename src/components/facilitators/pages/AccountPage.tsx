@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   SignedIn,
@@ -11,7 +11,15 @@ import { api, useMutation, useQuery } from "@/convex";
 import type { Doc, Id } from "@/convex";
 
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/ui";
-import { formatMoney } from "@/lib";
+import {
+  compareUnknown,
+  formatDateTime,
+  formatMoney,
+  getSortIndicator,
+  isMemberForAccountValue,
+  isSeasonForLabelValue,
+  toggleSort,
+} from "@/lib";
 
 /**
  * Renders the `/account` screen.
@@ -195,7 +203,7 @@ export function AccountPage() {
                               )
                             }
                           >
-                            Start{vm.sortIndicator("start")}
+                            Start{getSortIndicator(vm.tSort, "start")}
                           </button>
                         </th>
                         <th className="py-2 pr-4">
@@ -208,7 +216,7 @@ export function AccountPage() {
                               )
                             }
                           >
-                            Season{vm.sortIndicator("season")}
+                            Season{getSortIndicator(vm.tSort, "season")}
                           </button>
                         </th>
                         <th className="py-2 pr-4">
@@ -221,7 +229,7 @@ export function AccountPage() {
                               )
                             }
                           >
-                            Tournament{vm.sortIndicator("tournament")}
+                            Tournament{getSortIndicator(vm.tSort, "tournament")}
                           </button>
                         </th>
                         <th className="py-2 pr-4">Tour card</th>
@@ -235,7 +243,7 @@ export function AccountPage() {
                               )
                             }
                           >
-                            Pos{vm.sortIndicator("position")}
+                            Pos{getSortIndicator(vm.tSort, "position")}
                           </button>
                         </th>
                         <th className="py-2 pr-4">
@@ -248,7 +256,7 @@ export function AccountPage() {
                               )
                             }
                           >
-                            Pts{vm.sortIndicator("points")}
+                            Pts{getSortIndicator(vm.tSort, "points")}
                           </button>
                         </th>
                         <th className="py-2 pr-4">
@@ -261,7 +269,7 @@ export function AccountPage() {
                               )
                             }
                           >
-                            Earnings{vm.sortIndicator("earnings")}
+                            Earnings{getSortIndicator(vm.tSort, "earnings")}
                           </button>
                         </th>
                       </tr>
@@ -338,7 +346,6 @@ function useAccountPage() {
     Doc<"members">,
     "_id" | "firstname" | "lastname" | "account"
   >;
-  type SeasonForLabel = Pick<Doc<"seasons">, "_id" | "year" | "number">;
   type TournamentHistoryRow = {
     teamId: Id<"teams">;
     tournamentId: Id<"tournaments">;
@@ -355,57 +362,8 @@ function useAccountPage() {
     updatedAt: number | undefined;
   };
 
-  const isMemberForAccount = useCallback(
-    (value: unknown): value is MemberForAccount => {
-      if (!value || typeof value !== "object") return false;
-      if (!("_id" in value) || !("account" in value)) return false;
-      const record = value as Record<string, unknown>;
-      return typeof record.account === "number";
-    },
-    [],
-  );
-
-  const isSeasonForLabel = useCallback(
-    (value: unknown): value is SeasonForLabel => {
-      if (!value || typeof value !== "object") return false;
-      if (!("_id" in value) || !("year" in value) || !("number" in value)) {
-        return false;
-      }
-      const record = value as Record<string, unknown>;
-      return (
-        typeof record.year === "number" && typeof record.number === "number"
-      );
-    },
-    [],
-  );
-
-  function formatDateTime(ms: number | undefined): string {
-    if (!ms) return "";
-    return new Intl.DateTimeFormat("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(ms);
-  }
-
-  function cmp(a: unknown, b: unknown): number {
-    if (a === b) return 0;
-    if (a === undefined || a === null) return -1;
-    if (b === undefined || b === null) return 1;
-    if (typeof a === "number" && typeof b === "number") return a - b;
-    return String(a).localeCompare(String(b));
-  }
-
-  function toggleSort<T extends string>(
-    current: { key: T; dir: SortDir } | null,
-    nextKey: T,
-  ): { key: T; dir: SortDir } {
-    if (!current || current.key !== nextKey)
-      return { key: nextKey, dir: "desc" };
-    return { key: nextKey, dir: current.dir === "desc" ? "asc" : "desc" };
-  }
+  const isMemberForAccount = isMemberForAccountValue;
+  const isSeasonForLabel = isSeasonForLabelValue;
 
   const { openSignIn, signOut } = useClerk();
   const { user: clerkUser } = useUser();
@@ -419,7 +377,7 @@ function useAccountPage() {
 
   const memberForAccount = useMemo<MemberForAccount | null>(() => {
     return isMemberForAccount(memberRaw) ? memberRaw : null;
-  }, [isMemberForAccount, memberRaw]);
+  }, [memberRaw]);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -450,7 +408,7 @@ function useAccountPage() {
       map.set(s._id, `${s.year} #${s.number}`);
     }
     return map;
-  }, [isSeasonForLabel, seasons]);
+  }, [seasons]);
 
   const tournamentHistory = useQuery(
     api.functions.members.getMyTournamentHistory,
@@ -530,20 +488,22 @@ function useAccountPage() {
         const dir = tSort.dir === "asc" ? 1 : -1;
         switch (tSort.key) {
           case "start":
-            return dir * cmp(a.tournamentStartDate, b.tournamentStartDate);
+            return (
+              dir * compareUnknown(a.tournamentStartDate, b.tournamentStartDate)
+            );
           case "season": {
             const aLabel = seasonLabelById.get(a.seasonId) ?? "";
             const bLabel = seasonLabelById.get(b.seasonId) ?? "";
-            return dir * cmp(aLabel, bLabel);
+            return dir * compareUnknown(aLabel, bLabel);
           }
           case "tournament":
-            return dir * cmp(a.tournamentName, b.tournamentName);
+            return dir * compareUnknown(a.tournamentName, b.tournamentName);
           case "points":
-            return dir * cmp(a.points, b.points);
+            return dir * compareUnknown(a.points, b.points);
           case "earnings":
-            return dir * cmp(a.earnings, b.earnings);
+            return dir * compareUnknown(a.earnings, b.earnings);
           case "position":
-            return dir * cmp(a.position, b.position);
+            return dir * compareUnknown(a.position, b.position);
         }
       });
   }, [
@@ -553,11 +513,6 @@ function useAccountPage() {
     tTourCardFilter,
     tournamentHistory,
   ]);
-
-  function sortIndicator(key: string) {
-    if (!tSort || tSort.key !== key) return "";
-    return tSort.dir === "asc" ? " ▲" : " ▼";
-  }
 
   const historyKind =
     tournamentHistory === undefined
@@ -586,7 +541,6 @@ function useAccountPage() {
     tSort,
     setTSort,
     toggleSort,
-    sortIndicator,
     onSaveProfile,
     tourCardOptions,
     historyKind,

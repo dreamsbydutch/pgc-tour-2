@@ -1,6 +1,6 @@
 import type { Doc, Id } from "@/convex";
 import type { EnhancedTournamentDoc } from "convex/types/types";
-import type { Dispatch, ReactNode, SetStateAction } from "react";
+import type { ComponentType, Dispatch, ReactNode, SetStateAction } from "react";
 import type { LucideIcon } from "lucide-react";
 
 export type AdminDashboardView =
@@ -15,6 +15,35 @@ export type AdminDashboardView =
   | "memberMerge"
   | "accountAudit"
   | "crons";
+
+export type TransactionType =
+  | "TourCardFee"
+  | "TournamentWinnings"
+  | "Withdrawal"
+  | "Deposit"
+  | "LeagueDonation"
+  | "CharityDonation"
+  | "Payment"
+  | "Refund"
+  | "Adjustment";
+
+export type TransactionStatus =
+  | "pending"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type Article = {
+  slug: string;
+  title: string;
+  excerpt: string;
+  author: string;
+  publishedAt: string;
+  tags?: string[];
+  Body: ComponentType;
+};
+
+export type ArticleModule = { article: Article };
 
 /**
  * Column definition used by `AdminDataTable`.
@@ -266,6 +295,15 @@ export interface NavigationError {
   code: string;
   message: string;
   retry?: () => void;
+}
+
+export interface ErrorResponse {
+  isError: true;
+  isAuthError: boolean;
+  isNotFoundError: boolean;
+  isValidationError: boolean;
+  message: string;
+  originalError: unknown;
 }
 
 export interface NavigationData {
