@@ -3,8 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ADMIN_DASHBOARD_VIEWS } from "@/lib/constants";
 import type { AdminDashboardView } from "@/lib/types";
 
-import { HardGateAdmin } from "@/components/internal/HardGateAdmin";
-import { AdminDashboardPage } from "@/components/pages/admin/AdminDashboardPage";
+import { AdminDashboardPage, HardGateAdmin } from "@/components";
 
 export const Route = createFileRoute("/admin")({
   component: AdminRoute,

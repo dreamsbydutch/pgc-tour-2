@@ -4,8 +4,7 @@ import { api, useQuery } from "@/convex";
 import { useUser } from "@clerk/tanstack-react-start";
 
 import { LeagueSchedule } from "@/ui";
-import { TourCardForm } from "@/components/internal/TourCardForm";
-import { TourCardOutput } from "@/components/internal/TourCardOutput";
+import { TourCardForm, TourCardOutput } from "@/components";
 import { useTournamentCountdown } from "@/hooks";
 import { TournamentCountdown } from "@/ui";
 import { Skeleton } from "@/ui";

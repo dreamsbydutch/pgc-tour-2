@@ -22,12 +22,14 @@ import {
 } from "@/ui";
 import { Field } from "@/ui";
 import { normalizeList } from "@/lib";
-import { CoursesSection } from "@/components/internal/CoursesSection";
-import { MembersManager } from "@/components/internal/MembersManager";
-import { SeasonsSection } from "@/components/internal/SeasonsSection";
-import { TiersSection } from "@/components/internal/TiersSection";
-import { ToursSection } from "@/components/internal/ToursSection";
-import { TransactionsManager } from "@/components/internal/TransactionsManager";
+import {
+  CoursesSection,
+  MembersManager,
+  SeasonsSection,
+  TiersSection,
+  ToursSection,
+  TransactionsManager,
+} from "@/components";
 
 /**
  * Admin page for league setup.

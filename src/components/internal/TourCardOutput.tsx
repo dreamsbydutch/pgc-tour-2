@@ -7,7 +7,7 @@ import type {
   MemberDoc,
   TourCardDoc,
 } from "convex/types/types";
-import { TourCardChangeButton } from "@/components/internal/TourCardChangeButton";
+import { TourCardChangeButton } from "@/components";
 import { Skeleton } from "@/ui";
 import { formatMoney } from "@/lib/utils";
 import { api } from "@/convex";

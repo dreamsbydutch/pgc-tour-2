@@ -11,7 +11,7 @@ import { AdminTeamsPage } from "./AdminTeamsPage";
 import { AdminTourCardsPage } from "./AdminTourCardsPage";
 import { AdminTournamentsPage } from "./AdminTournamentsPage";
 import { MemberAccountAuditPage } from "./MemberAccountAuditPage";
-import { MissingTourCardsSection } from "@/components/internal/MissingTourCardsSection";
+import { MissingTourCardsSection } from "@/components";
 
 /**
  * AdminDashboardPage

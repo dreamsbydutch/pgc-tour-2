@@ -7,7 +7,7 @@ import { PWAInstallPrompt } from "@/components";
 import { SignedOutPersistentSignIn } from "@/ui";
 
 import "../styles.css";
-import { NavigationContainer } from "@/components/pages/NavigationContainer";
+import { NavigationContainer } from "@/components";
 
 export const Route = createRootRoute({
   head: () => ({

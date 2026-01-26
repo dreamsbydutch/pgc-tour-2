@@ -72,6 +72,7 @@ export { RulebookPage } from "./pages/RulebookPage";
 export { TournamentPage } from "./pages/TournamentPage";
 
 // Public: admin pages (used by routes; data-fetching + mutations/actions)
+export { AdminDashboardPage } from "./pages/admin/AdminDashboardPage";
 export { AdminCronsPage } from "./pages/admin/AdminCronsPage";
 export { AdminGolfersPage } from "./pages/admin/AdminGolfersPage";
 export { AdminSeasonsPage } from "./pages/admin/AdminSeasonsPage";
@@ -93,7 +94,9 @@ export { LeagueSchedule } from "./ui/composites/league-schedule";
 // Internal: feature/leaf smart components (Convex hooks)
 export { ClerkUsersManager } from "./internal/ClerkUsersManager";
 export { CoursesSection } from "./internal/CoursesSection";
+export { HardGateAdmin } from "./internal/HardGateAdmin";
 export { MembersManager } from "./internal/MembersManager";
+export { MissingTourCardsSection } from "./internal/MissingTourCardsSection";
 export { SeasonsSection } from "./internal/SeasonsSection";
 export { TiersSection } from "./internal/TiersSection";
 export { TourCardChangeButton } from "./internal/TourCardChangeButton";
