@@ -30,9 +30,7 @@ export function StandingsFriendsOnlyToggle(props: {
       <Star
         className={cn(
           "h-3.5 w-3.5",
-          props.pressed
-            ? "fill-slate-900 text-slate-900"
-            : "text-slate-700",
+          props.pressed ? "fill-slate-900 text-slate-900" : "text-slate-700",
         )}
       />
     </button>

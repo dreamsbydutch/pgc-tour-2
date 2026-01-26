@@ -89,7 +89,8 @@ export function StandingsListingRow(props: {
               positionIndex,
               positionIndex + teamsTiedCount,
             );
-            const avg = slice.reduce((acc, v) => acc + v, 0) / (slice.length || 1);
+            const avg =
+              slice.reduce((acc, v) => acc + v, 0) / (slice.length || 1);
             return Math.round(avg * 10) / 10;
           }
           return props.strokes[positionIndex];
@@ -98,7 +99,9 @@ export function StandingsListingRow(props: {
 
   const canFriend = !!props.currentMemberId && !isCurrent;
 
-  const teamsForCard = props.teams.filter((t) => t.tourCardId === props.card._id);
+  const teamsForCard = props.teams.filter(
+    (t) => t.tourCardId === props.card._id,
+  );
 
   const nonPlayoffTournaments = props.tournaments
     .filter((t) => {
@@ -120,7 +123,10 @@ export function StandingsListingRow(props: {
   } as const;
 
   const parseRank = parseRankFromPositionString;
-  const posChange = props.mode === "playoff" ? (props.card.posChangePO ?? 0) : (props.card.posChange ?? 0);
+  const posChange =
+    props.mode === "playoff"
+      ? (props.card.posChangePO ?? 0)
+      : (props.card.posChange ?? 0);
 
   return (
     <div
@@ -152,7 +158,9 @@ export function StandingsListingRow(props: {
       </div>
 
       <div className="col-span-3 place-self-center font-varela text-xs xs:text-sm sm:text-base">
-        {props.mode === "playoff" ? (startingStrokes ?? "-") : formatMoney(props.card.earnings)}
+        {props.mode === "playoff"
+          ? (startingStrokes ?? "-")
+          : formatMoney(props.card.earnings)}
       </div>
 
       <div
@@ -200,7 +208,10 @@ export function StandingsListingRow(props: {
       </div>
 
       {isOpen ? (
-        <div className="col-span-16 px-2 pb-2" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="col-span-16 px-2 pb-2"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div
             className={cn(
               "mt-2 rounded-md border p-3",
@@ -230,14 +241,18 @@ export function StandingsListingRow(props: {
             </div>
 
             {nonPlayoffTournaments.length === 0 ? (
-              <div className="mt-2 text-sm text-muted-foreground">No tournaments</div>
+              <div className="mt-2 text-sm text-muted-foreground">
+                No tournaments
+              </div>
             ) : (
               <div className="mt-2 overflow-x-auto rounded-md border">
                 <div className="grid sm:hidden" style={mobileGridStyle}>
                   {nonPlayoffTournaments.map((t) => {
                     const tier = props.tierById.get(String(t.tierId));
                     const isMajor = tier?.name === "Major";
-                    const team = teamsForCard.find((x) => x.tournamentId === t._id);
+                    const team = teamsForCard.find(
+                      (x) => x.tournamentId === t._id,
+                    );
                     const isPastEvent = t.endDate < Date.now();
                     const didNotMakeCut = team?.position === "CUT";
                     const didNotPlay = !team && isPastEvent;
@@ -300,7 +315,9 @@ export function StandingsListingRow(props: {
                   {nonPlayoffTournaments.map((t) => {
                     const tier = props.tierById.get(String(t.tierId));
                     const isMajor = tier?.name === "Major";
-                    const team = teamsForCard.find((x) => x.tournamentId === t._id);
+                    const team = teamsForCard.find(
+                      (x) => x.tournamentId === t._id,
+                    );
                     const isPastEvent = t.endDate < Date.now();
                     const didNotMakeCut = team?.position === "CUT";
                     const didNotPlay = !team && isPastEvent;

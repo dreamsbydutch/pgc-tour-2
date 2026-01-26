@@ -10,13 +10,7 @@ import {
   StandingsViewSkeleton,
   ToursToggle,
 } from "@/displays";
-import {
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/ui";
+import { Button, Card, CardContent, CardHeader, CardTitle } from "@/ui";
 import { useFriendManagement } from "@/hooks";
 import type {
   ExtendedStandingsTourCard,
@@ -795,4 +789,3 @@ function useStandingsView(props: StandingsViewProps) {
     playoffStrokesSilver,
   } as const satisfies Model;
 }
-

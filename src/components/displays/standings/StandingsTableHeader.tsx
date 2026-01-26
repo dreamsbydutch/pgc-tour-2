@@ -54,7 +54,8 @@ export function StandingsTableHeader(props: {
       )}
     >
       {title && props.variant !== "regular" ? (
-        props.playoffDetails && (props.variant === "gold" || props.variant === "silver") ? (
+        props.playoffDetails &&
+        (props.variant === "gold" || props.variant === "silver") ? (
           <details className="col-span-16">
             <summary
               className={cn(
