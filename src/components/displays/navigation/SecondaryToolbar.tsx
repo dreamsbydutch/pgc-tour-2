@@ -28,18 +28,26 @@ export function SecondaryToolbar(props: {
   const level = props.level ?? "secondary";
 
   const baseClasses =
-    "fixed flex items-center justify-center transition-all duration-200 shadow-lg border-t bg-gray-100";
+    "fixed left-0 right-0 flex items-center justify-center transition-all duration-200 shadow-lg bg-gray-100";
 
   const positionClasses =
     level === "tertiary"
-      ? "bottom-24 left-0 right-0"
-      : "bottom-14 left-0 right-0";
+      ? "bottom-24 lg:bottom-auto lg:top-[88px]"
+      : "bottom-14 lg:bottom-auto lg:top-[48px]";
 
-  const sizeClasses = level === "tertiary" ? "h-7 text-sm z-10" : "h-10 z-20";
+  const sizeClasses = level === "tertiary" ? "h-7 text-sm z-30" : "h-10 z-40";
+
+  const borderClasses = "border-t lg:border-t-0 lg:border-b";
 
   return (
     <div
-      className={cn(baseClasses, positionClasses, sizeClasses, props.className)}
+      className={cn(
+        baseClasses,
+        positionClasses,
+        sizeClasses,
+        borderClasses,
+        props.className,
+      )}
     >
       {props.children}
     </div>
