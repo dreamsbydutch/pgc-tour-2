@@ -1,1 +1,1 @@
-export { AdminDataTable } from "../ui/blocks/admin-data-table";
+export { AdminDataTable } from "../ui/composites/admin-data-table";

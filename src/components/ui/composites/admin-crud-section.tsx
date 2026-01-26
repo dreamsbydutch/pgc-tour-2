@@ -1,6 +1,6 @@
 import type { FormEvent, ReactNode } from "react";
 
-import { AdminDataTable } from "./admin-data-table.tsx";
+import { AdminDataTable } from "./admin-data-table";
 import { Button } from "../primitives/button";
 import {
   Card,

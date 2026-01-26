@@ -27,8 +27,8 @@ export {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "./ui/blocks/dialog";
-export { Dropdown } from "./ui/blocks/dropdown";
+} from "./ui/composites/dialog";
+export { Dropdown } from "./ui/composites/dropdown";
 export { FormFeedback } from "./ui/primitives/form-feedback";
 export { Skeleton, SVGSkeleton } from "./ui/primitives/skeleton";
 export {
@@ -41,26 +41,26 @@ export {
   TableHeader,
   TableRow,
 } from "./ui/primitives/table";
-export { AdminEditDeleteActions } from "./ui/blocks/admin-edit-delete-actions";
-export { AdminRowActions } from "./ui/blocks/admin-row-actions";
-export { AdminLoadMore } from "./ui/blocks/admin-load-more";
-export { TournamentCountdown } from "./ui/blocks/tournament-countdown";
-export { LittleFucker } from "./ui/blocks/little-fucker";
-export { TierDistributionsTable } from "./ui/blocks/tier-distributions-table";
-export { MemberHeader } from "./ui/blocks/member-header";
-export { TeamGolfersList } from "./ui/blocks/team-golfers-list";
-export { TeamGolfersTable } from "./ui/blocks/team-golfers-table";
-export { HomePageListingsContainer } from "./ui/blocks/home-page-listings-container";
-export { LeaderboardHeader } from "./ui/blocks/leaderboard-header";
-export { LeaderboardHeaderDropdown } from "./ui/blocks/leaderboard-header-dropdown";
-export { LeaderboardHeaderRow } from "./ui/blocks/leaderboard-header-row";
-export { LeaderboardListing } from "./ui/blocks/leaderboard-listing";
-export { LeaderboardView } from "./ui/blocks/leaderboard-view";
-export { ModeratorTools } from "./ui/blocks/moderator-tools";
-export { PGADropdown } from "./ui/blocks/pga-dropdown";
-export { PGALeaderboard } from "./ui/blocks/pga-leaderboard";
-export { PGCLeaderboard } from "./ui/blocks/pgc-leaderboard";
-export { PWAInstallPrompt } from "./ui/blocks/pwa-install-prompt";
+export { AdminEditDeleteActions } from "./ui/composites/admin-edit-delete-actions";
+export { AdminRowActions } from "./ui/composites/admin-row-actions";
+export { AdminLoadMore } from "./ui/composites/admin-load-more";
+export { TournamentCountdown } from "./ui/composites/tournament-countdown";
+export { LittleFucker } from "./ui/composites/little-fucker";
+export { TierDistributionsTable } from "./ui/composites/tier-distributions-table";
+export { MemberHeader } from "./ui/composites/member-header";
+export { TeamGolfersList } from "./ui/composites/team-golfers-list";
+export { TeamGolfersTable } from "./ui/composites/team-golfers-table";
+export { HomePageListingsContainer } from "./ui/composites/home-page-listings-container";
+export { LeaderboardHeader } from "./ui/composites/leaderboard-header";
+export { LeaderboardHeaderDropdown } from "./ui/composites/leaderboard-header-dropdown";
+export { LeaderboardHeaderRow } from "./ui/composites/leaderboard-header-row";
+export { LeaderboardListing } from "./ui/composites/leaderboard-listing";
+export { LeaderboardView } from "./ui/composites/leaderboard-view";
+export { ModeratorTools } from "./ui/composites/moderator-tools";
+export { PGADropdown } from "./ui/composites/pga-dropdown";
+export { PGALeaderboard } from "./ui/composites/pga-leaderboard";
+export { PGCLeaderboard } from "./ui/composites/pgc-leaderboard";
+export { PWAInstallPrompt } from "./ui/composites/pwa-install-prompt";
 
 // Public: route page components (used by routes; typically data-fetching)
 export { AccountPage } from "./pages/AccountPage";
@@ -82,13 +82,13 @@ export { NavigationContainer } from "./pages/NavigationContainer";
 export { StandingsView } from "./pages/StandingsView";
 
 // Internal: shared building blocks (multi-use)
-export { AdminCrudSection } from "./ui/blocks/admin-crud-section";
-export { AdminDataTable } from "./ui/blocks/admin-data-table";
+export { AdminCrudSection } from "./ui/composites/admin-crud-section";
+export { AdminDataTable } from "./ui/composites/admin-data-table";
 export { Field } from "./ui/primitives/field";
-export { ToursToggle } from "./ui/blocks/tours-toggle";
+export { ToursToggle } from "./ui/composites/tours-toggle";
 
 // Internal: shared + data-fetching (multi-use)
-export { LeagueSchedule } from "./ui/blocks/league-schedule";
+export { LeagueSchedule } from "./ui/composites/league-schedule";
 
 // Internal: feature/leaf smart components (Convex hooks)
 export { ClerkUsersManager } from "./internal/ClerkUsersManager";
@@ -104,7 +104,7 @@ export { ToursSection } from "./internal/ToursSection";
 export { TransactionsManager } from "./internal/TransactionsManager";
 
 // Internal: feature/leaf presentational/composition components (no Convex hooks)
-export { AdminPanel } from "./ui/blocks/admin-panel";
+export { AdminPanel } from "./ui/composites/admin-panel";
 export { ChampionsPopup } from "./internal/ChampionsPopup";
 export { PreTournamentContent } from "./internal/PreTournamentContent";
 export { TeamPickForm } from "./internal/TeamPickForm";
