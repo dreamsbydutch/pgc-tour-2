@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { AccountPage } from "@/components";
-import { HardGateSignedIn } from "@/ui";
+import { HardGateSignedIn } from "@/components";
 
 export const Route = createFileRoute("/account")({
   component: AccountRoute,
