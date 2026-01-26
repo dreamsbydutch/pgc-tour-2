@@ -1,30 +1,27 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 import type {
   TimeLeftType,
   TournamentCountdownProps,
   TournamentCountdownTourney,
 } from "@/lib/types";
-import { formatTwoDigits } from "@/lib/utils";
+import { calculateCountdownTimeLeft, formatTwoDigits } from "@/lib/utils";
 
 import { Skeleton } from "@/ui";
 
 /**
  * Displays a tournament countdown UI given tournament metadata and a computed timer.
  *
- * This component is intentionally leaf/pure: it does not own timers/intervals.
- * Use `useTournamentCountdown()` (in `src/hooks/*`) to compute `timeLeft`.
- *
  * @param props - Component props.
  * @param props.tourney - Tournament details used for display.
  * @param props.timeLeft - Precomputed countdown time left.
  * @returns A countdown card or a skeleton state.
  */
-export function TournamentCountdown(
-  props: TournamentCountdownProps & { timeLeft?: TimeLeftType },
-) {
+export function TournamentCountdown(props: TournamentCountdownProps) {
   const tourney: TournamentCountdownTourney | undefined = props.tourney;
-  const timeLeft = props.timeLeft ?? null;
+  const { timeLeft } = useTournamentCountdown(tourney);
 
   if (!tourney || timeLeft === null) {
     return <TournamentCountdownSkeleton />;
@@ -58,6 +55,32 @@ export function TournamentCountdown(
       </div>
     </div>
   );
+}
+
+/**
+ * Derives and updates the countdown time left for a given tournament.
+ *
+ * @param tourney - Tournament used to determine the countdown start time.
+ * @returns The current `timeLeft`, updated every second.
+ */
+function useTournamentCountdown(tourney?: TournamentCountdownTourney) {
+  const [timeLeft, setTimeLeft] = useState<TimeLeftType>(null);
+  const startDate = tourney?.startDate;
+
+  useEffect(() => {
+    if (typeof startDate !== "number") {
+      setTimeLeft(null);
+      return;
+    }
+
+    setTimeLeft(calculateCountdownTimeLeft(startDate));
+    const timer = setInterval(() => {
+      setTimeLeft(calculateCountdownTimeLeft(startDate));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [startDate]);
+
+  return { timeLeft };
 }
 
 /**

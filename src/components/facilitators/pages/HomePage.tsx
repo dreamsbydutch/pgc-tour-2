@@ -3,11 +3,9 @@ import { Shield, Star } from "lucide-react";
 import { api, useQuery } from "@/convex";
 import { useUser } from "@clerk/tanstack-react-start";
 
-import { LeagueSchedule } from "@/components/widgets/schedule/LeagueSchedule";
-import { TourCardForm } from "@/components/facilitators/tour-cards/TourCardForm";
-import { TourCardOutput } from "@/components/facilitators/tour-cards/TourCardOutput";
-import { useTournamentCountdown } from "@/hooks";
-import { TournamentCountdown } from "@/components/displays/tournament/TournamentCountdown";
+import { TournamentCountdown } from "@/displays";
+import { TourCardForm, TourCardOutput } from "@/facilitators";
+import { LeagueSchedule } from "@/widgets";
 import { Skeleton } from "@/ui";
 import { useRoleAccess } from "@/hooks";
 import { formatMoney } from "@/lib";
@@ -31,8 +29,6 @@ export function HomePage() {
   const tourney: TournamentCountdownTourney | undefined =
     model.kind === "ready" ? (model.firstTournament ?? undefined) : undefined;
 
-  const { timeLeft } = useTournamentCountdown(tourney);
-
   if (model.kind === "loading") {
     return <HomePageSkeleton />;
   }
@@ -50,7 +46,7 @@ export function HomePage() {
         {model.beforeFirstTournament ? <TourCardOutput /> : null}
         {model.registrationOpen ? <TourCardForm /> : null}
         {model.accountAlert}
-        <TournamentCountdown tourney={tourney} timeLeft={timeLeft} />
+        <TournamentCountdown tourney={tourney} />
         <LeagueSchedule />
       </div>
     </div>

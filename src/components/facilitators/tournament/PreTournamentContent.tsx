@@ -6,8 +6,7 @@ import { TeamPickForm } from "./TeamPickForm";
 import { Button, Skeleton } from "@/ui";
 import { PRE_TOURNAMENT_PICK_WINDOW_MS } from "@/lib/constants";
 import { isPlayoffTournament } from "@/lib/utils";
-import { useTournamentCountdown } from "@/hooks";
-import { TournamentCountdown } from "@/components/displays/tournament/TournamentCountdown";
+import { TournamentCountdown } from "@/displays";
 
 /**
  * Renders the pre-tournament pick experience.
@@ -84,7 +83,6 @@ export function PreTournamentContent(props: {
       }
     : undefined;
 
-  const { timeLeft } = useTournamentCountdown(tourney);
   const model = usePreTournamentContent(props);
 
   if (model.kind === "loading") {
@@ -92,7 +90,7 @@ export function PreTournamentContent(props: {
   }
 
   if (model.kind === "picksClosed") {
-    return <TournamentCountdown tourney={tourney} timeLeft={timeLeft} />;
+    return <TournamentCountdown tourney={tourney} />;
   }
 
   if (model.kind === "mustSignIn") {
@@ -123,7 +121,7 @@ export function PreTournamentContent(props: {
   }
 
   if (model.kind === "carryOverLocked") {
-    return <TournamentCountdown tourney={tourney} timeLeft={timeLeft} />;
+    return <TournamentCountdown tourney={tourney} />;
   }
 
   return (
