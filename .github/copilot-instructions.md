@@ -19,6 +19,34 @@ You are working in the **PGC** repo (Vite/React + Convex backend). Follow these 
 
 ## Frontend: Components (Project Convention)
 
+### Component Taxonomy (Folder Structure)
+
+All app components live under `src/components/*` and are organized into four buckets:
+
+- `src/components/ui/*` (import from `@/ui`)
+  - UI primitives/composites only (shadcn/ui-style).
+  - No Convex hooks, no auth/role hooks, no router reads/writes, no business logic.
+- `src/components/displays/*` (import from `@/displays`)
+  - Presentational components: props in, UI out.
+  - Avoid data fetching and orchestration.
+- `src/components/widgets/*` (import from `@/widgets`)
+  - Leaf components that may own local state and do small, self-contained data flows.
+  - Can use Convex hooks and other app hooks when appropriate.
+- `src/components/facilitators/*` (import from `@/facilitators`)
+  - Orchestration components and page-level composition.
+  - Compose displays/widgets; handle routing glue and feature-level state.
+
+### Import Rules (Important)
+
+- All component imports must come only from: `@/ui`, `@/displays`, `@/widgets`, `@/facilitators`.
+- Do not import components from `@/components`.
+- Do not import from deep paths like `@/components/displays/...` or `@/components/widgets/...`.
+- If something isn’t exported yet, add it to the appropriate barrel index:
+  - `src/components/ui/index.ts`
+  - `src/components/displays/index.ts`
+  - `src/components/widgets/index.ts`
+  - `src/components/facilitators/index.ts`
+
 - **One component per file**: each component lives in a single `.tsx` file and exports exactly one React component (the UI).
 - **Optional internals**: if the component needs local business logic or a loading state, define them in the same file as:
   - an unexported custom hook (business logic + fetching; called only by the exported component), and/or
@@ -48,7 +76,7 @@ You are working in the **PGC** repo (Vite/React + Convex backend). Follow these 
   - Side effects that change app data (mutations, analytics events, etc.).
 - Prefer moving app data fetching and view-model construction into:
   - hooks under `src/hooks/*`, and/or
-  - “smart” components under `src/components/pages/*` or `src/components/internal/*`.
+  - “smart/orchestration” components under `src/components/facilitators/*`.
 - UI components may compose other UI primitives (Button/Card/Table/Skeleton) and use `@/lib/*` utilities/types.
 - **Skeleton UI**: use existing primitives from `src/components/ui/*` (e.g. `Skeleton`) rather than inventing new loading styles.
 
@@ -62,7 +90,7 @@ Key rules:
 - Routes live in `src/routes/*` and are defined with `createFileRoute(...)`.
 - The global app shell/layout is `src/routes/__root.tsx`.
 - The router is created in `src/router.tsx` using the generated `src/routeTree.gen.ts`.
-- Prefer the `@/*` import alias (`@/components`, `@/hooks`, `@/lib/utils`).
+- Prefer the `@/*` import aliases (`@/ui`, `@/displays`, `@/widgets`, `@/facilitators`, `@/hooks`, `@/lib`, `@/convex`).
 - Use existing UI primitives in `src/components/ui/*` (shadcn/ui). Don’t invent new design tokens.
 - Use `cn()` from `src/lib/utils.ts` for className composition.
 
@@ -74,7 +102,7 @@ Key rules:
   - minimal routing concerns (`createFileRoute`, `validateSearch`, reading params/search via `Route.useParams()` / `Route.useSearch()`),
   - minimal auth gating (signed-in / role checks) when needed,
   - minimal navigation wiring (`Route.useNavigate()` to keep URL state in sync),
-  - and rendering a single page component from `src/components/*`.
+  - and rendering a single page component from `@/facilitators`.
 - Do **not** put business logic, complex view-model construction, or data fetching (e.g. `useQuery`) in route files.
 - Move non-routing logic into the component the route renders (or into hooks under `src/hooks/*` used by that component).
 - `src/routes/__root.tsx` is the app shell and may include layout/provider wiring.
@@ -87,7 +115,7 @@ Data & hooks:
 
 Auth & providers:
 
-- Providers are wired in `src/components/Providers.tsx` (Convex + Clerk + PostHog).
+- Providers are wired in `src/components/facilitators/providers/Providers.tsx` (Convex + Clerk + PostHog) and imported from `@/facilitators`.
 - Preserve existing `"use client"` directives where present; don’t add them broadly unless required by the surrounding pattern.
 
 ## Convex: How it works in this repo
