@@ -9,7 +9,7 @@ import type {
 } from "convex/types/types";
 import { TourCardChangeButton } from "@/widgets";
 import { Skeleton } from "@/ui";
-import { formatMoney } from "@/lib/utils";
+import { formatMonthDay, formatMoney } from "@/lib/utils";
 import { api } from "@/convex";
 
 /**
@@ -59,13 +59,7 @@ export function TourCardOutput() {
   return (
     <div className="mt-2 flex flex-col items-center justify-center">
       <h2 className="max-w-xl text-center font-varela text-lg text-slate-600">
-        {`You have secured your spot on the ${tour.name}. The ${tour.season?.year} season will begin with the Waste Management Open on ${new Intl.DateTimeFormat(
-          "en-US",
-          {
-            month: "short",
-            day: "numeric",
-          },
-        ).format(tour.season?.startDate)}.`}
+        {`You have secured your spot on the ${tour.name}. The ${tour.season?.year} season will begin with the Waste Management Open on ${formatMonthDay(tour.season?.startDate)}.`}
       </h2>
       <div className="mx-auto mt-4 flex w-[12rem] min-w-fit flex-col items-center justify-center rounded-lg border-2 border-gray-400 bg-gray-300 p-4 text-center shadow-2xl 2xs:w-[18rem] sm:w-[22rem]">
         {pictureUrl ? (

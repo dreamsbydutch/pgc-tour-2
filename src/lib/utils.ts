@@ -238,6 +238,18 @@ export function getTournamentYear(tournament: {
   );
 }
 
+/**
+ * Formats a date value as `Mon D` (e.g. `Jan 3`) for concise UI labels.
+ */
+export function formatMonthDay(value: Date | number | null | undefined): string {
+  if (value === null || value === undefined) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
 export function isNonEmptyString(
   str: string | null | undefined,
 ): str is string {

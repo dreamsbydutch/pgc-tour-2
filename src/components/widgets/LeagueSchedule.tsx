@@ -1,4 +1,4 @@
-import { cn, getTournamentTimeline } from "@/lib/utils";
+import { cn, formatMonthDay, getTournamentTimeline } from "@/lib/utils";
 import type { LeagueScheduleProps } from "@/lib/types";
 
 import {
@@ -134,18 +134,12 @@ export function LeagueSchedule({ seasonId, loading }: LeagueScheduleProps) {
                     "text-nowrap border-l text-center text-xs",
                   )}
                 >
-                  {`${startDate.toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                  })} - ${
+                  {`${formatMonthDay(startDate)} - ${
                     startDate.getMonth() === endDate.getMonth()
                       ? endDate.toLocaleDateString("en-US", {
                           day: "numeric",
                         })
-                      : endDate.toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                        })
+                      : formatMonthDay(endDate)
                   }`}
                 </TableCell>
                 <TableCell

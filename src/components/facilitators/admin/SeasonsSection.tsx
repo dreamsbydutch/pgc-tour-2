@@ -158,9 +158,9 @@ function useSeasonsSection({ seasons }: { seasons: SeasonDoc[] | undefined }) {
   const createSeason = useMutation(api.functions.seasons.createSeasons);
   const updateSeason = useMutation(api.functions.seasons.updateSeasons);
 
-    const msToDateInput = msToDateInputValue;
+  const msToDateInput = msToDateInputValue;
 
-    const dateInputToMs = dateInputValueToMs;
+  const dateInputToMs = dateInputValueToMs;
 
   const [editingId, setEditingId] = useState<Id<"seasons"> | null>(null);
   const [form, setForm] = useState<SeasonFormState>({
