@@ -1,23 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useUser } from "@clerk/clerk-react";
-import {
-  ChevronDown,
-  Loader2,
-  MoveDown,
-  MoveHorizontal,
-  MoveUp,
-  Star,
-} from "lucide-react";
-import { Link } from "@tanstack/react-router";
 
-import { ToursToggle } from "@/displays";
+import {
+  PointsAndPayoutsDetails,
+  StandingsFriendsOnlyToggle,
+  StandingsListingRow,
+  StandingsPositionChange,
+  StandingsTableHeader,
+  StandingsViewSkeleton,
+  ToursToggle,
+} from "@/displays";
 import {
   Button,
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-  Skeleton,
 } from "@/ui";
 import { useFriendManagement } from "@/hooks";
 import type {
@@ -30,14 +28,10 @@ import type {
   StandingsViewProps,
 } from "@/lib";
 import {
-  cn,
   computeStandingsPositionChangeByTour,
   computeStandingsPositionStrings,
-  formatMoney,
-  includesPlayoff,
   isStandingsMember,
   parsePositionToNumber,
-  parseRankFromPositionString,
 } from "@/lib";
 import { api, useQuery } from "@/convex";
 import type { Doc, Id } from "@/convex";
@@ -77,582 +71,16 @@ export function StandingsView(props: StandingsViewProps) {
     );
   }
 
-  const parseRank = parseRankFromPositionString;
+  const friendsOnlyToggle = (
+    <StandingsFriendsOnlyToggle
+      pressed={model.friendsOnly}
+      disabled={!model.currentMemberId}
+      onToggle={() => model.setFriendsOnly(!model.friendsOnly)}
+    />
+  );
 
-  const PositionChange = ({ posChange }: { posChange: number }) => {
-    if (posChange === 0) {
-      return (
-        <span className="ml-1 inline-flex items-center text-xs text-muted-foreground">
-          <MoveHorizontal className="h-3 w-3" />
-        </span>
-      );
-    }
-
-    const isPositive = posChange > 0;
-    const Icon = isPositive ? MoveUp : MoveDown;
-    return (
-      <span
-        className={cn(
-          "ml-1 inline-flex items-center text-xs",
-          isPositive ? "text-green-700" : "text-red-700",
-        )}
-      >
-        <Icon className="h-3 w-3" />
-        {Math.abs(posChange)}
-      </span>
-    );
-  };
-
-  const FriendsOnlyToggle = ({ disabled }: { disabled: boolean }) => {
-    return (
-      <button
-        type="button"
-        aria-pressed={model.friendsOnly}
-        disabled={disabled}
-        onClick={() => model.setFriendsOnly(!model.friendsOnly)}
-        className={cn(
-          "mx-auto flex h-6 w-6 items-center justify-center rounded-md",
-          model.friendsOnly ? "bg-slate-200" : "bg-transparent",
-          disabled && "opacity-50",
-        )}
-      >
-        <Star
-          className={cn(
-            "h-3.5 w-3.5",
-            model.friendsOnly
-              ? "fill-slate-900 text-slate-900"
-              : "text-slate-700",
-          )}
-        />
-      </button>
-    );
-  };
-
-  const PointsAndPayoutsDetails = ({
-    title,
-    points,
-    payouts,
-  }: {
-    title: string;
-    points: number[];
-    payouts: number[];
-  }) => {
-    return (
-      <details className="rounded-md border p-2">
-        <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-medium">
-          {title}
-          <ChevronDown className="h-4 w-4" />
-        </summary>
-        <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-          <div className="font-medium">Rank</div>
-          <div className="col-span-1 font-medium">Points</div>
-          <div className="col-span-1 font-medium">Payout</div>
-          {Array.from({ length: Math.min(points.length, payouts.length) }).map(
-            (_, i) => (
-              <div key={i} className="contents">
-                <div className="text-muted-foreground">{i + 1}</div>
-                <div className="text-muted-foreground">{points[i]}</div>
-                <div className="text-muted-foreground">
-                  {formatMoney(payouts[i] ?? 0)}
-                </div>
-              </div>
-            ),
-          )}
-        </div>
-      </details>
-    );
-  };
-
-  const StandingsTableHeader = ({
-    variant,
-    disabled,
-    playoffDetails,
-  }: {
-    variant: "regular" | "gold" | "silver" | "bumped";
-    disabled: boolean;
-    playoffDetails?: { title: string; points: number[]; payouts: number[] };
-  }) => {
-    const title =
-      variant === "gold"
-        ? "PGC GOLD PLAYOFF"
-        : variant === "silver"
-          ? "PGC SILVER PLAYOFF"
-          : variant === "bumped"
-            ? "KNOCKED OUT"
-            : null;
-
-    const wrapperClass =
-      variant === "gold"
-        ? "mt-4 rounded-xl bg-gradient-to-b from-yellow-200"
-        : variant === "silver"
-          ? "mt-12 rounded-xl bg-gradient-to-b from-zinc-300"
-          : variant === "bumped"
-            ? "mt-12 rounded-xl bg-gradient-to-b from-red-200 text-red-900"
-            : "";
-
-    const titleTextClass =
-      variant === "gold"
-        ? "text-yellow-900"
-        : variant === "silver"
-          ? "text-zinc-600"
-          : variant === "bumped"
-            ? "text-red-900"
-            : "";
-
-    return (
-      <div
-        className={cn(
-          "grid grid-flow-row grid-cols-16 text-center",
-          wrapperClass,
-          variant === "regular" && "text-slate-700",
-        )}
-      >
-        {title && variant !== "regular" ? (
-          playoffDetails && (variant === "gold" || variant === "silver") ? (
-            <details className="col-span-16">
-              <summary
-                className={cn(
-                  "col-span-16 my-2 cursor-pointer list-none font-varela text-2xl font-extrabold",
-                  titleTextClass,
-                )}
-              >
-                {title}
-              </summary>
-              <div className="mx-auto w-full max-w-xl px-2 pb-3">
-                <PointsAndPayoutsDetails
-                  title={playoffDetails.title}
-                  points={playoffDetails.points}
-                  payouts={playoffDetails.payouts}
-                />
-              </div>
-            </details>
-          ) : (
-            <div
-              className={cn(
-                "col-span-16 my-2 font-varela text-2xl font-extrabold",
-                titleTextClass,
-              )}
-            >
-              {title}
-            </div>
-          )
-        ) : null}
-
-        <div
-          className={cn(
-            "col-span-2 place-self-center font-varela text-xs font-bold sm:text-sm",
-            variant !== "regular" && titleTextClass,
-          )}
-        >
-          Rank
-        </div>
-        <div
-          className={cn(
-            "col-span-7 place-self-center font-varela text-base font-bold sm:text-lg",
-            variant !== "regular" && titleTextClass,
-          )}
-        >
-          Name
-        </div>
-        <div
-          className={cn(
-            "col-span-3 place-self-center font-varela text-xs font-bold xs:text-sm sm:text-base",
-            variant !== "regular" && titleTextClass,
-          )}
-        >
-          Cup Points
-        </div>
-        <div
-          className={cn(
-            "col-span-3 place-self-center font-varela text-2xs xs:text-xs sm:text-sm",
-            variant !== "regular" && titleTextClass,
-          )}
-        >
-          {variant === "gold" || variant === "silver"
-            ? "Starting Strokes"
-            : "Earnings"}
-        </div>
-        <div className="col-span-1 place-self-center overflow-x-clip">
-          <FriendsOnlyToggle disabled={disabled} />
-        </div>
-      </div>
-    );
-  };
-
-  const calculateAverageScore = (
-    teams: StandingsTeam[] = [],
-    type: "weekday" | "weekend",
-  ) => {
-    const rounds =
-      type === "weekday"
-        ? teams.reduce(
-            (acc, t) => acc + (t.roundOne ?? 0) + (t.roundTwo ?? 0),
-            0,
-          )
-        : teams.reduce(
-            (acc, t) => acc + (t.roundThree ?? 0) + (t.roundFour ?? 0),
-            0,
-          );
-
-    const roundCount =
-      type === "weekday"
-        ? teams.filter((t) => t.roundOne !== undefined).length +
-          teams.filter((t) => t.roundTwo !== undefined).length
-        : teams.filter((t) => t.roundThree !== undefined).length +
-          teams.filter((t) => t.roundFour !== undefined).length;
-
-    return Math.round((rounds / (roundCount || 1)) * 10) / 10;
-  };
-
-  const StandingsListingRow = ({
-    card,
-    mode,
-    teamsForPlayoff,
-    strokes,
-    tourLogoUrl,
-  }: {
-    card: ExtendedStandingsTourCard;
-    mode: "regular" | "playoff" | "bumped";
-    teamsForPlayoff?: ExtendedStandingsTourCard[];
-    strokes?: number[];
-    tourLogoUrl?: string;
-  }) => {
-    const [isOpen, setIsOpen] = useState(false);
-
-    const isCurrent =
-      !!model.currentMemberId &&
-      String(card.memberId) === model.currentMemberId;
-
-    const isFriend = model.friendIds.has(String(card.memberId));
-    if (model.friendsOnly && !isFriend && !isCurrent) return null;
-
-    const isFriendChanging = model.isFriendChanging(String(card.memberId));
-
-    const positionLabel =
-      mode === "playoff" && teamsForPlayoff
-        ? (() => {
-            const teamsBetterCount = teamsForPlayoff.filter(
-              (obj) => (obj.points ?? 0) > (card.points ?? 0),
-            ).length;
-            const teamsTiedCount = teamsForPlayoff.filter(
-              (obj) => (obj.points ?? 0) === (card.points ?? 0),
-            ).length;
-            return (
-              (teamsTiedCount > 1 ? "T" : "") + String(teamsBetterCount + 1)
-            );
-          })()
-        : (card.currentPosition ?? "-");
-
-    const startingStrokes =
-      mode === "playoff" && teamsForPlayoff && strokes
-        ? (() => {
-            const teamsBetterCount = teamsForPlayoff.filter(
-              (obj) => (obj.points ?? 0) > (card.points ?? 0),
-            ).length;
-            const teamsTiedCount = teamsForPlayoff.filter(
-              (obj) => (obj.points ?? 0) === (card.points ?? 0),
-            ).length;
-            const positionIndex = teamsBetterCount;
-            if (teamsTiedCount > 1) {
-              const slice = strokes.slice(
-                positionIndex,
-                positionIndex + teamsTiedCount,
-              );
-              const avg =
-                slice.reduce((acc, v) => acc + v, 0) / (slice.length || 1);
-              return Math.round(avg * 10) / 10;
-            }
-            return strokes[positionIndex];
-          })()
-        : null;
-
-    const canFriend = !!model.currentMemberId && !isCurrent;
-
-    const tierById = model.tierById;
-    const teamsForCard = model.teams.filter((t) => t.tourCardId === card._id);
-
-    const nonPlayoffTournaments = model.tournaments
-      .filter((t) => {
-        const tier = tierById.get(String(t.tierId));
-        return !includesPlayoff(tier?.name);
-      })
-      .slice()
-      .sort((a, b) => a.startDate - b.startDate);
-
-    const count = Math.max(1, nonPlayoffTournaments.length);
-    const desktopGridStyle = {
-      gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))`,
-    } as const;
-
-    const mobileCols = Math.max(1, Math.ceil(count / 2));
-    const mobileGridStyle = {
-      gridTemplateColumns: `repeat(${mobileCols}, minmax(0, 1fr))`,
-      gridTemplateRows: "repeat(2, minmax(0, 1fr))",
-    } as const;
-
-    return (
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setIsOpen((v) => !v)}
-        onKeyDown={(e) => {
-          if (e.key !== "Enter" && e.key !== " ") return;
-          e.preventDefault();
-          setIsOpen((v) => !v);
-        }}
-        className={cn(
-          "grid cursor-pointer grid-flow-row grid-cols-16 rounded-lg py-[1px] text-center",
-          isCurrent ? "bg-slate-200 font-semibold" : "",
-          !isCurrent && isFriend ? "bg-slate-100" : "",
-        )}
-      >
-        <div className="col-span-2 flex place-self-center font-varela text-sm sm:text-base">
-          {positionLabel}
-          <PositionChange
-            posChange={
-              mode === "playoff"
-                ? (card.posChangePO ?? 0)
-                : (card.posChange ?? 0)
-            }
-          />
-        </div>
-
-        <div className="col-span-7 flex items-center justify-center place-self-center font-varela text-lg sm:text-xl">
-          {card.displayName}
-        </div>
-
-        <div className="col-span-3 place-self-center font-varela text-sm xs:text-base sm:text-lg">
-          {card.points}
-        </div>
-
-        <div className="col-span-3 place-self-center font-varela text-xs xs:text-sm sm:text-base">
-          {mode === "playoff"
-            ? (startingStrokes ?? "-")
-            : formatMoney(card.earnings)}
-        </div>
-
-        <div
-          className="col-span-1 flex place-self-center"
-          onClick={(e) => {
-            if (!canFriend) return;
-            e.stopPropagation();
-            if (isFriendChanging) return;
-            const memberId = String(card.memberId);
-            if (isFriend) model.onRemoveFriend(memberId);
-            else model.onAddFriend(memberId);
-          }}
-          role={canFriend ? "button" : undefined}
-          tabIndex={canFriend ? 0 : -1}
-          onKeyDown={(e) => {
-            if (!canFriend) return;
-            if (e.key !== "Enter" && e.key !== " ") return;
-            e.preventDefault();
-            e.stopPropagation();
-            if (isFriendChanging) return;
-            const memberId = String(card.memberId);
-            if (isFriend) model.onRemoveFriend(memberId);
-            else model.onAddFriend(memberId);
-          }}
-        >
-          {mode === "bumped" && tourLogoUrl ? (
-            <div className="max-h-8 min-h-6 min-w-6 max-w-8 place-self-center p-1">
-              <img
-                src={tourLogoUrl}
-                alt="Tour"
-                className="h-6 w-6 object-contain"
-              />
-            </div>
-          ) : !canFriend ? (
-            <div className="h-6 w-6" />
-          ) : isFriendChanging ? (
-            <Loader2 className="m-auto h-3.5 w-3.5 animate-spin text-muted-foreground" />
-          ) : (
-            <Star
-              size={12}
-              className={cn(
-                "m-auto",
-                isFriend ? "fill-slate-900 text-slate-900" : "text-slate-700",
-              )}
-            />
-          )}
-        </div>
-
-        {isOpen ? (
-          <div
-            className="col-span-16 px-2 pb-2"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              className={cn(
-                "mt-2 rounded-md border p-3",
-                isCurrent && "bg-blue-50",
-                !isCurrent && isFriend && "bg-muted/40",
-              )}
-            >
-              <div className="grid grid-cols-5 gap-2 text-center text-xs font-medium text-muted-foreground">
-                <div>Wins</div>
-                <div>Top 10</div>
-                <div>Cuts</div>
-                <div>Weekday</div>
-                <div>Weekend</div>
-              </div>
-              <div className="mt-1 grid grid-cols-5 gap-2 text-center text-sm">
-                <div>{card.wins ?? 0}</div>
-                <div>{card.topTen}</div>
-                <div>
-                  {card.madeCut} / {card.appearances}
-                </div>
-                <div>{calculateAverageScore(teamsForCard, "weekday")}</div>
-                <div>{calculateAverageScore(teamsForCard, "weekend")}</div>
-              </div>
-
-              <div className="mt-4 text-xs font-medium text-muted-foreground">
-                Tournament history
-              </div>
-
-              {nonPlayoffTournaments.length === 0 ? (
-                <div className="mt-2 text-sm text-muted-foreground">
-                  No tournaments
-                </div>
-              ) : (
-                <div className="mt-2 overflow-x-auto rounded-md border">
-                  <div className="grid sm:hidden" style={mobileGridStyle}>
-                    {nonPlayoffTournaments.map((t) => {
-                      const tier = tierById.get(String(t.tierId));
-                      const isMajor = tier?.name === "Major";
-                      const team = teamsForCard.find(
-                        (x) => x.tournamentId === t._id,
-                      );
-                      const isPastEvent = t.endDate < Date.now();
-                      const didNotMakeCut = team?.position === "CUT";
-                      const didNotPlay = !team && isPastEvent;
-                      const numericFinish = team?.position
-                        ? parseRank(team.position)
-                        : Number.POSITIVE_INFINITY;
-                      const isWinner = numericFinish === 1;
-
-                      return (
-                        <div
-                          key={t._id}
-                          className={cn(
-                            "flex flex-col items-center justify-center gap-1 border-r border-dashed p-2 text-center text-xs",
-                            isMajor && "bg-yellow-50",
-                            didNotPlay && "opacity-40",
-                            didNotMakeCut && "opacity-60",
-                            isWinner && "font-semibold",
-                          )}
-                        >
-                          <Link
-                            to="/tournament"
-                            search={{
-                              tournamentId: t._id,
-                              tourId: card.tourId,
-                              variant: null,
-                            }}
-                            className="flex flex-col items-center gap-1"
-                          >
-                            {t.logoUrl ? (
-                              <img
-                                src={t.logoUrl}
-                                alt={t.name}
-                                className="h-8 w-8 object-contain"
-                              />
-                            ) : (
-                              <div className="h-8 w-8 rounded bg-muted" />
-                            )}
-                            <div
-                              className={cn(
-                                "whitespace-nowrap",
-                                didNotPlay && "text-red-700",
-                                didNotMakeCut && "text-muted-foreground",
-                                isWinner && "text-yellow-700",
-                              )}
-                            >
-                              {!isPastEvent
-                                ? "-"
-                                : !team
-                                  ? "DNP"
-                                  : team.position === "CUT"
-                                    ? "CUT"
-                                    : team.position}
-                            </div>
-                          </Link>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="hidden sm:grid" style={desktopGridStyle}>
-                    {nonPlayoffTournaments.map((t) => {
-                      const tier = tierById.get(String(t.tierId));
-                      const isMajor = tier?.name === "Major";
-                      const team = teamsForCard.find(
-                        (x) => x.tournamentId === t._id,
-                      );
-                      const isPastEvent = t.endDate < Date.now();
-                      const didNotMakeCut = team?.position === "CUT";
-                      const didNotPlay = !team && isPastEvent;
-                      const numericFinish = team?.position
-                        ? parseRank(team.position)
-                        : Number.POSITIVE_INFINITY;
-                      const isWinner = numericFinish === 1;
-
-                      return (
-                        <div
-                          key={t._id}
-                          className={cn(
-                            "flex flex-col items-center justify-center gap-1 border-r border-dashed p-2 text-center text-xs",
-                            isMajor && "bg-yellow-50",
-                            didNotPlay && "opacity-40",
-                            didNotMakeCut && "opacity-60",
-                            isWinner && "font-semibold",
-                          )}
-                        >
-                          <Link
-                            to="/tournament"
-                            search={{
-                              tournamentId: t._id,
-                              tourId: card.tourId,
-                              variant: null,
-                            }}
-                            className="flex flex-col items-center gap-1"
-                          >
-                            {t.logoUrl ? (
-                              <img
-                                src={t.logoUrl}
-                                alt={t.name}
-                                className="h-8 w-8 object-contain"
-                              />
-                            ) : (
-                              <div className="h-8 w-8 rounded bg-muted" />
-                            )}
-                            <div
-                              className={cn(
-                                "whitespace-nowrap",
-                                didNotPlay && "text-red-700",
-                                didNotMakeCut && "text-muted-foreground",
-                                isWinner && "text-yellow-700",
-                              )}
-                            >
-                              {!isPastEvent
-                                ? "-"
-                                : !team
-                                  ? "DNP"
-                                  : team.position === "CUT"
-                                    ? "CUT"
-                                    : team.position}
-                            </div>
-                          </Link>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : null}
-      </div>
-    );
+  const renderPositionChange = (posChange: number) => {
+    return <StandingsPositionChange posChange={posChange} />;
   };
 
   return (
@@ -705,15 +133,15 @@ export function StandingsView(props: StandingsViewProps) {
         <div className="mx-auto px-1">
           <StandingsTableHeader
             variant="gold"
-            disabled={!model.currentMemberId}
+            friendsOnlyToggle={friendsOnlyToggle}
             playoffDetails={
-              model.playoffGold
-                ? {
-                    title: "Points & payouts",
-                    points: model.playoffGold.points,
-                    payouts: model.playoffGold.payouts,
-                  }
-                : undefined
+              model.playoffGold ? (
+                <PointsAndPayoutsDetails
+                  title="Points & payouts"
+                  points={model.playoffGold.points}
+                  payouts={model.playoffGold.payouts}
+                />
+              ) : undefined
             }
           />
           <div className="mt-2 space-y-1">
@@ -722,6 +150,16 @@ export function StandingsView(props: StandingsViewProps) {
                 key={tc._id}
                 card={tc}
                 mode="playoff"
+                teams={model.teams}
+                tournaments={model.tournaments}
+                tierById={model.tierById}
+                currentMemberId={model.currentMemberId}
+                friendsOnly={model.friendsOnly}
+                friendIds={model.friendIds}
+                isFriendChanging={model.isFriendChanging}
+                onAddFriend={model.onAddFriend}
+                onRemoveFriend={model.onRemoveFriend}
+                renderPositionChange={renderPositionChange}
                 teamsForPlayoff={model.playoffGroups.goldTeams}
                 strokes={model.playoffStrokesGold}
                 tourLogoUrl={model.toursById.get(String(tc.tourId))?.logoUrl}
@@ -731,15 +169,15 @@ export function StandingsView(props: StandingsViewProps) {
 
           <StandingsTableHeader
             variant="silver"
-            disabled={!model.currentMemberId}
+            friendsOnlyToggle={friendsOnlyToggle}
             playoffDetails={
-              model.playoffSilver
-                ? {
-                    title: "Points & payouts",
-                    points: model.playoffSilver.points,
-                    payouts: model.playoffSilver.payouts,
-                  }
-                : undefined
+              model.playoffSilver ? (
+                <PointsAndPayoutsDetails
+                  title="Points & payouts"
+                  points={model.playoffSilver.points}
+                  payouts={model.playoffSilver.payouts}
+                />
+              ) : undefined
             }
           />
           <div className="mt-2 space-y-1">
@@ -748,6 +186,16 @@ export function StandingsView(props: StandingsViewProps) {
                 key={tc._id}
                 card={tc}
                 mode="playoff"
+                teams={model.teams}
+                tournaments={model.tournaments}
+                tierById={model.tierById}
+                currentMemberId={model.currentMemberId}
+                friendsOnly={model.friendsOnly}
+                friendIds={model.friendIds}
+                isFriendChanging={model.isFriendChanging}
+                onAddFriend={model.onAddFriend}
+                onRemoveFriend={model.onRemoveFriend}
+                renderPositionChange={renderPositionChange}
                 teamsForPlayoff={model.playoffGroups.silverTeams}
                 strokes={model.playoffStrokesSilver}
                 tourLogoUrl={model.toursById.get(String(tc.tourId))?.logoUrl}
@@ -757,7 +205,7 @@ export function StandingsView(props: StandingsViewProps) {
 
           <StandingsTableHeader
             variant="bumped"
-            disabled={!model.currentMemberId}
+            friendsOnlyToggle={friendsOnlyToggle}
           />
           <div className="mt-2 space-y-1">
             {model.playoffGroups.bumpedTeams.map((tc) => (
@@ -765,6 +213,16 @@ export function StandingsView(props: StandingsViewProps) {
                 key={tc._id}
                 card={tc}
                 mode="bumped"
+                teams={model.teams}
+                tournaments={model.tournaments}
+                tierById={model.tierById}
+                currentMemberId={model.currentMemberId}
+                friendsOnly={model.friendsOnly}
+                friendIds={model.friendIds}
+                isFriendChanging={model.isFriendChanging}
+                onAddFriend={model.onAddFriend}
+                onRemoveFriend={model.onRemoveFriend}
+                renderPositionChange={renderPositionChange}
                 tourLogoUrl={model.toursById.get(String(tc.tourId))?.logoUrl}
               />
             ))}
@@ -774,12 +232,26 @@ export function StandingsView(props: StandingsViewProps) {
         <div className="mx-auto px-1">
           <StandingsTableHeader
             variant="regular"
-            disabled={!model.currentMemberId}
+            friendsOnlyToggle={friendsOnlyToggle}
           />
 
           <div className="mt-2 space-y-1">
             {model.tourGroups.goldCutCards.map((tc) => (
-              <StandingsListingRow key={tc._id} card={tc} mode="regular" />
+              <StandingsListingRow
+                key={tc._id}
+                card={tc}
+                mode="regular"
+                teams={model.teams}
+                tournaments={model.tournaments}
+                tierById={model.tierById}
+                currentMemberId={model.currentMemberId}
+                friendsOnly={model.friendsOnly}
+                friendIds={model.friendIds}
+                isFriendChanging={model.isFriendChanging}
+                onAddFriend={model.onAddFriend}
+                onRemoveFriend={model.onRemoveFriend}
+                renderPositionChange={renderPositionChange}
+              />
             ))}
           </div>
 
@@ -789,7 +261,21 @@ export function StandingsView(props: StandingsViewProps) {
 
           <div className="space-y-1">
             {model.tourGroups.silverCutCards.map((tc) => (
-              <StandingsListingRow key={tc._id} card={tc} mode="regular" />
+              <StandingsListingRow
+                key={tc._id}
+                card={tc}
+                mode="regular"
+                teams={model.teams}
+                tournaments={model.tournaments}
+                tierById={model.tierById}
+                currentMemberId={model.currentMemberId}
+                friendsOnly={model.friendsOnly}
+                friendIds={model.friendIds}
+                isFriendChanging={model.isFriendChanging}
+                onAddFriend={model.onAddFriend}
+                onRemoveFriend={model.onRemoveFriend}
+                renderPositionChange={renderPositionChange}
+              />
             ))}
           </div>
 
@@ -799,7 +285,21 @@ export function StandingsView(props: StandingsViewProps) {
 
           <div className="space-y-1">
             {model.tourGroups.remainingCards.map((tc) => (
-              <StandingsListingRow key={tc._id} card={tc} mode="regular" />
+              <StandingsListingRow
+                key={tc._id}
+                card={tc}
+                mode="regular"
+                teams={model.teams}
+                tournaments={model.tournaments}
+                tierById={model.tierById}
+                currentMemberId={model.currentMemberId}
+                friendsOnly={model.friendsOnly}
+                friendIds={model.friendIds}
+                isFriendChanging={model.isFriendChanging}
+                onAddFriend={model.onAddFriend}
+                onRemoveFriend={model.onRemoveFriend}
+                renderPositionChange={renderPositionChange}
+              />
             ))}
           </div>
         </div>
@@ -1296,28 +796,3 @@ function useStandingsView(props: StandingsViewProps) {
   } as const satisfies Model;
 }
 
-/**
- * Loading UI for `StandingsView`.
- */
-function StandingsViewSkeleton() {
-  return (
-    <div className="space-y-6">
-      <div className="space-y-2 text-center">
-        <Skeleton className="mx-auto h-8 w-56" />
-        <Skeleton className="mx-auto h-4 w-72" />
-      </div>
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-6 w-40" />
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {Array.from({ length: 10 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}

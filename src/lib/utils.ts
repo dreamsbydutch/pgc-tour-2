@@ -752,6 +752,35 @@ export function computeStandingsPositionChangeByTour(args: {
 }
 
 /**
+ * Calculates a rounded (1 decimal) average score across the supplied teams.
+ *
+ * @param teams - Standings teams containing round score fields.
+ * @param type - "weekday" uses rounds 1+2, "weekend" uses rounds 3+4.
+ * @returns Average score rounded to 1 decimal.
+ */
+export function calculateAverageScore(
+  teams: StandingsTeam[] = [],
+  type: "weekday" | "weekend",
+): number {
+  const rounds =
+    type === "weekday"
+      ? teams.reduce((acc, t) => acc + (t.roundOne ?? 0) + (t.roundTwo ?? 0), 0)
+      : teams.reduce(
+          (acc, t) => acc + (t.roundThree ?? 0) + (t.roundFour ?? 0),
+          0,
+        );
+
+  const roundCount =
+    type === "weekday"
+      ? teams.filter((t) => t.roundOne !== undefined).length +
+        teams.filter((t) => t.roundTwo !== undefined).length
+      : teams.filter((t) => t.roundThree !== undefined).length +
+        teams.filter((t) => t.roundFour !== undefined).length;
+
+  return Math.round((rounds / (roundCount || 1)) * 10) / 10;
+}
+
+/**
  * Determines whether a tournament should be treated as a playoff event.
  */
 export function isPlayoffTournament(args: {

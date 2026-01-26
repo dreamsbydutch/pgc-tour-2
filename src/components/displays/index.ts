@@ -13,6 +13,13 @@ export { ToursToggle } from "./leaderboard/ToursToggle";
 export { LittleFucker } from "./misc/LittleFucker";
 export { TierDistributionsTable } from "./misc/TierDistributionsTable";
 
+export { PointsAndPayoutsDetails } from "./standings/PointsAndPayoutsDetails";
+export { StandingsFriendsOnlyToggle } from "./standings/StandingsFriendsOnlyToggle";
+export { StandingsListingRow } from "./standings/StandingsListingRow";
+export { StandingsPositionChange } from "./standings/StandingsPositionChange";
+export { StandingsTableHeader } from "./standings/StandingsTableHeader";
+export { StandingsViewSkeleton } from "./standings/StandingsViewSkeleton";
+
 export { SecondaryToolbar } from "./navigation/SecondaryToolbar";
 
 export { TeamGolfersList } from "./team/TeamGolfersList";
