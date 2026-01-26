@@ -8,6 +8,7 @@ import type { SeasonDoc } from "../../../../../../convex/types/types";
 import { useRoleAccess } from "@/hooks";
 import { AdminDataTable } from "@/displays";
 import { Button, Field } from "@/ui";
+import { dateInputValueToMs, msToDateInputValue } from "@/lib";
 import {
   Card,
   CardContent,
@@ -218,19 +219,9 @@ export function AdminSeasonsPage() {
 function useAdminSeasonsPage() {
   const { isAdmin, isLoading: isRoleLoading } = useRoleAccess();
 
-  function msToDateInput(ms: number | undefined): string {
-    if (!ms) return "";
-    const d = new Date(ms);
-    const year = d.getFullYear();
-    const month = `${d.getMonth() + 1}`.padStart(2, "0");
-    const day = `${d.getDate()}`.padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }
+  const msToDateInput = msToDateInputValue;
 
-  function dateInputToMs(date: string, endOfDay = false): number {
-    const suffix = endOfDay ? "T23:59:59" : "T00:00:00";
-    return new Date(`${date}${suffix}`).getTime();
-  }
+  const dateInputToMs = dateInputValueToMs;
 
   type SeasonFormState = {
     year: string;

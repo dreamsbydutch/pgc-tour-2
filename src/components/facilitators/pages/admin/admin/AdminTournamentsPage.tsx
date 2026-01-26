@@ -20,6 +20,7 @@ import type {
 import { useRoleAccess } from "@/hooks";
 import { AdminDataTable } from "@/displays";
 import { Button, Field } from "@/ui";
+import { dateInputValueToMs, msToDateInputValue } from "@/lib";
 import {
   Card,
   CardContent,
@@ -38,14 +39,7 @@ import {
 export function AdminTournamentsPage() {
   const { isAdmin, isRoleLoading, vm } = useAdminTournamentsPage();
 
-  function msToDateInput(ms: number | undefined): string {
-    if (!ms) return "";
-    const d = new Date(ms);
-    const year = d.getFullYear();
-    const month = `${d.getMonth() + 1}`.padStart(2, "0");
-    const day = `${d.getDate()}`.padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }
+  const msToDateInput = msToDateInputValue;
 
   return (
     <div className="container mx-auto px-4 py-8 pb-20 lg:pb-8 lg:pt-20">
@@ -526,19 +520,9 @@ function useAdminTournamentsPage() {
   const { isAdmin, isLoading: isRoleLoading } = useRoleAccess();
   const { user } = useUser();
 
-  function dateInputToMs(date: string, endOfDay = false): number {
-    const suffix = endOfDay ? "T23:59:59" : "T00:00:00";
-    return new Date(`${date}${suffix}`).getTime();
-  }
+  const msToDateInput = msToDateInputValue;
 
-  function msToDateInput(ms: number | undefined): string {
-    if (!ms) return "";
-    const d = new Date(ms);
-    const year = d.getFullYear();
-    const month = `${d.getMonth() + 1}`.padStart(2, "0");
-    const day = `${d.getDate()}`.padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }
+  const dateInputToMs = dateInputValueToMs;
 
   function normalizeList<T, K extends string>(
     result: Array<T | null> | Record<K, Array<T | null>> | undefined,

@@ -9,6 +9,7 @@ import { AdminEditDeleteActions } from "@/displays";
 import { AdminCrudSection } from "./AdminCrudSection";
 import { Card, CardContent, CardHeader, Field, Skeleton } from "@/ui";
 import { ADMIN_FORM_CONTROL_CLASSNAME } from "@/lib/constants";
+import { dateInputValueToMs, msToDateInputValue } from "@/lib";
 import { adminActionsColumn } from "@/lib/adminTable";
 
 /**
@@ -157,19 +158,9 @@ function useSeasonsSection({ seasons }: { seasons: SeasonDoc[] | undefined }) {
   const createSeason = useMutation(api.functions.seasons.createSeasons);
   const updateSeason = useMutation(api.functions.seasons.updateSeasons);
 
-  const msToDateInput = (ms: number | undefined): string => {
-    if (!ms) return "";
-    const d = new Date(ms);
-    const year = d.getFullYear();
-    const month = `${d.getMonth() + 1}`.padStart(2, "0");
-    const day = `${d.getDate()}`.padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  };
+    const msToDateInput = msToDateInputValue;
 
-  const dateInputToMs = (date: string, endOfDay = false): number => {
-    const suffix = endOfDay ? "T23:59:59" : "T00:00:00";
-    return new Date(`${date}${suffix}`).getTime();
-  };
+    const dateInputToMs = dateInputValueToMs;
 
   const [editingId, setEditingId] = useState<Id<"seasons"> | null>(null);
   const [form, setForm] = useState<SeasonFormState>({

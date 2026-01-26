@@ -137,6 +137,47 @@ export function formatTwoDigits(num: number): string {
   return String(num).padStart(2, "0");
 }
 
+/**
+ * Converts a unix ms timestamp into a `YYYY-MM-DD` string for `<input type="date" />`.
+ */
+export function msToDateInputValue(ms: number | undefined): string {
+  if (!ms) return "";
+  const d = new Date(ms);
+  const year = d.getFullYear();
+  const month = formatTwoDigits(d.getMonth() + 1);
+  const day = formatTwoDigits(d.getDate());
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Converts a `YYYY-MM-DD` date input value into a unix ms timestamp.
+ */
+export function dateInputValueToMs(date: string, endOfDay = false): number {
+  const suffix = endOfDay ? "T23:59:59" : "T00:00:00";
+  return new Date(`${date}${suffix}`).getTime();
+}
+
+/**
+ * Converts a unix ms timestamp into a `YYYY-MM-DDTHH:mm` string for `<input type="datetime-local" />`.
+ */
+export function msToDateTimeLocalInputValue(ms: number | undefined): string {
+  if (!ms) return "";
+  const d = new Date(ms);
+  const year = d.getFullYear();
+  const month = formatTwoDigits(d.getMonth() + 1);
+  const day = formatTwoDigits(d.getDate());
+  const hours = formatTwoDigits(d.getHours());
+  const minutes = formatTwoDigits(d.getMinutes());
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+/**
+ * Converts a `datetime-local` input value into a unix ms timestamp.
+ */
+export function dateTimeLocalInputValueToMs(value: string): number {
+  return new Date(value).getTime();
+}
+
 export function calculateCountdownTimeLeft(
   startDateTime: number,
 ): TimeLeftType {

@@ -17,6 +17,12 @@ import { AdminCrudSection } from "./AdminCrudSection";
 import { Card, CardContent, CardHeader, Field, Skeleton } from "@/ui";
 import { ADMIN_FORM_CONTROL_CLASSNAME } from "@/lib/constants";
 import { adminActionsColumn } from "@/lib/adminTable";
+import {
+  dateTimeLocalInputValueToMs,
+  formatCentsAsDollars,
+  msToDateTimeLocalInputValue,
+  normalizeList,
+} from "@/lib";
 
 /**
  * Admin UI for creating and editing ledger transactions.
@@ -362,41 +368,9 @@ function useTransactionsManager() {
     "cancelled",
   ];
 
-  const msToDateTimeLocal = (ms: number | undefined): string => {
-    if (!ms) return "";
-    const d = new Date(ms);
-    const pad = (n: number) => `${n}`.padStart(2, "0");
-    const year = d.getFullYear();
-    const month = pad(d.getMonth() + 1);
-    const day = pad(d.getDate());
-    const hours = pad(d.getHours());
-    const minutes = pad(d.getMinutes());
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
-  };
+  const msToDateTimeLocal = msToDateTimeLocalInputValue;
 
-  const dateTimeLocalToMs = (value: string): number => {
-    return new Date(value).getTime();
-  };
-
-  const formatCentsAsDollars = (cents: number): string => {
-    const sign = cents < 0 ? "-" : "";
-    return `${sign}$${(Math.abs(cents) / 100).toFixed(2)}`;
-  };
-
-  const normalizeList = <T, K extends string>(
-    result: Array<T | null> | Record<K, Array<T | null>> | undefined,
-    key: K,
-  ): T[] => {
-    if (!result) return [];
-    if (Array.isArray(result)) {
-      return result.filter((x): x is T => x !== null);
-    }
-    const value = result[key];
-    if (Array.isArray(value)) {
-      return value.filter((x): x is T => x !== null);
-    }
-    return [];
-  };
+  const dateTimeLocalToMs = dateTimeLocalInputValueToMs;
 
   const createTransaction = useMutation(
     api.functions.transactions.createTransactions,
