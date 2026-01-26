@@ -41,25 +41,25 @@ export {
   TableHeader,
   TableRow,
 } from "./ui/primitives/table";
-export { AdminEditDeleteActions } from "./ui/composites/admin-edit-delete-actions";
-export { AdminRowActions } from "./ui/composites/admin-row-actions";
+export { AdminEditDeleteActions } from "./ui/primitives/admin-edit-delete-actions";
+export { AdminRowActions } from "./ui/primitives/admin-row-actions";
 export { AdminLoadMore } from "./ui/composites/admin-load-more";
-export { TournamentCountdown } from "./ui/composites/tournament-countdown";
-export { LittleFucker } from "./ui/composites/little-fucker";
-export { TierDistributionsTable } from "./ui/composites/tier-distributions-table";
-export { MemberHeader } from "./ui/composites/member-header";
-export { TeamGolfersList } from "./ui/composites/team-golfers-list";
-export { TeamGolfersTable } from "./ui/composites/team-golfers-table";
-export { HomePageListingsContainer } from "./ui/composites/home-page-listings-container";
-export { LeaderboardHeader } from "./ui/composites/leaderboard-header";
+export { TournamentCountdown } from "./ui/primitives/tournament-countdown";
+export { LittleFucker } from "./ui/primitives/little-fucker";
+export { TierDistributionsTable } from "./ui/primitives/tier-distributions-table";
+export { MemberHeader } from "./ui/primitives/member-header";
+export { TeamGolfersList } from "./ui/primitives/team-golfers-list";
+export { TeamGolfersTable } from "./ui/primitives/team-golfers-table";
+export { HomePageListingsContainer } from "./ui/primitives/home-page-listings-container";
+export { LeaderboardHeader } from "./ui/primitives/leaderboard-header";
 export { LeaderboardHeaderDropdown } from "./ui/composites/leaderboard-header-dropdown";
-export { LeaderboardHeaderRow } from "./ui/composites/leaderboard-header-row";
+export { LeaderboardHeaderRow } from "./ui/primitives/leaderboard-header-row";
 export { LeaderboardListing } from "./ui/composites/leaderboard-listing";
-export { LeaderboardView } from "./ui/composites/leaderboard-view";
-export { ModeratorTools } from "./ui/composites/moderator-tools";
-export { PGADropdown } from "./ui/composites/pga-dropdown";
-export { PGALeaderboard } from "./ui/composites/pga-leaderboard";
-export { PGCLeaderboard } from "./ui/composites/pgc-leaderboard";
+export { LeaderboardView } from "./ui/primitives/leaderboard-view";
+export { ModeratorTools } from "./ui/primitives/moderator-tools";
+export { PGADropdown } from "./ui/primitives/pga-dropdown";
+export { PGALeaderboard } from "./ui/primitives/pga-leaderboard";
+export { PGCLeaderboard } from "./ui/primitives/pgc-leaderboard";
 export { PWAInstallPrompt } from "./ui/composites/pwa-install-prompt";
 
 // Public: route page components (used by routes; typically data-fetching)
@@ -82,10 +82,10 @@ export { NavigationContainer } from "./pages/NavigationContainer";
 export { StandingsView } from "./pages/StandingsView";
 
 // Internal: shared building blocks (multi-use)
-export { AdminCrudSection } from "./ui/composites/admin-crud-section";
-export { AdminDataTable } from "./ui/composites/admin-data-table";
+export { AdminCrudSection } from "./ui/primitives/admin-crud-section";
+export { AdminDataTable } from "./ui/primitives/admin-data-table";
 export { Field } from "./ui/primitives/field";
-export { ToursToggle } from "./ui/composites/tours-toggle";
+export { ToursToggle } from "./ui/primitives/tours-toggle";
 
 // Internal: shared + data-fetching (multi-use)
 export { LeagueSchedule } from "./ui/composites/league-schedule";
@@ -104,7 +104,7 @@ export { ToursSection } from "./internal/ToursSection";
 export { TransactionsManager } from "./internal/TransactionsManager";
 
 // Internal: feature/leaf presentational/composition components (no Convex hooks)
-export { AdminPanel } from "./ui/composites/admin-panel";
+export { AdminPanel } from "./ui/primitives/admin-panel";
 export { ChampionsPopup } from "./internal/ChampionsPopup";
 export { PreTournamentContent } from "./internal/PreTournamentContent";
 export { TeamPickForm } from "./internal/TeamPickForm";

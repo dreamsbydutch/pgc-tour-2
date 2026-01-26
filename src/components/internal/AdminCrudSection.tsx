@@ -1,1 +1,1 @@
-export { AdminCrudSection } from "../ui/composites/admin-crud-section";
+export { AdminCrudSection } from "../ui/primitives/admin-crud-section";

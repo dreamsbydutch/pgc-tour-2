@@ -1,1 +1,1 @@
-export { AdminDataTable } from "../ui/composites/admin-data-table";
+export { AdminDataTable } from "../ui/primitives/admin-data-table";
