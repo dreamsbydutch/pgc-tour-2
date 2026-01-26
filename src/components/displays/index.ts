@@ -13,6 +13,8 @@ export { ToursToggle } from "./leaderboard/ToursToggle";
 export { LittleFucker } from "./misc/LittleFucker";
 export { TierDistributionsTable } from "./misc/TierDistributionsTable";
 
+export { SecondaryToolbar } from "./navigation/SecondaryToolbar";
+
 export { TeamGolfersList } from "./team/TeamGolfersList";
 export { TeamGolfersTable } from "./team/TeamGolfersTable";
 
