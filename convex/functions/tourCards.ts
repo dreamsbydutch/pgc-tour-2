@@ -331,7 +331,9 @@ export const getActiveMembersMissingTourCards = query({
         .map((g) => ({
           firstname: g.firstname,
           lastname: g.lastname,
-          members: [...g.members].sort((a, b) => a.email.localeCompare(b.email)),
+          members: [...g.members].sort((a, b) =>
+            a.email.localeCompare(b.email),
+          ),
         }))
         .sort((a, b) => {
           const aName = `${a.lastname} ${a.firstname}`.trim();

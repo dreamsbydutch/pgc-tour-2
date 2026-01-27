@@ -144,9 +144,6 @@ const schema = defineSchema({
     currentRound: v.optional(v.number()),
     livePlay: v.optional(v.boolean()),
 
-    groupsEmailSentAt: v.optional(v.float64()),
-    reminderEmailSentAt: v.optional(v.float64()),
-
     updatedAt: v.optional(v.number()),
   })
     .index("by_season", ["seasonId"])

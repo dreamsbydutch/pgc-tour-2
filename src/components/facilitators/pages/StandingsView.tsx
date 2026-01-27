@@ -497,14 +497,7 @@ function useStandingsView(props: StandingsViewProps) {
       tournaments,
       currentSeason: currentSeason ?? null,
     };
-  }, [
-    computeStandingsPositionChangeByTour,
-    computeStandingsPositionStrings,
-    currentMemberDoc,
-    currentSeason,
-    isLoading,
-    standingsData,
-  ]);
+  }, [currentMemberDoc, currentSeason, isLoading, standingsData]);
 
   const [friendsOnly, setFriendsOnly] = useState(false);
   const friendManagement = useFriendManagement(
@@ -602,8 +595,6 @@ function useStandingsView(props: StandingsViewProps) {
     return allTourCards.filter((c) => c.tourId === activeView);
   }, [activeView, allTourCards]);
 
-  const parsePosition = parsePositionToNumber;
-
   const activeTourPlayoffSpots = useMemo(() => {
     if (!activeView || activeView === "playoffs") return null;
     const tour = tours.find((t) => t._id === activeView);
@@ -621,14 +612,14 @@ function useStandingsView(props: StandingsViewProps) {
     const silverCut = goldCut + silverCount;
 
     const goldCutCards = filteredTourCards.filter(
-      (card) => parsePosition(card.currentPosition) <= goldCut,
+      (card) => parsePositionToNumber(card.currentPosition) <= goldCut,
     );
     const silverCutCards = filteredTourCards.filter((card) => {
-      const pos = parsePosition(card.currentPosition);
+      const pos = parsePositionToNumber(card.currentPosition);
       return pos > goldCut && pos <= silverCut;
     });
     const remainingCards = filteredTourCards.filter(
-      (card) => parsePosition(card.currentPosition) > silverCut,
+      (card) => parsePositionToNumber(card.currentPosition) > silverCut,
     );
     return { goldCutCards, silverCutCards, remainingCards };
   }, [

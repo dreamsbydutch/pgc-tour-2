@@ -4,6 +4,7 @@ import { api, useAction, useQuery } from "@/convex";
 import type { Id } from "@/convex";
 
 import { ADMIN_FORM_CONTROL_CLASSNAME } from "@/lib/constants";
+import { normalizeList } from "@/lib";
 
 import { Button } from "@/ui";
 import {
@@ -262,11 +263,25 @@ function useAdminEmailsPage() {
   });
 
   const tournaments = useMemo(() => {
-    const list = Array.isArray(tournamentsResult)
-      ? tournamentsResult
-      : (tournamentsResult as any)?.tournaments;
+    const list = normalizeList<unknown, "tournaments">(
+      tournamentsResult as unknown,
+      "tournaments",
+    );
 
-    return Array.isArray(list) ? (list as any[]) : [];
+    return list
+      .map((t) => {
+        if (!t || typeof t !== "object") return null;
+        const rec = t as Record<string, unknown>;
+        const id = rec._id;
+        const name = rec.name;
+        if (typeof id !== "string" || typeof name !== "string") return null;
+
+        return {
+          _id: id as Id<"tournaments">,
+          name,
+        };
+      })
+      .filter((t): t is { _id: Id<"tournaments">; name: string } => t !== null);
   }, [tournamentsResult]);
 
   const [tournamentId, setTournamentId] = useState<Id<"tournaments"> | null>(
@@ -291,10 +306,51 @@ function useAdminEmailsPage() {
     {},
   );
 
+  const normalizedOpenerPreview = useMemo(() => {
+    if (!openerPreview || typeof openerPreview !== "object") return null;
+    const rec = openerPreview as Record<string, unknown>;
+    if (rec.ok !== true) return null;
+
+    const activeMemberCount =
+      typeof rec.activeMemberCount === "number" ? rec.activeMemberCount : null;
+    if (activeMemberCount === null) return null;
+
+    return { activeMemberCount };
+  }, [openerPreview]);
+
   const preview = useQuery(
     api.functions.emails.adminGetGroupsEmailPreview,
     tournamentId ? { tournamentId } : "skip",
   );
+
+  const normalizedPreview = useMemo(() => {
+    if (!preview || typeof preview !== "object") return null;
+    const rec = preview as Record<string, unknown>;
+    if (rec.ok !== true) return null;
+
+    const previousTournamentName =
+      typeof rec.previousTournamentName === "string"
+        ? rec.previousTournamentName
+        : "";
+    const champions = typeof rec.champions === "string" ? rec.champions : "";
+    const recipientCount =
+      typeof rec.recipientCount === "number" ? rec.recipientCount : 0;
+    const activeTourCardCount =
+      typeof rec.activeTourCardCount === "number" ? rec.activeTourCardCount : 0;
+    const memberCount =
+      typeof rec.memberCount === "number" ? rec.memberCount : 0;
+    const groupsEmailSentAt =
+      typeof rec.groupsEmailSentAt === "number" ? rec.groupsEmailSentAt : null;
+
+    return {
+      previousTournamentName,
+      champions,
+      recipientCount,
+      activeTourCardCount,
+      memberCount,
+      groupsEmailSentAt,
+    };
+  }, [preview]);
 
   const sendTestAction = useAction(api.functions.emails.sendGroupsEmailTest);
   const sendRealAction = useAction(
@@ -395,7 +451,7 @@ function useAdminEmailsPage() {
     setCustomBlurb,
     force,
     setForce,
-    preview: preview && (preview as any).ok ? (preview as any) : null,
+    preview: normalizedPreview,
     isBusy,
     result,
     openerResult,
@@ -408,10 +464,7 @@ function useAdminEmailsPage() {
     openerCustomBlurb,
     setOpenerCustomBlurb,
     sendOpenerTest,
-    openerPreview:
-      openerPreview && (openerPreview as any).ok
-        ? (openerPreview as any)
-        : null,
+    openerPreview: normalizedOpenerPreview,
     openerConfirm,
     setOpenerConfirm,
     sendOpenerReal,

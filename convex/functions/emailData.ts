@@ -44,7 +44,7 @@ function escapeEmailText(value: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
+    .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
 
@@ -267,10 +267,11 @@ export const getActiveTourCardRecipientsForTournament = internalQuery({
         tournament,
       }));
 
-    const previousTournamentLogoUrl =
-      previous && typeof (previous as any).logoUrl === "string"
-        ? ((previous as any).logoUrl as string)
-        : "";
+    const previousTournamentLogoUrl = (() => {
+      if (!previous || typeof previous !== "object") return "";
+      const maybeLogoUrl = (previous as Record<string, unknown>)["logoUrl"];
+      return typeof maybeLogoUrl === "string" ? maybeLogoUrl : "";
+    })();
 
     const champions = previous
       ? await getChampionsStringForTournamentId({
