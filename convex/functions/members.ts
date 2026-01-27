@@ -2314,3 +2314,279 @@ export const listClerkUsers = action({
     };
   },
 });
+
+export const adminGetClerkUserCount = action({
+  args: {
+    clerkId: v.optional(v.string()),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    ok: true;
+    count: number;
+    isCapped: boolean;
+    cap: number;
+  }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    const actingClerkId = args.clerkId?.trim();
+
+    if (identity && actingClerkId && identity.subject !== actingClerkId) {
+      throw new Error("Unauthorized: Clerk ID mismatch");
+    }
+
+    if (!identity) {
+      await requireAdminByClerkId(ctx as unknown as AuthCtx, actingClerkId);
+    }
+
+    const limit = 200;
+    const cap = 5000;
+    let offset = 0;
+    let count = 0;
+
+    while (count < cap) {
+      const batch = await fetchClerkUsers({ limit, offset });
+      count += batch.length;
+      if (batch.length < limit) {
+        return { ok: true, count, isCapped: false, cap };
+      }
+      offset += limit;
+    }
+
+    return { ok: true, count, isCapped: true, cap };
+  },
+});
+
+export const adminGetAdminDashboardStats = query({
+  args: {
+    seasonId: v.id("seasons"),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const season = await ctx.db.get(args.seasonId);
+    if (!season) throw new Error("Season not found");
+
+    const previousYear = season.year - 1;
+    const previousYearSeasons = await ctx.db
+      .query("seasons")
+      .withIndex("by_year", (q) => q.eq("year", previousYear))
+      .collect();
+
+    const previousSeason =
+      previousYearSeasons.length > 0
+        ? previousYearSeasons.reduce((best, candidate) => {
+            if (candidate.number !== best.number) {
+              return candidate.number > best.number ? candidate : best;
+            }
+
+            const bestStart = best.startDate ?? 0;
+            const candidateStart = candidate.startDate ?? 0;
+            if (candidateStart !== bestStart) {
+              return candidateStart > bestStart ? candidate : best;
+            }
+
+            return candidate._creationTime > best._creationTime
+              ? candidate
+              : best;
+          }, previousYearSeasons[0])
+        : null;
+
+    const members = await ctx.db.query("members").collect();
+    const totalMembers = members.length;
+    const activeMembers = members.filter((m) => m.isActive === true).length;
+    const membersWithClerkId = members.filter(
+      (m) => typeof m.clerkId === "string" && m.clerkId.trim().length > 0,
+    ).length;
+
+    const currentTourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .collect();
+
+    const currentUniqueMembers = new Set<Id<"members">>();
+    for (const tc of currentTourCards) currentUniqueMembers.add(tc.memberId);
+
+    const previousTourCards = previousSeason
+      ? await ctx.db
+          .query("tourCards")
+          .withIndex("by_season", (q) => q.eq("seasonId", previousSeason._id))
+          .collect()
+      : [];
+
+    const previousUniqueMembers = new Set<Id<"members">>();
+    for (const tc of previousTourCards) previousUniqueMembers.add(tc.memberId);
+
+    let retainedMembers = 0;
+    for (const memberId of previousUniqueMembers) {
+      if (currentUniqueMembers.has(memberId)) retainedMembers += 1;
+    }
+
+    const newMembersWithCards =
+      currentUniqueMembers.size -
+      [...currentUniqueMembers].filter((id) => previousUniqueMembers.has(id))
+        .length;
+    const churnedMembers = previousUniqueMembers.size - retainedMembers;
+
+    const retentionRate =
+      previousUniqueMembers.size > 0
+        ? retainedMembers / previousUniqueMembers.size
+        : null;
+    const churnRate =
+      previousUniqueMembers.size > 0
+        ? churnedMembers / previousUniqueMembers.size
+        : null;
+
+    return {
+      ok: true,
+      season: {
+        seasonId: args.seasonId,
+        year: season.year,
+        number: season.number,
+      },
+      previousSeason: previousSeason
+        ? {
+            seasonId: previousSeason._id,
+            year: previousSeason.year,
+            number: previousSeason.number,
+          }
+        : null,
+      members: {
+        totalMembers,
+        activeMembers,
+        membersWithClerkId,
+        membersWithoutClerkId: totalMembers - membersWithClerkId,
+      },
+      tourCards: {
+        currentSeason: {
+          tourCardCount: currentTourCards.length,
+          uniqueMemberCount: currentUniqueMembers.size,
+        },
+        previousSeason: previousSeason
+          ? {
+              tourCardCount: previousTourCards.length,
+              uniqueMemberCount: previousUniqueMembers.size,
+            }
+          : null,
+        retainedMembers,
+        newMembersWithCards,
+        churnedMembers,
+        retentionRate,
+        churnRate,
+      },
+    };
+  },
+});
+
+export const adminGetAdminDashboardMemberGrowthByYear = query({
+  args: {
+    options: v.optional(
+      v.object({
+        startYear: v.optional(v.number()),
+        endYear: v.optional(v.number()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const members = await ctx.db.query("members").collect();
+    const nowYear = new Date().getFullYear();
+
+    const yearBuckets = new Map<
+      number,
+      { newMembers: number; newActiveMembers: number; newLinkedMembers: number }
+    >();
+
+    let minYear: number | null = null;
+    let maxYear: number | null = null;
+
+    for (const member of members) {
+      const year = new Date(member._creationTime).getFullYear();
+      if (!Number.isFinite(year)) continue;
+
+      if (minYear === null || year < minYear) minYear = year;
+      if (maxYear === null || year > maxYear) maxYear = year;
+
+      const existing = yearBuckets.get(year) ?? {
+        newMembers: 0,
+        newActiveMembers: 0,
+        newLinkedMembers: 0,
+      };
+
+      existing.newMembers += 1;
+      if (member.isActive === true) existing.newActiveMembers += 1;
+      if (typeof member.clerkId === "string" && member.clerkId.trim()) {
+        existing.newLinkedMembers += 1;
+      }
+
+      yearBuckets.set(year, existing);
+    }
+
+    const rawStart = args.options?.startYear;
+    const rawEnd = args.options?.endYear;
+
+    const computedMinYear = minYear ?? nowYear;
+    const computedMaxYear = Math.max(maxYear ?? nowYear, nowYear);
+
+    const startYear = Math.max(
+      computedMinYear,
+      typeof rawStart === "number" ? Math.trunc(rawStart) : computedMinYear,
+    );
+    const endYear = Math.min(
+      computedMaxYear,
+      typeof rawEnd === "number" ? Math.trunc(rawEnd) : computedMaxYear,
+    );
+
+    if (startYear > endYear) {
+      throw new Error("Invalid year range");
+    }
+
+    let cumulativeMembers = 0;
+    const series: Array<{
+      year: number;
+      newMembers: number;
+      newActiveMembers: number;
+      newLinkedMembers: number;
+      cumulativeMembers: number;
+      yoyNewMembersDelta: number | null;
+      yoyNewMembersRate: number | null;
+    }> = [];
+
+    for (let year = computedMinYear; year <= endYear; year += 1) {
+      const bucket = yearBuckets.get(year) ?? {
+        newMembers: 0,
+        newActiveMembers: 0,
+        newLinkedMembers: 0,
+      };
+
+      cumulativeMembers += bucket.newMembers;
+
+      if (year < startYear) continue;
+
+      const prev = yearBuckets.get(year - 1)?.newMembers ?? 0;
+      const yoyNewMembersDelta = prev > 0 ? bucket.newMembers - prev : null;
+      const yoyNewMembersRate =
+        prev > 0 ? (bucket.newMembers - prev) / prev : null;
+
+      series.push({
+        year,
+        newMembers: bucket.newMembers,
+        newActiveMembers: bucket.newActiveMembers,
+        newLinkedMembers: bucket.newLinkedMembers,
+        cumulativeMembers,
+        yoyNewMembersDelta,
+        yoyNewMembersRate,
+      });
+    }
+
+    return {
+      ok: true,
+      startYear,
+      endYear,
+      nowYear,
+      totalMembers: members.length,
+      series,
+    };
+  },
+});

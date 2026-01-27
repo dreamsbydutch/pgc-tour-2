@@ -115,7 +115,6 @@ function useAdminPanel() {
       view: "tourCards" as AdminDashboardView,
       Icon: Database,
     },
-    { label: "Seasons", view: "seasons" as AdminDashboardView, Icon: Database },
     { label: "Teams", view: "teams" as AdminDashboardView, Icon: Database },
     {
       label: "Manage Golfers",

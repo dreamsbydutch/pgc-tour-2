@@ -1,7 +1,7 @@
 import type { AdminDashboardView } from "@/lib";
 
 import { SecondaryToolbar } from "@/displays";
-import { Button, Card, CardContent, CardHeader, CardTitle } from "@/ui";
+import { Button } from "@/ui";
 
 import { AdminCronsPage } from "./AdminCronsPage";
 import { AdminGolfersPage } from "./AdminGolfersPage";
@@ -12,7 +12,7 @@ import { AdminTeamsPage } from "./AdminTeamsPage";
 import { AdminTourCardsPage } from "./AdminTourCardsPage";
 import { AdminTournamentsPage } from "./AdminTournamentsPage";
 import { MemberAccountAuditPage } from "./MemberAccountAuditPage";
-import { MissingTourCardsSection } from "@/facilitators";
+import { AdminHomeDashboard, MissingTourCardsSection } from "@/facilitators";
 
 /**
  * AdminDashboardPage
@@ -24,8 +24,8 @@ import { MissingTourCardsSection } from "@/facilitators";
  * - Renders the selected admin tool inside the same URL via the `view` search param.
  *
  * Data sources:
- * - This component does not fetch data directly.
- * - Child tool views (setup, tournaments, etc.) may fetch their own data.
+ * - The Home dashboard view renders `AdminHomeDashboard` which fetches its own data.
+ * - Other child tool views (setup, tournaments, etc.) fetch their own data.
  *
  * @param props.view Selected view key.
  * @param props.onViewChange Callback for switching views (updates the route search params).
@@ -44,14 +44,10 @@ export function AdminDashboardPage(props: {
 
         <div className="min-w-0">
           {props.view === "dashboard" ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Select an admin tool</CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">
-                Use the toolbar to open a tool.
-              </CardContent>
-            </Card>
+            <AdminHomeDashboard
+              activeView={props.view}
+              onViewChange={props.onViewChange}
+            />
           ) : null}
 
           {props.view === "leagueSetup" ? <AdminSetupPage /> : null}
@@ -108,7 +104,6 @@ function useAdminSecondaryToolbarItems(): Array<{
     { view: "missingTourCards", label: "Missing" },
     { view: "tournaments", label: "Tourn." },
     { view: "tourCards", label: "Cards" },
-    { view: "seasons", label: "Seasons" },
     { view: "teams", label: "Teams" },
     { view: "golfers", label: "Golfers" },
     { view: "memberMerge", label: "Merge" },
