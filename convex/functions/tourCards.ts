@@ -9,7 +9,9 @@ import { v } from "convex/values";
 import { requireAdmin, requireOwnResource, getCurrentMember } from "../auth";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import type { AuthCtx } from "../types/functionUtils";
 import type { ValidationResult } from "../types/types";
+import { requireAdminByClerkId } from "./_authByClerkId";
 
 const DEFAULT_MAX_PARTICIPANTS = 75;
 
@@ -773,6 +775,286 @@ export const recomputeTourCardsForSeasonAsAdmin = mutation({
     return {
       tourCardsUpdated: tourCards.length,
       completedTournamentCount: completedTournaments.length,
+    };
+  },
+});
+
+export const adminSeedFakeTourCardsForSeason = mutation({
+  args: {
+    seasonId: v.id("seasons"),
+    adminClerkId: v.optional(v.string()),
+    options: v.optional(
+      v.object({
+        perTour: v.optional(v.number()),
+        total: v.optional(v.number()),
+        memberPoolSize: v.optional(v.number()),
+        createMembers: v.optional(v.boolean()),
+        resetSeeded: v.optional(v.boolean()),
+        dryRun: v.optional(v.boolean()),
+        seed: v.optional(v.number()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (identity) {
+      await requireAdmin(ctx);
+    } else {
+      const clerkId = args.adminClerkId?.trim() || undefined;
+      await requireAdminByClerkId(ctx as unknown as AuthCtx, clerkId);
+    }
+
+    const season = await ctx.db.get(args.seasonId);
+    if (!season) throw new Error("Season not found");
+
+    const options = args.options ?? {};
+    const dryRun = options.dryRun === true;
+    const resetSeeded = options.resetSeeded === true;
+
+    const seedDomain = "seed.pgc.local";
+    const emailPrefix = `seed+${season.year}-`;
+    const now = Date.now();
+
+    const tours = await ctx.db
+      .query("tours")
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .collect();
+
+    if (tours.length === 0) {
+      throw new Error(
+        "No tours found for that season. Create tours first, then seed tour cards.",
+      );
+    }
+
+    const existingSeasonCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .collect();
+
+    let deletedSeededTourCards = 0;
+    if (resetSeeded) {
+      for (const card of existingSeasonCards) {
+        const member = await ctx.db.get(card.memberId);
+        const email = member?.email ?? "";
+        const isSeeded =
+          typeof email === "string" &&
+          email.startsWith(emailPrefix) &&
+          email.endsWith(`@${seedDomain}`);
+
+        if (!isSeeded) continue;
+        if (dryRun) {
+          deletedSeededTourCards += 1;
+        } else {
+          await ctx.db.delete(card._id);
+          deletedSeededTourCards += 1;
+        }
+      }
+    }
+
+    const existingPairs = new Set<string>();
+    for (const card of existingSeasonCards) {
+      existingPairs.add(`${card.memberId}|${card.tourId}`);
+    }
+
+    const initialMembers = await ctx.db.query("members").collect();
+    const seededMembers = initialMembers.filter(
+      (m) =>
+        typeof m.email === "string" &&
+        m.email.startsWith(emailPrefix) &&
+        m.email.endsWith(`@${seedDomain}`),
+    );
+    const realMembers = initialMembers.filter(
+      (m) => typeof m.email === "string" && !m.email.endsWith(`@${seedDomain}`),
+    );
+
+    const perTour =
+      typeof options.perTour === "number" && Number.isFinite(options.perTour)
+        ? Math.max(0, Math.trunc(options.perTour))
+        : null;
+    const total =
+      typeof options.total === "number" && Number.isFinite(options.total)
+        ? Math.max(0, Math.trunc(options.total))
+        : null;
+
+    const computedTotal = total ?? (perTour ?? 30) * tours.length;
+    const requestedMemberPoolSize =
+      typeof options.memberPoolSize === "number" &&
+      Number.isFinite(options.memberPoolSize)
+        ? Math.max(0, Math.trunc(options.memberPoolSize))
+        : computedTotal;
+
+    const shouldCreateMembers = options.createMembers !== false;
+    const memberPool: Array<Doc<"members">> = [...realMembers, ...seededMembers];
+
+    const firstNames = [
+      "Alex",
+      "Jordan",
+      "Taylor",
+      "Casey",
+      "Riley",
+      "Morgan",
+      "Avery",
+      "Cameron",
+      "Quinn",
+      "Parker",
+      "Drew",
+      "Reese",
+    ];
+    const lastNames = [
+      "Smith",
+      "Johnson",
+      "Williams",
+      "Brown",
+      "Jones",
+      "Miller",
+      "Davis",
+      "Garcia",
+      "Rodriguez",
+      "Wilson",
+      "Martinez",
+      "Anderson",
+      "Taylor",
+      "Thomas",
+      "Moore",
+    ];
+
+    let rngState =
+      typeof options.seed === "number" && Number.isFinite(options.seed)
+        ? Math.trunc(options.seed)
+        : season.year * 1000 + season.number;
+    const nextRand = () => {
+      rngState = (rngState * 1664525 + 1013904223) % 0x100000000;
+      return rngState / 0x100000000;
+    };
+    const pick = <T,>(values: T[]): T => {
+      const idx = Math.floor(nextRand() * values.length);
+      return values[Math.max(0, Math.min(values.length - 1, idx))];
+    };
+
+    let createdMembers = 0;
+    if (shouldCreateMembers) {
+      const have = memberPool.filter((m) => !m.email.endsWith(`@${seedDomain}`))
+        .length;
+      const need = Math.max(0, requestedMemberPoolSize - have);
+      for (let i = 0; i < need; i += 1) {
+        const firstname = pick(firstNames);
+        const lastname = pick(lastNames);
+        const email = `${emailPrefix}${String(i + 1).padStart(4, "0")}@${seedDomain}`;
+        if (dryRun) {
+          createdMembers += 1;
+          continue;
+        }
+
+        const id = await ctx.db.insert("members", {
+          email,
+          firstname,
+          lastname,
+          isActive: true,
+          role: "regular",
+          account: 0,
+          friends: [],
+          updatedAt: now,
+        });
+        const doc = await ctx.db.get(id);
+        if (doc) {
+          memberPool.push(doc);
+          createdMembers += 1;
+        }
+      }
+    }
+
+    if (memberPool.length === 0) {
+      throw new Error(
+        "No members available to assign tour cards to. Create members first.",
+      );
+    }
+
+    const perTourCounts = (() => {
+      if (perTour !== null) {
+        return tours.map(() => perTour);
+      }
+
+      const base = Math.floor(computedTotal / tours.length);
+      const rem = computedTotal - base * tours.length;
+      return tours.map((_, i) => base + (i < rem ? 1 : 0));
+    })();
+
+    let createdTourCards = 0;
+    let skippedExisting = 0;
+
+    for (let tourIndex = 0; tourIndex < tours.length; tourIndex += 1) {
+      const tour = tours[tourIndex];
+      const targetCount = perTourCounts[tourIndex] ?? 0;
+      const usedMembersForTour = new Set<string>();
+
+      let createdForTour = 0;
+      let attempts = 0;
+      const maxAttempts = targetCount * 10 + 50;
+
+      while (createdForTour < targetCount && attempts < maxAttempts) {
+        attempts += 1;
+        const member = pick(memberPool);
+        const memberKey = String(member._id);
+        if (usedMembersForTour.has(memberKey)) continue;
+        const pairKey = `${member._id}|${tour._id}`;
+        if (existingPairs.has(pairKey)) {
+          skippedExisting += 1;
+          usedMembersForTour.add(memberKey);
+          continue;
+        }
+
+        const firstname = (member.firstname ?? "").trim() || pick(firstNames);
+        const lastname = (member.lastname ?? "").trim() || pick(lastNames);
+        const displayName = `${firstname} ${lastname}`.trim();
+
+        const appearances = 20;
+        const madeCut = Math.max(0, Math.min(appearances, Math.floor(nextRand() * 20)));
+        const topTen = Math.max(0, Math.min(madeCut, Math.floor(nextRand() * 10)));
+        const wins = Math.floor(nextRand() * 3);
+        const topFive = Math.max(0, Math.min(topTen, Math.floor(nextRand() * 5)));
+        const points = Math.floor(nextRand() * 2000);
+        const earnings = Math.floor(nextRand() * 1_000_000);
+
+        if (!dryRun) {
+          await ctx.db.insert("tourCards", {
+            memberId: member._id,
+            displayName,
+            tourId: tour._id,
+            seasonId: args.seasonId,
+            earnings,
+            points,
+            wins,
+            topTen,
+            topFive,
+            madeCut,
+            appearances,
+            updatedAt: now,
+          });
+        }
+
+        existingPairs.add(pairKey);
+        usedMembersForTour.add(memberKey);
+        createdForTour += 1;
+        createdTourCards += 1;
+      }
+    }
+
+    return {
+      ok: true as const,
+      dryRun,
+      resetSeeded,
+      season: {
+        seasonId: args.seasonId,
+        year: season.year,
+        number: season.number,
+      },
+      tourCount: tours.length,
+      computedTotal,
+      memberPoolSize: memberPool.length,
+      createdMembers,
+      deletedSeededTourCards,
+      createdTourCards,
+      skippedExisting,
     };
   },
 });
