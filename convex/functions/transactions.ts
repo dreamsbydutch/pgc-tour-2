@@ -196,7 +196,8 @@ function readOptionalNonNegativeCents(args: {
     return requirePositiveCentsFromDollarsString(amountDollars, "Amount");
   }
   if (typeof args.amountCents === "number") {
-    if (!Number.isFinite(args.amountCents)) throw new Error("Amount must be a number");
+    if (!Number.isFinite(args.amountCents))
+      throw new Error("Amount must be a number");
     const cents = Math.trunc(args.amountCents);
     if (cents !== args.amountCents) {
       throw new Error("Amount must be an integer (cents)");

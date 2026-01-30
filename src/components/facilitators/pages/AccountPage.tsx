@@ -145,18 +145,25 @@ export function AccountPage() {
                   {vm.balanceSummary ? (
                     <>
                       <div>
-                        Balance: <span className="font-medium">{formatMoney(vm.balanceSummary.accountCents)}</span>
+                        Balance:{" "}
+                        <span className="font-medium">
+                          {formatMoney(vm.balanceSummary.accountCents)}
+                        </span>
                       </div>
                       <div>
                         Pending withdrawals:{" "}
                         <span className="font-medium">
-                          {formatMoneyWithCents(vm.balanceSummary.pendingWithdrawalCents)}
+                          {formatMoneyWithCents(
+                            vm.balanceSummary.pendingWithdrawalCents,
+                          )}
                         </span>
                       </div>
                       <div>
                         Available:{" "}
                         <span className="font-medium">
-                          {formatMoneyWithCents(vm.balanceSummary.availableCents)}
+                          {formatMoneyWithCents(
+                            vm.balanceSummary.availableCents,
+                          )}
                         </span>
                       </div>
                     </>
