@@ -884,7 +884,10 @@ export const adminSeedFakeTourCardsForSeason = mutation({
         : computedTotal;
 
     const shouldCreateMembers = options.createMembers !== false;
-    const memberPool: Array<Doc<"members">> = [...realMembers, ...seededMembers];
+    const memberPool: Array<Doc<"members">> = [
+      ...realMembers,
+      ...seededMembers,
+    ];
 
     const firstNames = [
       "Alex",
@@ -926,15 +929,16 @@ export const adminSeedFakeTourCardsForSeason = mutation({
       rngState = (rngState * 1664525 + 1013904223) % 0x100000000;
       return rngState / 0x100000000;
     };
-    const pick = <T,>(values: T[]): T => {
+    const pick = <T>(values: T[]): T => {
       const idx = Math.floor(nextRand() * values.length);
       return values[Math.max(0, Math.min(values.length - 1, idx))];
     };
 
     let createdMembers = 0;
     if (shouldCreateMembers) {
-      const have = memberPool.filter((m) => !m.email.endsWith(`@${seedDomain}`))
-        .length;
+      const have = memberPool.filter(
+        (m) => !m.email.endsWith(`@${seedDomain}`),
+      ).length;
       const need = Math.max(0, requestedMemberPoolSize - have);
       for (let i = 0; i < need; i += 1) {
         const firstname = pick(firstNames);
@@ -1008,10 +1012,19 @@ export const adminSeedFakeTourCardsForSeason = mutation({
         const displayName = `${firstname} ${lastname}`.trim();
 
         const appearances = 20;
-        const madeCut = Math.max(0, Math.min(appearances, Math.floor(nextRand() * 20)));
-        const topTen = Math.max(0, Math.min(madeCut, Math.floor(nextRand() * 10)));
+        const madeCut = Math.max(
+          0,
+          Math.min(appearances, Math.floor(nextRand() * 20)),
+        );
+        const topTen = Math.max(
+          0,
+          Math.min(madeCut, Math.floor(nextRand() * 10)),
+        );
         const wins = Math.floor(nextRand() * 3);
-        const topFive = Math.max(0, Math.min(topTen, Math.floor(nextRand() * 5)));
+        const topFive = Math.max(
+          0,
+          Math.min(topTen, Math.floor(nextRand() * 5)),
+        );
         const points = Math.floor(nextRand() * 2000);
         const earnings = Math.floor(nextRand() * 1_000_000);
 
