@@ -187,6 +187,26 @@ function requirePositiveCents(args: {
   throw new Error("Amount is required");
 }
 
+function readOptionalNonNegativeCents(args: {
+  amountCents?: number;
+  amountDollars?: string;
+}): number {
+  const amountDollars = args.amountDollars?.trim();
+  if (amountDollars) {
+    return requirePositiveCentsFromDollarsString(amountDollars, "Amount");
+  }
+  if (typeof args.amountCents === "number") {
+    if (!Number.isFinite(args.amountCents)) throw new Error("Amount must be a number");
+    const cents = Math.trunc(args.amountCents);
+    if (cents !== args.amountCents) {
+      throw new Error("Amount must be an integer (cents)");
+    }
+    if (cents < 0) throw new Error("Amount must be non-negative");
+    return cents;
+  }
+  return 0;
+}
+
 function requireValidEmail(value: string, label: string) {
   const trimmed = value.trim();
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -210,6 +230,153 @@ async function getPendingWithdrawalSumCents(
 
   return pending.reduce((sum, t) => sum + t.amount, 0);
 }
+
+export const getMyBalanceSummary = query({
+  args: {},
+  handler: async (ctx) => {
+    const member = await getActingMember(ctx);
+    const pendingWithdrawalCents = await getPendingWithdrawalSumCents(
+      ctx,
+      member._id,
+    );
+    return {
+      accountCents: member.account,
+      pendingWithdrawalCents,
+      availableCents: member.account + pendingWithdrawalCents,
+    };
+  },
+});
+
+export const createMyWithdrawalAndDonations = mutation({
+  args: {
+    seasonId: v.id("seasons"),
+    payoutEmail: v.optional(v.string()),
+    withdrawalAmountCents: v.optional(v.number()),
+    withdrawalAmountDollars: v.optional(v.string()),
+    leagueDonationCents: v.optional(v.number()),
+    leagueDonationDollars: v.optional(v.string()),
+    charityDonationCents: v.optional(v.number()),
+    charityDonationDollars: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const member = await getActingMember(ctx);
+
+    const withdrawalCents = readOptionalNonNegativeCents({
+      amountCents: args.withdrawalAmountCents,
+      amountDollars: args.withdrawalAmountDollars,
+    });
+    const leagueCents = readOptionalNonNegativeCents({
+      amountCents: args.leagueDonationCents,
+      amountDollars: args.leagueDonationDollars,
+    });
+    const charityCents = readOptionalNonNegativeCents({
+      amountCents: args.charityDonationCents,
+      amountDollars: args.charityDonationDollars,
+    });
+
+    if (withdrawalCents === 0 && leagueCents === 0 && charityCents === 0) {
+      throw new Error("Enter an e-transfer amount and/or donation amount");
+    }
+
+    const payoutEmail =
+      withdrawalCents > 0
+        ? requireValidEmail(args.payoutEmail ?? "", "E-transfer email")
+        : undefined;
+
+    const signedWithdrawal =
+      withdrawalCents > 0
+        ? toSignedAmountCents({
+            transactionType: "Withdrawal",
+            amountCents: withdrawalCents,
+          })
+        : 0;
+    const signedLeague =
+      leagueCents > 0
+        ? toSignedAmountCents({
+            transactionType: "LeagueDonation",
+            amountCents: leagueCents,
+          })
+        : 0;
+    const signedCharity =
+      charityCents > 0
+        ? toSignedAmountCents({
+            transactionType: "CharityDonation",
+            amountCents: charityCents,
+          })
+        : 0;
+
+    const pendingWithdrawalSum = await getPendingWithdrawalSumCents(
+      ctx,
+      member._id,
+    );
+
+    const signedTotal = signedWithdrawal + signedLeague + signedCharity;
+    if (member.account + pendingWithdrawalSum + signedTotal < 0) {
+      throw new Error("Insufficient available balance");
+    }
+
+    const now = Date.now();
+    const created: {
+      withdrawalId?: Id<"transactions">;
+      leagueDonationId?: Id<"transactions">;
+      charityDonationId?: Id<"transactions">;
+    } = {};
+
+    if (leagueCents > 0) {
+      created.leagueDonationId = await ctx.db.insert("transactions", {
+        memberId: member._id,
+        seasonId: args.seasonId,
+        amount: signedLeague,
+        transactionType: "LeagueDonation",
+        status: "completed",
+        processedAt: now,
+        updatedAt: now,
+      });
+    }
+
+    if (charityCents > 0) {
+      created.charityDonationId = await ctx.db.insert("transactions", {
+        memberId: member._id,
+        seasonId: args.seasonId,
+        amount: signedCharity,
+        transactionType: "CharityDonation",
+        status: "completed",
+        processedAt: now,
+        updatedAt: now,
+      });
+    }
+
+    const signedDonationTotal = signedLeague + signedCharity;
+    const updatedAccountCents = member.account + signedDonationTotal;
+    if (signedDonationTotal !== 0) {
+      await ctx.db.patch(member._id, {
+        account: updatedAccountCents,
+        updatedAt: now,
+      });
+    }
+
+    if (withdrawalCents > 0) {
+      created.withdrawalId = await ctx.db.insert("transactions", {
+        memberId: member._id,
+        seasonId: args.seasonId,
+        amount: signedWithdrawal,
+        transactionType: "Withdrawal",
+        status: "pending",
+        payoutEmail,
+        updatedAt: now,
+      });
+    }
+
+    return {
+      ok: true,
+      created,
+      accountCents: updatedAccountCents,
+      pendingWithdrawalCents: pendingWithdrawalSum + signedWithdrawal,
+      availableCents:
+        updatedAccountCents + (pendingWithdrawalSum + signedWithdrawal),
+    } as const;
+  },
+});
 
 export const createTransactions = mutation({
   args: {
