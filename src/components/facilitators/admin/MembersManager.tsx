@@ -75,7 +75,7 @@ export function MembersManager() {
             />
           </Field>
 
-          <Field label="Display name (optional)">
+          <Field label="Tour card display name (derived)">
             <input
               value={model.form.displayName}
               readOnly
@@ -531,7 +531,6 @@ function useMembersManager() {
             email,
             ...(firstname ? { firstname } : { firstname: "" }),
             ...(lastname ? { lastname } : { lastname: "" }),
-            displayName: derivedDisplayName,
             ...(form.role
               ? { role: form.role as Exclude<MemberFormState["role"], ""> }
               : {}),

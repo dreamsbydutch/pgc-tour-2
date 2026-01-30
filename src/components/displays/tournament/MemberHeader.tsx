@@ -6,7 +6,6 @@ import { useMemo } from "react";
  * Displays a member display name.
  *
  * Behavior:
- * - Prefers `member.displayName`.
  * - Falls back to `firstname` + `lastname`.
  * - Falls back to `email`.
  *
@@ -15,7 +14,6 @@ import { useMemo } from "react";
  */
 export function MemberHeader(props: {
   member: {
-    displayName?: string | null;
     firstname?: string | null;
     lastname?: string | null;
     email?: string | null;
@@ -35,7 +33,6 @@ export function MemberHeader(props: {
  */
 function useMemberHeader(args: {
   member: {
-    displayName?: string | null;
     firstname?: string | null;
     lastname?: string | null;
     email?: string | null;
@@ -43,18 +40,12 @@ function useMemberHeader(args: {
 }) {
   return useMemo(() => {
     const displayName =
-      args.member.displayName ||
       `${args.member.firstname || ""} ${args.member.lastname || ""}`.trim() ||
       args.member.email ||
       "Unknown Member";
 
     return { displayName };
-  }, [
-    args.member.displayName,
-    args.member.email,
-    args.member.firstname,
-    args.member.lastname,
-  ]);
+  }, [args.member.email, args.member.firstname, args.member.lastname]);
 }
 
 /**

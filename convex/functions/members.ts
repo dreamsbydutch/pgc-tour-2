@@ -121,7 +121,6 @@ function validateMemberData(data: {
   email?: string;
   firstname?: string;
   lastname?: string;
-  displayName?: string;
   isActive?: boolean;
   role?: "admin" | "moderator" | "regular";
   account?: number;
@@ -154,14 +153,6 @@ function validateMemberData(data: {
     "Last name",
   );
   if (lastnameErr) errors.push(lastnameErr);
-
-  const displayNameErr = validators.stringLength(
-    data.displayName,
-    0,
-    100,
-    "Display name",
-  );
-  if (displayNameErr) errors.push(displayNameErr);
 
   if (data.account !== undefined) {
     if (!Number.isFinite(data.account)) {
@@ -295,10 +286,31 @@ function generateDisplayName(
   return "Anonymous User";
 }
 
-function readOptionalDisplayName(value: unknown): string | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const dn = (value as { displayName?: unknown }).displayName;
-  return typeof dn === "string" && dn.trim() ? dn.trim() : undefined;
+function formatTourCardDisplayName(
+  firstname?: string,
+  lastname?: string,
+  email?: string,
+): string {
+  const first = normalizePersonName(firstname);
+  const last = normalizePersonName(lastname);
+
+  if (first && last) {
+    return `${first[0].toUpperCase()}. ${last}`;
+  }
+
+  if (last) {
+    return last;
+  }
+
+  if (first) {
+    return `${first[0].toUpperCase()}.`;
+  }
+
+  if (email) {
+    return email.split("@")[0];
+  }
+
+  return "Anonymous User";
 }
 
 /**
@@ -648,6 +660,7 @@ export const getMembers = query({
       fullName: generateFullName(member.firstname, member.lastname),
       formattedBalance: formatCents(member.account),
       effectiveDisplayName: generateDisplayName(
+        undefined,
         member.firstname,
         member.lastname,
         member.email,
@@ -1030,7 +1043,6 @@ export const updateMembers = mutation({
       email: v.optional(v.string()),
       firstname: v.optional(v.string()),
       lastname: v.optional(v.string()),
-      displayName: v.optional(v.string()),
       isActive: v.optional(v.boolean()),
       role: v.optional(
         v.union(
@@ -1138,17 +1150,12 @@ export const updateMembers = mutation({
       const effectiveEmail = updateData.email ?? member.email;
       const effectiveFirst = updateData.firstname ?? member.firstname;
       const effectiveLast = updateData.lastname ?? member.lastname;
-      const effectiveDisplayName =
-        args.data.displayName ?? readOptionalDisplayName(member);
-
-      const nextTourCardDisplayName = generateDisplayName(
-        typeof effectiveDisplayName === "string"
-          ? effectiveDisplayName
-          : undefined,
-        effectiveFirst,
-        effectiveLast,
-        effectiveEmail,
-      );
+      const resolvedTourCardDisplayName =
+        formatTourCardDisplayName(
+          effectiveFirst,
+          effectiveLast,
+          effectiveEmail,
+        );
 
       const currentYear = new Date().getFullYear();
       const seasonsForYear = await ctx.db
@@ -1185,9 +1192,9 @@ export const updateMembers = mutation({
             ];
 
         for (const tc of candidates) {
-          if (tc.displayName === nextTourCardDisplayName) continue;
+          if (tc.displayName === resolvedTourCardDisplayName) continue;
           await ctx.db.patch(tc._id, {
-            displayName: nextTourCardDisplayName,
+            displayName: resolvedTourCardDisplayName,
             updatedAt: Date.now(),
           });
         }
@@ -2031,7 +2038,11 @@ export const adminGetMemberMergePreview = query({
         _id: source._id,
         clerkId: source.clerkId ?? null,
         email: source.email,
-        displayName: readOptionalDisplayName(source) ?? null,
+        displayName: formatTourCardDisplayName(
+          source.firstname,
+          source.lastname,
+          source.email,
+        ),
         firstname: source.firstname ?? null,
         lastname: source.lastname ?? null,
         role: source.role,
@@ -2043,7 +2054,11 @@ export const adminGetMemberMergePreview = query({
             _id: target._id,
             clerkId: target.clerkId ?? null,
             email: target.email,
-            displayName: readOptionalDisplayName(target) ?? null,
+            displayName: formatTourCardDisplayName(
+              target.firstname,
+              target.lastname,
+              target.email,
+            ),
             firstname: target.firstname ?? null,
             lastname: target.lastname ?? null,
             role: target.role,
@@ -2144,11 +2159,6 @@ export const adminMergeMembers = mutation({
     }
     if (!target.lastname && source.lastname) {
       targetPatch.lastname = source.lastname;
-    }
-    const targetDisplayName = readOptionalDisplayName(target);
-    const sourceDisplayName = readOptionalDisplayName(source);
-    if (!targetDisplayName && sourceDisplayName) {
-      targetPatch.displayName = sourceDisplayName;
     }
 
     await ctx.db.patch(args.targetMemberId, targetPatch);
