@@ -2233,6 +2233,9 @@ export const adminRunCronJob = action({
                   playerName: g.player_name,
                   country: g.country,
                   worldRank: g.ranking?.owgr_rank,
+                  rating: normalizeDgSkillEstimateToPgcRating(
+                    g.ranking?.dg_skill_estimate ?? -1.875,
+                  ),
                   ...(typeof g.r1_teetime === "string" &&
                   g.r1_teetime.trim().length
                     ? {
@@ -2247,12 +2250,39 @@ export const adminRunCronJob = action({
                 })),
               }));
 
+              const resolvedTournamentId =
+                target &&
+                typeof target === "object" &&
+                "tournamentId" in target &&
+                typeof (target as { tournamentId?: unknown }).tournamentId ===
+                  "string"
+                  ? (target as { tournamentId: string }).tournamentId
+                  : null;
+
+              const tournamentGolfers = payload.flatMap((group) =>
+                group.golfers.map((g) => ({
+                  tournamentId: resolvedTournamentId,
+                  golferApiId: g.dgId,
+                  group: group.groupNumber,
+                  worldRank: g.worldRank ?? 501,
+                  rating: g.rating,
+                  ...(typeof g.r1TeeTime === "string"
+                    ? { roundOneTeeTime: g.r1TeeTime }
+                    : {}),
+                  ...(typeof g.r2TeeTime === "string"
+                    ? { roundTwoTeeTime: g.r2TeeTime }
+                    : {}),
+                })),
+              );
+
               return {
                 ok: true,
                 skipped: false,
                 dataGolfEventName,
                 totalGolfers: processed.length,
+                tournamentId: resolvedTournamentId,
                 groups: payload,
+                tournamentGolfers,
                 groupSizes: payload.map((g) => ({
                   groupNumber: g.groupNumber,
                   golfers: g.golfers.length,

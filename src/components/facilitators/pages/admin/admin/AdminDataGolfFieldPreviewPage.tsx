@@ -101,6 +101,22 @@ export function AdminDataGolfFieldPreviewPage() {
 
         <Card>
           <CardHeader>
+            <CardTitle>Tournament Golfers (DB Payload)</CardTitle>
+            <CardDescription>
+              Flat list of tournament-golfer records that would be written
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <pre className="max-h-[520px] overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-50">
+              {vm.tournamentGolfers
+                ? JSON.stringify(vm.tournamentGolfers, null, 2)
+                : "(no preview run yet)"}
+            </pre>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle>Incoming DataGolf Input</CardTitle>
             <CardDescription>Raw DataGolf field-updates payload</CardDescription>
           </CardHeader>
@@ -129,6 +145,7 @@ function useAdminDataGolfFieldPreviewPage(): {
   lastResult: unknown | null;
   setLastResult: React.Dispatch<React.SetStateAction<unknown | null>>;
   cronOutput: unknown | null;
+  tournamentGolfers: unknown | null;
   incomingFieldUpdates: unknown | null;
   onRun: () => Promise<void>;
 } {
@@ -169,7 +186,7 @@ function useAdminDataGolfFieldPreviewPage(): {
     }
   }
 
-  const { cronOutput, incomingFieldUpdates } = useMemo(() => {
+  const { cronOutput, tournamentGolfers, incomingFieldUpdates } = useMemo(() => {
     const raw = lastResult as unknown;
 
     if (!raw || typeof raw !== "object") {
@@ -194,6 +211,13 @@ function useAdminDataGolfFieldPreviewPage(): {
     const cronOutput =
       "cronOutput" in result ? (result as { cronOutput?: unknown }).cronOutput : null;
 
+    const tournamentGolfers = (() => {
+      if (!cronOutput || typeof cronOutput !== "object") return null;
+      return "tournamentGolfers" in cronOutput
+        ? (cronOutput as { tournamentGolfers?: unknown }).tournamentGolfers ?? null
+        : null;
+    })();
+
     const incoming =
       "incoming" in result ? (result as { incoming?: unknown }).incoming : null;
 
@@ -204,6 +228,7 @@ function useAdminDataGolfFieldPreviewPage(): {
 
     return {
       cronOutput: cronOutput ?? result,
+      tournamentGolfers,
       incomingFieldUpdates: fieldUpdates,
     };
   }, [lastResult]);
@@ -216,6 +241,7 @@ function useAdminDataGolfFieldPreviewPage(): {
     lastResult,
     setLastResult,
     cronOutput,
+    tournamentGolfers,
     incomingFieldUpdates,
     onRun,
   };
