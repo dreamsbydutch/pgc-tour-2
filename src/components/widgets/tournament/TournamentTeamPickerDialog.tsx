@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { api, useMutation, useQuery, type Id } from "@/convex";
+import { cn } from "@/lib";
 import {
   Button,
   Dialog,
@@ -43,6 +44,25 @@ export function TournamentTeamPickerDialog(props: {
 }) {
   const model = useTournamentTeamPickerDialog(props);
 
+  const [expandedCompletedGroups, setExpandedCompletedGroups] = useState<
+    Set<number>
+  >(new Set());
+
+  useEffect(() => {
+    if (model.kind !== "ready") return;
+
+    setExpandedCompletedGroups((prev) => {
+      const next = new Set(prev);
+
+      for (const group of model.groups) {
+        if (group.groupKey === 0) continue;
+        if (group.selectedCount < 2) next.delete(group.groupKey);
+      }
+
+      return next;
+    });
+  }, [model.kind, model.kind === "ready" ? model.groups : null]);
+
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent className="max-h-[80vh] overflow-y-auto">
@@ -65,38 +85,28 @@ export function TournamentTeamPickerDialog(props: {
           ) : (
             <div className="space-y-4">
               {model.groups.map((group) => (
-                <div key={group.groupKey} className="rounded-md border p-3">
-                  <div className="mb-2 flex items-baseline justify-between">
-                    <div className="font-semibold">{group.label}</div>
-                    <div className="text-xs text-gray-600">
-                      {group.selectedCount}/2 selected
-                    </div>
-                  </div>
+                <TournamentTeamPickerGroup
+                  key={group.groupKey}
+                  group={group}
+                  isCollapsed={
+                    group.groupKey !== 0 &&
+                    group.selectedCount >= 2 &&
+                    !expandedCompletedGroups.has(group.groupKey)
+                  }
+                  onToggleCollapse={() => {
+                    setExpandedCompletedGroups((prev) => {
+                      const next = new Set(prev);
+                      const isCompleted = group.groupKey !== 0 && group.selectedCount >= 2;
+                      if (!isCompleted) return next;
 
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {group.golfers.map((g) => (
-                      <label
-                        key={g.golferApiId}
-                        className="flex cursor-pointer items-center gap-2 rounded-md border px-2 py-2"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={g.isSelected}
-                          disabled={g.isDisabled}
-                          onChange={() => model.toggleGolfer(g.golferApiId)}
-                        />
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium">
-                            {g.playerName}
-                          </div>
-                          <div className="text-xs text-gray-600">
-                            {g.worldRank != null ? `WGR #${g.worldRank}` : "WGR -"}
-                          </div>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </div>
+                      if (next.has(group.groupKey)) next.delete(group.groupKey);
+                      else next.add(group.groupKey);
+
+                      return next;
+                    });
+                  }}
+                  onToggleGolfer={model.toggleGolfer}
+                />
               ))}
 
               <div className="text-center text-sm text-gray-700">
@@ -123,6 +133,86 @@ export function TournamentTeamPickerDialog(props: {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * A single group section inside `TournamentTeamPickerDialog`.
+ *
+ * @param props.group - Group model.
+ * @param props.isCollapsed - Whether the section is collapsed.
+ * @param props.onToggleCollapse - Toggle handler for the section.
+ * @param props.onToggleGolfer - Toggle handler for a golfer checkbox.
+ * @returns A bordered section with an optional collapsed body.
+ */
+function TournamentTeamPickerGroup(props: {
+  group: {
+    groupKey: number;
+    label: string;
+    selectedCount: number;
+    golfers: Array<{
+      golferApiId: number;
+      playerName: string;
+      group: number | null;
+      worldRank: number | null;
+      isSelected: boolean;
+      isDisabled: boolean;
+    }>;
+  };
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
+  onToggleGolfer: (apiId: number) => void;
+}) {
+  const isCollapsible = props.group.groupKey !== 0 && props.group.selectedCount >= 2;
+
+  return (
+    <div className="rounded-md border p-3">
+      <button
+        type="button"
+        className={cn(
+          "mb-2 flex w-full items-baseline justify-between text-left",
+          isCollapsible && "cursor-pointer",
+        )}
+        onClick={() => {
+          if (!isCollapsible) return;
+          props.onToggleCollapse();
+        }}
+      >
+        <div className="font-semibold">
+          {props.group.label}
+          {isCollapsible ? (
+            <span className="ml-2 text-xs font-normal text-gray-600">
+              {props.isCollapsed ? "(collapsed)" : "(expanded)"}
+            </span>
+          ) : null}
+        </div>
+        <div className="text-xs text-gray-600">{props.group.selectedCount}/2</div>
+      </button>
+
+      {props.isCollapsed ? null : (
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {props.group.golfers.map((g) => (
+            <label
+              key={g.golferApiId}
+              className="flex cursor-pointer items-center gap-2 rounded-md border px-2 py-2"
+            >
+              <input
+                type="checkbox"
+                checked={g.isSelected}
+                disabled={g.isDisabled}
+                onChange={() => props.onToggleGolfer(g.golferApiId)}
+              />
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">{g.playerName}</div>
+                <div className="text-xs text-gray-600">
+                  {g.worldRank != null ? `WGR #${g.worldRank}` : "WGR -"}
+                </div>
+              </div>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
