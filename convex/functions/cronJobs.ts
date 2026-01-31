@@ -502,6 +502,11 @@ export const runCreateGroupsForNextTournament: ReturnType<
       ctx.runAction(api.functions.datagolf.fetchDataGolfRankings, {}),
     ]);
 
+    console.log(
+      "[create_groups_for_next_tournament] DataGolf field-updates payload",
+      fieldUpdates,
+    );
+
     const dataGolfEventName =
       typeof (fieldUpdates as { event_name?: unknown }).event_name === "string"
         ? (fieldUpdates as { event_name: string }).event_name
@@ -532,6 +537,11 @@ export const runCreateGroupsForNextTournament: ReturnType<
     const field = Array.isArray((fieldUpdates as { field?: unknown }).field)
       ? ((fieldUpdates as { field: unknown[] }).field as FieldPlayer[])
       : [];
+
+    console.log(
+      "[create_groups_for_next_tournament] DataGolf field length",
+      field.length,
+    );
 
     const rankingsList = Array.isArray(
       (rankings as { rankings?: unknown }).rankings,
@@ -2063,7 +2073,7 @@ export const adminRunCronJob = action({
         throw new Error("Forbidden: Moderator or admin access required");
       }
 
-      if (!args.confirm) {
+      if (!args.confirm && args.job !== "create_groups_for_next_tournament") {
         throw new Error(
           "Confirmation required: set confirm=true to run a mutating cron job",
         );
@@ -2090,10 +2100,34 @@ export const adminRunCronJob = action({
           break;
         }
         case "create_groups_for_next_tournament": {
-          result = await ctx.runAction(
-            internal.functions.cronJobs.runCreateGroupsForNextTournament,
-            { tournamentId },
-          );
+          if (!args.confirm) {
+            const target = await ctx.runQuery(
+              internal.functions.cronJobs.getCreateGroupsTarget,
+              { tournamentId },
+            );
+
+            const fieldUpdates = await ctx.runAction(
+              api.functions.datagolf.fetchFieldUpdates,
+              { options: { tour: "pga" } },
+            );
+
+            console.log(
+              "[adminRunCronJob:preview] DataGolf field-updates payload",
+              fieldUpdates,
+            );
+
+            result = {
+              mode: "preview" as const,
+              job: "create_groups_for_next_tournament" as const,
+              target,
+              fieldUpdates,
+            };
+          } else {
+            result = await ctx.runAction(
+              internal.functions.cronJobs.runCreateGroupsForNextTournament,
+              { tournamentId },
+            );
+          }
           break;
         }
         case "recompute_standings": {

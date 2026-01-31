@@ -4,6 +4,7 @@ import { SecondaryToolbar } from "@/displays";
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/ui";
 
 import { AdminCronsPage } from "./AdminCronsPage";
+import { AdminDataGolfFieldPreviewPage } from "./AdminDataGolfFieldPreviewPage";
 import { AdminGolfersPage } from "./AdminGolfersPage";
 import { AdminMemberMergePage } from "./AdminMemberMergePage";
 import { AdminSeasonsPage } from "./AdminSeasonsPage";
@@ -66,6 +67,9 @@ export function AdminDashboardPage(props: {
           {props.view === "memberMerge" ? <AdminMemberMergePage /> : null}
           {props.view === "accountAudit" ? <MemberAccountAuditPage /> : null}
           {props.view === "crons" ? <AdminCronsPage /> : null}
+          {props.view === "datagolfFieldPreview" ? (
+            <AdminDataGolfFieldPreviewPage />
+          ) : null}
         </div>
       </div>
 
@@ -114,5 +118,6 @@ function useAdminSecondaryToolbarItems(): Array<{
     { view: "memberMerge", label: "Merge" },
     { view: "accountAudit", label: "Audit" },
     { view: "crons", label: "Crons" },
+    { view: "datagolfFieldPreview", label: "DG Field" },
   ];
 }

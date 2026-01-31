@@ -28,6 +28,7 @@ export const ADMIN_DASHBOARD_VIEWS = [
   "memberMerge",
   "accountAudit",
   "crons",
+  "datagolfFieldPreview",
 ] as const;
 
 export const TRANSACTION_TYPES: TransactionType[] = [

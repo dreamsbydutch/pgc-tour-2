@@ -14,7 +14,8 @@ export type AdminDashboardView =
   | "golfers"
   | "memberMerge"
   | "accountAudit"
-  | "crons";
+  | "crons"
+  | "datagolfFieldPreview";
 
 export type TransactionType =
   | "TourCardFee"
