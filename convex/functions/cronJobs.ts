@@ -363,8 +363,9 @@ export const applyCreateGroups = internalMutation({
           )
           .first();
 
-        const rating =
-          Math.round((((g.skillEstimate ?? -1.875) + 2) / 0.04) * 100) / 100;
+        const rating = normalizeDgSkillEstimateToPgcRating(
+          g.skillEstimate ?? -1.875,
+        );
 
         if (!existingTG) {
           await ctx.db.insert("tournamentGolfers", {
@@ -395,6 +396,26 @@ export const applyCreateGroups = internalMutation({
     } as const;
   },
 });
+
+function normalizeDgSkillEstimateToPgcRating(dgSkillEstimate: number): number {
+  const x = dgSkillEstimate;
+
+  if (!Number.isFinite(x)) return 0;
+
+  if (x < -1.5) {
+    const raw = 5 + ((x + 1.5) / 1.5) * 5;
+    return Math.max(0, Math.min(5, Math.round(raw * 100) / 100));
+  }
+
+  if (x <= 2) {
+    const raw = 5 + ((x + 1.5) / 3.5) * 95;
+    return Math.max(0, Math.round(raw * 100) / 100);
+  }
+
+  const extra = 20 * Math.sqrt((x - 2) / 1.5);
+  const raw = 100 + extra;
+  return Math.min(150, Math.round(raw * 100) / 100);
+}
 
 function determineGroupIndex(
   currentIndex: number,
@@ -806,9 +827,7 @@ export const applyDataGolfLiveSync = internalMutation({
               : undefined,
           rating:
             typeof ranking?.dg_skill_estimate === "number"
-              ? Math.round(
-                  (((ranking.dg_skill_estimate ?? -1.875) + 2) / 0.0004) * 100,
-                ) / 100
+              ? normalizeDgSkillEstimateToPgcRating(ranking.dg_skill_estimate)
               : undefined,
           updatedAt: Date.now(),
         });
@@ -874,9 +893,7 @@ export const applyDataGolfLiveSync = internalMutation({
             : undefined,
         rating:
           typeof ranking?.dg_skill_estimate === "number"
-            ? Math.round(
-                (((ranking.dg_skill_estimate ?? -1.875) + 2) / 0.0004) * 100,
-              ) / 100
+            ? normalizeDgSkillEstimateToPgcRating(ranking.dg_skill_estimate)
             : undefined,
         ...(nextUsage !== undefined ? { usage: nextUsage } : {}),
         updatedAt: Date.now(),
