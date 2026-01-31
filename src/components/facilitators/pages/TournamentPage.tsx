@@ -8,6 +8,7 @@ import {
   LeaderboardView,
   PreTournamentContent,
 } from "@/facilitators";
+import { TournamentCountdown } from "@/displays";
 import type {
   LeaderboardPgaRow,
   LeaderboardTeamRow,
@@ -54,6 +55,20 @@ export function TournamentPage(props: {
     return <TournamentPageSkeleton />;
   }
 
+  if (vm.kind === "loadingPreTournamentGate") {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <LeaderboardHeader
+          focusTourney={vm.selectedTournament}
+          tournaments={vm.tournaments}
+          onTournamentChange={props.onTournamentChange}
+        />
+
+        <div className="mt-4 text-center">Loading tournament...</div>
+      </div>
+    );
+  }
+
   if (vm.kind === "noTournaments") {
     return (
       <div className="container mx-auto px-1 py-4">
@@ -89,6 +104,52 @@ export function TournamentPage(props: {
             existingTeam={vm.preTournament.existingTeam}
             teamGolfers={vm.preTournament.teamGolfers}
             playoffEventIndex={vm.preTournament.playoffEventIndex}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (vm.kind === "preTournamentCountdown") {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <LeaderboardHeader
+          focusTourney={vm.selectedTournament}
+          tournaments={vm.tournaments}
+          onTournamentChange={props.onTournamentChange}
+        />
+
+        <div className="mt-4">
+          <TournamentCountdown
+            tourney={{
+              name: vm.selectedTournament.name,
+              startDate: vm.selectedTournament.startDate,
+              logoUrl: vm.selectedTournament.logoUrl,
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (vm.kind === "preTournamentTeamPick") {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <LeaderboardHeader
+          focusTourney={vm.selectedTournament}
+          tournaments={vm.tournaments}
+          onTournamentChange={props.onTournamentChange}
+        />
+
+        <div className="mt-4">
+          <PreTournamentContent
+            tournament={vm.preTournament.tournament}
+            member={vm.preTournament.member}
+            tourCard={vm.preTournament.tourCard}
+            existingTeam={vm.preTournament.existingTeam}
+            teamGolfers={vm.preTournament.teamGolfers}
+            playoffEventIndex={vm.preTournament.playoffEventIndex}
+            forceOpen
           />
         </div>
       </div>
@@ -133,10 +194,62 @@ function useTournamentPage(args: {
   variant: LeaderboardVariant | null;
 }):
   | { kind: "loadingTournaments" }
+  | {
+      kind: "loadingPreTournamentGate";
+      tournaments: EnhancedTournamentDoc[];
+      selectedTournament: EnhancedTournamentDoc;
+    }
   | { kind: "noTournaments" }
   | { kind: "noSelection" }
   | {
-      kind: "preTournament";
+  kind: "preTournament";
+      tournaments: EnhancedTournamentDoc[];
+      selectedTournament: EnhancedTournamentDoc;
+      preTournament: {
+        tournament: {
+          _id: string;
+          name: string;
+          startDate: number;
+          tier?: { name?: string | null } | null;
+        };
+        member:
+          | {
+              displayName?: string | null;
+              firstname?: string | null;
+              lastname?: string | null;
+              email?: string | null;
+              account?: number | null;
+            }
+          | null
+          | undefined;
+        tourCard:
+          | {
+              _id: string;
+              tourId: string;
+              playoff?: number | null;
+              currentPosition?: string | number | null;
+              points?: number | null;
+              earnings?: number | null;
+            }
+          | null
+          | undefined;
+        existingTeam: { golferIds?: number[] | null } | null;
+        teamGolfers: Array<{
+          apiId?: number | null;
+          _id?: string | null;
+          playerName: string;
+          worldRank?: number | null;
+        }> | null;
+        playoffEventIndex: number;
+      };
+    }
+  | {
+      kind: "preTournamentCountdown";
+      tournaments: EnhancedTournamentDoc[];
+      selectedTournament: EnhancedTournamentDoc;
+    }
+  | {
+      kind: "preTournamentTeamPick";
       tournaments: EnhancedTournamentDoc[];
       selectedTournament: EnhancedTournamentDoc;
       preTournament: {
@@ -284,6 +397,13 @@ function useTournamentPage(args: {
   const isNotStartedYet =
     typeof selectedTournament?.startDate === "number" &&
     selectedTournament.startDate > Date.now();
+
+  const hasTournamentGolfers = useQuery(
+    api.functions.tournaments.hasTournamentGolfers,
+    selectedTournament && isNotStartedYet
+      ? { tournamentId: selectedTournament._id }
+      : "skip",
+  ) as boolean | undefined;
 
   const memberResult = useQuery(
     api.functions.members.getMembers,
@@ -578,8 +698,24 @@ function useTournamentPage(args: {
   }
 
   if (isNotStartedYet) {
+    if (hasTournamentGolfers === undefined) {
+      return {
+        kind: "loadingPreTournamentGate",
+        tournaments,
+        selectedTournament,
+      };
+    }
+
+    if (!hasTournamentGolfers) {
+      return {
+        kind: "preTournamentCountdown",
+        tournaments,
+        selectedTournament,
+      };
+    }
+
     return {
-      kind: "preTournament",
+      kind: "preTournamentTeamPick",
       tournaments,
       selectedTournament,
       preTournament: {

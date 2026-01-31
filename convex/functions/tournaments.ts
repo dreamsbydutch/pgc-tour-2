@@ -569,6 +569,20 @@ export const getTournamentLeaderboardView = query({
   },
 });
 
+export const hasTournamentGolfers = query({
+  args: {
+    tournamentId: v.id("tournaments"),
+  },
+  handler: async (ctx, args) => {
+    const tournamentGolfer = await ctx.db
+      .query("tournamentGolfers")
+      .withIndex("by_tournament", (q) => q.eq("tournamentId", args.tournamentId))
+      .first();
+
+    return Boolean(tournamentGolfer);
+  },
+});
+
 /**
  * Frontend convenience: get all tournaments for simple list UIs.
  */

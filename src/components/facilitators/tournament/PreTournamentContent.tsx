@@ -74,6 +74,7 @@ export function PreTournamentContent(props: {
     group?: number | null;
   }> | null;
   playoffEventIndex?: number;
+  forceOpen?: boolean;
 }) {
   const tourney = props.tournament
     ? {
@@ -177,6 +178,7 @@ function usePreTournamentContent(props: {
     | undefined;
   existingTeam?: { golferIds?: number[] | null } | null;
   playoffEventIndex?: number;
+  forceOpen?: boolean;
 }) {
   const [isPreTournament, setIsPreTournament] = useState(false);
 
@@ -192,7 +194,9 @@ function usePreTournamentContent(props: {
       return { kind: "loading" as const };
     }
 
-    if (!isPreTournament) {
+    const allowPicks = props.forceOpen ? true : isPreTournament;
+
+    if (!allowPicks) {
       return { kind: "picksClosed" as const };
     }
 
@@ -242,6 +246,7 @@ function usePreTournamentContent(props: {
   }, [
     isPreTournament,
     props.existingTeam?.golferIds,
+    props.forceOpen,
     props.member,
     props.playoffEventIndex,
     props.tourCard,
