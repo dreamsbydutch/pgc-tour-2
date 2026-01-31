@@ -96,7 +96,9 @@ export function AdminDataGolfFieldPreviewPage() {
                 type="button"
                 variant="outline"
                 onClick={() => vm.setLastResult(null)}
-                disabled={vm.isRunning || vm.isWriting || vm.lastResult === null}
+                disabled={
+                  vm.isRunning || vm.isWriting || vm.lastResult === null
+                }
               >
                 Clear
               </Button>
@@ -234,24 +236,40 @@ function useAdminDataGolfFieldPreviewPage(): {
       const raw = lastResult as unknown;
 
       if (!raw || typeof raw !== "object") {
-        return { cronOutput: null, tournamentGolfers: null, incomingFieldUpdates: null };
+        return {
+          cronOutput: null,
+          tournamentGolfers: null,
+          incomingFieldUpdates: null,
+        };
       }
 
       const ok = "ok" in raw ? (raw as { ok?: unknown }).ok : undefined;
       if (ok !== true) {
-        return { cronOutput: raw, tournamentGolfers: null, incomingFieldUpdates: null };
+        return {
+          cronOutput: raw,
+          tournamentGolfers: null,
+          incomingFieldUpdates: null,
+        };
       }
 
       const result =
         "result" in raw ? (raw as { result?: unknown }).result : null;
       if (!result || typeof result !== "object") {
-        return { cronOutput: raw, tournamentGolfers: null, incomingFieldUpdates: null };
+        return {
+          cronOutput: raw,
+          tournamentGolfers: null,
+          incomingFieldUpdates: null,
+        };
       }
 
       const mode =
         "mode" in result ? (result as { mode?: unknown }).mode : null;
       if (mode !== "preview") {
-        return { cronOutput: result, tournamentGolfers: null, incomingFieldUpdates: null };
+        return {
+          cronOutput: result,
+          tournamentGolfers: null,
+          incomingFieldUpdates: null,
+        };
       }
 
       const cronOutput =

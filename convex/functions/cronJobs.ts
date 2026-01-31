@@ -155,6 +155,30 @@ async function listPlayoffTournamentsForSeason(
     .sort((a, b) => a.startDate - b.startDate);
 }
 
+export const getGolferIdsByApiIds = internalQuery({
+  args: {
+    apiIds: v.array(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const unique = Array.from(new Set(args.apiIds));
+
+    const rows = await Promise.all(
+      unique.map(async (apiId) => {
+        const golfer = await ctx.db
+          .query("golfers")
+          .withIndex("by_api_id", (q) => q.eq("apiId", apiId))
+          .first();
+        return {
+          apiId,
+          golferId: golfer?._id ?? null,
+        };
+      }),
+    );
+
+    return rows;
+  },
+});
+
 export const getCreateGroupsTarget = internalQuery({
   args: {
     tournamentId: v.optional(v.id("tournaments")),
@@ -336,7 +360,9 @@ export const applyCreateGroups = internalMutation({
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("tournamentGolfers")
-      .withIndex("by_tournament", (q) => q.eq("tournamentId", args.tournamentId))
+      .withIndex("by_tournament", (q) =>
+        q.eq("tournamentId", args.tournamentId),
+      )
       .first();
 
     if (existing) {
@@ -2200,7 +2226,7 @@ export const adminRunCronJob = action({
             const byDgId = new Map<number, RankedPlayer>();
             for (const r of rankingsList) byDgId.set(r.dg_id, r);
 
-            const plannedGroups = (() => {
+            const plannedGroups = await (async () => {
               if (
                 target &&
                 typeof target === "object" &&
@@ -2297,9 +2323,7 @@ export const adminRunCronJob = action({
 
               const tournamentGolfers = payload.flatMap((group) =>
                 group.golfers.map((g) => ({
-                  tournamentId: resolvedTournamentId,
                   golferApiId: g.dgId,
-                  playerName: g.playerName,
                   group: group.groupNumber,
                   worldRank: g.worldRank ?? 501,
                   rating: g.rating,
@@ -2312,6 +2336,35 @@ export const adminRunCronJob = action({
                 })),
               );
 
+              const apiIds = tournamentGolfers.map((g) => g.golferApiId);
+              const lookups = await ctx.runQuery(
+                internal.functions.cronJobs.getGolferIdsByApiIds,
+                { apiIds },
+              );
+
+              const apiIdToGolferId = new Map<number, string>();
+              for (const row of lookups) {
+                if (row.golferId) apiIdToGolferId.set(row.apiId, row.golferId);
+              }
+
+              const missingGolferApiIds = tournamentGolfers
+                .map((g) => g.golferApiId)
+                .filter((apiId) => !apiIdToGolferId.has(apiId));
+
+              const tournamentGolferInserts = tournamentGolfers.map((g) => ({
+                tournamentId: resolvedTournamentId,
+                golferId: apiIdToGolferId.get(g.golferApiId) ?? null,
+                group: g.group,
+                rating: g.rating,
+                ...(typeof g.roundOneTeeTime === "string"
+                  ? { roundOneTeeTime: g.roundOneTeeTime }
+                  : {}),
+                ...(typeof g.roundTwoTeeTime === "string"
+                  ? { roundTwoTeeTime: g.roundTwoTeeTime }
+                  : {}),
+                worldRank: g.worldRank,
+              }));
+
               return {
                 ok: true,
                 skipped: false,
@@ -2319,7 +2372,8 @@ export const adminRunCronJob = action({
                 totalGolfers: processed.length,
                 tournamentId: resolvedTournamentId,
                 groups: payload,
-                tournamentGolfers,
+                tournamentGolfers: tournamentGolferInserts,
+                missingGolferApiIds,
                 groupSizes: payload.map((g) => ({
                   groupNumber: g.groupNumber,
                   golfers: g.golfers.length,
