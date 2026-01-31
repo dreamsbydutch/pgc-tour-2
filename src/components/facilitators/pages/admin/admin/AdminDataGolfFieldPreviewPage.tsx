@@ -85,13 +85,29 @@ export function AdminDataGolfFieldPreviewPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Output</CardTitle>
-            <CardDescription>Last preview result (JSON)</CardDescription>
+            <CardTitle>Cron Output</CardTitle>
+            <CardDescription>
+              What the create-groups cron would do (no writes)
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <pre className="max-h-[520px] overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-50">
-              {vm.lastResult
-                ? JSON.stringify(vm.lastResult, null, 2)
+              {vm.cronOutput
+                ? JSON.stringify(vm.cronOutput, null, 2)
+                : "(no preview run yet)"}
+            </pre>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Incoming DataGolf Input</CardTitle>
+            <CardDescription>Raw DataGolf field-updates payload</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <pre className="max-h-[520px] overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-50">
+              {vm.incomingFieldUpdates
+                ? JSON.stringify(vm.incomingFieldUpdates, null, 2)
                 : "(no preview run yet)"}
             </pre>
           </CardContent>
@@ -112,6 +128,8 @@ function useAdminDataGolfFieldPreviewPage(): {
   isRunning: boolean;
   lastResult: unknown | null;
   setLastResult: React.Dispatch<React.SetStateAction<unknown | null>>;
+  cronOutput: unknown | null;
+  incomingFieldUpdates: unknown | null;
   onRun: () => Promise<void>;
 } {
   const [tournamentId, setTournamentId] = useState<Id<"tournaments"> | "">("");
@@ -151,6 +169,45 @@ function useAdminDataGolfFieldPreviewPage(): {
     }
   }
 
+  const { cronOutput, incomingFieldUpdates } = useMemo(() => {
+    const raw = lastResult as unknown;
+
+    if (!raw || typeof raw !== "object") {
+      return { cronOutput: null, incomingFieldUpdates: null };
+    }
+
+    const ok = "ok" in raw ? (raw as { ok?: unknown }).ok : undefined;
+    if (ok !== true) {
+      return { cronOutput: raw, incomingFieldUpdates: null };
+    }
+
+    const result = "result" in raw ? (raw as { result?: unknown }).result : null;
+    if (!result || typeof result !== "object") {
+      return { cronOutput: raw, incomingFieldUpdates: null };
+    }
+
+    const mode = "mode" in result ? (result as { mode?: unknown }).mode : null;
+    if (mode !== "preview") {
+      return { cronOutput: result, incomingFieldUpdates: null };
+    }
+
+    const cronOutput =
+      "cronOutput" in result ? (result as { cronOutput?: unknown }).cronOutput : null;
+
+    const incoming =
+      "incoming" in result ? (result as { incoming?: unknown }).incoming : null;
+
+    const fieldUpdates =
+      incoming && typeof incoming === "object" && "fieldUpdates" in incoming
+        ? (incoming as { fieldUpdates?: unknown }).fieldUpdates
+        : null;
+
+    return {
+      cronOutput: cronOutput ?? result,
+      incomingFieldUpdates: fieldUpdates,
+    };
+  }, [lastResult]);
+
   return {
     tournaments,
     tournamentId,
@@ -158,6 +215,8 @@ function useAdminDataGolfFieldPreviewPage(): {
     isRunning,
     lastResult,
     setLastResult,
+    cronOutput,
+    incomingFieldUpdates,
     onRun,
   };
 }

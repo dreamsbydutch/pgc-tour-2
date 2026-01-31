@@ -2114,21 +2114,144 @@ export const adminRunCronJob = action({
               { tournamentId },
             );
 
-            const fieldUpdates = await ctx.runAction(
-              api.functions.datagolf.fetchFieldUpdates,
-              { options: { tour: "pga" } },
-            );
+            const [fieldUpdates, rankings] = await Promise.all([
+              ctx.runAction(api.functions.datagolf.fetchFieldUpdates, {
+                options: { tour: "pga" },
+              }),
+              ctx.runAction(api.functions.datagolf.fetchDataGolfRankings, {}),
+            ]);
 
             console.log(
               "[adminRunCronJob:preview] DataGolf field-updates payload",
               fieldUpdates,
             );
 
+            const dataGolfEventName =
+              typeof (fieldUpdates as { event_name?: unknown }).event_name ===
+              "string"
+                ? (fieldUpdates as { event_name: string }).event_name
+                : "";
+
+            const field = Array.isArray(
+              (fieldUpdates as { field?: unknown }).field,
+            )
+              ? ((fieldUpdates as { field: unknown[] }).field as FieldPlayer[])
+              : [];
+
+            const rankingsList = Array.isArray(
+              (rankings as { rankings?: unknown }).rankings,
+            )
+              ? ((rankings as { rankings: unknown[] }).rankings as RankedPlayer[])
+              : [];
+
+            const byDgId = new Map<number, RankedPlayer>();
+            for (const r of rankingsList) byDgId.set(r.dg_id, r);
+
+            const plannedGroups = (() => {
+              if (
+                target &&
+                typeof target === "object" &&
+                "skipped" in target &&
+                (target as { skipped?: unknown }).skipped === true
+              ) {
+                return target;
+              }
+
+              if (!dataGolfEventName.trim()) {
+                return {
+                  ok: true,
+                  skipped: true,
+                  reason: "missing_datagolf_event_name",
+                  dataGolfEventName,
+                } as const;
+              }
+
+              const tournamentName =
+                target &&
+                typeof target === "object" &&
+                "tournamentName" in target &&
+                typeof (target as { tournamentName?: unknown }).tournamentName ===
+                  "string"
+                  ? (target as { tournamentName: string }).tournamentName
+                  : "";
+
+              const compatible = eventNameLooksCompatible(
+                tournamentName,
+                dataGolfEventName,
+              );
+
+              if (!compatible.ok) {
+                return {
+                  ok: true,
+                  skipped: true,
+                  reason: "event_name_mismatch",
+                  tournamentName,
+                  dataGolfEventName,
+                  score: compatible.score,
+                  intersection: compatible.intersection,
+                  expectedTokens: compatible.expectedTokens,
+                  actualTokens: compatible.actualTokens,
+                } as const;
+              }
+
+              const processed: EnhancedGolfer[] = field
+                .filter((g) => !EXCLUDED_GOLFER_IDS.has(g.dg_id))
+                .map((g) => ({ ...g, ranking: byDgId.get(g.dg_id) }))
+                .sort(
+                  (a, b) =>
+                    (b.ranking?.dg_skill_estimate ?? -50) -
+                    (a.ranking?.dg_skill_estimate ?? -50),
+                );
+
+              const groups: EnhancedGolfer[][] = [[], [], [], [], []];
+              processed.forEach((g, index) => {
+                const gi = determineGroupIndex(index, processed.length, groups);
+                groups[gi]!.push(g);
+              });
+
+              const payload = groups.map((group, idx) => ({
+                groupNumber: idx + 1,
+                golfers: group.map((g) => ({
+                  dgId: g.dg_id,
+                  playerName: g.player_name,
+                  country: g.country,
+                  worldRank: g.ranking?.owgr_rank,
+                  ...(typeof g.r1_teetime === "string" &&
+                  g.r1_teetime.trim().length
+                    ? {
+                        r1TeeTime: g.r1_teetime,
+                        ...(typeof g.r2_teetime === "string" &&
+                        g.r2_teetime.trim().length
+                          ? { r2TeeTime: g.r2_teetime }
+                          : {}),
+                      }
+                    : {}),
+                  skillEstimate: g.ranking?.dg_skill_estimate,
+                })),
+              }));
+
+              return {
+                ok: true,
+                skipped: false,
+                dataGolfEventName,
+                totalGolfers: processed.length,
+                groups: payload,
+                groupSizes: payload.map((g) => ({
+                  groupNumber: g.groupNumber,
+                  golfers: g.golfers.length,
+                })),
+              } as const;
+            })();
+
             result = {
               mode: "preview" as const,
               job: "create_groups_for_next_tournament" as const,
               target,
-              fieldUpdates,
+              cronOutput: plannedGroups,
+              incoming: {
+                fieldUpdates,
+                rankings,
+              },
             };
           } else {
             result = await ctx.runAction(
