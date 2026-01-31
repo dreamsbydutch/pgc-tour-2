@@ -118,14 +118,21 @@ function useTeamPickForm(props: {
 
   const onOpenForm = useCallback(() => {
     setIsOpeningForm(true);
-    router.navigate({
-      to: "/tournament",
-      search: {
-        tournamentId: props.tournamentId,
-        tourId: props.tourId,
-        variant: "regular",
-      },
-    });
+
+    Promise.resolve(
+      router.navigate({
+        to: "/tournament",
+        search: {
+          tournamentId: props.tournamentId,
+          tourId: props.tourId,
+          variant: "regular",
+        },
+      }),
+    )
+      .catch(() => {})
+      .finally(() => {
+        setIsOpeningForm(false);
+      });
   }, [props.tourId, props.tournamentId, router]);
 
   return useMemo(() => {
