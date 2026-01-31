@@ -2351,6 +2351,27 @@ export const adminRunCronJob = action({
                 .map((g) => g.golferApiId)
                 .filter((apiId) => !apiIdToGolferId.has(apiId));
 
+              const golfersToInsert = (() => {
+                const byApiId = new Map<
+                  number,
+                  { apiId: number; playerName: string; country?: string }
+                >();
+                for (const group of payload) {
+                  for (const g of group.golfers) {
+                    if (!missingGolferApiIds.includes(g.dgId)) continue;
+                    if (byApiId.has(g.dgId)) continue;
+                    byApiId.set(g.dgId, {
+                      apiId: g.dgId,
+                      playerName: g.playerName,
+                      ...(typeof g.country === "string" && g.country.trim()
+                        ? { country: g.country }
+                        : {}),
+                    });
+                  }
+                }
+                return Array.from(byApiId.values());
+              })();
+
               const tournamentGolferInserts = tournamentGolfers.map((g) => ({
                 tournamentId: resolvedTournamentId,
                 golferId: apiIdToGolferId.get(g.golferApiId) ?? null,
@@ -2374,6 +2395,7 @@ export const adminRunCronJob = action({
                 groups: payload,
                 tournamentGolfers: tournamentGolferInserts,
                 missingGolferApiIds,
+                golfersToInsert,
                 groupSizes: payload.map((g) => ({
                   groupNumber: g.groupNumber,
                   golfers: g.golfers.length,
