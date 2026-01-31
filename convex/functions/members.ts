@@ -314,6 +314,147 @@ function formatTourCardDisplayName(
 }
 
 /**
+ * Format a tour card display name using a configurable first-name prefix length.
+ *
+ * Intended for disambiguating display names within a season by expanding the
+ * visible portion of the first name: `C. Hough` -> `Cu. Hough` -> `Cur. Hough`.
+ */
+function formatTourCardDisplayNameWithPrefixLength(input: {
+  firstname?: string;
+  lastname?: string;
+  email?: string;
+  firstPrefixLength: number;
+}): string {
+  const first = normalizePersonName(input.firstname);
+  const last = normalizePersonName(input.lastname);
+  const prefixLen = Math.max(0, Math.trunc(input.firstPrefixLength));
+
+  if (first && last) {
+    const prefix = first.slice(0, Math.min(prefixLen || 1, first.length));
+    return `${prefix}. ${last}`;
+  }
+
+  if (last) {
+    return last;
+  }
+
+  if (first) {
+    const prefix = first.slice(0, Math.min(prefixLen || 1, first.length));
+    return `${prefix}.`;
+  }
+
+  if (input.email) {
+    return input.email.split("@")[0];
+  }
+
+  return "Anonymous User";
+}
+
+/**
+ * Computes unique tour card display names within a single season.
+ *
+ * Names start in the compact form (`F. Last`) and expand the visible first-name
+ * prefix for collisions until unique (or until the full first name is used).
+ */
+function computeUniqueTourCardDisplayNamesForSeason(options: {
+  items: Array<{
+    tourCardId: string;
+    firstname: string;
+    lastname: string;
+    email: string;
+  }>;
+  reservedNames: Set<string>;
+}): Map<string, string> {
+  const prefixLenByTourCardId = new Map<string, number>();
+  for (const item of options.items) {
+    prefixLenByTourCardId.set(item.tourCardId, 1);
+  }
+
+  const buildName = (item: (typeof options.items)[number]): string => {
+    const prefixLen = prefixLenByTourCardId.get(item.tourCardId) ?? 1;
+    return formatTourCardDisplayNameWithPrefixLength({
+      firstname: item.firstname,
+      lastname: item.lastname,
+      email: item.email,
+      firstPrefixLength: prefixLen,
+    });
+  };
+
+  let didProgress = true;
+  let safety = 0;
+  while (didProgress && safety < 50) {
+    safety += 1;
+    didProgress = false;
+
+    const nameToIds = new Map<string, string[]>();
+    const nameById = new Map<string, string>();
+
+    for (const item of options.items) {
+      const name = buildName(item);
+      nameById.set(item.tourCardId, name);
+      const list = nameToIds.get(name);
+      if (list) list.push(item.tourCardId);
+      else nameToIds.set(name, [item.tourCardId]);
+    }
+
+    const conflicting = new Set<string>();
+
+    for (const [name, ids] of nameToIds) {
+      if (ids.length > 1) {
+        for (const id of ids) conflicting.add(id);
+      }
+
+      if (options.reservedNames.has(name)) {
+        for (const id of ids) conflicting.add(id);
+      }
+    }
+
+    if (conflicting.size === 0) {
+      return nameById;
+    }
+
+    for (const item of options.items) {
+      if (!conflicting.has(item.tourCardId)) continue;
+      const first = normalizePersonName(item.firstname);
+      if (!first) continue;
+
+      const current = prefixLenByTourCardId.get(item.tourCardId) ?? 1;
+      const next = Math.min(first.length, current + 1);
+      if (next !== current) {
+        prefixLenByTourCardId.set(item.tourCardId, next);
+        didProgress = true;
+      }
+    }
+  }
+
+  const out = new Map<string, string>();
+  const used = new Set<string>(options.reservedNames);
+
+  for (const item of options.items) {
+    const base = buildName(item);
+    let candidate = base;
+
+    if (!used.has(candidate)) {
+      used.add(candidate);
+      out.set(item.tourCardId, candidate);
+      continue;
+    }
+
+    let n = 2;
+    while (n < 1000) {
+      candidate = `${base} (${n})`;
+      if (!used.has(candidate)) break;
+      n += 1;
+    }
+
+    used.add(candidate);
+    out.set(item.tourCardId, candidate);
+  }
+
+  return out;
+}
+
+/**
  * Calculate days since last login
  */
 function calculateDaysSinceLastLogin(lastLoginAt?: number): number | undefined {
@@ -1402,14 +1543,7 @@ export const normalizeMemberNamesAndTourCardDisplayNames = mutation({
     const members =
       typeof limit === "number" ? membersAll.slice(0, limit) : membersAll;
 
-    const tourCards = await ctx.db.query("tourCards").collect();
-    const tourCardsByMemberId = new Map<string, (typeof tourCards)[number][]>();
-
-    for (const tc of tourCards) {
-      const list = tourCardsByMemberId.get(tc.memberId);
-      if (list) list.push(tc);
-      else tourCardsByMemberId.set(tc.memberId, [tc]);
-    }
+    const membersById = new Map<string, { firstname: string; lastname: string; email: string }>();
 
     let membersUpdated = 0;
     let tourCardsUpdated = 0;
@@ -1443,39 +1577,79 @@ export const normalizeMemberNamesAndTourCardDisplayNames = mutation({
         membersUpdated += 1;
       }
 
-      const tourCardDisplayName = formatTourCardDisplayName(
-        afterFirst,
-        afterLast,
-        m.email,
-      );
-
-      const memberTourCards = tourCardsByMemberId.get(m._id) ?? [];
-      let memberTourCardsUpdated = 0;
-
-      for (const tc of memberTourCards) {
-        if (tc.displayName === tourCardDisplayName) continue;
-        if (!dryRun) {
-          await ctx.db.patch(tc._id, {
-            displayName: tourCardDisplayName,
-            updatedAt: now,
-          });
-        }
-        tourCardsUpdated += 1;
-        memberTourCardsUpdated += 1;
-      }
+      membersById.set(m._id, {
+        firstname: afterFirst,
+        lastname: afterLast,
+        email: m.email,
+      });
 
       if (
-        (memberChanged || memberTourCardsUpdated > 0) &&
-        examples.length < 15
+        memberChanged && examples.length < 15
       ) {
         examples.push({
           memberId: m._id,
           email: m.email,
           before: { firstname: beforeFirst, lastname: beforeLast },
           after: { firstname: afterFirst, lastname: afterLast },
-          tourCardsUpdated: memberTourCardsUpdated,
+          tourCardsUpdated: 0,
         });
       }
+    }
+
+    const tourCards = await ctx.db.query("tourCards").collect();
+    const tourCardsBySeasonId = new Map<string, (typeof tourCards)[number][]>();
+    for (const tc of tourCards) {
+      const key = String(tc.seasonId);
+      const list = tourCardsBySeasonId.get(key);
+      if (list) list.push(tc);
+      else tourCardsBySeasonId.set(key, [tc]);
+    }
+
+    const targetNameByTourCardId = new Map<string, string>();
+    for (const cards of tourCardsBySeasonId.values()) {
+      const reserved = new Set<string>();
+      const items: Array<{
+        tourCardId: string;
+        firstname: string;
+        lastname: string;
+        email: string;
+      }> = [];
+
+      for (const tc of cards) {
+        const member = membersById.get(tc.memberId);
+        if (!member) {
+          reserved.add(tc.displayName);
+          continue;
+        }
+
+        items.push({
+          tourCardId: String(tc._id),
+          firstname: member.firstname,
+          lastname: member.lastname,
+          email: member.email,
+        });
+      }
+
+      if (items.length === 0) continue;
+
+      const computed = computeUniqueTourCardDisplayNamesForSeason({
+        items,
+        reservedNames: reserved,
+      });
+
+      for (const [id, name] of computed) {
+        targetNameByTourCardId.set(id, name);
+      }
+    }
+
+    for (const tc of tourCards) {
+      const target = targetNameByTourCardId.get(String(tc._id));
+      if (!target) continue;
+      if (tc.displayName === target) continue;
+      if (!dryRun) {
+        await ctx.db.patch(tc._id, { displayName: target, updatedAt: now });
+      }
+      tourCardsUpdated += 1;
     }
 
     return {
