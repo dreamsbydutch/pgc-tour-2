@@ -2,23 +2,21 @@
 
 import { useCallback, useMemo, useState } from "react";
 
-import { useRouter } from "@tanstack/react-router";
-
 import { Button } from "@/ui";
 import { cn, formatMoney } from "@/lib";
 
 import { MemberHeader, TeamGolfersList } from "@/displays";
+import { TournamentTeamPickerDialog } from "@/widgets";
 
 /**
  * Renders the "Create/Change Your Team" call-to-action for pre-tournament picks.
  *
  * Behavior:
- * - Navigates to `/tournament` with search params for tournament + tour.
+ * - Opens a modal team picker for the active tournament.
  * - Disables the button when opening or when the member has an outstanding balance.
  * - Shows the member's current points/earnings and an optional golfer list.
  *
  * @param props.tournamentId - Tournament id used for navigation.
- * @param props.tourId - Tour id used for navigation.
  * @param props.member - Member used for display and balance checks.
  * @param props.tourCard - Tour card used for ranking/points/earnings display.
  * @param props.existingTeam - Used to choose button label.
@@ -27,7 +25,6 @@ import { MemberHeader, TeamGolfersList } from "@/displays";
  */
 export function TeamPickForm(props: {
   tournamentId: string;
-  tourId: string;
   member: {
     displayName?: string | null;
     firstname?: string | null;
@@ -36,12 +33,13 @@ export function TeamPickForm(props: {
     account?: number | null;
   };
   tourCard: {
+    _id: string;
     tourId?: string | null;
     currentPosition?: string | number | null;
     points?: number | null;
     earnings?: number | null;
   };
-  existingTeam?: unknown | null;
+  existingTeam?: { _id: string; golferIds?: number[] | null } | null;
   teamGolfers?: Array<{
     apiId?: number | null;
     _id?: string | null;
@@ -52,7 +50,7 @@ export function TeamPickForm(props: {
   }>;
 }) {
   const model = useTeamPickForm(props);
-  if (!props.tournamentId || !props.tourId) {
+  if (!props.tournamentId || !props.tourCard._id) {
     return <TeamPickFormSkeleton />;
   }
 
@@ -81,17 +79,21 @@ export function TeamPickForm(props: {
         className={cn("mb-4 mt-8 text-xl")}
         size="lg"
       >
-        {model.isOpeningForm ? (
-          <div className="flex items-center space-x-2">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
-            <span>Loading...</span>
-          </div>
-        ) : model.hasExistingTeam ? (
+        {model.hasExistingTeam ? (
           "Change Your Team"
         ) : (
           "Create Your Team"
         )}
       </Button>
+
+      <TournamentTeamPickerDialog
+        open={model.isPickerOpen}
+        onOpenChange={model.onOpenChange}
+        tournamentId={props.tournamentId}
+        tourCardId={props.tourCard._id}
+        existingTeamId={props.existingTeam?._id ?? null}
+        existingGolferIds={props.existingTeam?.golferIds ?? null}
+      />
     </div>
   );
 }
@@ -104,42 +106,25 @@ export function TeamPickForm(props: {
  */
 function useTeamPickForm(props: {
   tournamentId: string;
-  tourId: string;
   member: { account?: number | null; currentPosition?: never };
   tourCard: {
     currentPosition?: string | number | null;
     points?: number | null;
     earnings?: number | null;
   };
-  existingTeam?: unknown | null;
+  existingTeam?: { _id: string; golferIds?: number[] | null } | null;
 }) {
-  const [isOpeningForm, setIsOpeningForm] = useState(false);
-  const router = useRouter();
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
 
   const onOpenForm = useCallback(() => {
-    setIsOpeningForm(true);
-
-    Promise.resolve(
-      router.navigate({
-        to: "/tournament",
-        search: {
-          tournamentId: props.tournamentId,
-          tourId: props.tourId,
-          variant: "regular",
-        },
-      }),
-    )
-      .catch(() => {})
-      .finally(() => {
-        setIsOpeningForm(false);
-      });
-  }, [props.tourId, props.tournamentId, router]);
+    setIsPickerOpen(true);
+  }, []);
 
   return useMemo(() => {
     const accountCents = props.member.account ?? 0;
     const hasBalance = accountCents > 0;
 
-    const isButtonDisabled = isOpeningForm || hasBalance;
+    const isButtonDisabled = hasBalance;
 
     const positionRaw = props.tourCard.currentPosition;
     const formattedRank = (() => {
@@ -165,7 +150,6 @@ function useTeamPickForm(props: {
     return {
       kind: "ready" as const,
       onOpenForm,
-      isOpeningForm,
       hasBalance,
       accountCents,
       isButtonDisabled,
@@ -173,15 +157,18 @@ function useTeamPickForm(props: {
       pointsDisplay,
       earningsDisplay,
       hasExistingTeam: Boolean(props.existingTeam),
+      isPickerOpen,
+      onOpenChange: setIsPickerOpen,
     };
   }, [
-    isOpeningForm,
     onOpenForm,
     props.existingTeam,
     props.member.account,
     props.tourCard.currentPosition,
     props.tourCard.earnings,
     props.tourCard.points,
+    isPickerOpen,
+    setIsPickerOpen,
   ]);
 }
 

@@ -64,7 +64,7 @@ export function PreTournamentContent(props: {
       }
     | null
     | undefined;
-  existingTeam?: { golferIds?: number[] | null } | null;
+  existingTeam?: { _id: string; golferIds?: number[] | null } | null;
   teamGolfers?: Array<{
     apiId?: number | null;
     _id?: string | null;
@@ -129,7 +129,6 @@ export function PreTournamentContent(props: {
     <div>
       <TeamPickForm
         tournamentId={model.tournamentId}
-        tourId={model.tourId}
         member={model.member}
         tourCard={model.tourCard}
         existingTeam={props.existingTeam}
@@ -176,7 +175,7 @@ function usePreTournamentContent(props: {
       }
     | null
     | undefined;
-  existingTeam?: { golferIds?: number[] | null } | null;
+  existingTeam?: { _id: string; golferIds?: number[] | null } | null;
   playoffEventIndex?: number;
   forceOpen?: boolean;
 }) {

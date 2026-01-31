@@ -576,10 +576,46 @@ export const hasTournamentGolfers = query({
   handler: async (ctx, args) => {
     const tournamentGolfer = await ctx.db
       .query("tournamentGolfers")
-      .withIndex("by_tournament", (q) => q.eq("tournamentId", args.tournamentId))
+      .withIndex("by_tournament", (q) =>
+        q.eq("tournamentId", args.tournamentId),
+      )
       .first();
 
     return Boolean(tournamentGolfer);
+  },
+});
+
+export const getTournamentPickPool = query({
+  args: {
+    tournamentId: v.id("tournaments"),
+  },
+  handler: async (ctx, args) => {
+    const tournamentGolfers = await ctx.db
+      .query("tournamentGolfers")
+      .withIndex("by_tournament", (q) => q.eq("tournamentId", args.tournamentId))
+      .collect();
+
+    const golferIds = Array.from(
+      new Set(tournamentGolfers.map((tg) => tg.golferId)),
+    );
+    const golfers = await Promise.all(golferIds.map((id) => ctx.db.get(id)));
+    const golferById = new Map(
+      golfers.filter(Boolean).map((g) => [g!._id, g!]),
+    );
+
+    return tournamentGolfers
+      .map((tg) => {
+        const golfer = golferById.get(tg.golferId);
+        if (!golfer) return null;
+
+        return {
+          golferApiId: golfer.apiId,
+          playerName: golfer.playerName,
+          group: tg.group ?? null,
+          worldRank: tg.worldRank ?? golfer.worldRank ?? null,
+        };
+      })
+      .filter(Boolean);
   },
 });
 

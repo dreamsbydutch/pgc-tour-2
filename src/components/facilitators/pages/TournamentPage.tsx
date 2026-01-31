@@ -202,7 +202,7 @@ function useTournamentPage(args: {
   | { kind: "noTournaments" }
   | { kind: "noSelection" }
   | {
-  kind: "preTournament";
+      kind: "preTournament";
       tournaments: EnhancedTournamentDoc[];
       selectedTournament: EnhancedTournamentDoc;
       preTournament: {
@@ -233,7 +233,7 @@ function useTournamentPage(args: {
             }
           | null
           | undefined;
-        existingTeam: { golferIds?: number[] | null } | null;
+        existingTeam: { _id: string; golferIds?: number[] | null } | null;
         teamGolfers: Array<{
           apiId?: number | null;
           _id?: string | null;
@@ -280,7 +280,7 @@ function useTournamentPage(args: {
             }
           | null
           | undefined;
-        existingTeam: { golferIds?: number[] | null } | null;
+        existingTeam: { _id: string; golferIds?: number[] | null } | null;
         teamGolfers: Array<{
           apiId?: number | null;
           _id?: string | null;
@@ -468,6 +468,7 @@ function useTournamentPage(args: {
       : "skip",
   ) as
     | Array<null | {
+        _id: unknown;
         golferIds?: number[] | null;
         golfers?: Array<{
           _id?: unknown;
@@ -480,7 +481,7 @@ function useTournamentPage(args: {
 
   const existingTeam =
     teamResult && teamResult.length > 0 && teamResult[0]
-      ? { golferIds: teamResult[0].golferIds ?? null }
+      ? { _id: String(teamResult[0]._id), golferIds: teamResult[0].golferIds ?? null }
       : null;
 
   const teamGolfers =
