@@ -1443,16 +1443,22 @@ export const normalizeMemberNamesAndTourCardDisplayNames = mutation({
         membersUpdated += 1;
       }
 
-      const fullName = generateFullName(afterFirst, afterLast);
-      if (!fullName) continue;
+      const tourCardDisplayName = formatTourCardDisplayName(
+        afterFirst,
+        afterLast,
+        m.email,
+      );
 
       const memberTourCards = tourCardsByMemberId.get(m._id) ?? [];
       let memberTourCardsUpdated = 0;
 
       for (const tc of memberTourCards) {
-        if (tc.displayName === fullName) continue;
+        if (tc.displayName === tourCardDisplayName) continue;
         if (!dryRun) {
-          await ctx.db.patch(tc._id, { displayName: fullName, updatedAt: now });
+          await ctx.db.patch(tc._id, {
+            displayName: tourCardDisplayName,
+            updatedAt: now,
+          });
         }
         tourCardsUpdated += 1;
         memberTourCardsUpdated += 1;
