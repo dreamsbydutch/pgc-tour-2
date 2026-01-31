@@ -512,26 +512,34 @@ export const runCreateGroupsForNextTournament: ReturnType<
         ? (fieldUpdates as { event_name: string }).event_name
         : "";
 
-    if (dataGolfEventName) {
-      const compatible = eventNameLooksCompatible(
-        target.tournamentName,
-        dataGolfEventName,
-      );
+    if (!dataGolfEventName.trim()) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: "missing_datagolf_event_name",
+        tournamentId,
+        tournamentName: target.tournamentName,
+      } as const;
+    }
 
-      if (!compatible.ok) {
-        return {
-          ok: true,
-          skipped: true,
-          reason: "event_name_mismatch",
-          tournamentId,
-          tournamentName: target.tournamentName,
-          dataGolfEventName,
-          score: compatible.score,
-          intersection: compatible.intersection,
-          expectedTokens: compatible.expectedTokens,
-          actualTokens: compatible.actualTokens,
-        } as const;
-      }
+    const compatible = eventNameLooksCompatible(
+      target.tournamentName,
+      dataGolfEventName,
+    );
+
+    if (!compatible.ok) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: "event_name_mismatch",
+        tournamentId,
+        tournamentName: target.tournamentName,
+        dataGolfEventName,
+        score: compatible.score,
+        intersection: compatible.intersection,
+        expectedTokens: compatible.expectedTokens,
+        actualTokens: compatible.actualTokens,
+      } as const;
     }
 
     const field = Array.isArray((fieldUpdates as { field?: unknown }).field)
