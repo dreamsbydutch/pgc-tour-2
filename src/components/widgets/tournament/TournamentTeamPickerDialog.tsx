@@ -165,6 +165,8 @@ function TournamentTeamPickerGroup(props: {
 }) {
   const isCollapsible = props.group.groupKey !== 0 && props.group.selectedCount >= 2;
 
+  const selectedGolfers = props.group.golfers.filter((g) => g.isSelected);
+
   return (
     <div className="rounded-md border p-3">
       <button
@@ -189,7 +191,24 @@ function TournamentTeamPickerGroup(props: {
         <div className="text-xs text-gray-600">{props.group.selectedCount}/2</div>
       </button>
 
-      {props.isCollapsed ? null : (
+      {props.isCollapsed ? (
+        <div className="text-sm text-gray-700">
+          {selectedGolfers.length > 0 ? (
+            <div className="grid grid-cols-1 gap-1">
+              {selectedGolfers.map((g) => (
+                <div key={g.golferApiId} className="flex items-baseline gap-2">
+                  <span className="font-medium">{g.playerName}</span>
+                  <span className="text-xs text-gray-600">
+                    {g.worldRank != null ? `WGR #${g.worldRank}` : "WGR -"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-gray-600">No golfers selected</div>
+          )}
+        </div>
+      ) : (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {props.group.golfers.map((g) => (
             <label
