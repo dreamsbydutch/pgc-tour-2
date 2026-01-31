@@ -15,6 +15,22 @@ import type {
   RankedPlayer,
 } from "../types/datagolf";
 
+function normalizePlayerNameFromDataGolf(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed.includes(",")) return trimmed.replace(/\s+/g, " ").trim();
+
+  const parts = trimmed
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (parts.length < 2) return trimmed.replace(/\s+/g, " ").trim();
+
+  const last = parts[0] ?? trimmed;
+  const first = parts.slice(1).join(", ").trim();
+  return `${first} ${last}`.replace(/\s+/g, " ").trim();
+}
+
 function normalizeEventTokens(name: string): string[] {
   const STOP = new Set([
     "the",
@@ -318,23 +334,18 @@ export const applyCreateGroups = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    function normalizePlayerNameFromDataGolf(raw: string): string {
-      const trimmed = raw.trim();
-      if (!trimmed.includes(",")) return trimmed;
-      const parts = trimmed
-        .split(",")
-        .map((p) => p.trim())
-        .filter(Boolean);
-      if (parts.length === 2) {
-        const [last, first] = parts;
-        return `${first} ${last}`.replace(/\s+/g, " ").trim();
-      }
-      const last = parts[0] ?? trimmed;
-      const first = parts[parts.length - 1] ?? "";
-      const suffix = parts.slice(1, parts.length - 1).join(" ");
-      return `${first} ${last}${suffix ? ` ${suffix}` : ""}`
-        .replace(/\s+/g, " ")
-        .trim();
+    const existing = await ctx.db
+      .query("tournamentGolfers")
+      .withIndex("by_tournament", (q) => q.eq("tournamentId", args.tournamentId))
+      .first();
+
+    if (existing) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: "already_has_golfers",
+        tournamentId: args.tournamentId,
+      } as const;
     }
 
     let inserted = 0;
@@ -345,6 +356,18 @@ export const applyCreateGroups = internalMutation({
           .query("golfers")
           .withIndex("by_api_id", (q) => q.eq("apiId", g.dgId))
           .first();
+
+        if (existingGolfer) {
+          const normalized = normalizePlayerNameFromDataGolf(
+            existingGolfer.playerName,
+          );
+          if (normalized !== existingGolfer.playerName) {
+            await ctx.db.patch(existingGolfer._id, {
+              playerName: normalized,
+              updatedAt: Date.now(),
+            });
+          }
+        }
 
         const golferId = existingGolfer
           ? existingGolfer._id
@@ -604,7 +627,7 @@ export const runCreateGroupsForNextTournament: ReturnType<
           groupNumber: idx + 1,
           golfers: group.map((g) => ({
             dgId: g.dg_id,
-            playerName: g.player_name,
+            playerName: normalizePlayerNameFromDataGolf(g.player_name),
             country: g.country,
             worldRank: g.ranking?.owgr_rank,
             ...(typeof g.r1_teetime === "string" && g.r1_teetime.trim().length
@@ -794,11 +817,23 @@ export const applyDataGolfLiveSync = internalMutation({
         .withIndex("by_api_id", (q) => q.eq("apiId", golferApiId))
         .first();
 
+      if (existingGolfer) {
+        const normalized = normalizePlayerNameFromDataGolf(
+          existingGolfer.playerName,
+        );
+        if (normalized !== existingGolfer.playerName) {
+          await ctx.db.patch(existingGolfer._id, {
+            playerName: normalized,
+            updatedAt: Date.now(),
+          });
+        }
+      }
+
       const golferId = existingGolfer
         ? existingGolfer._id
         : await ctx.db.insert("golfers", {
             apiId: golferApiId,
-            playerName: field.player_name,
+            playerName: normalizePlayerNameFromDataGolf(field.player_name),
             country: field.country || ranking?.country,
             worldRank:
               typeof ranking?.owgr_rank === "number"
@@ -2158,7 +2193,8 @@ export const adminRunCronJob = action({
             const rankingsList = Array.isArray(
               (rankings as { rankings?: unknown }).rankings,
             )
-              ? ((rankings as { rankings: unknown[] }).rankings as RankedPlayer[])
+              ? ((rankings as { rankings: unknown[] })
+                  .rankings as RankedPlayer[])
               : [];
 
             const byDgId = new Map<number, RankedPlayer>();
@@ -2187,8 +2223,8 @@ export const adminRunCronJob = action({
                 target &&
                 typeof target === "object" &&
                 "tournamentName" in target &&
-                typeof (target as { tournamentName?: unknown }).tournamentName ===
-                  "string"
+                typeof (target as { tournamentName?: unknown })
+                  .tournamentName === "string"
                   ? (target as { tournamentName: string }).tournamentName
                   : "";
 
@@ -2230,7 +2266,7 @@ export const adminRunCronJob = action({
                 groupNumber: idx + 1,
                 golfers: group.map((g) => ({
                   dgId: g.dg_id,
-                  playerName: g.player_name,
+                  playerName: normalizePlayerNameFromDataGolf(g.player_name),
                   country: g.country,
                   worldRank: g.ranking?.owgr_rank,
                   rating: normalizeDgSkillEstimateToPgcRating(
@@ -2263,6 +2299,7 @@ export const adminRunCronJob = action({
                 group.golfers.map((g) => ({
                   tournamentId: resolvedTournamentId,
                   golferApiId: g.dgId,
+                  playerName: g.playerName,
                   group: group.groupNumber,
                   worldRank: g.worldRank ?? 501,
                   rating: g.rating,

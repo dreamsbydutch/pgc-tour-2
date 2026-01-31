@@ -43,7 +43,8 @@ export function AdminDataGolfFieldPreviewPage() {
           <CardHeader>
             <CardTitle>Preview create-groups DataGolf input</CardTitle>
             <CardDescription>
-              This does not write to the database (preview mode).
+              Preview does not write to the database. Write mode seeds this
+              tournament once and then stops if golfers already exist.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -68,14 +69,34 @@ export function AdminDataGolfFieldPreviewPage() {
             </div>
 
             <div className="flex items-center gap-3">
-              <Button onClick={vm.onRun} disabled={vm.isRunning}>
-                {vm.isRunning ? "Fetching…" : "Fetch DataGolf field"}
+              <Button
+                onClick={vm.onRun}
+                disabled={vm.isRunning || vm.isWriting}
+              >
+                {vm.isRunning ? "Fetching…" : "Preview (no writes)"}
+              </Button>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={vm.allowWrite}
+                  onChange={(e) => vm.setAllowWrite(e.target.checked)}
+                  disabled={vm.isRunning || vm.isWriting}
+                />
+                Enable write
+              </label>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={vm.onWrite}
+                disabled={!vm.allowWrite || vm.isRunning || vm.isWriting}
+              >
+                {vm.isWriting ? "Writing…" : "Write groups to DB"}
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => vm.setLastResult(null)}
-                disabled={vm.isRunning || vm.lastResult === null}
+                disabled={vm.isRunning || vm.isWriting || vm.lastResult === null}
               >
                 Clear
               </Button>
@@ -118,7 +139,9 @@ export function AdminDataGolfFieldPreviewPage() {
         <Card>
           <CardHeader>
             <CardTitle>Incoming DataGolf Input</CardTitle>
-            <CardDescription>Raw DataGolf field-updates payload</CardDescription>
+            <CardDescription>
+              Raw DataGolf field-updates payload
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <pre className="max-h-[520px] overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-50">
@@ -142,15 +165,21 @@ function useAdminDataGolfFieldPreviewPage(): {
   tournamentId: Id<"tournaments"> | "";
   setTournamentId: React.Dispatch<React.SetStateAction<Id<"tournaments"> | "">>;
   isRunning: boolean;
+  isWriting: boolean;
+  allowWrite: boolean;
+  setAllowWrite: React.Dispatch<React.SetStateAction<boolean>>;
   lastResult: unknown | null;
   setLastResult: React.Dispatch<React.SetStateAction<unknown | null>>;
   cronOutput: unknown | null;
   tournamentGolfers: unknown | null;
   incomingFieldUpdates: unknown | null;
   onRun: () => Promise<void>;
+  onWrite: () => Promise<void>;
 } {
   const [tournamentId, setTournamentId] = useState<Id<"tournaments"> | "">("");
   const [isRunning, setIsRunning] = useState(false);
+  const [isWriting, setIsWriting] = useState(false);
+  const [allowWrite, setAllowWrite] = useState(false);
   const [lastResult, setLastResult] = useState<unknown | null>(null);
 
   const runCron = useAction(api.functions.cronJobs.adminRunCronJob);
@@ -186,63 +215,89 @@ function useAdminDataGolfFieldPreviewPage(): {
     }
   }
 
-  const { cronOutput, tournamentGolfers, incomingFieldUpdates } = useMemo(() => {
-    const raw = lastResult as unknown;
-
-    if (!raw || typeof raw !== "object") {
-      return { cronOutput: null, incomingFieldUpdates: null };
+  async function onWrite() {
+    setIsWriting(true);
+    try {
+      const result = await runCron({
+        job: "create_groups_for_next_tournament",
+        confirm: true,
+        ...(tournamentId ? { tournamentId } : {}),
+      });
+      setLastResult(result);
+    } finally {
+      setIsWriting(false);
     }
+  }
 
-    const ok = "ok" in raw ? (raw as { ok?: unknown }).ok : undefined;
-    if (ok !== true) {
-      return { cronOutput: raw, incomingFieldUpdates: null };
-    }
+  const { cronOutput, tournamentGolfers, incomingFieldUpdates } =
+    useMemo(() => {
+      const raw = lastResult as unknown;
 
-    const result = "result" in raw ? (raw as { result?: unknown }).result : null;
-    if (!result || typeof result !== "object") {
-      return { cronOutput: raw, incomingFieldUpdates: null };
-    }
+      if (!raw || typeof raw !== "object") {
+        return { cronOutput: null, tournamentGolfers: null, incomingFieldUpdates: null };
+      }
 
-    const mode = "mode" in result ? (result as { mode?: unknown }).mode : null;
-    if (mode !== "preview") {
-      return { cronOutput: result, incomingFieldUpdates: null };
-    }
+      const ok = "ok" in raw ? (raw as { ok?: unknown }).ok : undefined;
+      if (ok !== true) {
+        return { cronOutput: raw, tournamentGolfers: null, incomingFieldUpdates: null };
+      }
 
-    const cronOutput =
-      "cronOutput" in result ? (result as { cronOutput?: unknown }).cronOutput : null;
+      const result =
+        "result" in raw ? (raw as { result?: unknown }).result : null;
+      if (!result || typeof result !== "object") {
+        return { cronOutput: raw, tournamentGolfers: null, incomingFieldUpdates: null };
+      }
 
-    const tournamentGolfers = (() => {
-      if (!cronOutput || typeof cronOutput !== "object") return null;
-      return "tournamentGolfers" in cronOutput
-        ? (cronOutput as { tournamentGolfers?: unknown }).tournamentGolfers ?? null
-        : null;
-    })();
+      const mode =
+        "mode" in result ? (result as { mode?: unknown }).mode : null;
+      if (mode !== "preview") {
+        return { cronOutput: result, tournamentGolfers: null, incomingFieldUpdates: null };
+      }
 
-    const incoming =
-      "incoming" in result ? (result as { incoming?: unknown }).incoming : null;
+      const cronOutput =
+        "cronOutput" in result
+          ? (result as { cronOutput?: unknown }).cronOutput
+          : null;
 
-    const fieldUpdates =
-      incoming && typeof incoming === "object" && "fieldUpdates" in incoming
-        ? (incoming as { fieldUpdates?: unknown }).fieldUpdates
-        : null;
+      const tournamentGolfers = (() => {
+        if (!cronOutput || typeof cronOutput !== "object") return null;
+        return "tournamentGolfers" in cronOutput
+          ? ((cronOutput as { tournamentGolfers?: unknown })
+              .tournamentGolfers ?? null)
+          : null;
+      })();
 
-    return {
-      cronOutput: cronOutput ?? result,
-      tournamentGolfers,
-      incomingFieldUpdates: fieldUpdates,
-    };
-  }, [lastResult]);
+      const incoming =
+        "incoming" in result
+          ? (result as { incoming?: unknown }).incoming
+          : null;
+
+      const fieldUpdates =
+        incoming && typeof incoming === "object" && "fieldUpdates" in incoming
+          ? (incoming as { fieldUpdates?: unknown }).fieldUpdates
+          : null;
+
+      return {
+        cronOutput: cronOutput ?? result,
+        tournamentGolfers,
+        incomingFieldUpdates: fieldUpdates,
+      };
+    }, [lastResult]);
 
   return {
     tournaments,
     tournamentId,
     setTournamentId,
     isRunning,
+    isWriting,
+    allowWrite,
+    setAllowWrite,
     lastResult,
     setLastResult,
     cronOutput,
     tournamentGolfers,
     incomingFieldUpdates,
     onRun,
+    onWrite,
   };
 }
