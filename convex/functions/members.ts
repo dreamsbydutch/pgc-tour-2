@@ -1288,16 +1288,6 @@ export const updateMembers = mutation({
         updateData.lastname !== member.lastname);
 
     if (didNameChange) {
-      const effectiveEmail = updateData.email ?? member.email;
-      const effectiveFirst = updateData.firstname ?? member.firstname;
-      const effectiveLast = updateData.lastname ?? member.lastname;
-      const resolvedTourCardDisplayName =
-        formatTourCardDisplayName(
-          effectiveFirst,
-          effectiveLast,
-          effectiveEmail,
-        );
-
       const currentYear = new Date().getFullYear();
       const seasonsForYear = await ctx.db
         .query("seasons")
@@ -1311,33 +1301,83 @@ export const updateMembers = mutation({
             )
           : null;
 
-      const tourCardsToUpdate = currentSeason
-        ? await ctx.db
-            .query("tourCards")
-            .withIndex("by_member_season", (q) =>
-              q.eq("memberId", args.memberId).eq("seasonId", currentSeason._id),
-            )
-            .collect()
-        : await ctx.db
-            .query("tourCards")
-            .withIndex("by_member", (q) => q.eq("memberId", args.memberId))
-            .collect();
+      const seasonIds: Array<Id<"seasons">> = [];
+      if (currentSeason) {
+        seasonIds.push(currentSeason._id);
+      } else {
+        const memberTourCards = await ctx.db
+          .query("tourCards")
+          .withIndex("by_member", (q) => q.eq("memberId", args.memberId))
+          .collect();
 
-      if (tourCardsToUpdate.length > 0) {
-        const candidates = currentSeason
-          ? tourCardsToUpdate
-          : [
-              tourCardsToUpdate.reduce((best, tc) =>
-                tc._creationTime > best._creationTime ? tc : best,
-              ),
-            ];
+        if (memberTourCards.length > 0) {
+          const latest = memberTourCards.reduce((best, tc) =>
+            tc._creationTime > best._creationTime ? tc : best,
+          );
+          seasonIds.push(latest.seasonId);
+        }
+      }
 
-        for (const tc of candidates) {
-          if (tc.displayName === resolvedTourCardDisplayName) continue;
-          await ctx.db.patch(tc._id, {
-            displayName: resolvedTourCardDisplayName,
-            updatedAt: Date.now(),
+      const now = Date.now();
+      for (const seasonId of seasonIds) {
+        const seasonTourCards = await ctx.db
+          .query("tourCards")
+          .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
+          .collect();
+
+        const memberIds = Array.from(
+          new Set(seasonTourCards.map((tc) => tc.memberId)),
+        );
+        const membersById = new Map<
+          string,
+          { firstname: string; lastname: string; email: string }
+        >();
+
+        for (const memberId of memberIds) {
+          const m = await ctx.db.get(memberId);
+          if (!m) continue;
+          membersById.set(memberId, {
+            firstname: normalizePersonName(m.firstname ?? ""),
+            lastname: normalizePersonName(m.lastname ?? ""),
+            email: m.email,
           });
+        }
+
+        const reservedNames = new Set<string>();
+        const items: Array<{
+          tourCardId: string;
+          firstname: string;
+          lastname: string;
+          email: string;
+        }> = [];
+
+        for (const tc of seasonTourCards) {
+          const m = membersById.get(tc.memberId);
+          if (!m) {
+            reservedNames.add(tc.displayName);
+            continue;
+          }
+
+          items.push({
+            tourCardId: String(tc._id),
+            firstname: m.firstname,
+            lastname: m.lastname,
+            email: m.email,
+          });
+        }
+
+        if (items.length === 0) continue;
+
+        const targetNameById = computeUniqueTourCardDisplayNamesForSeason({
+          items,
+          reservedNames,
+        });
+
+        for (const tc of seasonTourCards) {
+          const target = targetNameById.get(String(tc._id));
+          if (!target) continue;
+          if (tc.displayName === target) continue;
+          await ctx.db.patch(tc._id, { displayName: target, updatedAt: now });
         }
       }
     }

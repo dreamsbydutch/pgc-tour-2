@@ -15,6 +15,238 @@ import { requireAdminByClerkId } from "./_authByClerkId";
 
 const DEFAULT_MAX_PARTICIPANTS = 75;
 
+function normalizeNameToken(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  let out = "";
+  let shouldCapitalize = true;
+
+  for (const ch of trimmed) {
+    const isLetter = /[A-Za-z]/.test(ch);
+    if (isLetter) {
+      out += shouldCapitalize ? ch.toUpperCase() : ch.toLowerCase();
+      shouldCapitalize = false;
+      continue;
+    }
+
+    out += ch;
+    shouldCapitalize = ch === "-" || ch === "'" || ch === "’";
+  }
+
+  return out;
+}
+
+function normalizePersonName(value: string | undefined): string {
+  const raw = (value ?? "").trim();
+  if (!raw) return "";
+
+  const tokens = raw
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map(normalizeNameToken);
+
+  return tokens.join(" ");
+}
+
+function formatTourCardDisplayNameWithPrefixLength(input: {
+  firstname?: string;
+  lastname?: string;
+  email?: string;
+  firstPrefixLength: number;
+}): string {
+  const first = normalizePersonName(input.firstname);
+  const last = normalizePersonName(input.lastname);
+  const prefixLen = Math.max(0, Math.trunc(input.firstPrefixLength));
+
+  if (first && last) {
+    const prefix = first.slice(0, Math.min(prefixLen || 1, first.length));
+    return `${prefix}. ${last}`;
+  }
+
+  if (last) {
+    return last;
+  }
+
+  if (first) {
+    const prefix = first.slice(0, Math.min(prefixLen || 1, first.length));
+    return `${prefix}.`;
+  }
+
+  if (input.email) {
+    return input.email.split("@")[0];
+  }
+
+  return "Anonymous User";
+}
+
+function computeUniqueTourCardDisplayNamesForSeason(options: {
+  items: Array<{
+    tourCardId: string;
+    firstname: string;
+    lastname: string;
+    email: string;
+  }>;
+  reservedNames: Set<string>;
+}): Map<string, string> {
+  const prefixLenByTourCardId = new Map<string, number>();
+  for (const item of options.items) {
+    prefixLenByTourCardId.set(item.tourCardId, 1);
+  }
+
+  const buildName = (item: (typeof options.items)[number]): string => {
+    const prefixLen = prefixLenByTourCardId.get(item.tourCardId) ?? 1;
+    return formatTourCardDisplayNameWithPrefixLength({
+      firstname: item.firstname,
+      lastname: item.lastname,
+      email: item.email,
+      firstPrefixLength: prefixLen,
+    });
+  };
+
+  let didProgress = true;
+  let safety = 0;
+  while (didProgress && safety < 50) {
+    safety += 1;
+    didProgress = false;
+
+    const nameToIds = new Map<string, string[]>();
+    const nameById = new Map<string, string>();
+
+    for (const item of options.items) {
+      const name = buildName(item);
+      nameById.set(item.tourCardId, name);
+      const list = nameToIds.get(name);
+      if (list) list.push(item.tourCardId);
+      else nameToIds.set(name, [item.tourCardId]);
+    }
+
+    const conflicting = new Set<string>();
+
+    for (const [name, ids] of nameToIds) {
+      if (ids.length > 1) {
+        for (const id of ids) conflicting.add(id);
+      }
+
+      if (options.reservedNames.has(name)) {
+        for (const id of ids) conflicting.add(id);
+      }
+    }
+
+    if (conflicting.size === 0) {
+      return nameById;
+    }
+
+    for (const item of options.items) {
+      if (!conflicting.has(item.tourCardId)) continue;
+      const first = normalizePersonName(item.firstname);
+      if (!first) continue;
+
+      const current = prefixLenByTourCardId.get(item.tourCardId) ?? 1;
+      const next = Math.min(first.length, current + 1);
+      if (next !== current) {
+        prefixLenByTourCardId.set(item.tourCardId, next);
+        didProgress = true;
+      }
+    }
+  }
+
+  const out = new Map<string, string>();
+  const used = new Set<string>(options.reservedNames);
+
+  for (const item of options.items) {
+    const base = buildName(item);
+    let candidate = base;
+
+    if (!used.has(candidate)) {
+      used.add(candidate);
+      out.set(item.tourCardId, candidate);
+      continue;
+    }
+
+    let n = 2;
+    while (n < 1000) {
+      candidate = `${base} (${n})`;
+      if (!used.has(candidate)) break;
+      n += 1;
+    }
+
+    used.add(candidate);
+    out.set(item.tourCardId, candidate);
+  }
+
+  return out;
+}
+
+async function recomputeSeasonTourCardDisplayNames(
+  ctx: MutationCtx,
+  seasonId: Id<"seasons">,
+): Promise<number> {
+  const tourCards = await ctx.db
+    .query("tourCards")
+    .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
+    .collect();
+
+  const memberIds = Array.from(new Set(tourCards.map((c) => c.memberId)));
+  const membersById = new Map<
+    string,
+    { firstname: string; lastname: string; email: string }
+  >();
+
+  for (const memberId of memberIds) {
+    const member = await ctx.db.get(memberId);
+    if (!member) continue;
+    membersById.set(memberId, {
+      firstname: normalizePersonName(member.firstname ?? ""),
+      lastname: normalizePersonName(member.lastname ?? ""),
+      email: member.email,
+    });
+  }
+
+  const reserved = new Set<string>();
+  const items: Array<{
+    tourCardId: string;
+    firstname: string;
+    lastname: string;
+    email: string;
+  }> = [];
+
+  for (const tc of tourCards) {
+    const member = membersById.get(tc.memberId);
+    if (!member) {
+      reserved.add(tc.displayName);
+      continue;
+    }
+
+    items.push({
+      tourCardId: String(tc._id),
+      firstname: member.firstname,
+      lastname: member.lastname,
+      email: member.email,
+    });
+  }
+
+  if (items.length === 0) return 0;
+
+  const targetNameById = computeUniqueTourCardDisplayNamesForSeason({
+    items,
+    reservedNames: reserved,
+  });
+
+  const now = Date.now();
+  let updated = 0;
+  for (const tc of tourCards) {
+    const target = targetNameById.get(String(tc._id));
+    if (!target) continue;
+    if (tc.displayName === target) continue;
+    await ctx.db.patch(tc._id, { displayName: target, updatedAt: now });
+    updated += 1;
+  }
+
+  return updated;
+}
+
 export const createTourCards = mutation({
   args: {
     data: v.object({
@@ -45,11 +277,26 @@ export const createTourCards = mutation({
     const currentMember = await getCurrentMember(ctx);
     const memberId = args.data.memberId ?? currentMember._id;
 
+    const targetMember =
+      memberId === currentMember._id
+        ? currentMember
+        : await ctx.db.get(memberId);
+    if (!targetMember) {
+      throw new Error("Member not found");
+    }
+
+    const computedDisplayName = formatTourCardDisplayNameWithPrefixLength({
+      firstname: targetMember.firstname,
+      lastname: targetMember.lastname,
+      email: targetMember.email,
+      firstPrefixLength: 1,
+    });
+
     const skipValidation = args.options?.skipValidation ?? false;
 
     if (!skipValidation) {
       const validation = validateTourCardData({
-        displayName: args.data.displayName,
+        displayName: computedDisplayName,
         earnings: args.data.earnings,
         points: args.data.points,
         wins: args.data.wins,
@@ -101,7 +348,7 @@ export const createTourCards = mutation({
 
     const id = await ctx.db.insert("tourCards", {
       memberId,
-      displayName: args.data.displayName,
+      displayName: computedDisplayName,
       tourId: args.data.tourId,
       seasonId: args.data.seasonId,
       earnings: args.data.earnings,
@@ -115,6 +362,8 @@ export const createTourCards = mutation({
       currentPosition: args.data.currentPosition,
       updatedAt: Date.now(),
     });
+
+    await recomputeSeasonTourCardDisplayNames(ctx, args.data.seasonId);
 
     return await ctx.db.get(id);
   },
@@ -605,10 +854,16 @@ export const updateTourCards = mutation({
       }
     }
 
+    const { displayName: _ignoredDisplayName, ...patchData } = args.data;
+
     await ctx.db.patch(args.id, {
-      ...args.data,
+      ...patchData,
       updatedAt: Date.now(),
     });
+
+    if (args.data.displayName !== undefined) {
+      await recomputeSeasonTourCardDisplayNames(ctx, tourCard.seasonId);
+    }
 
     return await ctx.db.get(args.id);
   },
