@@ -580,8 +580,10 @@ export const getChampionshipWinsForMember = query({
         const isPlayoffByTier = playoffTierIds.has(t.tierId);
         const isPlayoffByName = playoffEventNames.some((n) => n === t.name);
         const isFinished = t.status === "completed" || t.endDate <= now;
-        return (isCanadianOpen || isMajor || isPlayoffByTier || isPlayoffByName) &&
-          isFinished;
+        return (
+          (isCanadianOpen || isMajor || isPlayoffByTier || isPlayoffByName) &&
+          isFinished
+        );
       });
 
       for (const tournament of relevantTournaments) {
@@ -601,7 +603,9 @@ export const getChampionshipWinsForMember = query({
         ]);
 
         const winners = [...pos1, ...posT1];
-        const userWon = winners.some((team) => tourCardIds.has(team.tourCardId));
+        const userWon = winners.some((team) =>
+          tourCardIds.has(team.tourCardId),
+        );
         if (!userWon) continue;
 
         winsByTournamentId.set(tournament._id, {
@@ -982,8 +986,15 @@ async function enhanceTeam(
   }
 
   if (enhance.includeGolfers) {
-    const golfers = await Promise.all(
-      team.golferIds.map(async (golferApiId) => {
+    type TeamGolferWithTournamentFields = Omit<GolferDoc, "worldRank"> & {
+      worldRank: number | null;
+      group: number | null;
+      rating: number | null;
+    };
+
+    const golfers: Array<TeamGolferWithTournamentFields | null> =
+      await Promise.all(
+        team.golferIds.map(async (golferApiId) => {
         const golfer = await ctx.db
           .query("golfers")
           .withIndex("by_api_id", (q) => q.eq("apiId", golferApiId))
@@ -1004,15 +1015,11 @@ async function enhanceTeam(
           rating: tg?.rating ?? null,
           worldRank: tg?.worldRank ?? golfer.worldRank ?? null,
         };
-      }),
-    );
+        }),
+      );
 
     enhanced.golfers = golfers.filter(
-      (g): g is GolferDoc & {
-        group?: number | null;
-        rating?: number | null;
-        worldRank?: number | null;
-      } => g !== null,
+      (g): g is TeamGolferWithTournamentFields => g !== null,
     );
   }
 
