@@ -217,7 +217,7 @@ function TournamentTeamPickerGroup(props: {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="flex flex-col gap-3">
           {props.group.golfers.map((g) => (
             <label
               key={g.golferApiId}
@@ -228,14 +228,17 @@ function TournamentTeamPickerGroup(props: {
                 checked={g.isSelected}
                 disabled={g.isDisabled}
                 onChange={() => props.onToggleGolfer(g.golferApiId)}
-              />
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium">
+              />{" "}
+              <div className="flex items-baseline gap-2">
+                <span className="text-xs text-gray-600">
+                  {g.worldRank != null ? `#${g.worldRank}` : ""}
+                </span>
+                <span className="truncate text-sm font-medium">
                   {g.playerName}
-                </div>
-                <div className="text-xs text-gray-600">
-                  {g.worldRank != null ? `WGR #${g.worldRank}` : "WGR -"}
-                </div>
+                </span>
+                <span className="text-xs text-gray-600">
+                  {g.rating != null ? `(${g.rating})` : "(N/A)"}
+                </span>
               </div>
             </label>
           ))}

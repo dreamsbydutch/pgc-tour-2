@@ -615,6 +615,7 @@ export const getTournamentPickPool = query({
           playerName: golfer.playerName,
           group: tg.group ?? null,
           worldRank: tg.worldRank ?? golfer.worldRank ?? null,
+          rating: tg.rating ?? null,
         };
       })
       .filter(Boolean);
