@@ -884,9 +884,10 @@ function isRoundRunningFromLiveStats(liveStats: LiveModelPlayer[]): boolean {
   });
 }
 
-function inferParFromLiveStats(
-  liveStats: LiveModelPlayer[],
-): { par: number | null; samples: number } {
+function inferParFromLiveStats(liveStats: LiveModelPlayer[]): {
+  par: number | null;
+  samples: number;
+} {
   const counts = new Map<number, number>();
   let samples = 0;
 
@@ -1214,17 +1215,17 @@ export const applyDataGolfLiveSync = internalMutation({
       tournamentGolfersUpdated += 1;
     }
 
-      console.log("applyDataGolfLiveSync: summary", {
-        tournamentId: args.tournamentId,
-        currentRound: args.currentRound,
-        field: args.field.length,
-        rankings: args.rankings.length,
-        liveStats: args.liveStats.length,
-        golfersInserted,
-        tournamentGolfersInserted,
-        tournamentGolfersPatchedFromField,
-        tournamentGolfersUpdated,
-      });
+    console.log("applyDataGolfLiveSync: summary", {
+      tournamentId: args.tournamentId,
+      currentRound: args.currentRound,
+      field: args.field.length,
+      rankings: args.rankings.length,
+      liveStats: args.liveStats.length,
+      golfersInserted,
+      tournamentGolfersInserted,
+      tournamentGolfersPatchedFromField,
+      tournamentGolfersUpdated,
+    });
 
     const inferredRoundIsRunning = isRoundRunningFromLiveStats(
       args.liveStats as LiveModelPlayer[],
@@ -1304,25 +1305,32 @@ export const runLiveTournamentSync: ReturnType<typeof internalAction> =
 
       if (!roundIsRunning) {
         const previousLastUpdate = await ctx.runQuery(
-          internal.functions.cronJobs.getTournamentDataGolfInPlayLastUpdateForCron,
+          internal.functions.cronJobs
+            .getTournamentDataGolfInPlayLastUpdateForCron,
           { tournamentId },
         );
 
-        if (!dataGolfInPlayLastUpdate || dataGolfInPlayLastUpdate === previousLastUpdate) {
-          console.log("runLiveTournamentSync: skipped (no_active_round_no_changes)", {
-            tournamentId,
-            dataGolfEventName:
-              typeof inPlay.info?.event_name === "string"
-                ? inPlay.info.event_name
-                : undefined,
-            currentRound:
-              typeof inPlay.info?.current_round === "number"
-                ? inPlay.info.current_round
-                : undefined,
-            lastUpdate: dataGolfInPlayLastUpdate,
-            previousLastUpdate,
-            liveStats: liveStats.length,
-          });
+        if (
+          !dataGolfInPlayLastUpdate ||
+          dataGolfInPlayLastUpdate === previousLastUpdate
+        ) {
+          console.log(
+            "runLiveTournamentSync: skipped (no_active_round_no_changes)",
+            {
+              tournamentId,
+              dataGolfEventName:
+                typeof inPlay.info?.event_name === "string"
+                  ? inPlay.info.event_name
+                  : undefined,
+              currentRound:
+                typeof inPlay.info?.current_round === "number"
+                  ? inPlay.info.current_round
+                  : undefined,
+              lastUpdate: dataGolfInPlayLastUpdate,
+              previousLastUpdate,
+              liveStats: liveStats.length,
+            },
+          );
 
           return {
             ok: true,
@@ -1334,11 +1342,14 @@ export const runLiveTournamentSync: ReturnType<typeof internalAction> =
           } as const;
         }
 
-        console.log("runLiveTournamentSync: proceeding (no_active_round_but_new_update)", {
-          tournamentId,
-          lastUpdate: dataGolfInPlayLastUpdate,
-          previousLastUpdate,
-        });
+        console.log(
+          "runLiveTournamentSync: proceeding (no_active_round_but_new_update)",
+          {
+            tournamentId,
+            lastUpdate: dataGolfInPlayLastUpdate,
+            previousLastUpdate,
+          },
+        );
       }
 
       const tournamentName = await ctx.runQuery(
@@ -1407,13 +1418,16 @@ export const runLiveTournamentSync: ReturnType<typeof internalAction> =
         );
 
         if (!compatible.ok) {
-          console.log("runLiveTournamentSync: event_name_mismatch (continuing)", {
-            tournamentId,
-            tournamentName,
-            dataGolfEventName,
-            score: compatible.score,
-            intersection: compatible.intersection,
-          });
+          console.log(
+            "runLiveTournamentSync: event_name_mismatch (continuing)",
+            {
+              tournamentId,
+              tournamentName,
+              dataGolfEventName,
+              score: compatible.score,
+              intersection: compatible.intersection,
+            },
+          );
         }
       }
 
@@ -2074,18 +2088,24 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
             const aRound = getRound(a, round);
             const bRound = getRound(b, round);
             const va = liveMode
-              ? (typeof a.today === "number" ? a.today : Number.POSITIVE_INFINITY)
+              ? typeof a.today === "number"
+                ? a.today
+                : Number.POSITIVE_INFINITY
               : typeof aRound === "number"
                 ? aRound - par
                 : Number.POSITIVE_INFINITY;
             const vb = liveMode
-              ? (typeof b.today === "number" ? b.today : Number.POSITIVE_INFINITY)
+              ? typeof b.today === "number"
+                ? b.today
+                : Number.POSITIVE_INFINITY
               : typeof bRound === "number"
                 ? bRound - par
                 : Number.POSITIVE_INFINITY;
             if (va !== vb) return va - vb;
-            const sa = typeof a.score === "number" ? a.score : Number.POSITIVE_INFINITY;
-            const sb = typeof b.score === "number" ? b.score : Number.POSITIVE_INFINITY;
+            const sa =
+              typeof a.score === "number" ? a.score : Number.POSITIVE_INFINITY;
+            const sb =
+              typeof b.score === "number" ? b.score : Number.POSITIVE_INFINITY;
             if (sa !== sb) return sa - sb;
             return (a.apiId ?? 0) - (b.apiId ?? 0);
           });
@@ -2128,15 +2148,22 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
           return avg(vals);
         };
 
-        const avgToday = (golfers: SnapGolfer[]) => avg(golfers.map((g) => g.today));
-        const avgThru = (golfers: SnapGolfer[]) => avg(golfers.map((g) => g.thru));
+        const avgToday = (golfers: SnapGolfer[]) =>
+          avg(golfers.map((g) => g.today));
+        const avgThru = (golfers: SnapGolfer[]) =>
+          avg(golfers.map((g) => g.thru));
 
         const contrib = (round: 1 | 2 | 3 | 4, liveMode: boolean) => {
           const required = selectionCountFor(eventIndex, round);
           const pool =
             required >= 10
               ? teamGolfers
-              : pickTopN(active.length ? active : teamGolfers, round, liveMode, Math.min(required, active.length || teamGolfers.length));
+              : pickTopN(
+                  active.length ? active : teamGolfers,
+                  round,
+                  liveMode,
+                  Math.min(required, active.length || teamGolfers.length),
+                );
 
           if (team.golferIds.length === 0 || pool.length === 0) {
             const bracket = (() => {
@@ -2501,6 +2528,10 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
           for (const u of updates) u.earnings = 0;
         }
       } else {
+        for (const u of updates) {
+          u.points = 0;
+          u.earnings = 0;
+        }
         awardPointsAndEarnings(updates, 0);
       }
       const cleanUpdates = updates.map(({ _isCut, ...rest }) => rest);
@@ -2626,8 +2657,8 @@ export const adminRunCronJob = action({
             const field = Array.isArray(
               (fieldUpdates as { field?: unknown }).field,
             )
-                ? ((fieldUpdates as { field: unknown[] }).field as
-                  FieldPlayerWithAllTeeTimes[])
+              ? ((fieldUpdates as { field: unknown[] })
+                  .field as FieldPlayerWithAllTeeTimes[])
               : [];
 
             const rankingsList = Array.isArray(
