@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui";
+import { ChevronDown, ChevronUp } from "lucide-react";
 
 /**
  * Modal team picker for a single tournament.
@@ -172,29 +173,30 @@ function TournamentTeamPickerGroup(props: {
 
   return (
     <div className="rounded-md border p-3">
-      <button
-        type="button"
-        className={cn(
-          "mb-2 flex w-full items-baseline justify-between text-left",
-          isCollapsible && "cursor-pointer",
-        )}
-        onClick={() => {
-          if (!isCollapsible) return;
-          props.onToggleCollapse();
-        }}
-      >
-        <div className="font-semibold">
-          {props.group.label}
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="min-w-0 font-semibold">{props.group.label}</div>
+
+        <div className="flex items-center gap-2">
+          <div className="text-xs text-gray-600">{props.group.selectedCount}/2</div>
           {isCollapsible ? (
-            <span className="ml-2 text-xs font-normal text-gray-600">
-              {props.isCollapsed ? "(collapsed)" : "(expanded)"}
-            </span>
+            <button
+              type="button"
+              className={cn(
+                "inline-flex items-center justify-center rounded-md p-1 text-gray-600 hover:bg-gray-100",
+              )}
+              onClick={props.onToggleCollapse}
+              aria-label={props.isCollapsed ? "Expand group" : "Collapse group"}
+              title={props.isCollapsed ? "Expand" : "Collapse"}
+            >
+              {props.isCollapsed ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronUp className="h-4 w-4" />
+              )}
+            </button>
           ) : null}
         </div>
-        <div className="text-xs text-gray-600">
-          {props.group.selectedCount}/2
-        </div>
-      </button>
+      </div>
 
       {props.isCollapsed ? (
         <div className="text-sm text-gray-700">
