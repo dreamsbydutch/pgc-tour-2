@@ -179,6 +179,69 @@ export const getGolferIdsByApiIds = internalQuery({
   },
 });
 
+export const updateGolfersWorldRanksFromRankings = internalMutation({
+  args: {
+    rankings: v.array(
+      v.object({
+        dg_id: v.number(),
+        owgr_rank: v.number(),
+        player_name: v.string(),
+        country: v.optional(v.string()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    let golfersMatched = 0;
+    let golfersUpdated = 0;
+
+    for (const r of args.rankings) {
+      const apiId = r.dg_id;
+      const nextWorldRank = r.owgr_rank;
+      if (!Number.isFinite(apiId) || !Number.isFinite(nextWorldRank)) continue;
+
+      const golfer = await ctx.db
+        .query("golfers")
+        .withIndex("by_api_id", (q) => q.eq("apiId", apiId))
+        .first();
+
+      if (!golfer) continue;
+      golfersMatched += 1;
+
+      const patch: Partial<Doc<"golfers">> & { updatedAt: number } = {
+        updatedAt: Date.now(),
+      };
+
+      const normalizedName = normalizePlayerNameFromDataGolf(r.player_name);
+      if (normalizedName && normalizedName !== golfer.playerName) {
+        patch.playerName = normalizedName;
+      }
+
+      if (nextWorldRank !== golfer.worldRank) {
+        patch.worldRank = nextWorldRank;
+      }
+
+      const nextCountry = typeof r.country === "string" ? r.country.trim() : "";
+      if (nextCountry && golfer.country !== nextCountry) {
+        patch.country = nextCountry;
+      }
+
+      const keys = Object.keys(patch);
+      if (keys.length > 1) {
+        await ctx.db.patch(golfer._id, patch);
+        golfersUpdated += 1;
+      }
+    }
+
+    return {
+      ok: true,
+      skipped: false,
+      golfersMatched,
+      golfersUpdated,
+      rankingsProcessed: args.rankings.length,
+    } as const;
+  },
+});
+
 export const getCreateGroupsTarget = internalQuery({
   args: {
     tournamentId: v.optional(v.id("tournaments")),
@@ -671,10 +734,23 @@ export const runCreateGroupsForNextTournament: ReturnType<
       },
     );
 
+    const worldRankUpdate = await ctx.runMutation(
+      internal.functions.cronJobs.updateGolfersWorldRanksFromRankings,
+      {
+        rankings: rankingsList.map((r) => ({
+          dg_id: r.dg_id,
+          owgr_rank: r.owgr_rank,
+          player_name: r.player_name,
+          country: r.country,
+        })),
+      },
+    );
+
     return {
       ok: true,
       tournamentId,
       createGroups: createResult,
+      worldRankUpdate,
     };
   },
 });
