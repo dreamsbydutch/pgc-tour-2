@@ -324,7 +324,13 @@ export interface EnhancedTeamDoc extends TeamDoc {
   tournament?: TournamentDoc;
   tourCard?: TourCardDoc;
   member?: MemberDoc;
-  golfers?: GolferDoc[];
+  golfers?: Array<
+    GolferDoc & {
+      group?: number | null;
+      rating?: number | null;
+      worldRank?: number | null;
+    }
+  >;
   statistics?: TeamStatistics;
 }
 

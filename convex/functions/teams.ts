@@ -983,15 +983,37 @@ async function enhanceTeam(
 
   if (enhance.includeGolfers) {
     const golfers = await Promise.all(
-      team.golferIds.map(async (golferId) => {
+      team.golferIds.map(async (golferApiId) => {
         const golfer = await ctx.db
           .query("golfers")
-          .withIndex("by_api_id", (q) => q.eq("apiId", golferId))
+          .withIndex("by_api_id", (q) => q.eq("apiId", golferApiId))
           .first();
-        return golfer;
+
+        if (!golfer) return null;
+
+        const tg = await ctx.db
+          .query("tournamentGolfers")
+          .withIndex("by_golfer_tournament", (q) =>
+            q.eq("golferId", golfer._id).eq("tournamentId", team.tournamentId),
+          )
+          .first();
+
+        return {
+          ...golfer,
+          group: tg?.group ?? null,
+          rating: tg?.rating ?? null,
+          worldRank: tg?.worldRank ?? golfer.worldRank ?? null,
+        };
       }),
     );
-    enhanced.golfers = golfers.filter((g): g is GolferDoc => g !== null);
+
+    enhanced.golfers = golfers.filter(
+      (g): g is GolferDoc & {
+        group?: number | null;
+        rating?: number | null;
+        worldRank?: number | null;
+      } => g !== null,
+    );
   }
 
   if (enhance.includeStatistics) {
