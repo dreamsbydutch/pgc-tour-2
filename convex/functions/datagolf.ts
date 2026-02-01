@@ -62,6 +62,7 @@ import type {
   HoleStats,
   LiveHoleStatsResponse,
   HistoricalEvent,
+  HistoricalEventDataResponse,
   HistoricalPlayer,
   HistoricalRoundDataResponse,
 } from "../types/datagolf";
@@ -151,6 +152,8 @@ const vHistoricalDfsSite = v.union(
   v.literal("draftkings"),
   v.literal("fanduel"),
 );
+
+const vHistoricalEventDataTour = v.literal("pga");
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
@@ -1145,6 +1148,29 @@ export const fetchHistoricalRoundData = action({
     }
 
     return { ...data, scores: processedScores };
+  },
+});
+
+export const fetchHistoricalEventDataEvents = action({
+  args: {
+    options: v.object({
+      tour: vHistoricalEventDataTour,
+      eventId: v.number(),
+      year: v.number(),
+      format: v.optional(vFileFormat),
+    }),
+  },
+  handler: async (ctx, { options }): Promise<HistoricalEventDataResponse> => {
+    void ctx;
+
+    const format = (options.format || "json") as "json" | "csv";
+    const endpoint = `/historical-event-data/events?tour=${options.tour}&event_id=${options.eventId}&year=${options.year}&file_format=${format}`;
+
+    return fetchFromDataGolf<HistoricalEventDataResponse>(endpoint, (json) => {
+      if (!json || typeof json !== "object") return false;
+      const maybe = json as { event_stats?: unknown };
+      return Array.isArray(maybe.event_stats);
+    });
   },
 });
 

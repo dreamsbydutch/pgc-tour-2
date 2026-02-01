@@ -761,6 +761,25 @@ export interface HistoricalRoundDataResponse {
   scores: HistoricalPlayer[];
 }
 
+export interface HistoricalEventDataStat {
+  dg_id: number;
+  dg_points: number;
+  earnings: number;
+  fec_points: number;
+  fin_text: string;
+  player_name: string;
+}
+
+export interface HistoricalEventDataResponse {
+  event_completed: string;
+  tour: string;
+  season: number;
+  year: number;
+  event_id: string;
+  event_name: string;
+  event_stats: HistoricalEventDataStat[];
+}
+
 export type HistoricalOddsTour = "pga" | "euro" | "alt";
 
 export interface HistoricalOddsEventListEntry {
@@ -924,6 +943,7 @@ export type DataGolfAPIResponse =
   | LiveHoleStatsResponse
   | HistoricalEvent[]
   | HistoricalRoundDataResponse
+  | HistoricalEventDataResponse
   | BettingToolOutrightsResponse
   | BettingToolMatchupsResponse
   | BettingToolAllPairingsResponse

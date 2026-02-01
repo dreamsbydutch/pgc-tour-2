@@ -1617,6 +1617,7 @@ type TeamsCronGolferSnap = {
 
 type TeamsCronTournamentSnap = {
   tournamentId: Id<"tournaments">;
+  tournamentApiId: string | null;
   seasonId: Id<"seasons">;
   startDate: number;
   currentRound: number;
@@ -1741,6 +1742,7 @@ export const getTournamentSnapshotForTeamsCron = internalQuery({
 
     return {
       tournamentId: args.tournamentId,
+      tournamentApiId: tournament.apiId ?? null,
       seasonId: tournament.seasonId,
       startDate: tournament.startDate,
       currentRound: tournament.currentRound ?? 1,
@@ -2416,6 +2418,91 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
         })();
 
         for (const u of updates) u.position = labels.get(String(u.teamId));
+
+        const shouldApplyFinalT1TieBreaker = r === 5 && !live;
+        if (shouldApplyFinalT1TieBreaker) {
+          const tiedForFirst = updates.filter((u) => u.position === "T1");
+          if (tiedForFirst.length > 1) {
+            const apiIdRaw = (snap.tournamentApiId ?? "").trim();
+            const eventId = Number.parseInt(apiIdRaw, 10);
+            const year = new Date(snap.startDate).getFullYear();
+
+            if (!Number.isFinite(eventId)) {
+              console.log("runTeamsUpdateForTournament: t1_tiebreak_skipped (missing_event_id)", {
+                tournamentId,
+                tournamentApiId: snap.tournamentApiId,
+              });
+            } else {
+              try {
+                const eventStats = await ctx.runAction(
+                  api.functions.datagolf.fetchHistoricalEventDataEvents,
+                  {
+                    options: {
+                      tour: "pga",
+                      eventId,
+                      year,
+                      format: "json",
+                    },
+                  },
+                );
+
+                const earningsByGolferApiId = new Map<number, number>();
+                for (const s of eventStats.event_stats ?? []) {
+                  if (typeof s?.dg_id !== "number") continue;
+                  if (typeof s?.earnings !== "number") continue;
+                  earningsByGolferApiId.set(s.dg_id, s.earnings);
+                }
+
+                const teamById = new Map<string, Doc<"teams">>();
+                for (const t of snap.teams) teamById.set(String(t._id), t);
+
+                const calc = tiedForFirst
+                  .map((u) => {
+                    const team = teamById.get(String(u.teamId));
+                    const golferIds = team?.golferIds ?? [];
+                    const totalEarnings = golferIds.reduce(
+                      (sum, gid) => sum + (earningsByGolferApiId.get(gid) ?? 0),
+                      0,
+                    );
+                    return { u, totalEarnings };
+                  })
+                  .sort((a, b) => {
+                    if (b.totalEarnings !== a.totalEarnings) {
+                      return b.totalEarnings - a.totalEarnings;
+                    }
+                    return String(a.u.teamId).localeCompare(String(b.u.teamId));
+                  });
+
+                const winner = calc[0]?.u;
+                if (winner) {
+                  winner.position = "1";
+                  const remainingCount = tiedForFirst.length - 1;
+                  const label = remainingCount > 1 ? "T2" : "2";
+                  for (const other of tiedForFirst) {
+                    if (other.teamId === winner.teamId) continue;
+                    other.position = label;
+                  }
+
+                  console.log("runTeamsUpdateForTournament: t1_tiebreak_applied", {
+                    tournamentId,
+                    eventId,
+                    year,
+                    tiedCount: tiedForFirst.length,
+                    winnerTeamId: winner.teamId,
+                    winnerTotalEarnings: calc[0]?.totalEarnings,
+                  });
+                }
+              } catch (err) {
+                console.log("runTeamsUpdateForTournament: t1_tiebreak_failed (continuing)", {
+                  tournamentId,
+                  eventId,
+                  year,
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              }
+            }
+          }
+        }
       } else {
         const playoffByTeamId = new Map<string, number>();
         for (const team of snap.teams) {
