@@ -143,6 +143,9 @@ const schema = defineSchema({
     currentRound: v.optional(v.number()),
     livePlay: v.optional(v.boolean()),
 
+    // DataGolf sync markers (used to avoid unnecessary live-sync writes)
+    dataGolfInPlayLastUpdate: v.optional(v.string()),
+
     updatedAt: v.optional(v.number()),
   })
     .index("by_season", ["seasonId"])

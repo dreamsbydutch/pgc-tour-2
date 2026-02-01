@@ -598,6 +598,46 @@ function useTournamentPage(args: {
       },
     ];
 
+    const currentRoundForTeeTimes = (() => {
+      const raw = tournament.currentRound ?? null;
+      if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
+      const r = Math.floor(raw);
+      if (r <= 1) return 1;
+      if (r === 2) return 2;
+      if (r === 3) return 3;
+      return 4;
+    })();
+
+    const teeTimeForRound = (
+      rounds: {
+        roundOneTeeTime?: string | null;
+        roundTwoTeeTime?: string | null;
+        roundThreeTeeTime?: string | null;
+        roundFourTeeTime?: string | null;
+      },
+      currentRound: 1 | 2 | 3 | 4 | null,
+    ) => {
+      const byRound =
+        currentRound === 1
+          ? rounds.roundOneTeeTime
+          : currentRound === 2
+            ? rounds.roundTwoTeeTime
+            : currentRound === 3
+              ? rounds.roundThreeTeeTime
+              : currentRound === 4
+                ? rounds.roundFourTeeTime
+                : null;
+
+      return (
+        byRound ??
+        rounds.roundOneTeeTime ??
+        rounds.roundTwoTeeTime ??
+        rounds.roundThreeTeeTime ??
+        rounds.roundFourTeeTime ??
+        null
+      );
+    };
+
     const pgaRows: LeaderboardPgaRow[] = (golfers ?? []).map((tg) => ({
       kind: "pga",
       id: String(tg._id),
@@ -621,12 +661,15 @@ function useTournamentPage(args: {
       win: tg.win ?? null,
       worldRank: tg.worldRank ?? tg.golfer.worldRank ?? null,
       country: tg.golfer.country ?? null,
-      teeTimeDisplay:
-        tg.roundOneTeeTime ??
-        tg.roundTwoTeeTime ??
-        tg.roundThreeTeeTime ??
-        tg.roundFourTeeTime ??
-        null,
+      teeTimeDisplay: teeTimeForRound(
+        {
+          roundOneTeeTime: tg.roundOneTeeTime,
+          roundTwoTeeTime: tg.roundTwoTeeTime,
+          roundThreeTeeTime: tg.roundThreeTeeTime,
+          roundFourTeeTime: tg.roundFourTeeTime,
+        },
+        currentRoundForTeeTimes,
+      ),
     }));
 
     const pgcRows: LeaderboardTeamRow[] = (teams ?? []).map((team) => {
@@ -650,12 +693,15 @@ function useTournamentPage(args: {
         roundTwo: team.roundTwo ?? null,
         roundThree: team.roundThree ?? null,
         roundFour: team.roundFour ?? null,
-        teeTimeDisplay:
-          team.roundOneTeeTime ??
-          team.roundTwoTeeTime ??
-          team.roundThreeTeeTime ??
-          team.roundFourTeeTime ??
-          null,
+        teeTimeDisplay: teeTimeForRound(
+          {
+            roundOneTeeTime: team.roundOneTeeTime,
+            roundTwoTeeTime: team.roundTwoTeeTime,
+            roundThreeTeeTime: team.roundThreeTeeTime,
+            roundFourTeeTime: team.roundFourTeeTime,
+          },
+          currentRoundForTeeTimes,
+        ),
         tourCard: {
           id: teamTourCard ? String(teamTourCard._id) : String(team.tourCardId),
           ownerClerkId: null,

@@ -8,7 +8,7 @@ const crons = cronJobs();
 // Self-gating: the job exits quickly if no active tournament is found.
 crons.interval(
   "live_tournament_sync",
-  { minutes: 2 },
+  { minutes: 4 },
   internal.functions.cronJobs.runLiveTournamentSync,
   {},
 );
@@ -23,8 +23,22 @@ crons.cron(
 
 // Pre-tournament grouping (field updates + rankings -> tournamentGolfers.group)
 crons.cron(
-  "create_groups_for_next_tournament",
-  "0 10 * * 1",
+  "create_groups_for_next_tournament_12pm",
+  "0 17 * * 1",
+  internal.functions.cronJobs.runCreateGroupsForNextTournament,
+  {},
+);
+
+crons.cron(
+  "create_groups_for_next_tournament_1pm",
+  "0 18 * * 1",
+  internal.functions.cronJobs.runCreateGroupsForNextTournament,
+  {},
+);
+
+crons.cron(
+  "create_groups_for_next_tournament_2pm",
+  "0 19 * * 1",
   internal.functions.cronJobs.runCreateGroupsForNextTournament,
   {},
 );

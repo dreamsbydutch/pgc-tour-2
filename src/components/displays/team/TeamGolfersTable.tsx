@@ -37,6 +37,7 @@ export function TeamGolfersTable(props: {
 }) {
   const model = useTeamGolfersTable({
     team: props.team,
+    tournament: props.tournament,
     allGolfers: props.allGolfers,
   });
 
@@ -154,6 +155,7 @@ export function TeamGolfersTable(props: {
  */
 function useTeamGolfersTable(args: {
   team: LeaderboardTeamRow;
+  tournament: LeaderboardTournamentLite;
   allGolfers: LeaderboardPgaRow[];
 }) {
   return useMemo(() => {
@@ -164,8 +166,48 @@ function useTeamGolfersTable(args: {
     const nonCut = teamGolfers.filter((g) => !isPlayerCut(g.position));
     const cut = teamGolfers.filter((g) => isPlayerCut(g.position));
 
-    return { rows: [...nonCut, ...cut] };
-  }, [args.allGolfers, args.team.golferApiIds]);
+    const toTimeMs = (teeTime?: string | null) => {
+      if (!teeTime) return Number.POSITIVE_INFINITY;
+      const ms = new Date(teeTime).getTime();
+      return Number.isNaN(ms) ? Number.POSITIVE_INFINITY : ms;
+    };
+
+    const sortByLive = (rows: LeaderboardPgaRow[]) => {
+      return [...rows].sort((a, b) => {
+        const aStarted = typeof a.thru === "number" && a.thru > 0;
+        const bStarted = typeof b.thru === "number" && b.thru > 0;
+        if (aStarted !== bStarted) return aStarted ? -1 : 1;
+
+        if (!aStarted && !bStarted) {
+          const ta = toTimeMs(a.teeTimeDisplay ?? null);
+          const tb = toTimeMs(b.teeTimeDisplay ?? null);
+          if (ta !== tb) return ta - tb;
+          return (a.playerName ?? "").localeCompare(b.playerName ?? "");
+        }
+
+        const aToday = typeof a.today === "number" ? a.today : Number.POSITIVE_INFINITY;
+        const bToday = typeof b.today === "number" ? b.today : Number.POSITIVE_INFINITY;
+        if (aToday !== bToday) return aToday - bToday;
+
+        const aThru = typeof a.thru === "number" ? a.thru : Number.NEGATIVE_INFINITY;
+        const bThru = typeof b.thru === "number" ? b.thru : Number.NEGATIVE_INFINITY;
+        if (aThru !== bThru) return bThru - aThru;
+
+        const aScore = typeof a.score === "number" ? a.score : Number.POSITIVE_INFINITY;
+        const bScore = typeof b.score === "number" ? b.score : Number.POSITIVE_INFINITY;
+        if (aScore !== bScore) return aScore - bScore;
+
+        return (a.playerName ?? "").localeCompare(b.playerName ?? "");
+      });
+    };
+
+    const sortedNonCut = sortByLive(nonCut);
+    const sortedCut = [...cut].sort((a, b) =>
+      (a.playerName ?? "").localeCompare(b.playerName ?? ""),
+    );
+
+    return { rows: [...sortedNonCut, ...sortedCut] };
+  }, [args.allGolfers, args.team.golferApiIds, args.tournament.currentRound]);
 }
 
 /**

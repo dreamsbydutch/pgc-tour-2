@@ -101,8 +101,10 @@ export interface FieldPlayer {
   flag?: string;
   pga_number?: number;
   player_name: string;
-  r1_teetime?: string;
-  r2_teetime?: string;
+  r1_teetime?: string | null;
+  r2_teetime?: string | null;
+  r3_teetime?: string | null;
+  r4_teetime?: string | null;
   start_hole?: number;
   unofficial?: number;
   yh_id?: string;
