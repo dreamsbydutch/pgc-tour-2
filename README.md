@@ -52,7 +52,8 @@ VITE_CLERK_PUBLISHABLE_KEY=pk_test_your_publishable_key
 
 # PostHog - Get these from https://app.posthog.com
 VITE_POSTHOG_KEY=phc_your_project_key
-VITE_POSTHOG_HOST=https://app.posthog.com
+VITE_POSTHOG_HOST=https://us.i.posthog.com
+# (EU projects: https://eu.i.posthog.com)
 ```
 
 ### 4. Start Development
