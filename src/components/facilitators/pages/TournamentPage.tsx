@@ -481,7 +481,10 @@ function useTournamentPage(args: {
 
   const existingTeam =
     teamResult && teamResult.length > 0 && teamResult[0]
-      ? { _id: String(teamResult[0]._id), golferIds: teamResult[0].golferIds ?? null }
+      ? {
+          _id: String(teamResult[0]._id),
+          golferIds: teamResult[0].golferIds ?? null,
+        }
       : null;
 
   const teamGolfers =

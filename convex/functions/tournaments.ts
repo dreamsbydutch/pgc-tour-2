@@ -592,7 +592,9 @@ export const getTournamentPickPool = query({
   handler: async (ctx, args) => {
     const tournamentGolfers = await ctx.db
       .query("tournamentGolfers")
-      .withIndex("by_tournament", (q) => q.eq("tournamentId", args.tournamentId))
+      .withIndex("by_tournament", (q) =>
+        q.eq("tournamentId", args.tournamentId),
+      )
       .collect();
 
     const golferIds = Array.from(

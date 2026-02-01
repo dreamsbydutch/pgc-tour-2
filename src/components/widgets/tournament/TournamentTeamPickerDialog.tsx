@@ -96,7 +96,8 @@ export function TournamentTeamPickerDialog(props: {
                   onToggleCollapse={() => {
                     setExpandedCompletedGroups((prev) => {
                       const next = new Set(prev);
-                      const isCompleted = group.groupKey !== 0 && group.selectedCount >= 2;
+                      const isCompleted =
+                        group.groupKey !== 0 && group.selectedCount >= 2;
                       if (!isCompleted) return next;
 
                       if (next.has(group.groupKey)) next.delete(group.groupKey);
@@ -155,6 +156,7 @@ function TournamentTeamPickerGroup(props: {
       playerName: string;
       group: number | null;
       worldRank: number | null;
+      rating: number | null;
       isSelected: boolean;
       isDisabled: boolean;
     }>;
@@ -163,7 +165,8 @@ function TournamentTeamPickerGroup(props: {
   onToggleCollapse: () => void;
   onToggleGolfer: (apiId: number) => void;
 }) {
-  const isCollapsible = props.group.groupKey !== 0 && props.group.selectedCount >= 2;
+  const isCollapsible =
+    props.group.groupKey !== 0 && props.group.selectedCount >= 2;
 
   const selectedGolfers = props.group.golfers.filter((g) => g.isSelected);
 
@@ -188,7 +191,9 @@ function TournamentTeamPickerGroup(props: {
             </span>
           ) : null}
         </div>
-        <div className="text-xs text-gray-600">{props.group.selectedCount}/2</div>
+        <div className="text-xs text-gray-600">
+          {props.group.selectedCount}/2
+        </div>
       </button>
 
       {props.isCollapsed ? (
@@ -197,9 +202,12 @@ function TournamentTeamPickerGroup(props: {
             <div className="grid grid-cols-1 gap-1">
               {selectedGolfers.map((g) => (
                 <div key={g.golferApiId} className="flex items-baseline gap-2">
+                  <span className="text-xs text-gray-600">
+                    {g.worldRank != null ? `#${g.worldRank}` : ""}
+                  </span>
                   <span className="font-medium">{g.playerName}</span>
                   <span className="text-xs text-gray-600">
-                    {g.worldRank != null ? `WGR #${g.worldRank}` : "WGR -"}
+                    {g.rating != null ? `(${g.rating})` : "(N/A)"}
                   </span>
                 </div>
               ))}
@@ -222,7 +230,9 @@ function TournamentTeamPickerGroup(props: {
                 onChange={() => props.onToggleGolfer(g.golferApiId)}
               />
               <div className="min-w-0">
-                <div className="truncate text-sm font-medium">{g.playerName}</div>
+                <div className="truncate text-sm font-medium">
+                  {g.playerName}
+                </div>
                 <div className="text-xs text-gray-600">
                   {g.worldRank != null ? `WGR #${g.worldRank}` : "WGR -"}
                 </div>
@@ -263,6 +273,7 @@ function useTournamentTeamPickerDialog(props: {
         playerName: string;
         group: number | null;
         worldRank: number | null;
+        rating: number | null;
       }>
     | undefined;
 
@@ -324,7 +335,10 @@ function useTournamentTeamPickerDialog(props: {
       const g = pool.find((x) => x.golferApiId === apiId);
       const group = g?.group;
       if (typeof group !== "number") continue;
-      groupToSelectedCount.set(group, (groupToSelectedCount.get(group) ?? 0) + 1);
+      groupToSelectedCount.set(
+        group,
+        (groupToSelectedCount.get(group) ?? 0) + 1,
+      );
     }
 
     const byGroup = new Map<number, typeof pool>();
@@ -336,7 +350,8 @@ function useTournamentTeamPickerDialog(props: {
     const groups = Array.from(byGroup.entries())
       .sort(([a], [b]) => a - b)
       .map(([groupKey, golfers]) => {
-        const selectedCount = groupKey === 0 ? 0 : (groupToSelectedCount.get(groupKey) ?? 0);
+        const selectedCount =
+          groupKey === 0 ? 0 : (groupToSelectedCount.get(groupKey) ?? 0);
 
         const sorted = [...golfers].sort(
           (a, b) => (a.worldRank ?? Infinity) - (b.worldRank ?? Infinity),
@@ -349,7 +364,9 @@ function useTournamentTeamPickerDialog(props: {
           golfers: sorted.map((g) => {
             const isSelected = selectedApiIds.includes(g.golferApiId);
             const nextGroupCount =
-              typeof g.group === "number" ? (groupToSelectedCount.get(g.group) ?? 0) : 0;
+              typeof g.group === "number"
+                ? (groupToSelectedCount.get(g.group) ?? 0)
+                : 0;
 
             const wouldExceedTotal = !isSelected && totalSelected >= 10;
             const wouldExceedGroup =

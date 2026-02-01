@@ -79,11 +79,7 @@ export function TeamPickForm(props: {
         className={cn("mb-4 mt-8 text-xl")}
         size="lg"
       >
-        {model.hasExistingTeam ? (
-          "Change Your Team"
-        ) : (
-          "Create Your Team"
-        )}
+        {model.hasExistingTeam ? "Change Your Team" : "Create Your Team"}
       </Button>
 
       <TournamentTeamPickerDialog
