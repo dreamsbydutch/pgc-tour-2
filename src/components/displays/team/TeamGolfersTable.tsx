@@ -9,6 +9,7 @@ import type {
 } from "@/lib";
 import {
   cn,
+  formatTeeTimeTimeOfDay,
   formatPercentageDisplay,
   formatToPar,
   isPlayerCut,
@@ -56,7 +57,7 @@ export function TeamGolfersTable(props: {
     if (golfer.thru === 0 || golfer.thru === null) {
       return (
         <td className="text-xs" colSpan={2}>
-          {golfer.teeTimeDisplay ?? "-"}
+          {formatTeeTimeTimeOfDay(golfer.teeTimeDisplay) ?? "-"}
         </td>
       );
     }

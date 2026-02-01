@@ -239,6 +239,8 @@ function useTournamentPage(args: {
           _id?: string | null;
           playerName: string;
           worldRank?: number | null;
+          group?: number | null;
+          rating?: number | null;
         }> | null;
         playoffEventIndex: number;
       };
@@ -286,6 +288,8 @@ function useTournamentPage(args: {
           _id?: string | null;
           playerName: string;
           worldRank?: number | null;
+          group?: number | null;
+          rating?: number | null;
         }> | null;
         playoffEventIndex: number;
       };
@@ -358,6 +362,8 @@ function useTournamentPage(args: {
         playerName: string;
         country?: string | null;
         worldRank?: number | null;
+        group?: number | null;
+        rating?: number | null;
       };
     }>;
     tours: Array<{
@@ -475,7 +481,9 @@ function useTournamentPage(args: {
           apiId?: number | null;
           playerName: string;
           worldRank?: number | null;
-        }>;
+          group?: number | null;
+          rating?: number | null;
+        }> | null;
       }>
     | undefined;
 
@@ -494,6 +502,8 @@ function useTournamentPage(args: {
           apiId: g.apiId ?? null,
           playerName: g.playerName,
           worldRank: g.worldRank ?? null,
+          group: g.group ?? null,
+          rating: g.rating ?? null,
         }))
       : null;
 

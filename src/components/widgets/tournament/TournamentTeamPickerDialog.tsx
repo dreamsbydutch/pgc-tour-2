@@ -177,7 +177,9 @@ function TournamentTeamPickerGroup(props: {
         <div className="min-w-0 font-semibold">{props.group.label}</div>
 
         <div className="flex items-center gap-2">
-          <div className="text-xs text-gray-600">{props.group.selectedCount}/2</div>
+          <div className="text-xs text-gray-600">
+            {props.group.selectedCount}/2
+          </div>
           {isCollapsible ? (
             <button
               type="button"

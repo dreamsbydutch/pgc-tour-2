@@ -96,10 +96,9 @@ export function AdminCronsPage() {
                       }
                       className="w-full rounded-md border px-3 py-2 text-sm"
                     >
-                      <option value="datagolf_live_sync">
-                        datagolf_live_sync
+                      <option value="live_tournament_sync">
+                        live_tournament_sync
                       </option>
-                      <option value="update_teams">update_teams</option>
                       <option value="recompute_standings">
                         recompute_standings
                       </option>
@@ -190,14 +189,12 @@ function useAdminCronsPage():
       isRoleLoading: boolean;
       tournaments: Array<{ _id: Id<"tournaments">; name: string }>;
       job:
-        | "datagolf_live_sync"
-        | "update_teams"
+        | "live_tournament_sync"
         | "recompute_standings"
         | "create_groups_for_next_tournament";
       setJob: React.Dispatch<
         React.SetStateAction<
-          | "datagolf_live_sync"
-          | "update_teams"
+          | "live_tournament_sync"
           | "recompute_standings"
           | "create_groups_for_next_tournament"
         >
@@ -214,8 +211,7 @@ function useAdminCronsPage():
       onRun: () => Promise<void>;
     } {
   type CronJobName =
-    | "datagolf_live_sync"
-    | "update_teams"
+    | "live_tournament_sync"
     | "recompute_standings"
     | "create_groups_for_next_tournament";
 
@@ -258,15 +254,14 @@ function useAdminCronsPage():
     return list;
   }, [tournamentsResult]);
 
-  const [job, setJob] = useState<CronJobName>("datagolf_live_sync");
+  const [job, setJob] = useState<CronJobName>("live_tournament_sync");
   const [tournamentId, setTournamentId] = useState<Id<"tournaments"> | "">("");
   const [confirm, setConfirm] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [lastResult, setLastResult] = useState<CronRunResult | null>(null);
 
   const wantsTournamentId =
-    job === "datagolf_live_sync" ||
-    job === "update_teams" ||
+    job === "live_tournament_sync" ||
     job === "create_groups_for_next_tournament";
 
   async function onRun() {

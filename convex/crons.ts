@@ -4,20 +4,12 @@ import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 
-// Live tournament sync (DataGolf -> golfers/tournamentGolfers + tournament status)
+// Live tournament sync (DataGolf -> tournamentGolfers -> teams)
 // Self-gating: the job exits quickly if no active tournament is found.
 crons.interval(
-  "datagolf_live_sync",
+  "live_tournament_sync",
   { minutes: 2 },
-  internal.functions.cronJobs.runDataGolfLiveSync,
-  {},
-);
-
-// Teams recompute (tournamentGolfers -> teams score/position/points/earnings)
-crons.interval(
-  "update_teams",
-  { minutes: 2 },
-  internal.functions.cronJobs.runUpdateTeamsForActiveTournament,
+  internal.functions.cronJobs.runLiveTournamentSync,
   {},
 );
 

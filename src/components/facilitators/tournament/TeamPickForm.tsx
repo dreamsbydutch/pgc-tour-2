@@ -65,7 +65,7 @@ export function TeamPickForm(props: {
       ) : null}
 
       <div className="text-lg font-bold">
-        {`${model.formattedRank} - ${model.pointsDisplay} pts$${model.earningsDisplay}`}
+        {`${model.formattedRank} - ${model.pointsDisplay} pts${model.earningsDisplay}`}
       </div>
 
       {props.teamGolfers && props.teamGolfers.length > 0 ? (

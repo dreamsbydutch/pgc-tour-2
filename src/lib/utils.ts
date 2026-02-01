@@ -175,6 +175,54 @@ export function formatDateTime(ms: number | undefined): string {
 }
 
 /**
+ * Formats a tee time string (ISO, 24h, or already AM/PM) into a compact `h:mm AM/PM` display.
+ *
+ * @example
+ * formatTeeTimeTimeOfDay("2026-02-01T13:05:00-05:00") // "1:05 PM"
+ * @example
+ * formatTeeTimeTimeOfDay("09:40") // "9:40 AM"
+ */
+export function formatTeeTimeTimeOfDay(
+  value: string | null | undefined,
+): string | null {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const ampmMatch = trimmed.match(/\b(\d{1,2}):(\d{2})\s*([AP]M)\b/i);
+  if (ampmMatch) {
+    const hour = Number(ampmMatch[1]);
+    const minute = ampmMatch[2];
+    const suffix = ampmMatch[3].toUpperCase();
+    if (!Number.isFinite(hour) || hour < 1 || hour > 12) return trimmed;
+    return `${hour}:${minute} ${suffix}`;
+  }
+
+  const isoTimeMatch = trimmed.match(/T(\d{2}):(\d{2})(?::\d{2})?(?:\.\d+)?/);
+  const timeMatch =
+    isoTimeMatch ??
+    trimmed.match(/\b([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?\b/);
+  if (timeMatch) {
+    const hour24 = Number(timeMatch[1]);
+    const minute = timeMatch[2];
+    if (!Number.isFinite(hour24) || hour24 < 0 || hour24 > 23) return trimmed;
+    const suffix = hour24 >= 12 ? "PM" : "AM";
+    const hour12 = ((hour24 + 11) % 12) + 1;
+    return `${hour12}:${minute} ${suffix}`;
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return trimmed;
+
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(parsed);
+}
+
+/**
  * Generic compare helper for mixed/unknown values.
  */
 export function compareUnknown(a: unknown, b: unknown): number {

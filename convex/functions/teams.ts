@@ -995,26 +995,28 @@ async function enhanceTeam(
     const golfers: Array<TeamGolferWithTournamentFields | null> =
       await Promise.all(
         team.golferIds.map(async (golferApiId) => {
-        const golfer = await ctx.db
-          .query("golfers")
-          .withIndex("by_api_id", (q) => q.eq("apiId", golferApiId))
-          .first();
+          const golfer = await ctx.db
+            .query("golfers")
+            .withIndex("by_api_id", (q) => q.eq("apiId", golferApiId))
+            .first();
 
-        if (!golfer) return null;
+          if (!golfer) return null;
 
-        const tg = await ctx.db
-          .query("tournamentGolfers")
-          .withIndex("by_golfer_tournament", (q) =>
-            q.eq("golferId", golfer._id).eq("tournamentId", team.tournamentId),
-          )
-          .first();
+          const tg = await ctx.db
+            .query("tournamentGolfers")
+            .withIndex("by_golfer_tournament", (q) =>
+              q
+                .eq("golferId", golfer._id)
+                .eq("tournamentId", team.tournamentId),
+            )
+            .first();
 
-        return {
-          ...golfer,
-          group: tg?.group ?? null,
-          rating: tg?.rating ?? null,
-          worldRank: tg?.worldRank ?? golfer.worldRank ?? null,
-        };
+          return {
+            ...golfer,
+            group: tg?.group ?? null,
+            rating: tg?.rating ?? null,
+            worldRank: tg?.worldRank ?? golfer.worldRank ?? null,
+          };
         }),
       );
 
