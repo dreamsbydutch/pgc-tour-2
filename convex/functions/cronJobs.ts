@@ -2419,7 +2419,7 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
 
         for (const u of updates) u.position = labels.get(String(u.teamId));
 
-        const shouldApplyFinalT1TieBreaker = r === 5 && !live;
+        const shouldApplyFinalT1TieBreaker = currentRound === 5 && !live;
         if (shouldApplyFinalT1TieBreaker) {
           const tiedForFirst = updates.filter((u) => u.position === "T1");
           if (tiedForFirst.length > 1) {
@@ -2428,10 +2428,13 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
             const year = new Date(snap.startDate).getFullYear();
 
             if (!Number.isFinite(eventId)) {
-              console.log("runTeamsUpdateForTournament: t1_tiebreak_skipped (missing_event_id)", {
-                tournamentId,
-                tournamentApiId: snap.tournamentApiId,
-              });
+              console.log(
+                "runTeamsUpdateForTournament: t1_tiebreak_skipped (missing_event_id)",
+                {
+                  tournamentId,
+                  tournamentApiId: snap.tournamentApiId,
+                },
+              );
             } else {
               try {
                 const eventStats = await ctx.runAction(
@@ -2483,22 +2486,28 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
                     other.position = label;
                   }
 
-                  console.log("runTeamsUpdateForTournament: t1_tiebreak_applied", {
+                  console.log(
+                    "runTeamsUpdateForTournament: t1_tiebreak_applied",
+                    {
+                      tournamentId,
+                      eventId,
+                      year,
+                      tiedCount: tiedForFirst.length,
+                      winnerTeamId: winner.teamId,
+                      winnerTotalEarnings: calc[0]?.totalEarnings,
+                    },
+                  );
+                }
+              } catch (err) {
+                console.log(
+                  "runTeamsUpdateForTournament: t1_tiebreak_failed (continuing)",
+                  {
                     tournamentId,
                     eventId,
                     year,
-                    tiedCount: tiedForFirst.length,
-                    winnerTeamId: winner.teamId,
-                    winnerTotalEarnings: calc[0]?.totalEarnings,
-                  });
-                }
-              } catch (err) {
-                console.log("runTeamsUpdateForTournament: t1_tiebreak_failed (continuing)", {
-                  tournamentId,
-                  eventId,
-                  year,
-                  error: err instanceof Error ? err.message : String(err),
-                });
+                    error: err instanceof Error ? err.message : String(err),
+                  },
+                );
               }
             }
           }
