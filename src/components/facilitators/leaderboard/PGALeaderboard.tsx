@@ -1,13 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 
 import type {
   LeaderboardPgaRow,
   LeaderboardTournamentLite,
   LeaderboardViewerContext,
 } from "@/lib";
-import { sortPgaRows } from "@/lib";
+import { isPlayerCut, sortPgaRows } from "@/lib";
 import { LeaderboardListing } from "./LeaderboardListing";
 
 /**
@@ -37,19 +37,54 @@ export function PGALeaderboard(props: {
 
   return (
     <>
-      {model.rows.map((golfer) => (
-        <LeaderboardListing
-          key={golfer.id}
-          type="PGA"
-          tournament={props.tournament}
-          allGolfers={props.golfers}
-          viewer={props.viewer}
-          golfer={golfer}
-          isPreTournament={props.isPreTournament}
-        />
-      ))}
+      {model.rows.map((golfer, index) => {
+        const prev = index === 0 ? null : model.rows[index - 1];
+        const showDivider =
+          prev == null ? false : shouldRenderPgaDivider(prev, golfer);
+
+        return (
+          <Fragment key={golfer.id}>
+            {showDivider ? <LeaderboardSectionDivider /> : null}
+            <LeaderboardListing
+              type="PGA"
+              tournament={props.tournament}
+              allGolfers={props.golfers}
+              viewer={props.viewer}
+              golfer={golfer}
+              isPreTournament={props.isPreTournament}
+            />
+          </Fragment>
+        );
+      })}
     </>
   );
+}
+
+/**
+ * Determines whether to render a visual divider before the current PGA row.
+ *
+ * Rules:
+ * - Add a divider between the last non-cut row and the first cut/WD/DQ row.
+ * - Within the cut section, add a divider when `group` changes.
+ */
+function shouldRenderPgaDivider(
+  prev: LeaderboardPgaRow,
+  curr: LeaderboardPgaRow,
+) {
+  const prevIsCut = isPlayerCut(prev.position);
+  const currIsCut = isPlayerCut(curr.position);
+
+  if (!prevIsCut && currIsCut) return true;
+  if (prevIsCut && currIsCut)
+    return (prev.group ?? 999) !== (curr.group ?? 999);
+  return false;
+}
+
+/**
+ * Simple horizontal divider used to visually separate leaderboard row sections.
+ */
+function LeaderboardSectionDivider() {
+  return <div className="mx-auto my-2 max-w-4xl border border-t-2" />;
 }
 
 /**

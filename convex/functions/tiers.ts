@@ -7,83 +7,23 @@
  */
 
 import { query, mutation } from "../_generated/server";
-import { v } from "convex/values";
 import { requireAdmin } from "../auth";
-import { processData, sumArray, validators } from "./_utils";
-import { logAudit, computeChanges, extractDeleteMetadata } from "./_auditLog";
-import type {
-  ValidationResult,
-  AnalyticsResult,
-  DeleteResponse,
-  TierDoc,
-  EnhancedTierDoc,
-  TournamentDoc,
-  TierSortFunction,
-  DatabaseContext,
-  TierFilterOptions,
-  TierOptimizedQueryOptions,
-  TierEnhancementOptions,
-  TierSortOptions,
-} from "../types/types";
-
-/**
- * Validate tier data
- */
-function validateTierData(data: {
-  name?: string;
-  payouts?: number[];
-  points?: number[];
-  minimumParticipants?: number;
-  maximumParticipants?: number;
-  description?: string;
-}): ValidationResult {
-  const errors: string[] = [];
-
-  const nameErr = validators.stringLength(data.name, 3, 100, "Tier name");
-  if (nameErr) errors.push(nameErr);
-
-  if (data.payouts && data.payouts.length === 0) {
-    errors.push("At least one payout amount must be defined");
-  }
-
-  if (data.payouts && data.payouts.some((payout) => payout < 0)) {
-    errors.push("All payout amounts must be non-negative");
-  }
-
-  if (data.points && data.points.length === 0) {
-    errors.push("At least one points value must be defined");
-  }
-
-  if (data.points && data.points.some((point) => point < 0)) {
-    errors.push("All points values must be non-negative");
-  }
-
-  if (
-    data.payouts &&
-    data.points &&
-    data.payouts.length !== data.points.length
-  ) {
-    errors.push("Payouts and points arrays must have the same length");
-  }
-
-  if (data.minimumParticipants !== undefined && data.minimumParticipants < 1) {
-    errors.push("Minimum participants must be at least 1");
-  }
-
-  if (data.maximumParticipants !== undefined && data.maximumParticipants < 1) {
-    errors.push("Maximum participants must be at least 1");
-  }
-
-  if (
-    data.minimumParticipants !== undefined &&
-    data.maximumParticipants !== undefined &&
-    data.minimumParticipants > data.maximumParticipants
-  ) {
-    errors.push("Minimum participants cannot exceed maximum participants");
-  }
-
-  return { isValid: errors.length === 0, errors };
-}
+import { processData } from "../utils/processData";
+import { sumArray } from "../utils/sumArray";
+import {
+  applyFilters,
+  enhanceTier,
+  generateAnalytics,
+  getOptimizedTiers,
+  getSortFunction,
+} from "../utils/tiers";
+import {
+  logAudit,
+  computeChanges,
+  extractDeleteMetadata,
+} from "../utils/auditLog";
+import { tiersValidators } from "../validators/tiers";
+import type { DeleteResponse, TierDoc } from "../types/types";
 
 /**
  * Create tiers with comprehensive options
@@ -110,30 +50,14 @@ function validateTierData(data: {
  * });
  */
 export const createTiers = mutation({
-  args: {
-    data: v.object({
-      name: v.string(),
-      seasonId: v.id("seasons"),
-      payouts: v.array(v.number()),
-      points: v.array(v.number()),
-    }),
-    options: v.optional(
-      v.object({
-        skipValidation: v.optional(v.boolean()),
-        setActive: v.optional(v.boolean()),
-        returnEnhanced: v.optional(v.boolean()),
-        includeStatistics: v.optional(v.boolean()),
-        includeSeason: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: tiersValidators.args.createTiers,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
     const options = args.options || {};
     const data = args.data;
 
     if (!options.skipValidation) {
-      const validation = validateTierData(data);
+      const validation = tiersValidators.validateTierData(data);
 
       if (!validation.isValid) {
         throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
@@ -227,67 +151,7 @@ export const createTiers = mutation({
  * });
  */
 export const getTiers = query({
-  args: {
-    options: v.optional(
-      v.object({
-        id: v.optional(v.id("tiers")),
-        ids: v.optional(v.array(v.id("tiers"))),
-        filter: v.optional(
-          v.object({
-            seasonId: v.optional(v.id("seasons")),
-            name: v.optional(v.string()),
-            minPayouts: v.optional(v.number()),
-            maxPayouts: v.optional(v.number()),
-            minPoints: v.optional(v.number()),
-            maxPoints: v.optional(v.number()),
-            minParticipants: v.optional(v.number()),
-            maxParticipants: v.optional(v.number()),
-            hasDescription: v.optional(v.boolean()),
-            searchTerm: v.optional(v.string()),
-            payoutLevelsMin: v.optional(v.number()),
-            payoutLevelsMax: v.optional(v.number()),
-            pointLevelsMin: v.optional(v.number()),
-            pointLevelsMax: v.optional(v.number()),
-            createdAfter: v.optional(v.number()),
-            createdBefore: v.optional(v.number()),
-            updatedAfter: v.optional(v.number()),
-            updatedBefore: v.optional(v.number()),
-          }),
-        ),
-        sort: v.optional(
-          v.object({
-            sortBy: v.optional(
-              v.union(
-                v.literal("name"),
-                v.literal("totalPayouts"),
-                v.literal("totalPoints"),
-                v.literal("minimumParticipants"),
-                v.literal("maximumParticipants"),
-                v.literal("createdAt"),
-                v.literal("updatedAt"),
-              ),
-            ),
-            sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
-          }),
-        ),
-        pagination: v.optional(
-          v.object({
-            limit: v.optional(v.number()),
-            offset: v.optional(v.number()),
-          }),
-        ),
-        enhance: v.optional(
-          v.object({
-            includeSeason: v.optional(v.boolean()),
-            includeTournaments: v.optional(v.boolean()),
-            includeStatistics: v.optional(v.boolean()),
-          }),
-        ),
-        activeOnly: v.optional(v.boolean()),
-        includeAnalytics: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: tiersValidators.args.getTiers,
   handler: async (ctx, args) => {
     const options = args.options || {};
 
@@ -397,24 +261,7 @@ export const getTiers = query({
  * });
  */
 export const updateTiers = mutation({
-  args: {
-    tierId: v.id("tiers"),
-    data: v.object({
-      name: v.optional(v.string()),
-      payouts: v.optional(v.array(v.number())),
-      points: v.optional(v.array(v.number())),
-    }),
-    options: v.optional(
-      v.object({
-        skipValidation: v.optional(v.boolean()),
-        updateTimestamp: v.optional(v.boolean()),
-        returnEnhanced: v.optional(v.boolean()),
-        includeStatistics: v.optional(v.boolean()),
-        includeSeason: v.optional(v.boolean()),
-        includeTournaments: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: tiersValidators.args.updateTiers,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
     const options = args.options || {};
@@ -424,7 +271,7 @@ export const updateTiers = mutation({
     }
 
     if (!options.skipValidation) {
-      const validation = validateTierData(args.data);
+      const validation = tiersValidators.validateTierData(args.data);
       if (!validation.isValid) {
         throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
       }
@@ -496,16 +343,7 @@ export const updateTiers = mutation({
  * });
  */
 export const deleteTiers = mutation({
-  args: {
-    tierId: v.id("tiers"),
-    options: v.optional(
-      v.object({
-        softDelete: v.optional(v.boolean()),
-        reassignTournaments: v.optional(v.id("tiers")),
-        returnDeletedData: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: tiersValidators.args.deleteTiers,
   handler: async (ctx, args): Promise<DeleteResponse<TierDoc>> => {
     await requireAdmin(ctx);
     const options = args.options || {};
@@ -562,249 +400,3 @@ export const deleteTiers = mutation({
     };
   },
 });
-
-/**
- * Get optimized tiers based on query options using indexes
- */
-async function getOptimizedTiers(
-  ctx: DatabaseContext,
-  options: TierOptimizedQueryOptions,
-): Promise<TierDoc[]> {
-  const filter = options.filter || {};
-
-  if (filter.seasonId) {
-    return await ctx.db
-      .query("tiers")
-      .withIndex("by_season", (q) => q.eq("seasonId", filter.seasonId!))
-      .collect();
-  }
-
-  return await ctx.db.query("tiers").collect();
-}
-
-/**
- * Apply comprehensive filters to tiers
- */
-function applyFilters(tiers: TierDoc[], filter: TierFilterOptions): TierDoc[] {
-  return tiers.filter((tier) => {
-    if (filter.name && tier.name !== filter.name) {
-      return false;
-    }
-
-    const totalPayouts = sumArray(tier.payouts);
-    if (filter.minPayouts !== undefined && totalPayouts < filter.minPayouts) {
-      return false;
-    }
-    if (filter.maxPayouts !== undefined && totalPayouts > filter.maxPayouts) {
-      return false;
-    }
-
-    const totalPoints = sumArray(tier.points);
-    if (filter.minPoints !== undefined && totalPoints < filter.minPoints) {
-      return false;
-    }
-    if (filter.maxPoints !== undefined && totalPoints > filter.maxPoints) {
-      return false;
-    }
-
-    if (filter.hasDescription !== undefined) {
-      const hasDescription = false;
-      if (hasDescription !== filter.hasDescription) {
-        return false;
-      }
-    }
-
-    if (filter.searchTerm) {
-      const searchTerm = filter.searchTerm.toLowerCase();
-      const searchableText = [tier.name].join(" ").toLowerCase();
-
-      if (!searchableText.includes(searchTerm)) {
-        return false;
-      }
-    }
-
-    if (
-      filter.payoutLevelsMin !== undefined &&
-      tier.payouts.length < filter.payoutLevelsMin
-    ) {
-      return false;
-    }
-    if (
-      filter.payoutLevelsMax !== undefined &&
-      tier.payouts.length > filter.payoutLevelsMax
-    ) {
-      return false;
-    }
-
-    if (
-      filter.pointLevelsMin !== undefined &&
-      tier.points.length < filter.pointLevelsMin
-    ) {
-      return false;
-    }
-    if (
-      filter.pointLevelsMax !== undefined &&
-      tier.points.length > filter.pointLevelsMax
-    ) {
-      return false;
-    }
-
-    if (
-      filter.createdAfter !== undefined &&
-      tier._creationTime < filter.createdAfter
-    ) {
-      return false;
-    }
-    if (
-      filter.createdBefore !== undefined &&
-      tier._creationTime > filter.createdBefore
-    ) {
-      return false;
-    }
-    if (
-      filter.updatedAfter !== undefined &&
-      (tier.updatedAt || 0) < filter.updatedAfter
-    ) {
-      return false;
-    }
-    if (
-      filter.updatedBefore !== undefined &&
-      (tier.updatedAt || 0) > filter.updatedBefore
-    ) {
-      return false;
-    }
-
-    return true;
-  });
-}
-
-/**
- * Get sorting function based on sort options
- */
-function getSortFunction(sort: TierSortOptions): TierSortFunction {
-  if (!sort.sortBy) return undefined;
-
-  const sortOrder = sort.sortOrder === "asc" ? 1 : -1;
-
-  switch (sort.sortBy) {
-    case "name":
-      return (a: TierDoc, b: TierDoc) =>
-        a.name.localeCompare(b.name) * sortOrder;
-    case "totalPayouts":
-      return (a: TierDoc, b: TierDoc) =>
-        (sumArray(a.payouts) - sumArray(b.payouts)) * sortOrder;
-    case "totalPoints":
-      return (a: TierDoc, b: TierDoc) =>
-        (sumArray(a.points) - sumArray(b.points)) * sortOrder;
-    case "createdAt":
-      return (a: TierDoc, b: TierDoc) =>
-        (a._creationTime - b._creationTime) * sortOrder;
-    case "updatedAt":
-      return (a: TierDoc, b: TierDoc) =>
-        ((a.updatedAt || 0) - (b.updatedAt || 0)) * sortOrder;
-    default:
-      return undefined;
-  }
-}
-
-/**
- * Enhance a single tier with related data
- */
-async function enhanceTier(
-  ctx: DatabaseContext,
-  tier: TierDoc,
-  enhance: TierEnhancementOptions,
-): Promise<EnhancedTierDoc> {
-  const enhanced: EnhancedTierDoc = {
-    ...tier,
-    totalPayouts: sumArray(tier.payouts),
-    totalPoints: sumArray(tier.points),
-    averagePayout:
-      tier.payouts.length > 0
-        ? sumArray(tier.payouts) / tier.payouts.length
-        : 0,
-    averagePoints:
-      tier.points.length > 0 ? sumArray(tier.points) / tier.points.length : 0,
-    payoutLevels: tier.payouts.length,
-    pointLevels: tier.points.length,
-  };
-
-  if (enhance.includeSeason) {
-    const season = await ctx.db.get(tier.seasonId);
-    enhanced.season = season || undefined;
-  }
-
-  if (enhance.includeTournaments || enhance.includeStatistics) {
-    const tournaments = await ctx.db
-      .query("tournaments")
-      .withIndex("by_tier", (q) => q.eq("tierId", tier._id))
-      .collect();
-
-    if (enhance.includeTournaments) {
-      enhanced.tournaments = tournaments;
-      enhanced.tournamentCount = tournaments.length;
-    }
-
-    if (enhance.includeStatistics) {
-      enhanced.statistics = {
-        totalTournaments: tournaments.length,
-        activeTournaments: tournaments.filter(
-          (t: TournamentDoc) => t.status !== "cancelled",
-        ).length,
-        totalDistributedPayouts: 0,
-        totalDistributedPoints: 0,
-        participantCount: 0,
-        averageParticipants: 0,
-      };
-    }
-  }
-
-  return enhanced;
-}
-
-/**
- * Generate analytics for tiers
- */
-async function generateAnalytics(
-  _ctx: DatabaseContext,
-  tiers: TierDoc[],
-): Promise<AnalyticsResult> {
-  return {
-    total: tiers.length,
-    active: tiers.length,
-    inactive: 0,
-    statistics: {
-      averageTotalPayouts:
-        tiers.length > 0
-          ? tiers.reduce((sum, tier) => sum + sumArray(tier.payouts), 0) /
-            tiers.length
-          : 0,
-      totalPayoutValue: tiers.reduce(
-        (sum, tier) => sum + sumArray(tier.payouts),
-        0,
-      ),
-      averageTotalPoints:
-        tiers.length > 0
-          ? tiers.reduce((sum, tier) => sum + sumArray(tier.points), 0) /
-            tiers.length
-          : 0,
-      totalPointsValue: tiers.reduce(
-        (sum, tier) => sum + sumArray(tier.points),
-        0,
-      ),
-      averagePayoutLevels:
-        tiers.length > 0
-          ? tiers.reduce((sum, tier) => sum + tier.payouts.length, 0) /
-            tiers.length
-          : 0,
-    },
-    breakdown: tiers.reduce(
-      (acc, tier) => {
-        const key = `${tier.payouts.length} levels`;
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      },
-      {} as Record<string, number>,
-    ),
-  };
-}

@@ -33,7 +33,6 @@ export { SeasonsSection } from "./admin/SeasonsSection";
 export { TiersSection } from "./admin/TiersSection";
 export { ToursSection } from "./admin/ToursSection";
 export { TransactionsManager } from "./admin/TransactionsManager";
-export { AdminHomeDashboard } from "./admin/AdminHomeDashboard";
 
 // Auth facilitators
 export { HardGateAdmin } from "./auth/HardGateAdmin";

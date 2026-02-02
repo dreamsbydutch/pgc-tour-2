@@ -5,298 +5,28 @@
  */
 
 import { query, mutation } from "../_generated/server";
-import { v } from "convex/values";
-import { requireAdmin, requireOwnResource, getCurrentMember } from "../auth";
-import type { Doc, Id } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
-import type { AuthCtx } from "../types/functionUtils";
-import type { ValidationResult } from "../types/types";
-import { requireAdminByClerkId } from "./_authByClerkId";
+import { requireAdmin, getCurrentMember } from "../auth";
+import type { Id } from "../_generated/dataModel";
+import { tourCardsValidators } from "../validators/tourCards";
+import {
+  hasTourCardFeeForSeason,
+  isCompletedTourCardFee,
+  requireTourCardOwner,
+} from "../utils/tourCards";
 
 const DEFAULT_MAX_PARTICIPANTS = 75;
 
-function normalizeNameToken(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-
-  let out = "";
-  let shouldCapitalize = true;
-
-  for (const ch of trimmed) {
-    const isLetter = /[A-Za-z]/.test(ch);
-    if (isLetter) {
-      out += shouldCapitalize ? ch.toUpperCase() : ch.toLowerCase();
-      shouldCapitalize = false;
-      continue;
-    }
-
-    out += ch;
-    shouldCapitalize = ch === "-" || ch === "'" || ch === "’";
-  }
-
-  return out;
-}
-
-function normalizePersonName(value: string | undefined): string {
-  const raw = (value ?? "").trim();
-  if (!raw) return "";
-
-  const tokens = raw
-    .split(/\s+/)
-    .map((t) => t.trim())
-    .filter(Boolean)
-    .map(normalizeNameToken);
-
-  return tokens.join(" ");
-}
-
-function formatTourCardDisplayNameWithPrefixLength(input: {
-  firstname?: string;
-  lastname?: string;
-  email?: string;
-  firstPrefixLength: number;
-}): string {
-  const first = normalizePersonName(input.firstname);
-  const last = normalizePersonName(input.lastname);
-  const prefixLen = Math.max(0, Math.trunc(input.firstPrefixLength));
-
-  if (first && last) {
-    const prefix = first.slice(0, Math.min(prefixLen || 1, first.length));
-    return `${prefix}. ${last}`;
-  }
-
-  if (last) {
-    return last;
-  }
-
-  if (first) {
-    const prefix = first.slice(0, Math.min(prefixLen || 1, first.length));
-    return `${prefix}.`;
-  }
-
-  if (input.email) {
-    return input.email.split("@")[0];
-  }
-
-  return "Anonymous User";
-}
-
-function computeUniqueTourCardDisplayNamesForSeason(options: {
-  items: Array<{
-    tourCardId: string;
-    firstname: string;
-    lastname: string;
-    email: string;
-  }>;
-  reservedNames: Set<string>;
-}): Map<string, string> {
-  const prefixLenByTourCardId = new Map<string, number>();
-  for (const item of options.items) {
-    prefixLenByTourCardId.set(item.tourCardId, 1);
-  }
-
-  const buildName = (item: (typeof options.items)[number]): string => {
-    const prefixLen = prefixLenByTourCardId.get(item.tourCardId) ?? 1;
-    return formatTourCardDisplayNameWithPrefixLength({
-      firstname: item.firstname,
-      lastname: item.lastname,
-      email: item.email,
-      firstPrefixLength: prefixLen,
-    });
-  };
-
-  let didProgress = true;
-  let safety = 0;
-  while (didProgress && safety < 50) {
-    safety += 1;
-    didProgress = false;
-
-    const nameToIds = new Map<string, string[]>();
-    const nameById = new Map<string, string>();
-
-    for (const item of options.items) {
-      const name = buildName(item);
-      nameById.set(item.tourCardId, name);
-      const list = nameToIds.get(name);
-      if (list) list.push(item.tourCardId);
-      else nameToIds.set(name, [item.tourCardId]);
-    }
-
-    const conflicting = new Set<string>();
-
-    for (const [name, ids] of nameToIds) {
-      if (ids.length > 1) {
-        for (const id of ids) conflicting.add(id);
-      }
-
-      if (options.reservedNames.has(name)) {
-        for (const id of ids) conflicting.add(id);
-      }
-    }
-
-    if (conflicting.size === 0) {
-      return nameById;
-    }
-
-    for (const item of options.items) {
-      if (!conflicting.has(item.tourCardId)) continue;
-      const first = normalizePersonName(item.firstname);
-      if (!first) continue;
-
-      const current = prefixLenByTourCardId.get(item.tourCardId) ?? 1;
-      const next = Math.min(first.length, current + 1);
-      if (next !== current) {
-        prefixLenByTourCardId.set(item.tourCardId, next);
-        didProgress = true;
-      }
-    }
-  }
-
-  const out = new Map<string, string>();
-  const used = new Set<string>(options.reservedNames);
-
-  for (const item of options.items) {
-    const base = buildName(item);
-    let candidate = base;
-
-    if (!used.has(candidate)) {
-      used.add(candidate);
-      out.set(item.tourCardId, candidate);
-      continue;
-    }
-
-    let n = 2;
-    while (n < 1000) {
-      candidate = `${base} (${n})`;
-      if (!used.has(candidate)) break;
-      n += 1;
-    }
-
-    used.add(candidate);
-    out.set(item.tourCardId, candidate);
-  }
-
-  return out;
-}
-
-async function recomputeSeasonTourCardDisplayNames(
-  ctx: MutationCtx,
-  seasonId: Id<"seasons">,
-): Promise<number> {
-  const tourCards = await ctx.db
-    .query("tourCards")
-    .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
-    .collect();
-
-  const memberIds = Array.from(new Set(tourCards.map((c) => c.memberId)));
-  const membersById = new Map<
-    string,
-    { firstname: string; lastname: string; email: string }
-  >();
-
-  for (const memberId of memberIds) {
-    const member = await ctx.db.get(memberId);
-    if (!member) continue;
-    membersById.set(memberId, {
-      firstname: normalizePersonName(member.firstname ?? ""),
-      lastname: normalizePersonName(member.lastname ?? ""),
-      email: member.email,
-    });
-  }
-
-  const reserved = new Set<string>();
-  const items: Array<{
-    tourCardId: string;
-    firstname: string;
-    lastname: string;
-    email: string;
-  }> = [];
-
-  for (const tc of tourCards) {
-    const member = membersById.get(tc.memberId);
-    if (!member) {
-      reserved.add(tc.displayName);
-      continue;
-    }
-
-    items.push({
-      tourCardId: String(tc._id),
-      firstname: member.firstname,
-      lastname: member.lastname,
-      email: member.email,
-    });
-  }
-
-  if (items.length === 0) return 0;
-
-  const targetNameById = computeUniqueTourCardDisplayNamesForSeason({
-    items,
-    reservedNames: reserved,
-  });
-
-  const now = Date.now();
-  let updated = 0;
-  for (const tc of tourCards) {
-    const target = targetNameById.get(String(tc._id));
-    if (!target) continue;
-    if (tc.displayName === target) continue;
-    await ctx.db.patch(tc._id, { displayName: target, updatedAt: now });
-    updated += 1;
-  }
-
-  return updated;
-}
-
 export const createTourCards = mutation({
-  args: {
-    data: v.object({
-      memberId: v.optional(v.id("members")),
-
-      displayName: v.string(),
-      tourId: v.id("tours"),
-      seasonId: v.id("seasons"),
-
-      earnings: v.number(),
-      points: v.number(),
-      wins: v.optional(v.number()),
-      topTen: v.number(),
-      topFive: v.optional(v.number()),
-      madeCut: v.number(),
-      appearances: v.number(),
-      playoff: v.optional(v.number()),
-      currentPosition: v.optional(v.string()),
-    }),
-    options: v.optional(
-      v.object({
-        skipValidation: v.optional(v.boolean()),
-        setActive: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: tourCardsValidators.args.createTourCards,
   handler: async (ctx, args) => {
     const currentMember = await getCurrentMember(ctx);
     const memberId = args.data.memberId ?? currentMember._id;
 
-    const targetMember =
-      memberId === currentMember._id
-        ? currentMember
-        : await ctx.db.get(memberId);
-    if (!targetMember) {
-      throw new Error("Member not found");
-    }
-
-    const computedDisplayName = formatTourCardDisplayNameWithPrefixLength({
-      firstname: targetMember.firstname,
-      lastname: targetMember.lastname,
-      email: targetMember.email,
-      firstPrefixLength: 1,
-    });
-
     const skipValidation = args.options?.skipValidation ?? false;
 
     if (!skipValidation) {
-      const validation = validateTourCardData({
-        displayName: computedDisplayName,
+      const validation = tourCardsValidators.validateTourCardData({
+        displayName: args.data.displayName,
         earnings: args.data.earnings,
         points: args.data.points,
         wins: args.data.wins,
@@ -348,7 +78,7 @@ export const createTourCards = mutation({
 
     const id = await ctx.db.insert("tourCards", {
       memberId,
-      displayName: computedDisplayName,
+      displayName: args.data.displayName,
       tourId: args.data.tourId,
       seasonId: args.data.seasonId,
       earnings: args.data.earnings,
@@ -363,25 +93,12 @@ export const createTourCards = mutation({
       updatedAt: Date.now(),
     });
 
-    await recomputeSeasonTourCardDisplayNames(ctx, args.data.seasonId);
-
     return await ctx.db.get(id);
   },
 });
 
 export const getTourCards = query({
-  args: {
-    options: v.optional(
-      v.object({
-        id: v.optional(v.id("tourCards")),
-        memberId: v.optional(v.id("members")),
-        clerkId: v.optional(v.string()),
-        seasonId: v.optional(v.id("seasons")),
-        tourId: v.optional(v.id("tours")),
-        activeOnly: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: tourCardsValidators.args.getTourCards,
   handler: async (ctx, args) => {
     const options = args.options;
 
@@ -460,10 +177,7 @@ export const getTourCards = query({
 });
 
 export const getActiveMembersMissingTourCards = query({
-  args: {
-    seasonId: v.id("seasons"),
-    previousSeasonId: v.optional(v.id("seasons")),
-  },
+  args: tourCardsValidators.args.getActiveMembersMissingTourCards,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 
@@ -503,97 +217,6 @@ export const getActiveMembersMissingTourCards = query({
       return currentCount === 0;
     });
 
-    const duplicateNameGroups = (() => {
-      function normalizeNamePart(value: string | null | undefined) {
-        return (value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
-      }
-
-      const groups = new Map<
-        string,
-        {
-          firstname: string;
-          lastname: string;
-          members: Array<{
-            memberId: Id<"members">;
-            email: string;
-            firstname: string | null;
-            lastname: string | null;
-            lastLoginAt: number | null;
-            currentSeasonTourCardsCount: number;
-            previousSeasonTourCardsCount: number;
-            isMissingThisSeason: boolean;
-          }>;
-        }
-      >();
-
-      for (const m of activeMembers) {
-        const first = normalizeNamePart(m.firstname);
-        const last = normalizeNamePart(m.lastname);
-        if (!first || !last) continue;
-
-        const key = `${first}|${last}`;
-
-        const currentSeasonTourCardsCount =
-          currentCountsByMember.get(m._id) ?? 0;
-        const previousSeasonTourCardsCount =
-          previousCountsByMember.get(m._id) ?? 0;
-
-        const group =
-          groups.get(key) ??
-          ({
-            firstname: (m.firstname ?? "").trim(),
-            lastname: (m.lastname ?? "").trim(),
-            members: [],
-          } satisfies {
-            firstname: string;
-            lastname: string;
-            members: Array<{
-              memberId: Id<"members">;
-              email: string;
-              firstname: string | null;
-              lastname: string | null;
-              lastLoginAt: number | null;
-              currentSeasonTourCardsCount: number;
-              previousSeasonTourCardsCount: number;
-              isMissingThisSeason: boolean;
-            }>;
-          });
-
-        group.members.push({
-          memberId: m._id,
-          email: m.email,
-          firstname: m.firstname ?? null,
-          lastname: m.lastname ?? null,
-          lastLoginAt: m.lastLoginAt ?? null,
-          currentSeasonTourCardsCount,
-          previousSeasonTourCardsCount,
-          isMissingThisSeason: currentSeasonTourCardsCount === 0,
-        });
-
-        groups.set(key, group);
-      }
-
-      return [...groups.values()]
-        .filter(
-          (g) =>
-            g.members.length >= 2 &&
-            g.members.some((m) => m.isMissingThisSeason),
-        )
-        .map((g) => ({
-          firstname: g.firstname,
-          lastname: g.lastname,
-          members: [...g.members].sort((a, b) =>
-            a.email.localeCompare(b.email),
-          ),
-        }))
-        .sort((a, b) => {
-          const aName = `${a.lastname} ${a.firstname}`.trim();
-          const bName = `${b.lastname} ${b.firstname}`.trim();
-          if (aName !== bName) return aName.localeCompare(bName);
-          return b.members.length - a.members.length;
-        });
-    })();
-
     const rows = missingMembers
       .map((m) => {
         const previousSeasonTourCardsCount =
@@ -629,18 +252,12 @@ export const getActiveMembersMissingTourCards = query({
       missingCount: rows.length,
       returningMissingCount,
       members: rows,
-      duplicateNameGroups,
     };
   },
 });
 
 export const getCurrentYearTourCard = query({
-  args: {
-    options: v.object({
-      clerkId: v.string(),
-      year: v.number(),
-    }),
-  },
+  args: tourCardsValidators.args.getCurrentYearTourCard,
   handler: async (ctx, args) => {
     const member = await ctx.db
       .query("members")
@@ -693,11 +310,7 @@ export const getCurrentYearTourCard = query({
  * tour from the previous calendar year.
  */
 export const getReservedTourSpotsForSeason = query({
-  args: {
-    options: v.object({
-      seasonId: v.id("seasons"),
-    }),
-  },
+  args: tourCardsValidators.args.getReservedTourSpotsForSeason,
   handler: async (ctx, args) => {
     const season = await ctx.db.get(args.options.seasonId);
     if (!season) {
@@ -817,26 +430,7 @@ export const getReservedTourSpotsForSeason = query({
 });
 
 export const updateTourCards = mutation({
-  args: {
-    id: v.id("tourCards"),
-    data: v.object({
-      displayName: v.optional(v.string()),
-      earnings: v.optional(v.number()),
-      points: v.optional(v.number()),
-      wins: v.optional(v.number()),
-      topTen: v.optional(v.number()),
-      topFive: v.optional(v.number()),
-      madeCut: v.optional(v.number()),
-      appearances: v.optional(v.number()),
-      playoff: v.optional(v.number()),
-      currentPosition: v.optional(v.string()),
-    }),
-    options: v.optional(
-      v.object({
-        skipValidation: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: tourCardsValidators.args.updateTourCards,
   handler: async (ctx, args) => {
     const tourCard = await ctx.db.get(args.id);
     if (!tourCard) {
@@ -848,32 +442,23 @@ export const updateTourCards = mutation({
     const skipValidation = args.options?.skipValidation ?? false;
 
     if (!skipValidation) {
-      const validation = validateTourCardData(args.data);
+      const validation = tourCardsValidators.validateTourCardData(args.data);
       if (!validation.isValid) {
         throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
       }
     }
 
-    const { displayName: _ignoredDisplayName, ...patchData } = args.data;
-
     await ctx.db.patch(args.id, {
-      ...patchData,
+      ...args.data,
       updatedAt: Date.now(),
     });
-
-    if (args.data.displayName !== undefined) {
-      await recomputeSeasonTourCardDisplayNames(ctx, tourCard.seasonId);
-    }
 
     return await ctx.db.get(args.id);
   },
 });
 
 export const switchTourCards = mutation({
-  args: {
-    id: v.id("tourCards"),
-    tourId: v.id("tours"),
-  },
+  args: tourCardsValidators.args.switchTourCards,
   handler: async (ctx, args) => {
     const tourCard = await ctx.db.get(args.id);
     if (!tourCard) {
@@ -921,14 +506,7 @@ export const switchTourCards = mutation({
 });
 
 export const deleteTourCards = mutation({
-  args: {
-    id: v.id("tourCards"),
-    options: v.optional(
-      v.object({
-        softDelete: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: tourCardsValidators.args.deleteTourCards,
   handler: async (ctx, args) => {
     const tourCard = await ctx.db.get(args.id);
     if (!tourCard) {
@@ -943,9 +521,7 @@ export const deleteTourCards = mutation({
 });
 
 export const recomputeTourCardsForSeasonAsAdmin = mutation({
-  args: {
-    seasonId: v.id("seasons"),
-  },
+  args: tourCardsValidators.args.recomputeTourCardsForSeasonAsAdmin,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 
@@ -1034,303 +610,8 @@ export const recomputeTourCardsForSeasonAsAdmin = mutation({
   },
 });
 
-export const adminSeedFakeTourCardsForSeason = mutation({
-  args: {
-    seasonId: v.id("seasons"),
-    adminClerkId: v.optional(v.string()),
-    options: v.optional(
-      v.object({
-        perTour: v.optional(v.number()),
-        total: v.optional(v.number()),
-        memberPoolSize: v.optional(v.number()),
-        createMembers: v.optional(v.boolean()),
-        resetSeeded: v.optional(v.boolean()),
-        dryRun: v.optional(v.boolean()),
-        seed: v.optional(v.number()),
-      }),
-    ),
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (identity) {
-      await requireAdmin(ctx);
-    } else {
-      const clerkId = args.adminClerkId?.trim() || undefined;
-      await requireAdminByClerkId(ctx as unknown as AuthCtx, clerkId);
-    }
-
-    const season = await ctx.db.get(args.seasonId);
-    if (!season) throw new Error("Season not found");
-
-    const options = args.options ?? {};
-    const dryRun = options.dryRun === true;
-    const resetSeeded = options.resetSeeded === true;
-
-    const seedDomain = "seed.pgc.local";
-    const emailPrefix = `seed+${season.year}-`;
-    const now = Date.now();
-
-    const tours = await ctx.db
-      .query("tours")
-      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
-      .collect();
-
-    if (tours.length === 0) {
-      throw new Error(
-        "No tours found for that season. Create tours first, then seed tour cards.",
-      );
-    }
-
-    const existingSeasonCards = await ctx.db
-      .query("tourCards")
-      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
-      .collect();
-
-    let deletedSeededTourCards = 0;
-    if (resetSeeded) {
-      for (const card of existingSeasonCards) {
-        const member = await ctx.db.get(card.memberId);
-        const email = member?.email ?? "";
-        const isSeeded =
-          typeof email === "string" &&
-          email.startsWith(emailPrefix) &&
-          email.endsWith(`@${seedDomain}`);
-
-        if (!isSeeded) continue;
-        if (dryRun) {
-          deletedSeededTourCards += 1;
-        } else {
-          await ctx.db.delete(card._id);
-          deletedSeededTourCards += 1;
-        }
-      }
-    }
-
-    const existingPairs = new Set<string>();
-    for (const card of existingSeasonCards) {
-      existingPairs.add(`${card.memberId}|${card.tourId}`);
-    }
-
-    const initialMembers = await ctx.db.query("members").collect();
-    const seededMembers = initialMembers.filter(
-      (m) =>
-        typeof m.email === "string" &&
-        m.email.startsWith(emailPrefix) &&
-        m.email.endsWith(`@${seedDomain}`),
-    );
-    const realMembers = initialMembers.filter(
-      (m) => typeof m.email === "string" && !m.email.endsWith(`@${seedDomain}`),
-    );
-
-    const perTour =
-      typeof options.perTour === "number" && Number.isFinite(options.perTour)
-        ? Math.max(0, Math.trunc(options.perTour))
-        : null;
-    const total =
-      typeof options.total === "number" && Number.isFinite(options.total)
-        ? Math.max(0, Math.trunc(options.total))
-        : null;
-
-    const computedTotal = total ?? (perTour ?? 30) * tours.length;
-    const requestedMemberPoolSize =
-      typeof options.memberPoolSize === "number" &&
-      Number.isFinite(options.memberPoolSize)
-        ? Math.max(0, Math.trunc(options.memberPoolSize))
-        : computedTotal;
-
-    const shouldCreateMembers = options.createMembers !== false;
-    const memberPool: Array<Doc<"members">> = [
-      ...realMembers,
-      ...seededMembers,
-    ];
-
-    const firstNames = [
-      "Alex",
-      "Jordan",
-      "Taylor",
-      "Casey",
-      "Riley",
-      "Morgan",
-      "Avery",
-      "Cameron",
-      "Quinn",
-      "Parker",
-      "Drew",
-      "Reese",
-    ];
-    const lastNames = [
-      "Smith",
-      "Johnson",
-      "Williams",
-      "Brown",
-      "Jones",
-      "Miller",
-      "Davis",
-      "Garcia",
-      "Rodriguez",
-      "Wilson",
-      "Martinez",
-      "Anderson",
-      "Taylor",
-      "Thomas",
-      "Moore",
-    ];
-
-    let rngState =
-      typeof options.seed === "number" && Number.isFinite(options.seed)
-        ? Math.trunc(options.seed)
-        : season.year * 1000 + season.number;
-    const nextRand = () => {
-      rngState = (rngState * 1664525 + 1013904223) % 0x100000000;
-      return rngState / 0x100000000;
-    };
-    const pick = <T>(values: T[]): T => {
-      const idx = Math.floor(nextRand() * values.length);
-      return values[Math.max(0, Math.min(values.length - 1, idx))];
-    };
-
-    let createdMembers = 0;
-    if (shouldCreateMembers) {
-      const have = memberPool.filter(
-        (m) => !m.email.endsWith(`@${seedDomain}`),
-      ).length;
-      const need = Math.max(0, requestedMemberPoolSize - have);
-      for (let i = 0; i < need; i += 1) {
-        const firstname = pick(firstNames);
-        const lastname = pick(lastNames);
-        const email = `${emailPrefix}${String(i + 1).padStart(4, "0")}@${seedDomain}`;
-        if (dryRun) {
-          createdMembers += 1;
-          continue;
-        }
-
-        const id = await ctx.db.insert("members", {
-          email,
-          firstname,
-          lastname,
-          isActive: true,
-          role: "regular",
-          account: 0,
-          friends: [],
-          updatedAt: now,
-        });
-        const doc = await ctx.db.get(id);
-        if (doc) {
-          memberPool.push(doc);
-          createdMembers += 1;
-        }
-      }
-    }
-
-    if (memberPool.length === 0) {
-      throw new Error(
-        "No members available to assign tour cards to. Create members first.",
-      );
-    }
-
-    const perTourCounts = (() => {
-      if (perTour !== null) {
-        return tours.map(() => perTour);
-      }
-
-      const base = Math.floor(computedTotal / tours.length);
-      const rem = computedTotal - base * tours.length;
-      return tours.map((_, i) => base + (i < rem ? 1 : 0));
-    })();
-
-    let createdTourCards = 0;
-    let skippedExisting = 0;
-
-    for (let tourIndex = 0; tourIndex < tours.length; tourIndex += 1) {
-      const tour = tours[tourIndex];
-      const targetCount = perTourCounts[tourIndex] ?? 0;
-      const usedMembersForTour = new Set<string>();
-
-      let createdForTour = 0;
-      let attempts = 0;
-      const maxAttempts = targetCount * 10 + 50;
-
-      while (createdForTour < targetCount && attempts < maxAttempts) {
-        attempts += 1;
-        const member = pick(memberPool);
-        const memberKey = String(member._id);
-        if (usedMembersForTour.has(memberKey)) continue;
-        const pairKey = `${member._id}|${tour._id}`;
-        if (existingPairs.has(pairKey)) {
-          skippedExisting += 1;
-          usedMembersForTour.add(memberKey);
-          continue;
-        }
-
-        const firstname = (member.firstname ?? "").trim() || pick(firstNames);
-        const lastname = (member.lastname ?? "").trim() || pick(lastNames);
-        const displayName = `${firstname} ${lastname}`.trim();
-
-        const appearances = 20;
-        const madeCut = Math.max(
-          0,
-          Math.min(appearances, Math.floor(nextRand() * 20)),
-        );
-        const topTen = Math.max(
-          0,
-          Math.min(madeCut, Math.floor(nextRand() * 10)),
-        );
-        const wins = Math.floor(nextRand() * 3);
-        const topFive = Math.max(
-          0,
-          Math.min(topTen, Math.floor(nextRand() * 5)),
-        );
-        const points = Math.floor(nextRand() * 2000);
-        const earnings = Math.floor(nextRand() * 1_000_000);
-
-        if (!dryRun) {
-          await ctx.db.insert("tourCards", {
-            memberId: member._id,
-            displayName,
-            tourId: tour._id,
-            seasonId: args.seasonId,
-            earnings,
-            points,
-            wins,
-            topTen,
-            topFive,
-            madeCut,
-            appearances,
-            updatedAt: now,
-          });
-        }
-
-        existingPairs.add(pairKey);
-        usedMembersForTour.add(memberKey);
-        createdForTour += 1;
-        createdTourCards += 1;
-      }
-    }
-
-    return {
-      ok: true as const,
-      dryRun,
-      resetSeeded,
-      season: {
-        seasonId: args.seasonId,
-        year: season.year,
-        number: season.number,
-      },
-      tourCount: tours.length,
-      computedTotal,
-      memberPoolSize: memberPool.length,
-      createdMembers,
-      deletedSeededTourCards,
-      createdTourCards,
-      skippedExisting,
-    };
-  },
-});
-
 export const deleteTourCardAndFee = mutation({
-  args: {
-    id: v.id("tourCards"),
-  },
+  args: tourCardsValidators.args.deleteTourCardAndFee,
   handler: async (ctx, args) => {
     const tourCard = await ctx.db.get(args.id);
     if (!tourCard) {
@@ -1397,91 +678,3 @@ export const deleteTourCardAndFee = mutation({
     return tourCard;
   },
 });
-
-/**
- * Validate tour card data
- */
-function validateTourCardData(data: {
-  displayName?: string;
-  earnings?: number;
-  points?: number;
-  wins?: number;
-  topTen?: number;
-  appearances?: number;
-  madeCut?: number;
-}): ValidationResult {
-  const errors: string[] = [];
-
-  if (data.displayName && data.displayName.trim().length === 0) {
-    errors.push("Display name cannot be empty");
-  }
-
-  if (data.displayName && data.displayName.trim().length > 100) {
-    errors.push("Display name cannot exceed 100 characters");
-  }
-
-  if (data.earnings !== undefined && data.earnings < 0) {
-    errors.push("Earnings cannot be negative");
-  }
-
-  if (data.points !== undefined && data.points < 0) {
-    errors.push("Points cannot be negative");
-  }
-
-  if (data.wins !== undefined && data.wins < 0) {
-    errors.push("Wins cannot be negative");
-  }
-
-  if (data.topTen !== undefined && data.topTen < 0) {
-    errors.push("Top ten finishes cannot be negative");
-  }
-
-  if (data.appearances !== undefined && data.appearances < 0) {
-    errors.push("Appearances cannot be negative");
-  }
-
-  if (data.madeCut !== undefined && data.madeCut < 0) {
-    errors.push("Made cuts cannot be negative");
-  }
-
-  return { isValid: errors.length === 0, errors };
-}
-
-function isCompletedTourCardFee(tx: Doc<"transactions"> | null): boolean {
-  if (!tx) return false;
-  return tx.status === undefined || tx.status === "completed";
-}
-
-async function requireTourCardOwner(
-  ctx: MutationCtx,
-  tourCard: Doc<"tourCards">,
-) {
-  const member = await ctx.db.get(tourCard.memberId);
-  const clerkId = member?.clerkId;
-  if (!clerkId) {
-    throw new Error("Unauthorized: Tour card owner is not linked to Clerk");
-  }
-  await requireOwnResource(ctx, clerkId);
-}
-
-async function hasTourCardFeeForSeason(
-  ctx: MutationCtx,
-  args: {
-    member: Doc<"members">;
-    seasonId: Id<"seasons">;
-  },
-): Promise<boolean> {
-  const { member, seasonId } = args;
-
-  const existing = await ctx.db
-    .query("transactions")
-    .withIndex("by_member_season_type", (q) =>
-      q
-        .eq("memberId", member._id)
-        .eq("seasonId", seasonId)
-        .eq("transactionType", "TourCardFee"),
-    )
-    .first();
-
-  return isCompletedTourCardFee(existing);
-}

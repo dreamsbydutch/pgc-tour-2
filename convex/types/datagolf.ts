@@ -14,6 +14,15 @@ export type FileFormat = "json" | "csv";
 export type OddsFormat = "percent" | "american" | "decimal" | "fraction";
 export type Display = "value" | "rank";
 
+export type SkillRatingCategoryKey =
+  | "sg_putt"
+  | "sg_arg"
+  | "sg_app"
+  | "sg_ott"
+  | "sg_total"
+  | "driving_acc"
+  | "driving_dist";
+
 export type YesNo = "yes" | "no";
 
 /**
@@ -101,8 +110,10 @@ export interface FieldPlayer {
   flag?: string;
   pga_number?: number;
   player_name: string;
-  r1_teetime?: string;
-  r2_teetime?: string;
+  r1_teetime?: string | null;
+  r2_teetime?: string | null;
+  r3_teetime?: string | null;
+  r4_teetime?: string | null;
   start_hole?: number;
   unofficial?: number;
   yh_id?: string;
@@ -759,6 +770,25 @@ export interface HistoricalRoundDataResponse {
   scores: HistoricalPlayer[];
 }
 
+export interface HistoricalEventDataStat {
+  dg_id: number;
+  dg_points: number;
+  earnings: number;
+  fec_points: number;
+  fin_text: string;
+  player_name: string;
+}
+
+export interface HistoricalEventDataResponse {
+  event_completed: string;
+  tour: string;
+  season: number;
+  year: number;
+  event_id: string;
+  event_name: string;
+  event_stats: HistoricalEventDataStat[];
+}
+
 export type HistoricalOddsTour = "pga" | "euro" | "alt";
 
 export interface HistoricalOddsEventListEntry {
@@ -922,6 +952,7 @@ export type DataGolfAPIResponse =
   | LiveHoleStatsResponse
   | HistoricalEvent[]
   | HistoricalRoundDataResponse
+  | HistoricalEventDataResponse
   | BettingToolOutrightsResponse
   | BettingToolMatchupsResponse
   | BettingToolAllPairingsResponse

@@ -55,6 +55,7 @@ export function PGCLeaderboard(props: {
           type="PGC"
           tournament={props.tournament}
           allGolfers={props.allGolfers}
+          allTeams={props.teams}
           viewer={props.viewer}
           team={team}
           isPreTournament={props.isPreTournament}

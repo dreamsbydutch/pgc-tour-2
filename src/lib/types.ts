@@ -14,7 +14,8 @@ export type AdminDashboardView =
   | "golfers"
   | "memberMerge"
   | "accountAudit"
-  | "crons";
+  | "crons"
+  | "datagolfFieldPreview";
 
 export type TransactionType =
   | "TourCardFee"
@@ -326,8 +327,6 @@ export interface StandingsViewProps {
   initialTourId?: string;
   onSeasonChange?: (seasonId: string) => void;
   onTourChange?: (tourId: string) => void;
-  initialSeasonId?: string;
-  onSeasonChange?: (seasonId: string) => void;
 }
 
 export type StandingsMember = Doc<"members">;
@@ -388,22 +387,6 @@ export type TimeLeftType = {
 
 export type LeaderboardVariant = "regular" | "playoff" | "historical";
 
-export type AdminDashboardSection =
-  | "seasons"
-  | "tours"
-  | "tiers"
-  | "courses"
-  | "members"
-  | "member-merge"
-  | "account-audit"
-  | "transactions"
-  | "emails"
-  | "tournaments"
-  | "teams"
-  | "tourcards"
-  | "golfers"
-  | "crons";
-
 export type LeaderboardTourToggle = {
   id: string;
   shortForm: string;
@@ -461,6 +444,9 @@ export type LeaderboardTourCardLite = {
   displayName: string;
   tourId?: string | null;
   playoff?: number | null;
+  currentPosition?: string | null;
+  points?: number | null;
+  earnings?: number | null;
 };
 
 export type LeaderboardTeamRow = {
@@ -477,6 +463,7 @@ export type LeaderboardTeamRow = {
   score: number | null;
 
   points: number | null;
+  pointsBeforeTournament?: number | null;
   earnings: number | null;
 
   roundOne: number | null;
@@ -496,6 +483,7 @@ export type LeaderboardViewModelReady = {
   toggleTours: LeaderboardTourToggle[];
   pgaRows: LeaderboardPgaRow[];
   pgcRows: LeaderboardTeamRow[];
+  leaderboardLastUpdatedAt?: number | null;
   viewer?: LeaderboardViewerContext;
 };
 
@@ -532,6 +520,7 @@ export type LeaderboardListingProps =
       type: "PGC";
       tournament: LeaderboardTournamentLite;
       allGolfers: LeaderboardPgaRow[];
+      allTeams: LeaderboardTeamRow[];
       viewer?: LeaderboardViewerContext;
       team: LeaderboardTeamRow;
       isPreTournament?: boolean;

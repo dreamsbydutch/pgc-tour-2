@@ -80,7 +80,7 @@ export function StandingsView(props: StandingsViewProps) {
   return (
     <div className="space-y-6">
       <div className="space-y-2 text-center">
-        <h1 className="font-varela text-3xl font-bold tracking-tight sm:text-4xl">
+        <h1 className="font-yellowtail text-5xl font-bold sm:text-6xl md:text-7xl">
           {model.activeView === "playoffs"
             ? "PGC Playoff Standings"
             : (model.displayedTourName ?? "Standings")}
@@ -543,8 +543,7 @@ function useStandingsView(props: StandingsViewProps) {
     );
 
     return safeSeasons.map((s) => {
-      const label =
-        s.number && s.number > 1 ? `${s.year} (S${s.number})` : `${s.year}`;
+      const label = `${s.year}`;
       return { id: String(s._id), label };
     });
   }, [seasons]);
@@ -734,12 +733,39 @@ function useStandingsView(props: StandingsViewProps) {
   }, [playoffTier, playoffSpotTotals.silverTotal]);
 
   const playoffStrokesGold = useMemo(() => {
-    return playoffTier?.points.slice(0, playoffSpotTotals.goldTotal) ?? [];
-  }, [playoffTier, playoffSpotTotals.goldTotal]);
+    const teams = playoffGroups.goldTeams;
+    if (!teams.length) return [];
+
+    const highPoints = teams[0]!.points;
+    const lowPoints = teams[teams.length - 1]!.points;
+    const denom = highPoints - lowPoints;
+    if (!Number.isFinite(denom) || denom <= 0) return teams.map(() => 0);
+
+    return teams.map((tc) => {
+      const percentile = (tc.points - lowPoints) / denom;
+      const strokes = -10 * percentile;
+      return Math.round(strokes * 10) / 10;
+    });
+  }, [playoffGroups.goldTeams]);
 
   const playoffStrokesSilver = useMemo(() => {
-    return playoffTier?.points.slice(0, playoffSpotTotals.silverTotal) ?? [];
-  }, [playoffTier, playoffSpotTotals.silverTotal]);
+    const teams = playoffGroups.silverTeams;
+    if (!teams.length) return [];
+
+    const floorIndex = Math.min(35, teams.length - 1);
+
+    const highPoints = teams[0]!.points;
+    const floorPoints = teams[floorIndex]!.points;
+    const denom = highPoints - floorPoints;
+
+    return teams.map((tc, idx) => {
+      if (idx >= floorIndex) return 0;
+      if (!Number.isFinite(denom) || denom <= 0) return 0;
+      const percentile = (tc.points - floorPoints) / denom;
+      const strokes = -10 * percentile;
+      return Math.round(strokes * 10) / 10;
+    });
+  }, [playoffGroups.silverTeams]);
 
   if (isLoading) return { status: "loading" } as const satisfies Model;
 

@@ -10,12 +10,20 @@ import posthog from "posthog-js";
 import { PostHogProvider } from "posthog-js/react";
 
 const posthogKey = import.meta.env.VITE_POSTHOG_KEY;
-const posthogHost =
-  import.meta.env.VITE_POSTHOG_HOST ?? "https://app.posthog.com";
+const posthogHostEnv = import.meta.env.VITE_POSTHOG_HOST;
+const posthogUiHost = "https://app.posthog.com";
+
+const posthogApiHost = (() => {
+  const raw = (posthogHostEnv ?? "").trim();
+  if (!raw) return "https://us.i.posthog.com";
+  if (raw.includes("app.posthog.com")) return "https://us.i.posthog.com";
+  return raw;
+})();
 
 if (typeof window !== "undefined" && posthogKey) {
   posthog.init(posthogKey, {
-    api_host: posthogHost,
+    api_host: posthogApiHost,
+    ui_host: posthogUiHost,
     person_profiles: "identified_only",
     loaded: (ph) => {
       if (import.meta.env.DEV) ph.debug();

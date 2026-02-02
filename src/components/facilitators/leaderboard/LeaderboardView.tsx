@@ -44,6 +44,10 @@ export function LeaderboardView(props: LeaderboardViewProps) {
 
   return (
     <div className="mx-auto mt-2 w-full max-w-4xl md:w-11/12 lg:w-8/12">
+      <div className="text-end text-xs text-muted-foreground">
+        {formatLeaderboardLastUpdated(model.leaderboardLastUpdatedAt)}
+      </div>
+
       <ToursToggle
         tours={model.toggleTours}
         activeTourId={props.activeTourId}
@@ -77,6 +81,24 @@ export function LeaderboardView(props: LeaderboardViewProps) {
   );
 }
 
+function formatLeaderboardLastUpdated(
+  value: number | null | undefined,
+): string {
+  if (value == null) return "Last updated: —";
+
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return "Last updated: —";
+
+  const formatted = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(dt);
+
+  return `Last updated: ${formatted}`;
+}
+
 /**
  * Builds derived UI state for `LeaderboardView`.
  *
@@ -103,6 +125,7 @@ function useLeaderboardView(props: LeaderboardViewProps) {
       pgaRows: props.model.pgaRows,
       pgcRows: props.model.pgcRows,
       viewer: props.model.viewer,
+      leaderboardLastUpdatedAt: props.model.leaderboardLastUpdatedAt ?? null,
       activeTourShortForm,
       tournamentOver,
     };

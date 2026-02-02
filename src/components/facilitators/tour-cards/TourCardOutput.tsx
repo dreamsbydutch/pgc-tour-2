@@ -1,7 +1,6 @@
 "use client";
 
-import { useUser } from "@clerk/clerk-react";
-import { useQuery } from "convex/react";
+import { useUser } from "@clerk/tanstack-react-start";
 import type {
   EnhancedTourDoc,
   MemberDoc,
@@ -9,8 +8,8 @@ import type {
 } from "convex/types/types";
 import { TourCardChangeButton } from "@/widgets";
 import { Skeleton } from "@/ui";
-import { formatMonthDay, formatMoney } from "@/lib";
-import { api } from "@/convex";
+import { formatMonthDay, formatMoney, isNonEmptyString, PGC_LOGO_URL } from "@/lib";
+import { api, useQuery } from "@/convex";
 
 /**
  * TourCardOutput
@@ -108,11 +107,14 @@ export function TourCardOutput() {
 function useTourCardOutput() {
   const { user, isLoaded } = useUser();
   const clerkId = user?.id ?? null;
-  const currentYear = new Date().getFullYear();
+  const currentSeason = useQuery(api.functions.seasons.getCurrentSeason);
+  const seasonYear = currentSeason?.year ?? null;
 
   const tourCard = useQuery(
     api.functions.tourCards.getCurrentYearTourCard,
-    clerkId ? { options: { clerkId, year: currentYear } } : "skip",
+    clerkId && seasonYear
+      ? { options: { clerkId, year: seasonYear } }
+      : "skip",
   ) as TourCardDoc | null | undefined;
 
   const member = useQuery(
@@ -144,12 +146,14 @@ function useTourCardOutput() {
     tourCard ? { options: { seasonId: tourCard.seasonId } } : "skip",
   ) as { reservedByTourId?: Record<string, number> } | undefined;
 
-  const isLoadingTourCard = Boolean(clerkId) && tourCard === undefined;
+  const isLoadingCurrentSeason = currentSeason === undefined;
+  const isLoadingTourCard = Boolean(clerkId) && Boolean(seasonYear) && tourCard === undefined;
   const isLoadingMember = Boolean(clerkId) && member === undefined;
   const isLoadingTourDetails = Boolean(tourCard) && tour === undefined;
 
   if (
     !isLoaded ||
+    isLoadingCurrentSeason ||
     isLoadingTourCard ||
     isLoadingTourDetails ||
     isLoadingMember
@@ -162,7 +166,7 @@ function useTourCardOutput() {
   }
 
   const name = tourCard.displayName ?? user.fullName ?? "PGC Member";
-  const pictureUrl = tour.logoUrl;
+  const pictureUrl = isNonEmptyString(tour.logoUrl) ? tour.logoUrl : PGC_LOGO_URL;
   const reservedByTourId = reservedSpotsResult?.reservedByTourId ?? {};
   const reserved = reservedByTourId[tourCard.tourId] ?? 0;
   const spotsRemaining =

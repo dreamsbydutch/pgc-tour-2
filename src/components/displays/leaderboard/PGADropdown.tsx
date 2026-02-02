@@ -54,7 +54,7 @@ export function PGADropdown(props: {
         <div className="col-span-2 row-span-2 flex items-center justify-center text-sm font-bold">
           <div
             className={cn(
-              "w-[55%] max-w-8",
+              "flex h-12 w-12 items-center justify-center overflow-hidden",
               model.cutOrWithdrawn && "opacity-40",
             )}
           >
@@ -123,9 +123,16 @@ function usePGADropdown(args: {
 
     const emoji = getCountryFlagEmoji(args.golfer.country);
     const flagNode = emoji ? (
-      <span aria-label={args.golfer.country ?? ""}>{emoji}</span>
+      <span
+        aria-label={args.golfer.country ?? ""}
+        className="block text-4xl leading-none"
+      >
+        {emoji}
+      </span>
     ) : args.golfer.country ? (
-      <span className="text-xs font-semibold">{args.golfer.country}</span>
+      <span className="flex h-full w-full items-center justify-center text-center text-[10px] font-semibold leading-none">
+        {args.golfer.country}
+      </span>
     ) : null;
 
     const roundsDisplay = [

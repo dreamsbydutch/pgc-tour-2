@@ -7,3 +7,5 @@ export { LeaderboardHeaderDropdown } from "./leaderboard/LeaderboardHeaderDropdo
 export { LeagueSchedule } from "./LeagueSchedule";
 
 export { PWAInstallPrompt } from "./pwa/PWAInstallPrompt";
+
+export { TournamentTeamPickerDialog } from "./tournament/TournamentTeamPickerDialog";

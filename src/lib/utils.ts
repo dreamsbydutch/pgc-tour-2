@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import isoCountries from "i18n-iso-countries";
+import isoCountriesEn from "i18n-iso-countries/langs/en.json";
 import type { Id } from "@/convex";
 import type {
   AdminDataTableColumn,
@@ -172,6 +174,54 @@ export function formatDateTime(ms: number | undefined): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(ms);
+}
+
+/**
+ * Formats a tee time string (ISO, 24h, or already AM/PM) into a compact `h:mm AM/PM` display.
+ *
+ * @example
+ * formatTeeTimeTimeOfDay("2026-02-01T13:05:00-05:00") // "1:05 PM"
+ * @example
+ * formatTeeTimeTimeOfDay("09:40") // "9:40 AM"
+ */
+export function formatTeeTimeTimeOfDay(
+  value: string | null | undefined,
+): string | null {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const ampmMatch = trimmed.match(/\b(\d{1,2}):(\d{2})\s*([AP]M)\b/i);
+  if (ampmMatch) {
+    const hour = Number(ampmMatch[1]);
+    const minute = ampmMatch[2];
+    const suffix = ampmMatch[3].toUpperCase();
+    if (!Number.isFinite(hour) || hour < 1 || hour > 12) return trimmed;
+    return `${hour}:${minute} ${suffix}`;
+  }
+
+  const isoTimeMatch = trimmed.match(/T(\d{2}):(\d{2})(?::\d{2})?(?:\.\d+)?/);
+  const timeMatch =
+    isoTimeMatch ??
+    trimmed.match(/\b([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?\b/);
+  if (timeMatch) {
+    const hour24 = Number(timeMatch[1]);
+    const minute = timeMatch[2];
+    if (!Number.isFinite(hour24) || hour24 < 0 || hour24 > 23) return trimmed;
+    const suffix = hour24 >= 12 ? "PM" : "AM";
+    const hour12 = ((hour24 + 11) % 12) + 1;
+    return `${hour12}:${minute} ${suffix}`;
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return trimmed;
+
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(parsed);
 }
 
 /**
@@ -901,8 +951,13 @@ export function formatMoneyUsd(amount: number | null | undefined): string {
 const EMOJI_FLAGS: Record<string, string> = {
   USA: "🇺🇸",
   CAN: "🇨🇦",
-  ENG: "🏴",
-  SCO: "🏴",
+  ENG: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}",
+  SCO: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}",
+  WAL: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}",
+  ENGLAND: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}",
+  SCOTLAND: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}",
+  WALES: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}",
+  "NORTHERN IRELAND": "🇬🇧",
   IRL: "🇮🇪",
   GER: "🇩🇪",
   FRA: "🇫🇷",
@@ -926,11 +981,98 @@ const EMOJI_FLAGS: Record<string, string> = {
   VEN: "🇻🇪",
 };
 
+const COUNTRY_NAME_ALIASES: Record<string, string> = {
+  US: "United States",
+  "U.S.": "United States",
+  "U.S.A.": "United States",
+  USA: "United States",
+  UK: "United Kingdom",
+  "U.K.": "United Kingdom",
+  UAE: "United Arab Emirates",
+  "SOUTH KOREA": "Korea, Republic of",
+  "NORTH KOREA": "Korea, Democratic People's Republic of",
+  RUSSIA: "Russian Federation",
+  BOLIVIA: "Bolivia, Plurinational State of",
+  VENEZUELA: "Venezuela, Bolivarian Republic of",
+  VIETNAM: "Viet Nam",
+  LAOS: "Lao People's Democratic Republic",
+  SYRIA: "Syrian Arab Republic",
+  IRAN: "Iran, Islamic Republic of",
+  TANZANIA: "Tanzania, United Republic of",
+  BRUNEI: "Brunei Darussalam",
+  MOLDOVA: "Moldova, Republic of",
+  BOSNIA: "Bosnia and Herzegovina",
+  "CAPE VERDE": "Cabo Verde",
+  "CZECH REPUBLIC": "Czechia",
+};
+
+let isoCountriesLocaleReady = false;
+
+function ensureIsoCountriesLocaleReady() {
+  if (isoCountriesLocaleReady) return;
+  isoCountries.registerLocale(isoCountriesEn);
+  isoCountriesLocaleReady = true;
+}
+
+function normalizeCountryInput(value: string): string {
+  const trimmed = value.trim();
+  const compact = trimmed.replace(/\s+/g, " ");
+  const noParens = compact.replace(/\s*\([^)]*\)\s*/g, " ").trim();
+  return noParens;
+}
+
+function iso2ToFlagEmoji(iso2: string): string | null {
+  const upper = iso2.toUpperCase();
+  if (!/^[A-Z]{2}$/.test(upper)) return null;
+  const base = 0x1f1e6;
+  const a = "A".charCodeAt(0);
+  const codePoints = [
+    base + (upper.charCodeAt(0) - a),
+    base + (upper.charCodeAt(1) - a),
+  ];
+  return String.fromCodePoint(...codePoints);
+}
+
+function toIsoAlpha2(country: string): string | null {
+  ensureIsoCountriesLocaleReady();
+
+  const normalized = normalizeCountryInput(country);
+  const upper = normalized.toUpperCase();
+
+  if (/^[A-Z]{2}$/.test(upper)) return upper;
+
+  if (/^[A-Z]{3}$/.test(upper)) {
+    const alpha2 = isoCountries.alpha3ToAlpha2(upper);
+    return alpha2 ? alpha2.toUpperCase() : null;
+  }
+
+  const aliased = COUNTRY_NAME_ALIASES[upper] ?? normalized;
+
+  const alpha2 = isoCountries.getAlpha2Code(aliased, "en");
+  if (alpha2) return alpha2.toUpperCase();
+
+  const retry = isoCountries.getAlpha2Code(
+    aliased.replace(/\./g, "").replace(/&/g, "and"),
+    "en",
+  );
+  return retry ? retry.toUpperCase() : null;
+}
+
 export function getCountryFlagEmoji(
-  code: string | null | undefined,
+  country: string | null | undefined,
 ): string | null {
-  if (!code) return null;
-  return EMOJI_FLAGS[code] ?? null;
+  if (!country) return null;
+
+  const normalized = normalizeCountryInput(country);
+  if (!normalized) return null;
+
+  const upper = normalized.toUpperCase();
+  const direct = EMOJI_FLAGS[upper];
+  if (direct) return direct;
+
+  const iso2 = toIsoAlpha2(normalized);
+  if (!iso2) return null;
+  return iso2ToFlagEmoji(iso2);
 }
 
 const SCORE_PENALTIES = {

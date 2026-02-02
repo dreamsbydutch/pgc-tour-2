@@ -1,9 +1,10 @@
 import type { AdminDashboardView } from "@/lib";
 
 import { SecondaryToolbar } from "@/displays";
-import { Button } from "@/ui";
+import { Button, Card, CardContent, CardHeader, CardTitle } from "@/ui";
 
 import { AdminCronsPage } from "./AdminCronsPage";
+import { AdminDataGolfFieldPreviewPage } from "./AdminDataGolfFieldPreviewPage";
 import { AdminGolfersPage } from "./AdminGolfersPage";
 import { AdminMemberMergePage } from "./AdminMemberMergePage";
 import { AdminSeasonsPage } from "./AdminSeasonsPage";
@@ -12,7 +13,7 @@ import { AdminTeamsPage } from "./AdminTeamsPage";
 import { AdminTourCardsPage } from "./AdminTourCardsPage";
 import { AdminTournamentsPage } from "./AdminTournamentsPage";
 import { MemberAccountAuditPage } from "./MemberAccountAuditPage";
-import { AdminHomeDashboard, MissingTourCardsSection } from "@/facilitators";
+import { MissingTourCardsSection } from "@/facilitators";
 
 /**
  * AdminDashboardPage
@@ -24,8 +25,8 @@ import { AdminHomeDashboard, MissingTourCardsSection } from "@/facilitators";
  * - Renders the selected admin tool inside the same URL via the `view` search param.
  *
  * Data sources:
- * - The Home dashboard view renders `AdminHomeDashboard` which fetches its own data.
- * - Other child tool views (setup, tournaments, etc.) fetch their own data.
+ * - This component does not fetch data directly.
+ * - Child tool views (setup, tournaments, etc.) may fetch their own data.
  *
  * @param props.view Selected view key.
  * @param props.onViewChange Callback for switching views (updates the route search params).
@@ -44,10 +45,14 @@ export function AdminDashboardPage(props: {
 
         <div className="min-w-0">
           {props.view === "dashboard" ? (
-            <AdminHomeDashboard
-              activeView={props.view}
-              onViewChange={props.onViewChange}
-            />
+            <Card>
+              <CardHeader>
+                <CardTitle>Select an admin tool</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                Use the toolbar to open a tool.
+              </CardContent>
+            </Card>
           ) : null}
 
           {props.view === "leagueSetup" ? <AdminSetupPage /> : null}
@@ -62,6 +67,9 @@ export function AdminDashboardPage(props: {
           {props.view === "memberMerge" ? <AdminMemberMergePage /> : null}
           {props.view === "accountAudit" ? <MemberAccountAuditPage /> : null}
           {props.view === "crons" ? <AdminCronsPage /> : null}
+          {props.view === "datagolfFieldPreview" ? (
+            <AdminDataGolfFieldPreviewPage />
+          ) : null}
         </div>
       </div>
 
@@ -104,10 +112,12 @@ function useAdminSecondaryToolbarItems(): Array<{
     { view: "missingTourCards", label: "Missing" },
     { view: "tournaments", label: "Tourn." },
     { view: "tourCards", label: "Cards" },
+    { view: "seasons", label: "Seasons" },
     { view: "teams", label: "Teams" },
     { view: "golfers", label: "Golfers" },
     { view: "memberMerge", label: "Merge" },
     { view: "accountAudit", label: "Audit" },
     { view: "crons", label: "Crons" },
+    { view: "datagolfFieldPreview", label: "DG Field" },
   ];
 }

@@ -8,6 +8,7 @@ import {
   LeaderboardView,
   PreTournamentContent,
 } from "@/facilitators";
+import { TournamentCountdown } from "@/displays";
 import type {
   LeaderboardPgaRow,
   LeaderboardTeamRow,
@@ -54,6 +55,20 @@ export function TournamentPage(props: {
     return <TournamentPageSkeleton />;
   }
 
+  if (vm.kind === "loadingPreTournamentGate") {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <LeaderboardHeader
+          focusTourney={vm.selectedTournament}
+          tournaments={vm.tournaments}
+          onTournamentChange={props.onTournamentChange}
+        />
+
+        <div className="mt-4 text-center">Loading tournament...</div>
+      </div>
+    );
+  }
+
   if (vm.kind === "noTournaments") {
     return (
       <div className="container mx-auto px-1 py-4">
@@ -89,6 +104,52 @@ export function TournamentPage(props: {
             existingTeam={vm.preTournament.existingTeam}
             teamGolfers={vm.preTournament.teamGolfers}
             playoffEventIndex={vm.preTournament.playoffEventIndex}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (vm.kind === "preTournamentCountdown") {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <LeaderboardHeader
+          focusTourney={vm.selectedTournament}
+          tournaments={vm.tournaments}
+          onTournamentChange={props.onTournamentChange}
+        />
+
+        <div className="mt-4">
+          <TournamentCountdown
+            tourney={{
+              name: vm.selectedTournament.name,
+              startDate: vm.selectedTournament.startDate,
+              logoUrl: vm.selectedTournament.logoUrl,
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (vm.kind === "preTournamentTeamPick") {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <LeaderboardHeader
+          focusTourney={vm.selectedTournament}
+          tournaments={vm.tournaments}
+          onTournamentChange={props.onTournamentChange}
+        />
+
+        <div className="mt-4">
+          <PreTournamentContent
+            tournament={vm.preTournament.tournament}
+            member={vm.preTournament.member}
+            tourCard={vm.preTournament.tourCard}
+            existingTeam={vm.preTournament.existingTeam}
+            teamGolfers={vm.preTournament.teamGolfers}
+            playoffEventIndex={vm.preTournament.playoffEventIndex}
+            forceOpen
           />
         </div>
       </div>
@@ -133,6 +194,11 @@ function useTournamentPage(args: {
   variant: LeaderboardVariant | null;
 }):
   | { kind: "loadingTournaments" }
+  | {
+      kind: "loadingPreTournamentGate";
+      tournaments: EnhancedTournamentDoc[];
+      selectedTournament: EnhancedTournamentDoc;
+    }
   | { kind: "noTournaments" }
   | { kind: "noSelection" }
   | {
@@ -144,7 +210,6 @@ function useTournamentPage(args: {
           _id: string;
           name: string;
           startDate: number;
-          logoUrl?: string | null;
           tier?: { name?: string | null } | null;
         };
         member:
@@ -168,12 +233,63 @@ function useTournamentPage(args: {
             }
           | null
           | undefined;
-        existingTeam: { golferIds?: number[] | null } | null;
+        existingTeam: { _id: string; golferIds?: number[] | null } | null;
         teamGolfers: Array<{
           apiId?: number | null;
           _id?: string | null;
           playerName: string;
           worldRank?: number | null;
+          group?: number | null;
+          rating?: number | null;
+        }> | null;
+        playoffEventIndex: number;
+      };
+    }
+  | {
+      kind: "preTournamentCountdown";
+      tournaments: EnhancedTournamentDoc[];
+      selectedTournament: EnhancedTournamentDoc;
+    }
+  | {
+      kind: "preTournamentTeamPick";
+      tournaments: EnhancedTournamentDoc[];
+      selectedTournament: EnhancedTournamentDoc;
+      preTournament: {
+        tournament: {
+          _id: string;
+          name: string;
+          startDate: number;
+          tier?: { name?: string | null } | null;
+        };
+        member:
+          | {
+              displayName?: string | null;
+              firstname?: string | null;
+              lastname?: string | null;
+              email?: string | null;
+              account?: number | null;
+            }
+          | null
+          | undefined;
+        tourCard:
+          | {
+              _id: string;
+              tourId: string;
+              playoff?: number | null;
+              currentPosition?: string | number | null;
+              points?: number | null;
+              earnings?: number | null;
+            }
+          | null
+          | undefined;
+        existingTeam: { _id: string; golferIds?: number[] | null } | null;
+        teamGolfers: Array<{
+          apiId?: number | null;
+          _id?: string | null;
+          playerName: string;
+          worldRank?: number | null;
+          group?: number | null;
+          rating?: number | null;
         }> | null;
         playoffEventIndex: number;
       };
@@ -192,6 +308,7 @@ function useTournamentPage(args: {
       currentRound?: number | null;
       livePlay?: boolean | null;
     };
+    leaderboardLastUpdatedAt?: number | null;
     teams: Array<{
       _id: unknown;
       tourCardId: unknown;
@@ -216,6 +333,9 @@ function useTournamentPage(args: {
         displayName: string;
         tourId: unknown;
         playoff?: number | null;
+        currentPosition?: string | null;
+        points?: number | null;
+        earnings?: number | null;
       };
     }>;
     golfers: Array<{
@@ -246,6 +366,8 @@ function useTournamentPage(args: {
         playerName: string;
         country?: string | null;
         worldRank?: number | null;
+        group?: number | null;
+        rating?: number | null;
       };
     }>;
     tours: Array<{
@@ -285,6 +407,13 @@ function useTournamentPage(args: {
   const isNotStartedYet =
     typeof selectedTournament?.startDate === "number" &&
     selectedTournament.startDate > Date.now();
+
+  const hasTournamentGolfers = useQuery(
+    api.functions.tournaments.hasTournamentGolfers,
+    selectedTournament && isNotStartedYet
+      ? { tournamentId: selectedTournament._id }
+      : "skip",
+  ) as boolean | undefined;
 
   const memberResult = useQuery(
     api.functions.members.getMembers,
@@ -349,19 +478,25 @@ function useTournamentPage(args: {
       : "skip",
   ) as
     | Array<null | {
+        _id: unknown;
         golferIds?: number[] | null;
         golfers?: Array<{
           _id?: unknown;
           apiId?: number | null;
           playerName: string;
           worldRank?: number | null;
-        }>;
+          group?: number | null;
+          rating?: number | null;
+        }> | null;
       }>
     | undefined;
 
   const existingTeam =
     teamResult && teamResult.length > 0 && teamResult[0]
-      ? { golferIds: teamResult[0].golferIds ?? null }
+      ? {
+          _id: String(teamResult[0]._id),
+          golferIds: teamResult[0].golferIds ?? null,
+        }
       : null;
 
   const teamGolfers =
@@ -371,6 +506,8 @@ function useTournamentPage(args: {
           apiId: g.apiId ?? null,
           playerName: g.playerName,
           worldRank: g.worldRank ?? null,
+          group: g.group ?? null,
+          rating: g.rating ?? null,
         }))
       : null;
 
@@ -449,30 +586,61 @@ function useTournamentPage(args: {
       (tours ?? []).map((t) => [String(t._id), t.shortForm]),
     );
 
-    const pgaToggle: LeaderboardTourToggle = {
-      id: "pga",
-      shortForm: "PGA",
-      name: "PGA",
-      logoUrl:
-        "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPHn0reMa1Sl6K8NiXDVstIvkZcpyWUmEoY3xj",
-    };
+    const toggleTours: LeaderboardTourToggle[] = [
+      ...(tours ?? []).map((t) => ({
+        id: t.shortForm.toLowerCase(),
+        shortForm: t.shortForm,
+        name: t.name,
+        logoUrl: t.logoUrl,
+      })),
+      {
+        id: "pga",
+        shortForm: "PGA",
+        name: "PGA",
+        logoUrl:
+          "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPHn0reMa1Sl6K8NiXDVstIvkZcpyWUmEoY3xj",
+      },
+    ];
 
-    const toggleTours: LeaderboardTourToggle[] =
-      computedVariant === "playoff"
-        ? [
-            { id: "gold", shortForm: "Gold", name: "Gold" },
-            { id: "silver", shortForm: "Silver", name: "Silver" },
-            pgaToggle,
-          ]
-        : [
-            ...(tours ?? []).map((t) => ({
-              id: t.shortForm.toLowerCase(),
-              shortForm: t.shortForm,
-              name: t.name,
-              logoUrl: t.logoUrl,
-            })),
-            pgaToggle,
-          ];
+    const currentRoundForTeeTimes = (() => {
+      const raw = tournament.currentRound ?? null;
+      if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
+      const r = Math.floor(raw);
+      if (r <= 1) return 1;
+      if (r === 2) return 2;
+      if (r === 3) return 3;
+      return 4;
+    })();
+
+    const teeTimeForRound = (
+      rounds: {
+        roundOneTeeTime?: string | null;
+        roundTwoTeeTime?: string | null;
+        roundThreeTeeTime?: string | null;
+        roundFourTeeTime?: string | null;
+      },
+      currentRound: 1 | 2 | 3 | 4 | null,
+    ) => {
+      const byRound =
+        currentRound === 1
+          ? rounds.roundOneTeeTime
+          : currentRound === 2
+            ? rounds.roundTwoTeeTime
+            : currentRound === 3
+              ? rounds.roundThreeTeeTime
+              : currentRound === 4
+                ? rounds.roundFourTeeTime
+                : null;
+
+      return (
+        byRound ??
+        rounds.roundOneTeeTime ??
+        rounds.roundTwoTeeTime ??
+        rounds.roundThreeTeeTime ??
+        rounds.roundFourTeeTime ??
+        null
+      );
+    };
 
     const pgaRows: LeaderboardPgaRow[] = (golfers ?? []).map((tg) => ({
       kind: "pga",
@@ -497,12 +665,15 @@ function useTournamentPage(args: {
       win: tg.win ?? null,
       worldRank: tg.worldRank ?? tg.golfer.worldRank ?? null,
       country: tg.golfer.country ?? null,
-      teeTimeDisplay:
-        tg.roundOneTeeTime ??
-        tg.roundTwoTeeTime ??
-        tg.roundThreeTeeTime ??
-        tg.roundFourTeeTime ??
-        null,
+      teeTimeDisplay: teeTimeForRound(
+        {
+          roundOneTeeTime: tg.roundOneTeeTime,
+          roundTwoTeeTime: tg.roundTwoTeeTime,
+          roundThreeTeeTime: tg.roundThreeTeeTime,
+          roundFourTeeTime: tg.roundFourTeeTime,
+        },
+        currentRoundForTeeTimes,
+      ),
     }));
 
     const pgcRows: LeaderboardTeamRow[] = (teams ?? []).map((team) => {
@@ -521,23 +692,32 @@ function useTournamentPage(args: {
         thru: team.thru ?? null,
         score: team.score ?? null,
         points: team.points ?? null,
+        pointsBeforeTournament:
+          (team as { pointsBeforeTournament?: number | null })
+            .pointsBeforeTournament ?? null,
         earnings: team.earnings ?? null,
         roundOne: team.roundOne ?? null,
         roundTwo: team.roundTwo ?? null,
         roundThree: team.roundThree ?? null,
         roundFour: team.roundFour ?? null,
-        teeTimeDisplay:
-          team.roundOneTeeTime ??
-          team.roundTwoTeeTime ??
-          team.roundThreeTeeTime ??
-          team.roundFourTeeTime ??
-          null,
+        teeTimeDisplay: teeTimeForRound(
+          {
+            roundOneTeeTime: team.roundOneTeeTime,
+            roundTwoTeeTime: team.roundTwoTeeTime,
+            roundThreeTeeTime: team.roundThreeTeeTime,
+            roundFourTeeTime: team.roundFourTeeTime,
+          },
+          currentRoundForTeeTimes,
+        ),
         tourCard: {
           id: teamTourCard ? String(teamTourCard._id) : String(team.tourCardId),
           ownerClerkId: null,
           displayName: teamTourCard?.displayName ?? "Unknown",
           tourId: tourShortForm ? tourShortForm.toLowerCase() : null,
           playoff: teamTourCard?.playoff ?? null,
+          currentPosition: teamTourCard?.currentPosition ?? null,
+          points: teamTourCard?.points ?? null,
+          earnings: teamTourCard?.earnings ?? null,
         },
       };
     });
@@ -565,6 +745,8 @@ function useTournamentPage(args: {
       toggleTours,
       pgaRows,
       pgcRows,
+      leaderboardLastUpdatedAt:
+        leaderboardPayload.leaderboardLastUpdatedAt ?? null,
       viewer: viewerTourCardId
         ? {
             tourCardId: viewerTourCardId,
@@ -573,12 +755,7 @@ function useTournamentPage(args: {
           }
         : undefined,
     };
-  }, [
-    computedVariant,
-    isNotStartedYet,
-    leaderboardPayload,
-    selectedTournament,
-  ]);
+  }, [isNotStartedYet, leaderboardPayload, selectedTournament]);
 
   if (tournaments === undefined) {
     return { kind: "loadingTournaments" };
@@ -593,8 +770,24 @@ function useTournamentPage(args: {
   }
 
   if (isNotStartedYet) {
+    if (hasTournamentGolfers === undefined) {
+      return {
+        kind: "loadingPreTournamentGate",
+        tournaments,
+        selectedTournament,
+      };
+    }
+
+    if (!hasTournamentGolfers) {
+      return {
+        kind: "preTournamentCountdown",
+        tournaments,
+        selectedTournament,
+      };
+    }
+
     return {
-      kind: "preTournament",
+      kind: "preTournamentTeamPick",
       tournaments,
       selectedTournament,
       preTournament: {
@@ -602,7 +795,6 @@ function useTournamentPage(args: {
           _id: String(selectedTournament._id),
           name: selectedTournament.name,
           startDate: selectedTournament.startDate,
-          logoUrl: selectedTournament.logoUrl ?? null,
           tier: selectedTournament.tier
             ? { name: selectedTournament.tier.name ?? null }
             : null,

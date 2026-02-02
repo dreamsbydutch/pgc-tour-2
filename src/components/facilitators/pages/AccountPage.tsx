@@ -15,7 +15,6 @@ import {
   compareUnknown,
   formatDateTime,
   formatMoney,
-  formatMoneyWithCents,
   getSortIndicator,
   isMemberForAccountValue,
   isSeasonForLabelValue,
@@ -29,15 +28,11 @@ import {
  * - Sign-in/sign-out entry points (Clerk)
  * - Editing the member profile (first/last name)
  * - Showing the current account balance
- * - Requesting e-transfer withdrawals and making league/charity donations
  * - Listing and filtering the signed-in member’s tournament history
  *
  * Data sources:
  * - `api.functions.members.getMembers` (member record by Clerk id)
  * - `api.functions.members.updateMembers` (profile updates)
- * - `api.functions.seasons.getCurrentSeason` (default season for transactions)
- * - `api.functions.transactions.getMyBalanceSummary` (available balance)
- * - `api.functions.transactions.createMyWithdrawalAndDonations` (withdrawals + donations)
  * - `api.functions.seasons.getSeasons` (season labels)
  * - `api.functions.members.getMyTournamentHistory` (history rows)
  *
@@ -130,126 +125,6 @@ export function AccountPage() {
                 {vm.saveSuccess ? (
                   <div className="text-sm text-green-700">{vm.saveSuccess}</div>
                 ) : null}
-              </div>
-
-              <div className="mt-8 border-t pt-6">
-                <div className="mb-2 text-sm font-medium">
-                  Request payout / donate
-                </div>
-                <div className="mb-4 text-sm text-muted-foreground">
-                  Donations are completed immediately. Withdrawal requests are
-                  marked pending until processed.
-                </div>
-
-                <div className="mb-4 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-                  {vm.balanceSummary ? (
-                    <>
-                      <div>
-                        Balance:{" "}
-                        <span className="font-medium">
-                          {formatMoney(vm.balanceSummary.accountCents)}
-                        </span>
-                      </div>
-                      <div>
-                        Pending withdrawals:{" "}
-                        <span className="font-medium">
-                          {formatMoneyWithCents(
-                            vm.balanceSummary.pendingWithdrawalCents,
-                          )}
-                        </span>
-                      </div>
-                      <div>
-                        Available:{" "}
-                        <span className="font-medium">
-                          {formatMoneyWithCents(
-                            vm.balanceSummary.availableCents,
-                          )}
-                        </span>
-                      </div>
-                    </>
-                  ) : null}
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">
-                      E-transfer email
-                    </label>
-                    <input
-                      value={vm.payoutEmail}
-                      onChange={(e) => vm.setPayoutEmail(e.target.value)}
-                      className="w-full rounded-md border px-3 py-2 text-sm"
-                      placeholder="you@example.com"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">
-                      E-transfer amount
-                    </label>
-                    <input
-                      value={vm.withdrawalAmount}
-                      onChange={(e) => vm.setWithdrawalAmount(e.target.value)}
-                      className="w-full rounded-md border px-3 py-2 text-sm"
-                      placeholder="$25.00"
-                      inputMode="decimal"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">
-                      League donation
-                    </label>
-                    <input
-                      value={vm.leagueDonationAmount}
-                      onChange={(e) =>
-                        vm.setLeagueDonationAmount(e.target.value)
-                      }
-                      className="w-full rounded-md border px-3 py-2 text-sm"
-                      placeholder="$10.00"
-                      inputMode="decimal"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">
-                      Charity donation
-                    </label>
-                    <input
-                      value={vm.charityDonationAmount}
-                      onChange={(e) =>
-                        vm.setCharityDonationAmount(e.target.value)
-                      }
-                      className="w-full rounded-md border px-3 py-2 text-sm"
-                      placeholder="$10.00"
-                      inputMode="decimal"
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <Button
-                    onClick={vm.onSubmitPayoutAndDonations}
-                    disabled={
-                      vm.submittingPayout ||
-                      vm.payoutFormDisabledReason !== null
-                    }
-                  >
-                    {vm.submittingPayout ? "Submitting…" : "Submit"}
-                  </Button>
-
-                  {vm.payoutFormDisabledReason ? (
-                    <div className="text-sm text-muted-foreground">
-                      {vm.payoutFormDisabledReason}
-                    </div>
-                  ) : null}
-
-                  {vm.payoutError ? (
-                    <div className="text-sm text-red-600">{vm.payoutError}</div>
-                  ) : null}
-                  {vm.payoutSuccess ? (
-                    <div className="text-sm text-green-700">
-                      {vm.payoutSuccess}
-                    </div>
-                  ) : null}
-                </div>
               </div>
             </CardContent>
           </Card>
@@ -500,18 +375,9 @@ function useAccountPage() {
 
   const updateMember = useMutation(api.functions.members.updateMembers);
 
-  const currentSeason = useQuery(api.functions.seasons.getCurrentSeason, {});
-  const balanceSummary = useQuery(
-    api.functions.transactions.getMyBalanceSummary,
-    clerkUser ? {} : "skip",
-  );
-  const submitPayoutAndDonations = useMutation(
-    api.functions.transactions.createMyWithdrawalAndDonations,
-  );
-
   const memberForAccount = useMemo<MemberForAccount | null>(() => {
     return isMemberForAccount(memberRaw) ? memberRaw : null;
-  }, [isMemberForAccount, memberRaw]);
+  }, [memberRaw]);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -519,121 +385,13 @@ function useAccountPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
-  const [payoutEmail, setPayoutEmail] = useState("");
-  const [withdrawalAmount, setWithdrawalAmount] = useState("");
-  const [leagueDonationAmount, setLeagueDonationAmount] = useState("");
-  const [charityDonationAmount, setCharityDonationAmount] = useState("");
-  const [submittingPayout, setSubmittingPayout] = useState(false);
-  const [payoutError, setPayoutError] = useState<string | null>(null);
-  const [payoutSuccess, setPayoutSuccess] = useState<string | null>(null);
-
   useEffect(() => {
     if (!memberForAccount) return;
     setFirstName(memberForAccount.firstname ?? "");
     setLastName(memberForAccount.lastname ?? "");
   }, [memberForAccount]);
 
-  useEffect(() => {
-    const next = (memberRaw && "email" in memberRaw ? memberRaw.email : "") as
-      | string
-      | undefined;
-    if (!next || payoutEmail.trim()) return;
-    setPayoutEmail(next);
-  }, [memberRaw, payoutEmail]);
-
   const memberAccountCents = memberForAccount?.account;
-
-  function parseOptionalDollarsToCents(value: string): number {
-    const trimmed = value.trim();
-    if (!trimmed) return 0;
-
-    const cleaned = trimmed.replace(/[$,\s]/g, "");
-    if (!/^[0-9]+(?:\.[0-9]{1,2})?$/.test(cleaned)) {
-      throw new Error("Enter a dollar amount like 25.00");
-    }
-
-    const [dollarsPart, centsPartRaw] = cleaned.split(".");
-    const dollars = Number.parseInt(dollarsPart, 10);
-    const centsPart = (centsPartRaw ?? "").padEnd(2, "0");
-    const cents = centsPart ? Number.parseInt(centsPart, 10) : 0;
-    const total = dollars * 100 + cents;
-    if (!Number.isFinite(total) || total < 0) {
-      throw new Error("Enter a dollar amount like 25.00");
-    }
-    return total;
-  }
-
-  const payoutFormDisabledReason = useMemo(() => {
-    if (!clerkUser) return "Sign in to request payouts or donate.";
-    if (!currentSeason) return "No current season found.";
-    if (!balanceSummary) return "Loading balance…";
-
-    let withdrawalCents = 0;
-    let leagueCents = 0;
-    let charityCents = 0;
-    try {
-      withdrawalCents = parseOptionalDollarsToCents(withdrawalAmount);
-      leagueCents = parseOptionalDollarsToCents(leagueDonationAmount);
-      charityCents = parseOptionalDollarsToCents(charityDonationAmount);
-    } catch {
-      return "Enter valid dollar amounts.";
-    }
-
-    if (withdrawalCents === 0 && leagueCents === 0 && charityCents === 0) {
-      return "Enter an amount to submit.";
-    }
-
-    if (withdrawalCents > 0 && !payoutEmail.trim()) {
-      return "Enter an e-transfer email.";
-    }
-
-    const requestedTotal = withdrawalCents + leagueCents + charityCents;
-    if (requestedTotal > balanceSummary.availableCents) {
-      return "Total exceeds available balance.";
-    }
-
-    return null;
-  }, [
-    balanceSummary,
-    charityDonationAmount,
-    clerkUser,
-    currentSeason,
-    leagueDonationAmount,
-    payoutEmail,
-    withdrawalAmount,
-  ]);
-
-  async function onSubmitPayoutAndDonations() {
-    if (!clerkUser) return;
-    if (!currentSeason) return;
-
-    setSubmittingPayout(true);
-    setPayoutError(null);
-    setPayoutSuccess(null);
-
-    try {
-      const withdrawalCents = parseOptionalDollarsToCents(withdrawalAmount);
-      const leagueCents = parseOptionalDollarsToCents(leagueDonationAmount);
-      const charityCents = parseOptionalDollarsToCents(charityDonationAmount);
-
-      await submitPayoutAndDonations({
-        seasonId: currentSeason._id,
-        payoutEmail: payoutEmail.trim() || undefined,
-        withdrawalAmountCents: withdrawalCents || undefined,
-        leagueDonationCents: leagueCents || undefined,
-        charityDonationCents: charityCents || undefined,
-      });
-
-      setWithdrawalAmount("");
-      setLeagueDonationAmount("");
-      setCharityDonationAmount("");
-      setPayoutSuccess("Submitted.");
-    } catch (e) {
-      setPayoutError(e instanceof Error ? e.message : "Failed to submit");
-    } finally {
-      setSubmittingPayout(false);
-    }
-  }
 
   const seasons = useQuery(api.functions.seasons.getSeasons, {
     options: {
@@ -650,7 +408,7 @@ function useAccountPage() {
       map.set(s._id, `${s.year} #${s.number}`);
     }
     return map;
-  }, [isSeasonForLabel, seasons]);
+  }, [seasons]);
 
   const tournamentHistory = useQuery(
     api.functions.members.getMyTournamentHistory,
@@ -775,20 +533,6 @@ function useAccountPage() {
     saveError,
     saveSuccess,
     memberAccountCents,
-    balanceSummary,
-    payoutEmail,
-    setPayoutEmail,
-    withdrawalAmount,
-    setWithdrawalAmount,
-    leagueDonationAmount,
-    setLeagueDonationAmount,
-    charityDonationAmount,
-    setCharityDonationAmount,
-    submittingPayout,
-    payoutError,
-    payoutSuccess,
-    payoutFormDisabledReason,
-    onSubmitPayoutAndDonations,
     seasonLabelById,
     tSeasonFilter,
     setTSeasonFilter,
