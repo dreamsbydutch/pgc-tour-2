@@ -8,75 +8,40 @@
 
 import { action, mutation, query } from "../_generated/server";
 import { api } from "../_generated/api";
-import { processData, validators, normalize } from "./_utils";
-import { requireModeratorOrAdminByClerkId } from "./_authByClerkId";
-import { TIME } from "./_constants";
-import { v } from "convex/values";
+import { processData } from "../utils/processData";
+import { normalize } from "../utils/normalize";
+import {
+  applyFilters,
+  chunkArray,
+  countCommas,
+  enhanceGolfer,
+  fetchDataGolfPlayerList,
+  generateDisplayName,
+  generateRankDisplay,
+  generateAnalytics,
+  getOptimizedGolfers,
+  getRankingCategory,
+  getSortFunction,
+  normalizeCommaName,
+  normalizeCountry,
+  normalizeGolferName,
+  normalizePlayerName,
+  normalizeStoredCountry,
+} from "../utils/golfers";
+import { golfersValidators } from "../validators/golfers";
+import { requireModeratorOrAdminByClerkId } from "../utils/authByClerkId";
 import { requireModerator } from "../auth";
 import type { Id } from "../_generated/dataModel";
-import type { Player } from "../types/datagolf";
-import { fetchWithRetry } from "./_externalFetch";
 import type {
-  ValidationResult,
-  AnalyticsResult,
-  DeleteResponse,
-  GolferDoc,
-  EnhancedGolferDoc,
-  TournamentDoc,
-  TournamentGolferDoc,
-  GolferSortFunction,
-  DatabaseContext,
-  GolferFilterOptions,
-  GolferOptimizedQueryOptions,
-  GolferEnhancementOptions,
-  GolferSortOptions,
-} from "../types/types";
-
-/**
- * Validate golfer data
- */
-function validateGolferData(data: {
-  apiId?: number;
-  playerName?: string;
-  country?: string;
-  worldRank?: number;
-}): ValidationResult {
-  const errors: string[] = [];
-
-  const apiIdErr = validators.positiveNumber(data.apiId, "API ID");
-  if (apiIdErr) errors.push(apiIdErr);
-
-  const playerNameErr = validators.stringLength(
-    data.playerName,
-    2,
-    100,
-    "Player name",
-  );
-  if (playerNameErr) errors.push(playerNameErr);
-
-  const countryErr = validators.stringLength(
-    data.country,
-    0,
-    50,
-    "Country name",
-  );
-  if (countryErr) errors.push(countryErr);
-
-  const worldRankErr = validators.numberRange(
-    data.worldRank,
-    1,
-    10000,
-    "World rank",
-  );
-  if (worldRankErr) errors.push(worldRankErr);
-
-  return { isValid: errors.length === 0, errors };
-}
+  DedupeResult,
+  NormalizeNamesResult,
+  SyncResult,
+  UpsertResult,
+} from "../types/golfers";
+import type { DeleteResponse, GolferDoc } from "../types/types";
 
 export const listGolfersForSync = query({
-  args: {
-    clerkId: v.string(),
-  },
+  args: golfersValidators.args.listGolfersForSync,
   handler: async (ctx, args) => {
     await requireModeratorOrAdminByClerkId(ctx, args.clerkId);
 
@@ -91,149 +56,8 @@ export const listGolfersForSync = query({
   },
 });
 
-type UpsertResult = {
-  total: number;
-  inserted: number;
-  updated: number;
-  dryRun: boolean;
-};
-
-type SyncResult = {
-  fetched: number;
-  upserted: UpsertResult;
-};
-
-function normalizeCountry(country?: string): string | undefined {
-  const trimmed = country?.trim();
-  if (!trimmed) return undefined;
-  if (trimmed.toLowerCase() === "unknown") return undefined;
-  return trimmed;
-}
-
-function normalizeStoredCountry(
-  country: string | null | undefined,
-): string | null {
-  const trimmed = country?.trim();
-  if (!trimmed) return null;
-  if (trimmed.toLowerCase() === "unknown") return null;
-  return trimmed;
-}
-
-function chunkArray<T>(items: T[], chunkSize: number): T[][] {
-  if (chunkSize <= 0) return [items];
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += chunkSize) {
-    out.push(items.slice(i, i + chunkSize));
-  }
-  return out;
-}
-
-function normalizeSuffixToken(token: string): string {
-  const raw = token.trim();
-  if (!raw) return "";
-
-  const stripped = raw.replace(/\./g, "").trim();
-  const lower = stripped.toLowerCase();
-
-  if (lower === "jr") return "Jr.";
-  if (lower === "sr") return "Sr.";
-  if (/^(i|ii|iii|iv|v|vi|vii|viii|ix|x)$/i.test(stripped)) {
-    return stripped.toUpperCase();
-  }
-
-  return raw;
-}
-
-function normalizePlayerName(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed.includes(",")) return trimmed;
-
-  const parts = trimmed
-    .split(",")
-    .map((p) => p.trim())
-    .filter(Boolean);
-  if (parts.length === 2) {
-    const [last, first] = parts;
-    if (!last || !first) return trimmed;
-    return `${first} ${last}`.replace(/\s+/g, " ").trim();
-  }
-
-  if (parts.length >= 3) {
-    const last = parts[0];
-    const first = parts[parts.length - 1];
-    const suffixTokens = parts.slice(1, parts.length - 1);
-    const suffix = suffixTokens
-      .map(normalizeSuffixToken)
-      .filter(Boolean)
-      .join(" ");
-
-    if (!last || !first) return trimmed;
-    return (suffix ? `${first} ${last} ${suffix}` : `${first} ${last}`)
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  return trimmed;
-}
-
-function countCommas(s: string): number {
-  let count = 0;
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === ",") count++;
-  }
-  return count;
-}
-
-async function fetchDataGolfPlayerList(): Promise<Player[]> {
-  const apiKey = process.env.DATAGOLF_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "DataGolf API key not found. Please set DATAGOLF_API_KEY in Convex environment variables.",
-    );
-  }
-
-  const url = `https://feeds.datagolf.com/get-player-list?file_format=json&key=${apiKey}`;
-
-  const result = await fetchWithRetry<Player[]>(
-    url,
-    {},
-    {
-      timeout: 30000,
-      retries: 3,
-      validateResponse: (json): json is Player[] =>
-        Array.isArray(json) &&
-        (json.length === 0 ||
-          json.every(
-            (p) =>
-              p && typeof p === "object" && "player_name" in p && "dg_id" in p,
-          )),
-      logPrefix: "DataGolf Sync",
-    },
-  );
-
-  if (!result.ok) {
-    if (result.error.includes("401") || result.error.includes("403")) {
-      throw new Error(
-        "DataGolf API authentication failed. Please verify DATAGOLF_API_KEY is correct and active.",
-      );
-    }
-
-    throw new Error(`Failed to fetch DataGolf player list: ${result.error}`);
-  }
-
-  return result.data;
-}
-
 export const syncGolfersFromDataGolf = action({
-  args: {
-    clerkId: v.string(),
-    options: v.optional(
-      v.object({
-        dryRun: v.optional(v.boolean()),
-        limit: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: golfersValidators.args.syncGolfersFromDataGolf,
   handler: async (ctx, args): Promise<SyncResult> => {
     const clerkId = args.clerkId.trim();
     if (!clerkId) {
@@ -538,24 +362,7 @@ export const syncGolfersFromDataGolf = action({
  * }
  */
 export const getGolfersPage = query({
-  args: {
-    paginationOpts: v.object({
-      numItems: v.number(),
-      cursor: v.union(v.string(), v.null()),
-      id: v.optional(v.number()),
-    }),
-    options: v.optional(
-      v.object({
-        filter: v.optional(
-          v.object({
-            apiId: v.optional(v.number()),
-            country: v.optional(v.string()),
-            searchTerm: v.optional(v.string()),
-          }),
-        ),
-      }),
-    ),
-  },
+  args: golfersValidators.args.getGolfersPage,
   handler: async (ctx, args) => {
     const options = args.options || {};
     const filter = options.filter || {};
@@ -590,22 +397,7 @@ export const getGolfersPage = query({
 });
 
 export const bulkInsertGolfers = mutation({
-  args: {
-    clerkId: v.string(),
-    data: v.array(
-      v.object({
-        apiId: v.number(),
-        playerName: v.string(),
-        country: v.optional(v.string()),
-        worldRank: v.optional(v.number()),
-      }),
-    ),
-    options: v.optional(
-      v.object({
-        dryRun: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: golfersValidators.args.bulkInsertGolfers,
   handler: async (ctx, args) => {
     await requireModeratorOrAdminByClerkId(ctx, args.clerkId);
 
@@ -627,25 +419,7 @@ export const bulkInsertGolfers = mutation({
 });
 
 export const bulkPatchGolfers = mutation({
-  args: {
-    clerkId: v.string(),
-    patches: v.array(
-      v.object({
-        golferId: v.id("golfers"),
-        data: v.object({
-          apiId: v.optional(v.number()),
-          playerName: v.optional(v.string()),
-          country: v.optional(v.string()),
-          worldRank: v.optional(v.number()),
-        }),
-      }),
-    ),
-    options: v.optional(
-      v.object({
-        dryRun: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: golfersValidators.args.bulkPatchGolfers,
   handler: async (ctx, args) => {
     await requireModeratorOrAdminByClerkId(ctx, args.clerkId);
 
@@ -660,54 +434,6 @@ export const bulkPatchGolfers = mutation({
   },
 });
 
-function normalizeCommaName(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed.includes(",")) return trimmed;
-
-  const parts = trimmed
-    .split(",")
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  const normalizeSuffixToken = (token: string): string => {
-    const raw = token.trim();
-    if (!raw) return "";
-    const stripped = raw.replace(/\./g, "").trim();
-    const lower = stripped.toLowerCase();
-    if (lower === "jr") return "Jr.";
-    if (lower === "sr") return "Sr.";
-    if (/^(i|ii|iii|iv|v|vi|vii|viii|ix|x)$/i.test(stripped)) {
-      return stripped.toUpperCase();
-    }
-    return raw;
-  };
-
-  if (parts.length === 2) {
-    const [last, first] = parts;
-    if (!last || !first) return trimmed;
-    return `${first} ${last}`;
-  }
-
-  if (parts.length >= 3) {
-    const last = parts[0];
-    const first = parts[parts.length - 1];
-    const suffixTokens = parts.slice(1, parts.length - 1);
-    const suffix = suffixTokens
-      .map(normalizeSuffixToken)
-      .filter(Boolean)
-      .join(" ");
-    if (!last || !first) return trimmed;
-    return suffix ? `${first} ${last} ${suffix}` : `${first} ${last}`;
-  }
-
-  return trimmed;
-}
-
-type NormalizeNamesResult = {
-  scanned: number;
-  changed: number;
-};
-
 /**
  * Admin tool: convert golfer names from "Last, First" to "First Last".
  *
@@ -715,15 +441,7 @@ type NormalizeNamesResult = {
  * to remove any duplicates that collapse to the same name.
  */
 export const adminNormalizeGolferNames = mutation({
-  args: {
-    clerkId: v.string(),
-    options: v.optional(
-      v.object({
-        dryRun: v.optional(v.boolean()),
-        limit: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: golfersValidators.args.adminNormalizeGolferNames,
   handler: async (ctx, args): Promise<NormalizeNamesResult> => {
     await requireModeratorOrAdminByClerkId(ctx, args.clerkId);
 
@@ -751,22 +469,7 @@ export const adminNormalizeGolferNames = mutation({
 });
 
 export const upsertGolfers = mutation({
-  args: {
-    clerkId: v.optional(v.string()),
-    data: v.array(
-      v.object({
-        apiId: v.number(),
-        playerName: v.string(),
-        country: v.optional(v.string()),
-        worldRank: v.optional(v.number()),
-      }),
-    ),
-    options: v.optional(
-      v.object({
-        dryRun: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: golfersValidators.args.upsertGolfers,
   handler: async (ctx, args) => {
     const clerkId = args.clerkId?.trim();
     if (clerkId) {
@@ -832,59 +535,6 @@ export const upsertGolfers = mutation({
 });
 
 /**
- * Generate display name for golfer
- */
-function generateDisplayName(playerName: string): string {
-  return playerName.trim();
-}
-
-/**
- * Generate rank display string
- */
-function generateRankDisplay(worldRank?: number): string {
-  if (!worldRank) return "Unranked";
-  return `#${worldRank}`;
-}
-
-/**
- * Determine ranking category
- */
-function getRankingCategory(
-  worldRank?: number,
-): "top10" | "top50" | "top100" | "ranked" | "unranked" {
-  if (!worldRank) return "unranked";
-
-  if (worldRank <= 10) return "top10";
-  if (worldRank <= 50) return "top50";
-  if (worldRank <= 100) return "top100";
-  return "ranked";
-}
-
-/**
- * Determine recent form based on tournament results
- */
-function calculateRecentForm(
-  recentResults: TournamentGolferDoc[],
-): "excellent" | "good" | "average" | "poor" | "unknown" {
-  if (recentResults.length === 0) return "unknown";
-
-  const avgPosition = recentResults
-    .filter(
-      (r) =>
-        r.position && typeof r.position === "string" && r.position !== "CUT",
-    )
-    .map((r) => parseInt(r.position as string))
-    .filter((pos) => !isNaN(pos))
-    .reduce((sum, pos, _, arr) => sum + pos / arr.length, 0);
-
-  if (avgPosition === 0) return "unknown";
-  if (avgPosition <= 10) return "excellent";
-  if (avgPosition <= 25) return "good";
-  if (avgPosition <= 50) return "average";
-  return "poor";
-}
-
-/**
  * Create golfers with comprehensive options
  *
  * @example
@@ -910,30 +560,14 @@ function calculateRecentForm(
  * });
  */
 export const createGolfers = mutation({
-  args: {
-    data: v.object({
-      apiId: v.number(),
-      playerName: v.string(),
-      country: v.optional(v.string()),
-      worldRank: v.optional(v.number()),
-    }),
-    options: v.optional(
-      v.object({
-        skipValidation: v.optional(v.boolean()),
-        setActive: v.optional(v.boolean()),
-        returnEnhanced: v.optional(v.boolean()),
-        includeStatistics: v.optional(v.boolean()),
-        includeTournaments: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: golfersValidators.args.createGolfers,
   handler: async (ctx, args) => {
     await requireModerator(ctx);
 
     const options = args.options || {};
     const data = args.data;
     if (!options.skipValidation) {
-      const validation = validateGolferData(data);
+      const validation = golfersValidators.validateGolferData(data);
 
       if (!validation.isValid) {
         throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
@@ -1009,63 +643,7 @@ export const createGolfers = mutation({
  * });
  */
 export const getGolfers = query({
-  args: {
-    options: v.optional(
-      v.object({
-        id: v.optional(v.id("golfers")),
-        ids: v.optional(v.array(v.id("golfers"))),
-        apiId: v.optional(v.number()),
-        filter: v.optional(
-          v.object({
-            apiId: v.optional(v.number()),
-            playerName: v.optional(v.string()),
-            country: v.optional(v.string()),
-            worldRank: v.optional(v.number()),
-            minWorldRank: v.optional(v.number()),
-            maxWorldRank: v.optional(v.number()),
-            searchTerm: v.optional(v.string()),
-            createdAfter: v.optional(v.number()),
-            createdBefore: v.optional(v.number()),
-            updatedAfter: v.optional(v.number()),
-            updatedBefore: v.optional(v.number()),
-          }),
-        ),
-        sort: v.optional(
-          v.object({
-            sortBy: v.optional(
-              v.union(
-                v.literal("playerName"),
-                v.literal("country"),
-                v.literal("worldRank"),
-                v.literal("apiId"),
-                v.literal("createdAt"),
-                v.literal("updatedAt"),
-              ),
-            ),
-            sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
-          }),
-        ),
-        pagination: v.optional(
-          v.object({
-            limit: v.optional(v.number()),
-            offset: v.optional(v.number()),
-          }),
-        ),
-        enhance: v.optional(
-          v.object({
-            includeTournaments: v.optional(v.boolean()),
-            includeStatistics: v.optional(v.boolean()),
-            includeTeams: v.optional(v.boolean()),
-            includeRecentPerformance: v.optional(v.boolean()),
-          }),
-        ),
-        activeOnly: v.optional(v.boolean()),
-        rankedOnly: v.optional(v.boolean()),
-        topRankedOnly: v.optional(v.boolean()),
-        includeAnalytics: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: golfersValidators.args.getGolfers,
   handler: async (ctx, args) => {
     const options = args.options || {};
     if (options.id) {
@@ -1159,9 +737,7 @@ export const getGolfers = query({
  * Frontend convenience: golfers + tournament-specific leaderboard fields.
  */
 export const getTournamentLeaderboardGolfers = query({
-  args: {
-    tournamentId: v.id("tournaments"),
-  },
+  args: golfersValidators.args.getTournamentLeaderboardGolfers,
   handler: async (ctx, args) => {
     const tournamentGolferDocs = await ctx.db
       .query("tournamentGolfers")
@@ -1227,24 +803,7 @@ export const getTournamentLeaderboardGolfers = query({
  * });
  */
 export const updateGolfers = mutation({
-  args: {
-    golferId: v.id("golfers"),
-    data: v.object({
-      playerName: v.optional(v.string()),
-      country: v.optional(v.string()),
-      worldRank: v.optional(v.number()),
-    }),
-    options: v.optional(
-      v.object({
-        skipValidation: v.optional(v.boolean()),
-        updateTimestamp: v.optional(v.boolean()),
-        returnEnhanced: v.optional(v.boolean()),
-        includeStatistics: v.optional(v.boolean()),
-        includeTournaments: v.optional(v.boolean()),
-        includeRecentPerformance: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: golfersValidators.args.updateGolfers,
   handler: async (ctx, args) => {
     await requireModerator(ctx);
 
@@ -1254,7 +813,7 @@ export const updateGolfers = mutation({
       throw new Error("Golfer not found");
     }
     if (!options.skipValidation) {
-      const validation = validateGolferData(args.data);
+      const validation = golfersValidators.validateGolferData(args.data);
       if (!validation.isValid) {
         throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
       }
@@ -1303,17 +862,7 @@ export const updateGolfers = mutation({
  * });
  */
 export const deleteGolfers = mutation({
-  args: {
-    golferId: v.id("golfers"),
-    options: v.optional(
-      v.object({
-        softDelete: v.optional(v.boolean()),
-        cascadeDelete: v.optional(v.boolean()),
-        replacementGolferId: v.optional(v.id("golfers")),
-        returnDeletedData: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: golfersValidators.args.deleteGolfers,
   handler: async (ctx, args): Promise<DeleteResponse<GolferDoc>> => {
     await requireModerator(ctx);
 
@@ -1410,19 +959,6 @@ export const deleteGolfers = mutation({
   },
 });
 
-function normalizeGolferName(name: string): string {
-  return normalize.name(name);
-}
-
-type DedupeResult = {
-  scanned: number;
-  duplicateGroups: number;
-  kept: number;
-  removed: number;
-  updatedTournamentGolfers: number;
-  updatedTeams: number;
-};
-
 /**
  * Admin tool: ensure golfer names are unique by merging duplicates.
  *
@@ -1433,9 +969,7 @@ type DedupeResult = {
  * - Deletes the duplicate golfer docs
  */
 export const adminDedupeGolfersByName = mutation({
-  args: {
-    clerkId: v.string(),
-  },
+  args: golfersValidators.args.adminDedupeGolfersByName,
   handler: async (ctx, args): Promise<DedupeResult> => {
     const clerkId = args.clerkId.trim();
     if (!clerkId) throw new Error("Unauthorized: You must be signed in");
@@ -1564,310 +1098,3 @@ export const adminDedupeGolfersByName = mutation({
     };
   },
 });
-
-/**
- * Get optimized golfers based on query options using indexes
- */
-async function getOptimizedGolfers(
-  ctx: DatabaseContext,
-  options: GolferOptimizedQueryOptions,
-): Promise<GolferDoc[]> {
-  const filter = options.filter || {};
-  if (filter.apiId) {
-    const golfer = await ctx.db
-      .query("golfers")
-      .withIndex("by_api_id", (q) => q.eq("apiId", filter.apiId!))
-      .first();
-    return golfer ? [golfer] : [];
-  }
-
-  if (filter.playerName) {
-    return await ctx.db
-      .query("golfers")
-      .withIndex("by_player_name", (q) =>
-        q.eq("playerName", filter.playerName!),
-      )
-      .collect();
-  }
-
-  return await ctx.db.query("golfers").collect();
-}
-
-/**
- * Apply comprehensive filters to golfers
- */
-function applyFilters(
-  golfers: GolferDoc[],
-  filter: GolferFilterOptions,
-): GolferDoc[] {
-  return golfers.filter((golfer) => {
-    if (filter.country && golfer.country !== filter.country) {
-      return false;
-    }
-    if (
-      filter.worldRank !== undefined &&
-      golfer.worldRank !== filter.worldRank
-    ) {
-      return false;
-    }
-
-    if (filter.minWorldRank !== undefined) {
-      if (!golfer.worldRank || golfer.worldRank < filter.minWorldRank) {
-        return false;
-      }
-    }
-
-    if (filter.maxWorldRank !== undefined) {
-      if (!golfer.worldRank || golfer.worldRank > filter.maxWorldRank) {
-        return false;
-      }
-    }
-    if (filter.searchTerm) {
-      const searchTerm = filter.searchTerm.toLowerCase();
-      const searchableText = [golfer.playerName, golfer.country || ""]
-        .join(" ")
-        .toLowerCase();
-
-      if (!searchableText.includes(searchTerm)) {
-        return false;
-      }
-    }
-    if (
-      filter.createdAfter !== undefined &&
-      golfer._creationTime < filter.createdAfter
-    ) {
-      return false;
-    }
-
-    if (
-      filter.createdBefore !== undefined &&
-      golfer._creationTime > filter.createdBefore
-    ) {
-      return false;
-    }
-
-    if (
-      filter.updatedAfter !== undefined &&
-      (golfer.updatedAt || 0) < filter.updatedAfter
-    ) {
-      return false;
-    }
-
-    if (
-      filter.updatedBefore !== undefined &&
-      (golfer.updatedAt || 0) > filter.updatedBefore
-    ) {
-      return false;
-    }
-
-    return true;
-  });
-}
-
-/**
- * Get sorting function based on sort options
- */
-function getSortFunction(sort: GolferSortOptions): GolferSortFunction {
-  if (!sort.sortBy) return undefined;
-
-  const sortOrder = sort.sortOrder === "asc" ? 1 : -1;
-
-  switch (sort.sortBy) {
-    case "playerName":
-      return (a: GolferDoc, b: GolferDoc) =>
-        a.playerName.localeCompare(b.playerName) * sortOrder;
-    case "country":
-      return (a: GolferDoc, b: GolferDoc) =>
-        (a.country || "").localeCompare(b.country || "") * sortOrder;
-    case "worldRank":
-      return (a: GolferDoc, b: GolferDoc) => {
-        if (!a.worldRank && !b.worldRank) return 0;
-        if (!a.worldRank) return 1 * sortOrder;
-        if (!b.worldRank) return -1 * sortOrder;
-        return (a.worldRank - b.worldRank) * sortOrder;
-      };
-    case "apiId":
-      return (a: GolferDoc, b: GolferDoc) => (a.apiId - b.apiId) * sortOrder;
-    case "createdAt":
-      return (a: GolferDoc, b: GolferDoc) =>
-        (a._creationTime - b._creationTime) * sortOrder;
-    case "updatedAt":
-      return (a: GolferDoc, b: GolferDoc) =>
-        ((a.updatedAt || 0) - (b.updatedAt || 0)) * sortOrder;
-    default:
-      return undefined;
-  }
-}
-
-/**
- * Enhance a single golfer with related data
- */
-async function enhanceGolfer(
-  ctx: DatabaseContext,
-  golfer: GolferDoc,
-  enhance: GolferEnhancementOptions,
-): Promise<EnhancedGolferDoc> {
-  const enhanced: EnhancedGolferDoc = {
-    ...golfer,
-    displayName: generateDisplayName(golfer.playerName),
-    rankDisplay: generateRankDisplay(golfer.worldRank),
-    hasRanking: Boolean(golfer.worldRank && golfer.worldRank > 0),
-    isRanked: Boolean(golfer.worldRank && golfer.worldRank > 0),
-    rankingCategory: getRankingCategory(golfer.worldRank),
-  };
-
-  if (
-    enhance.includeTournaments ||
-    enhance.includeStatistics ||
-    enhance.includeRecentPerformance
-  ) {
-    const tournamentGolfers = await ctx.db
-      .query("tournamentGolfers")
-      .filter((q) => q.eq(q.field("golferId"), golfer._id))
-      .collect();
-
-    enhanced.tournamentGolfers = tournamentGolfers;
-
-    if (enhance.includeTournaments) {
-      const tournaments = await Promise.all(
-        tournamentGolfers.map(async (tg) => {
-          return await ctx.db.get(tg.tournamentId);
-        }),
-      );
-      enhanced.tournaments = tournaments.filter(
-        (t): t is TournamentDoc => t !== null,
-      );
-    }
-
-    if (enhance.includeRecentPerformance) {
-      const recentResults = tournamentGolfers
-        .sort((a, b) => b._creationTime - a._creationTime)
-        .slice(0, 5);
-      enhanced.recentPerformance = recentResults;
-    }
-
-    if (enhance.includeStatistics) {
-      const cuts = tournamentGolfers.filter((tg) => tg.makeCut).length;
-      const cutsMissed = tournamentGolfers.filter((tg) => !tg.makeCut).length;
-
-      const finishPositions = tournamentGolfers
-        .filter(
-          (tg) =>
-            tg.position &&
-            typeof tg.position === "string" &&
-            tg.position !== "CUT",
-        )
-        .map((tg) => parseInt(tg.position as string))
-        .filter((pos) => !isNaN(pos));
-
-      const topTens = finishPositions.filter((pos) => pos <= 10).length;
-      const topFives = finishPositions.filter((pos) => pos <= 5).length;
-      const wins = finishPositions.filter((pos) => pos === 1).length;
-
-      const recentForm = calculateRecentForm(
-        tournamentGolfers
-          .sort((a, b) => b._creationTime - a._creationTime)
-          .slice(0, 5),
-      );
-
-      enhanced.statistics = {
-        totalTournaments: tournamentGolfers.length,
-        activeTournaments: tournamentGolfers.filter(
-          (tg) =>
-            !tg._creationTime ||
-            tg._creationTime > Date.now() - 365 * TIME.MS_PER_DAY,
-        ).length,
-        totalTeams: 0,
-        averageScore:
-          tournamentGolfers.length > 0
-            ? tournamentGolfers
-                .filter((tg) => tg.score !== undefined)
-                .reduce(
-                  (sum, tg, _, arr) => sum + (tg.score || 0) / arr.length,
-                  0,
-                )
-            : undefined,
-        bestFinish:
-          finishPositions.length > 0 ? Math.min(...finishPositions) : undefined,
-        cuts,
-        cutsMissed,
-        topTens,
-        topFives,
-        wins,
-        totalEarnings: tournamentGolfers.reduce(
-          (sum, tg) => sum + (tg.earnings || 0),
-          0,
-        ),
-        totalPoints: 0,
-        recentForm,
-      };
-    }
-  }
-
-  if (enhance.includeTeams || enhanced.statistics) {
-    const teamsPage = await ctx.db
-      .query("teams")
-      .paginate({ cursor: null, numItems: 5000 });
-
-    if (!teamsPage.isDone) {
-      console.warn(
-        `[enhanceGolfer] Database has >5000 teams. Teams list for golfer ${golfer.apiId} may be incomplete.`,
-      );
-    }
-
-    const golferTeams = teamsPage.page.filter((team) =>
-      team.golferIds.includes(golfer.apiId),
-    );
-
-    if (enhance.includeTeams) {
-      enhanced.teams = golferTeams;
-    }
-
-    if (enhanced.statistics) {
-      enhanced.statistics.totalTeams = golferTeams.length;
-    }
-  }
-
-  return enhanced;
-}
-
-/**
- * Generate analytics for golfers
- */
-async function generateAnalytics(
-  _ctx: DatabaseContext,
-  golfers: GolferDoc[],
-): Promise<AnalyticsResult> {
-  const activeGolfers = golfers;
-  const rankedGolfers = golfers.filter((g) => g.worldRank && g.worldRank > 0);
-  const topRankedGolfers = golfers.filter(
-    (g) => g.worldRank && g.worldRank <= 100,
-  );
-
-  const countryBreakdown = golfers.reduce(
-    (acc, golfer) => {
-      const country = golfer.country || "Unknown";
-      acc[country] = (acc[country] || 0) + 1;
-      return acc;
-    },
-    {} as Record<string, number>,
-  );
-
-  return {
-    total: golfers.length,
-    active: activeGolfers.length,
-    inactive: 0,
-    statistics: {
-      rankedGolfers: rankedGolfers.length,
-      topRankedGolfers: topRankedGolfers.length,
-      averageRank:
-        rankedGolfers.length > 0
-          ? rankedGolfers.reduce((sum, g) => sum + (g.worldRank || 0), 0) /
-            rankedGolfers.length
-          : 0,
-      uniqueCountries: Object.keys(countryBreakdown).length,
-      golfersWithImages: 0,
-    },
-    breakdown: countryBreakdown,
-  };
-}

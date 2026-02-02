@@ -12,10 +12,17 @@
  * Betting Tools, Historical Odds, Historical DFS).
  */
 
-import { v } from "convex/values";
 import { action } from "../_generated/server";
-import { processData } from "./_utils";
-import { fetchWithRetry } from "./_externalFetch";
+import { datagolfValidators } from "../validators/datagolf";
+import { processData } from "../utils/processData";
+import {
+  buildQueryParams,
+  fetchFromDataGolf,
+  impliedProbabilityFromOdds,
+  isLiveTournamentStat,
+  isNonEmptyString,
+  isSkillRatingCategoryKey,
+} from "../utils/datagolf";
 import type {
   BettingMarketMatchups,
   BettingMarketOutright,
@@ -56,7 +63,6 @@ import type {
   ApproachSkillResponse,
   LiveModelPlayer,
   LiveModelPredictionsResponse,
-  LiveTournamentStat,
   LiveStatsPlayer,
   LiveTournamentStatsResponse,
   HoleStats,
@@ -66,193 +72,6 @@ import type {
   HistoricalPlayer,
   HistoricalRoundDataResponse,
 } from "../types/datagolf";
-
-const BASE_URL = "https://feeds.datagolf.com";
-
-async function fetchFromDataGolf<T = Record<string, never>>(
-  endpoint: string,
-  validateResponse?: (json: unknown) => boolean,
-): Promise<T> {
-  const apiKey = process.env.DATAGOLF_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "DataGolf API key not found. Please set DATAGOLF_API_KEY in Convex environment variables.",
-    );
-  }
-
-  const joiner = endpoint.includes("?") ? "&" : "?";
-  const url = `${BASE_URL}${endpoint}${joiner}key=${apiKey}`;
-
-  const result = await fetchWithRetry<T>(
-    url,
-    {},
-    {
-      timeout: 30000,
-      retries: 3,
-      validateResponse,
-      logPrefix: "DataGolf API",
-    },
-  );
-
-  if (!result.ok) {
-    if (result.error.includes("401") || result.error.includes("403")) {
-      throw new Error(
-        "DataGolf API authentication failed. Please verify DATAGOLF_API_KEY is correct and active.",
-      );
-    }
-
-    throw new Error(`DataGolf API error: ${result.error}`);
-  }
-
-  return result.data;
-}
-
-const vFileFormat = v.union(v.literal("json"), v.literal("csv"));
-const vOddsFormat = v.union(
-  v.literal("percent"),
-  v.literal("american"),
-  v.literal("decimal"),
-  v.literal("fraction"),
-);
-const vDisplay = v.union(v.literal("value"), v.literal("rank"));
-const vTour = v.literal("pga");
-
-const vFantasySite = v.union(
-  v.literal("draftkings"),
-  v.literal("fanduel"),
-  v.literal("yahoo"),
-);
-const vFantasySlate = v.union(
-  v.literal("main"),
-  v.literal("showdown"),
-  v.literal("showdown_late"),
-  v.literal("weekend"),
-  v.literal("captain"),
-);
-
-const vBettingMarketOutright = v.union(
-  v.literal("win"),
-  v.literal("top_5"),
-  v.literal("top_10"),
-  v.literal("top_20"),
-  v.literal("mc"),
-  v.literal("make_cut"),
-  v.literal("frl"),
-);
-const vBettingMarketMatchups = v.union(
-  v.literal("tournament_matchups"),
-  v.literal("round_matchups"),
-  v.literal("3_balls"),
-);
-
-const vHistoricalOddsTour = v.literal("pga");
-
-const vHistoricalDfsTour = v.literal("pga");
-const vHistoricalDfsSite = v.union(
-  v.literal("draftkings"),
-  v.literal("fanduel"),
-);
-
-const vHistoricalEventDataTour = v.literal("pga");
-
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function parseNumberLike(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-function impliedProbabilityFromOdds(
-  odds: number | string,
-  oddsFormat: OddsFormat,
-): number | null {
-  if (oddsFormat === "percent") {
-    const percent = parseNumberLike(odds);
-    if (percent === null) return null;
-    return percent / 100;
-  }
-
-  if (oddsFormat === "decimal") {
-    const decimal = parseNumberLike(odds);
-    if (decimal === null || decimal <= 0) return null;
-    return 1 / decimal;
-  }
-
-  if (oddsFormat === "american") {
-    const american = parseNumberLike(odds);
-    if (american === null || american === 0) return null;
-    if (american > 0) return 100 / (american + 100);
-    const abs = Math.abs(american);
-    return abs / (abs + 100);
-  }
-
-  const fraction = String(odds).trim();
-  const parts = fraction.split("/").map((p) => p.trim());
-  if (parts.length !== 2) return null;
-  const numerator = Number(parts[0]);
-  const denominator = Number(parts[1]);
-  if (!Number.isFinite(numerator) || !Number.isFinite(denominator)) return null;
-  if (numerator < 0 || denominator <= 0) return null;
-  return denominator / (numerator + denominator);
-}
-
-const SKILL_RATING_CATEGORY_KEYS = [
-  "sg_putt",
-  "sg_arg",
-  "sg_app",
-  "sg_ott",
-  "sg_total",
-  "driving_acc",
-  "driving_dist",
-] as const;
-
-type SkillRatingCategoryKey = (typeof SKILL_RATING_CATEGORY_KEYS)[number];
-
-function isSkillRatingCategoryKey(
-  value: string,
-): value is SkillRatingCategoryKey {
-  return (SKILL_RATING_CATEGORY_KEYS as readonly string[]).includes(value);
-}
-
-const LIVE_TOURNAMENT_STATS = [
-  "sg_putt",
-  "sg_arg",
-  "sg_app",
-  "sg_ott",
-  "sg_t2g",
-  "sg_bs",
-  "sg_total",
-  "distance",
-  "accuracy",
-  "gir",
-  "prox_fw",
-  "prox_rgh",
-  "scrambling",
-  "great_shots",
-  "poor_shots",
-] as const satisfies readonly LiveTournamentStat[];
-
-function isLiveTournamentStat(value: string): value is LiveTournamentStat {
-  return (LIVE_TOURNAMENT_STATS as readonly string[]).includes(value);
-}
-
-function buildQueryParams(
-  params: Record<string, string | number | boolean | undefined>,
-): string {
-  const searchParams = new URLSearchParams();
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined) {
-      searchParams.append(key, String(value));
-    }
-  });
-  return searchParams.toString();
-}
 
 /**
  * Fetch player list with comprehensive filtering and sorting options
@@ -267,18 +86,7 @@ function buildQueryParams(
  * });
  */
 export const fetchPlayerList = action({
-  args: {
-    options: v.optional(
-      v.object({
-        format: v.optional(vFileFormat),
-        filterByCountry: v.optional(v.string()),
-        filterByAmateur: v.optional(v.boolean()),
-        sortByName: v.optional(v.boolean()),
-        limit: v.optional(v.number()),
-        skip: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchPlayerList,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const format = options.format || "json";
@@ -333,20 +141,7 @@ export const fetchPlayerList = action({
  * });
  */
 export const fetchTourSchedule = action({
-  args: {
-    options: v.optional(
-      v.object({
-        tour: v.optional(vTour),
-        season: v.optional(v.number()),
-        format: v.optional(vFileFormat),
-        filterByLocation: v.optional(v.string()),
-        sortByDate: v.optional(v.boolean()),
-        upcomingOnly: v.optional(v.boolean()),
-        limit: v.optional(v.number()),
-        skip: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchTourSchedule,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const tour = options.tour || "all";
@@ -408,22 +203,7 @@ export const fetchTourSchedule = action({
  * });
  */
 export const fetchFieldUpdates = action({
-  args: {
-    options: v.optional(
-      v.object({
-        tour: v.optional(vTour),
-        format: v.optional(vFileFormat),
-        filterByCountry: v.optional(v.string()),
-        filterWithdrawn: v.optional(v.boolean()),
-        sortBySalary: v.optional(v.boolean()),
-        sortByName: v.optional(v.boolean()),
-        minSalary: v.optional(v.number()),
-        maxSalary: v.optional(v.number()),
-        limit: v.optional(v.number()),
-        skip: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchFieldUpdates,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const tour = options.tour || "pga";
@@ -487,20 +267,7 @@ export const fetchFieldUpdates = action({
  * });
  */
 export const fetchDataGolfRankings = action({
-  args: {
-    options: v.optional(
-      v.object({
-        format: v.optional(vFileFormat),
-        filterByCountry: v.optional(v.string()),
-        filterByTour: v.optional(v.string()),
-        topN: v.optional(v.number()),
-        minSkillEstimate: v.optional(v.number()),
-        sortBySkill: v.optional(v.boolean()),
-        limit: v.optional(v.number()),
-        skip: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchDataGolfRankings,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const format = options.format || "json";
@@ -556,24 +323,7 @@ export const fetchDataGolfRankings = action({
  * });
  */
 export const fetchPreTournamentPredictions = action({
-  args: {
-    options: v.optional(
-      v.object({
-        tour: v.optional(vTour),
-        addPosition: v.optional(v.array(v.number())),
-        deadHeat: v.optional(v.boolean()),
-        oddsFormat: v.optional(vOddsFormat),
-        format: v.optional(vFileFormat),
-        filterByCountry: v.optional(v.string()),
-        minWinProbability: v.optional(v.number()),
-        maxWinOdds: v.optional(v.number()),
-        sortByWinProbability: v.optional(v.boolean()),
-        model: v.optional(v.string()),
-        limit: v.optional(v.number()),
-        skip: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchPreTournamentPredictions,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const tour = options.tour || "pga";
@@ -619,8 +369,13 @@ export const fetchPreTournamentPredictions = action({
           if (winProb < options.minWinProbability) return false;
         }
         if (options.maxWinOdds && oddsFormat === "decimal") {
-          const decimalOdds = parseNumberLike(player.win);
-          if (decimalOdds !== null && decimalOdds > options.maxWinOdds)
+          const decimalOdds =
+            typeof player.win === "number"
+              ? player.win
+              : typeof player.win === "string"
+                ? Number(player.win)
+                : Number.NaN;
+          if (Number.isFinite(decimalOdds) && decimalOdds > options.maxWinOdds)
             return false;
         }
         return true;
@@ -644,20 +399,7 @@ export const fetchPreTournamentPredictions = action({
  * Fetch player skill decompositions with detailed prediction breakdowns
  */
 export const fetchPlayerSkillDecompositions = action({
-  args: {
-    options: v.optional(
-      v.object({
-        tour: v.optional(vTour),
-        format: v.optional(vFileFormat),
-        filterByCountry: v.optional(v.string()),
-        minPrediction: v.optional(v.number()),
-        sortByPrediction: v.optional(v.boolean()),
-        includeAdjustments: v.optional(v.boolean()),
-        limit: v.optional(v.number()),
-        skip: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchPlayerSkillDecompositions,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const tour = options.tour || "pga";
@@ -710,20 +452,7 @@ export const fetchPlayerSkillDecompositions = action({
  * Fetch skill ratings with category-specific sorting
  */
 export const fetchSkillRatings = action({
-  args: {
-    options: v.optional(
-      v.object({
-        display: v.optional(vDisplay),
-        format: v.optional(vFileFormat),
-        filterByCountry: v.optional(v.string()),
-        minTotalSG: v.optional(v.number()),
-        sortByCategory: v.optional(v.string()),
-        topNInCategory: v.optional(v.number()),
-        limit: v.optional(v.number()),
-        skip: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchSkillRatings,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const display = options.display || "value";
@@ -759,20 +488,7 @@ export const fetchSkillRatings = action({
  * Fetch approach skill data with distance-based filtering
  */
 export const fetchApproachSkill = action({
-  args: {
-    options: v.optional(
-      v.object({
-        period: v.optional(v.string()),
-        format: v.optional(vFileFormat),
-        filterByCountry: v.optional(v.string()),
-        minShotCount: v.optional(v.number()),
-        sortByProximity: v.optional(v.boolean()),
-        distanceRange: v.optional(v.string()),
-        limit: v.optional(v.number()),
-        skip: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchApproachSkill,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const period = options.period || "l24";
@@ -814,27 +530,7 @@ export const fetchApproachSkill = action({
  * Fetch live model predictions with position and probability filtering
  */
 export const fetchLiveModelPredictions = action({
-  args: {
-    options: v.optional(
-      v.object({
-        tour: v.optional(vTour),
-        deadHeat: v.optional(v.boolean()),
-        oddsFormat: v.optional(vOddsFormat),
-        format: v.optional(vFileFormat),
-        filterByPosition: v.optional(
-          v.object({
-            current: v.optional(v.string()),
-            maxPosition: v.optional(v.number()),
-          }),
-        ),
-        minWinProbability: v.optional(v.number()),
-        sortByPosition: v.optional(v.boolean()),
-        onlyActivePlayers: v.optional(v.boolean()),
-        limit: v.optional(v.number()),
-        skip: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchLiveModelPredictions,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const tour = options.tour || "pga";
@@ -884,27 +580,7 @@ export const fetchLiveModelPredictions = action({
  * Fetch live tournament stats with comprehensive stat filtering
  */
 export const fetchLiveTournamentStats = action({
-  args: {
-    options: v.optional(
-      v.object({
-        stats: v.optional(v.array(v.string())),
-        round: v.optional(v.string()),
-        display: v.optional(vDisplay),
-        format: v.optional(vFileFormat),
-        filterByPosition: v.optional(v.number()),
-        sortByStat: v.optional(v.string()),
-        minValue: v.optional(
-          v.object({
-            stat: v.string(),
-            value: v.number(),
-          }),
-        ),
-        onlyCompleteRounds: v.optional(v.boolean()),
-        limit: v.optional(v.number()),
-        skip: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchLiveTournamentStats,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const format = options.format || "json";
@@ -962,18 +638,7 @@ export const fetchLiveTournamentStats = action({
  * Fetch live hole statistics with hole and difficulty filtering
  */
 export const fetchLiveHoleStats = action({
-  args: {
-    options: v.optional(
-      v.object({
-        tour: v.optional(vTour),
-        format: v.optional(vFileFormat),
-        filterByHole: v.optional(v.number()),
-        filterByPar: v.optional(v.number()),
-        sortByDifficulty: v.optional(v.boolean()),
-        wave: v.optional(v.string()),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchLiveHoleStats,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const tour = options.tour || "pga";
@@ -1026,19 +691,7 @@ export const fetchLiveHoleStats = action({
  * Fetch historical raw data event list
  */
 export const fetchHistoricalEventList = action({
-  args: {
-    options: v.optional(
-      v.object({
-        format: v.optional(vFileFormat),
-        filterByTour: v.optional(v.string()),
-        filterByYear: v.optional(v.number()),
-        onlyWithSG: v.optional(v.boolean()),
-        sortByDate: v.optional(v.boolean()),
-        limit: v.optional(v.number()),
-        skip: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchHistoricalEventList,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const format = options.format || "json";
@@ -1074,22 +727,7 @@ export const fetchHistoricalEventList = action({
  * Fetch historical round data with comprehensive filtering
  */
 export const fetchHistoricalRoundData = action({
-  args: {
-    options: v.object({
-      tour: v.string(),
-      eventId: v.union(v.string(), v.number()),
-      year: v.number(),
-      format: v.optional(vFileFormat),
-      filterByPlayer: v.optional(v.string()),
-      filterByRound: v.optional(v.number()),
-      minScore: v.optional(v.number()),
-      maxScore: v.optional(v.number()),
-      sortByScore: v.optional(v.boolean()),
-      includeStats: v.optional(v.boolean()),
-      limit: v.optional(v.number()),
-      skip: v.optional(v.number()),
-    }),
-  },
+  args: datagolfValidators.args.fetchHistoricalRoundData,
   handler: async (_ctx, args) => {
     const options = args.options;
     const format = options.format || "json";
@@ -1152,14 +790,7 @@ export const fetchHistoricalRoundData = action({
 });
 
 export const fetchHistoricalEventDataEvents = action({
-  args: {
-    options: v.object({
-      tour: vHistoricalEventDataTour,
-      eventId: v.number(),
-      year: v.number(),
-      format: v.optional(vFileFormat),
-    }),
-  },
+  args: datagolfValidators.args.fetchHistoricalEventDataEvents,
   handler: async (ctx, { options }): Promise<HistoricalEventDataResponse> => {
     void ctx;
 
@@ -1175,19 +806,7 @@ export const fetchHistoricalEventDataEvents = action({
 });
 
 export const fetchPreTournamentPredictionsArchive = action({
-  args: {
-    options: v.optional(
-      v.object({
-        eventId: v.optional(v.union(v.string(), v.number())),
-        year: v.optional(v.number()),
-        oddsFormat: v.optional(vOddsFormat),
-        format: v.optional(vFileFormat),
-        model: v.optional(v.string()),
-        limit: v.optional(v.number()),
-        skip: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchPreTournamentPredictionsArchive,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const format = options.format || "json";
@@ -1220,28 +839,7 @@ export const fetchPreTournamentPredictionsArchive = action({
 });
 
 export const fetchFantasyProjectionDefaults = action({
-  args: {
-    options: v.optional(
-      v.object({
-        tour: v.optional(vTour),
-        site: v.optional(vFantasySite),
-        slate: v.optional(vFantasySlate),
-        format: v.optional(vFileFormat),
-        minSalary: v.optional(v.number()),
-        maxSalary: v.optional(v.number()),
-        sortBySalary: v.optional(v.boolean()),
-        sortByProjection: v.optional(v.boolean()),
-        filterByOwnership: v.optional(
-          v.object({
-            min: v.optional(v.number()),
-            max: v.optional(v.number()),
-          }),
-        ),
-        limit: v.optional(v.number()),
-        skip: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchFantasyProjectionDefaults,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const tour = options.tour || "pga";
@@ -1294,14 +892,7 @@ export const fetchFantasyProjectionDefaults = action({
  * DEPRECATED by DataGolf (prefer fetchLiveTournamentStats).
  */
 export const fetchLiveStrokesGained = action({
-  args: {
-    options: v.optional(
-      v.object({
-        sg: v.optional(v.union(v.literal("raw"), v.literal("relative"))),
-        format: v.optional(vFileFormat),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchLiveStrokesGained,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const sg = (options.sg || "raw") as LiveStrokesGainedView;
@@ -1318,14 +909,7 @@ export const fetchLiveStrokesGained = action({
 });
 
 export const fetchBettingToolsOutrights = action({
-  args: {
-    options: v.object({
-      market: vBettingMarketOutright,
-      tour: v.optional(vTour),
-      oddsFormat: v.optional(vOddsFormat),
-      format: v.optional(vFileFormat),
-    }),
-  },
+  args: datagolfValidators.args.fetchBettingToolsOutrights,
   handler: async (_ctx, args) => {
     const options = args.options;
     const tour = options.tour || "pga";
@@ -1346,14 +930,7 @@ export const fetchBettingToolsOutrights = action({
 });
 
 export const fetchBettingToolsMatchups = action({
-  args: {
-    options: v.object({
-      market: vBettingMarketMatchups,
-      tour: v.optional(vTour),
-      oddsFormat: v.optional(vOddsFormat),
-      format: v.optional(vFileFormat),
-    }),
-  },
+  args: datagolfValidators.args.fetchBettingToolsMatchups,
   handler: async (_ctx, args) => {
     const options = args.options;
     const tour = options.tour || "pga";
@@ -1374,22 +951,7 @@ export const fetchBettingToolsMatchups = action({
 });
 
 export const fetchBettingToolsMatchupsAllPairings = action({
-  args: {
-    options: v.optional(
-      v.object({
-        tour: v.optional(
-          v.union(
-            v.literal("pga"),
-            v.literal("euro"),
-            v.literal("opp"),
-            v.literal("alt"),
-          ),
-        ),
-        oddsFormat: v.optional(vOddsFormat),
-        format: v.optional(vFileFormat),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchBettingToolsMatchupsAllPairings,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const tour = options.tour || "pga";
@@ -1408,14 +970,7 @@ export const fetchBettingToolsMatchupsAllPairings = action({
 });
 
 export const fetchHistoricalOddsEventList = action({
-  args: {
-    options: v.optional(
-      v.object({
-        tour: v.optional(vHistoricalOddsTour),
-        format: v.optional(vFileFormat),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchHistoricalOddsEventList,
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const tour = options.tour as HistoricalOddsTour | undefined;
@@ -1432,24 +987,7 @@ export const fetchHistoricalOddsEventList = action({
 });
 
 export const fetchHistoricalOddsOutrights = action({
-  args: {
-    options: v.object({
-      market: v.union(
-        v.literal("win"),
-        v.literal("top_5"),
-        v.literal("top_10"),
-        v.literal("top_20"),
-        v.literal("make_cut"),
-        v.literal("mc"),
-      ),
-      book: v.string(),
-      tour: v.optional(vHistoricalOddsTour),
-      eventId: v.optional(v.union(v.string(), v.number())),
-      year: v.optional(v.number()),
-      oddsFormat: v.optional(vOddsFormat),
-      format: v.optional(vFileFormat),
-    }),
-  },
+  args: datagolfValidators.args.fetchHistoricalOddsOutrights,
   handler: async (_ctx, args) => {
     const options = args.options;
     const tour = (options.tour || "pga") as HistoricalOddsTour;
@@ -1476,16 +1014,7 @@ export const fetchHistoricalOddsOutrights = action({
 });
 
 export const fetchHistoricalOddsMatchups = action({
-  args: {
-    options: v.object({
-      book: v.string(),
-      tour: v.optional(vHistoricalOddsTour),
-      eventId: v.optional(v.union(v.string(), v.number())),
-      year: v.optional(v.number()),
-      oddsFormat: v.optional(vOddsFormat),
-      format: v.optional(vFileFormat),
-    }),
-  },
+  args: datagolfValidators.args.fetchHistoricalOddsMatchups,
   handler: async (_ctx, args) => {
     const options = args.options;
     const tour = (options.tour || "pga") as HistoricalOddsTour;
@@ -1511,13 +1040,7 @@ export const fetchHistoricalOddsMatchups = action({
 });
 
 export const fetchHistoricalDfsEventList = action({
-  args: {
-    options: v.optional(
-      v.object({
-        format: v.optional(vFileFormat),
-      }),
-    ),
-  },
+  args: datagolfValidators.args.fetchHistoricalDfsEventList,
   handler: async (_ctx, args) => {
     const format = args.options?.format || "json";
     const endpoint = `/historical-dfs-data/event-list?file_format=${format}`;
@@ -1526,15 +1049,7 @@ export const fetchHistoricalDfsEventList = action({
 });
 
 export const fetchHistoricalDfsPoints = action({
-  args: {
-    options: v.object({
-      tour: vHistoricalDfsTour,
-      eventId: v.union(v.string(), v.number()),
-      year: v.number(),
-      site: v.optional(vHistoricalDfsSite),
-      format: v.optional(vFileFormat),
-    }),
-  },
+  args: datagolfValidators.args.fetchHistoricalDfsPoints,
   handler: async (_ctx, args) => {
     const options = args.options;
     const tour = options.tour;

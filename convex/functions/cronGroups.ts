@@ -1,15 +1,23 @@
-import { v } from "convex/values";
+import { cronGroupsValidators } from "../validators/cronGroups";
 
 import {
   internalAction,
   internalMutation,
   internalQuery,
 } from "../_generated/server";
-import type { QueryCtx } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 
 import type { FieldPlayer, RankedPlayer } from "../types/datagolf";
 import type { Doc, Id } from "../_generated/dataModel";
+import type { CreateGroupsTarget, EnhancedGolfer } from "../types/cronGroups";
+import {
+  determineGroupIndex,
+  eventNameLooksCompatible,
+  isPlayoffTierName,
+  listPlayoffTournamentsForSeason,
+  normalizeDgSkillEstimateToPgcRating,
+} from "../utils/cronShared";
+import { normalizePlayerNameFromDataGolf } from "../utils/cronJobs";
 
 const EXCLUDED_GOLFER_IDS = new Set([18417]);
 
@@ -20,43 +28,8 @@ const GROUP_LIMITS = {
   GROUP_4: { percentage: 0.25, maxCount: 30 },
 } as const;
 
-type EnhancedGolfer = FieldPlayer & {
-  ranking?: RankedPlayer;
-};
-
-function isPlayoffTierName(tierName?: string | null): boolean {
-  return (tierName ?? "").toLowerCase().includes("playoff");
-}
-
-async function listPlayoffTournamentsForSeason(
-  ctx: QueryCtx,
-  seasonId: Id<"seasons">,
-) {
-  const tournaments: Doc<"tournaments">[] = await ctx.db
-    .query("tournaments")
-    .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
-    .collect();
-
-  const withTier = await Promise.all(
-    tournaments.map(async (t) => {
-      const tier = await ctx.db.get(t.tierId);
-      return {
-        tournament: t,
-        tierName: (tier?.name as string | undefined) ?? null,
-      };
-    }),
-  );
-
-  return withTier
-    .filter(({ tierName }) => isPlayoffTierName(tierName))
-    .map(({ tournament }) => tournament)
-    .sort((a, b) => a.startDate - b.startDate);
-}
-
 export const getCreateGroupsTarget = internalQuery({
-  args: {
-    tournamentId: v.optional(v.id("tournaments")),
-  },
+  args: cronGroupsValidators.args.getCreateGroupsTarget,
   handler: async (ctx, args) => {
     const now = Date.now();
 
@@ -129,10 +102,7 @@ export const getCreateGroupsTarget = internalQuery({
 });
 
 export const copyFromFirstPlayoff = internalMutation({
-  args: {
-    tournamentId: v.id("tournaments"),
-    firstPlayoffTournamentId: v.id("tournaments"),
-  },
+  args: cronGroupsValidators.args.copyFromFirstPlayoff,
   handler: async (ctx, args) => {
     const baseGolfers = await ctx.db
       .query("tournamentGolfers")
@@ -212,45 +182,8 @@ export const copyFromFirstPlayoff = internalMutation({
 });
 
 export const applyCreateGroups = internalMutation({
-  args: {
-    tournamentId: v.id("tournaments"),
-    groups: v.array(
-      v.object({
-        groupNumber: v.number(),
-        golfers: v.array(
-          v.object({
-            dgId: v.number(),
-            playerName: v.string(),
-            country: v.optional(v.string()),
-            r1TeeTime: v.optional(v.string()),
-            r2TeeTime: v.optional(v.string()),
-            worldRank: v.optional(v.number()),
-            skillEstimate: v.optional(v.number()),
-          }),
-        ),
-      }),
-    ),
-  },
+  args: cronGroupsValidators.args.applyCreateGroups,
   handler: async (ctx, args) => {
-    function normalizePlayerNameFromDataGolf(raw: string): string {
-      const trimmed = raw.trim();
-      if (!trimmed.includes(",")) return trimmed;
-      const parts = trimmed
-        .split(",")
-        .map((p) => p.trim())
-        .filter(Boolean);
-      if (parts.length === 2) {
-        const [last, first] = parts;
-        return `${first} ${last}`.replace(/\s+/g, " ").trim();
-      }
-      const last = parts[0] ?? trimmed;
-      const first = parts[parts.length - 1] ?? "";
-      const suffix = parts.slice(1, parts.length - 1).join(" ");
-      return `${first} ${last}${suffix ? ` ${suffix}` : ""}`
-        .replace(/\s+/g, " ")
-        .trim();
-    }
-
     let inserted = 0;
 
     for (const group of args.groups) {
@@ -311,180 +244,15 @@ export const applyCreateGroups = internalMutation({
   },
 });
 
-function normalizeDgSkillEstimateToPgcRating(dgSkillEstimate: number): number {
-  const x = dgSkillEstimate;
-
-  if (!Number.isFinite(x)) return 0;
-
-  if (x < -1.5) {
-    const raw = 5 + ((x + 1.5) / 1.5) * 5;
-    return Math.max(0, Math.min(5, Math.round(raw * 100) / 100));
-  }
-
-  if (x <= 2) {
-    const raw = 5 + ((x + 1.5) / 3.5) * 95;
-    return Math.max(0, Math.round(raw * 100) / 100);
-  }
-
-  const extra = 20 * Math.sqrt((x - 2) / 1.5);
-  const raw = 100 + extra;
-  return Math.min(150, Math.round(raw * 100) / 100);
-}
-
-function normalizeEventTokens(name: string): string[] {
-  const STOP = new Set([
-    "the",
-    "a",
-    "an",
-    "and",
-    "of",
-    "at",
-    "in",
-    "on",
-    "for",
-    "to",
-    "by",
-    "presented",
-    "championship",
-    "tournament",
-    "cup",
-    "classic",
-  ]);
-
-  return name
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .map((w) => w.trim())
-    .filter(Boolean)
-    .map((w) => (w.endsWith("s") && w.length > 3 ? w.slice(0, -1) : w))
-    .filter((w) => w.length > 1)
-    .filter((w) => !/^\d+$/.test(w))
-    .filter((w) => !STOP.has(w));
-}
-
-function eventNameLooksCompatible(
-  expectedTournamentName: string,
-  dataGolfEventName: string,
-): {
-  ok: boolean;
-  score: number;
-  intersection: string[];
-  expectedTokens: string[];
-  actualTokens: string[];
-} {
-  const expectedTokens = normalizeEventTokens(expectedTournamentName);
-  const actualTokens = normalizeEventTokens(dataGolfEventName);
-
-  const expectedNorm = expectedTournamentName
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const actualNorm = dataGolfEventName
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (expectedNorm && actualNorm) {
-    if (
-      expectedNorm.includes(actualNorm) ||
-      actualNorm.includes(expectedNorm)
-    ) {
-      return {
-        ok: true,
-        score: 1,
-        intersection: [],
-        expectedTokens,
-        actualTokens,
-      };
-    }
-  }
-
-  const expectedSet = new Set(expectedTokens);
-  const actualSet = new Set(actualTokens);
-  const intersection = [...expectedSet].filter((t) => actualSet.has(t));
-  const denom = Math.max(expectedSet.size, actualSet.size, 1);
-  const score = intersection.length / denom;
-  const ok = score >= 0.6 || (intersection.length >= 2 && score >= 0.5);
-
-  return { ok, score, intersection, expectedTokens, actualTokens };
-}
-
-function determineGroupIndex(
-  currentIndex: number,
-  totalGolfers: number,
-  groups: EnhancedGolfer[][],
-): number {
-  const remainingGolfers = totalGolfers - currentIndex;
-
-  if (
-    groups[0].length < totalGolfers * GROUP_LIMITS.GROUP_1.percentage &&
-    groups[0].length < GROUP_LIMITS.GROUP_1.maxCount
-  ) {
-    return 0;
-  }
-
-  if (
-    groups[1].length < totalGolfers * GROUP_LIMITS.GROUP_2.percentage &&
-    groups[1].length < GROUP_LIMITS.GROUP_2.maxCount
-  ) {
-    return 1;
-  }
-
-  if (
-    groups[2].length < totalGolfers * GROUP_LIMITS.GROUP_3.percentage &&
-    groups[2].length < GROUP_LIMITS.GROUP_3.maxCount
-  ) {
-    return 2;
-  }
-
-  if (
-    groups[3].length < totalGolfers * GROUP_LIMITS.GROUP_4.percentage &&
-    groups[3].length < GROUP_LIMITS.GROUP_4.maxCount
-  ) {
-    return 3;
-  }
-  if (
-    remainingGolfers <= groups[3].length + groups[4].length * 0.5 ||
-    remainingGolfers === 1
-  ) {
-    return 4;
-  }
-
-  return currentIndex % 2 ? 3 : 4;
-}
-
 export const runCreateGroupsForNextTournament: ReturnType<
   typeof internalAction
 > = internalAction({
-  args: {
-    tournamentId: v.optional(v.id("tournaments")),
-  },
+  args: cronGroupsValidators.args.runCreateGroupsForNextTournament,
   handler: async (ctx, args): Promise<unknown> => {
-    type CreateGroupsTarget =
-      | {
-          ok: true;
-          skipped: true;
-          reason: string;
-          tournamentId?: Id<"tournaments">;
-        }
-      | {
-          ok: true;
-          skipped: false;
-          tournamentId: Id<"tournaments">;
-          tournamentName: string;
-          isPlayoff: boolean;
-          eventIndex: 1 | 2 | 3;
-          firstPlayoffTournamentId: Id<"tournaments"> | null;
-          seasonId: Id<"seasons">;
-        };
-
-    const target: CreateGroupsTarget = await ctx.runQuery(
+    const target = (await ctx.runQuery(
       internal.functions.cronGroups.getCreateGroupsTarget,
       { tournamentId: args.tournamentId },
-    );
+    )) as CreateGroupsTarget;
 
     if (target.skipped) return target;
 
@@ -567,7 +335,12 @@ export const runCreateGroupsForNextTournament: ReturnType<
 
     const groups: EnhancedGolfer[][] = [[], [], [], [], []];
     processed.forEach((g, index) => {
-      const gi = determineGroupIndex(index, processed.length, groups);
+      const gi = determineGroupIndex(
+        index,
+        processed.length,
+        groups,
+        GROUP_LIMITS,
+      );
       groups[gi]!.push(g);
     });
 

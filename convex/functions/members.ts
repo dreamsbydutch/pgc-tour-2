@@ -9,343 +9,38 @@
 import { query, mutation, action } from "../_generated/server";
 import { v } from "convex/values";
 import { requireAdmin } from "../auth";
-import type { Id } from "../_generated/dataModel";
 import type { AuthCtx } from "../types/functionUtils";
-import { requireAdminByClerkId } from "./_authByClerkId";
+import { requireAdminByClerkId } from "../utils/authByClerkId";
 import {
-  processData,
-  formatCents,
-  dateUtils,
-  normalize,
-  validators,
-} from "./_utils";
-import { TIME } from "./_constants";
-import { logAudit, computeChanges, extractDeleteMetadata } from "./_auditLog";
-import { fetchWithRetry } from "./_externalFetch";
-import type {
-  ValidationResult,
-  AnalyticsResult,
-  DeleteResponse,
-  MemberDoc,
-  EnhancedMemberDoc,
-  MemberSortFunction,
-  DatabaseContext,
-  MemberFilterOptions,
-  MemberOptimizedQueryOptions,
-  MemberEnhancementOptions,
-  MemberSortOptions,
-} from "../types/types";
+  logAudit,
+  computeChanges,
+  extractDeleteMetadata,
+} from "../utils/auditLog";
+import { formatCents } from "../utils/formatCents";
+import { normalize } from "../utils/normalize";
+import { processData } from "../utils/processData";
+import {
+  applyFilters,
+  buildFullName,
+  calculateDaysSinceLastLogin,
+  enhanceMember,
+  fetchClerkUsers,
+  generateAnalytics,
+  generateFullName,
+  generateDisplayName,
+  getActingMember,
+  getSortFunction,
+  getOptimizedMembers,
+  isOnline,
+  normalizePersonName,
+  pickPrimaryEmail,
+  readOptionalDisplayName,
+} from "../utils/members";
+import { membersValidators } from "../validators/members";
+import type { DeleteResponse, MemberDoc } from "../types/types";
 
-type ClerkEmail = {
-  email_address?: string;
-};
+import type { ClerkUser, ClerkUserRow } from "../types/members";
 
-type ClerkUser = {
-  id: string;
-  first_name?: string | null;
-  last_name?: string | null;
-  full_name?: string | null;
-  email_addresses?: ClerkEmail[];
-};
-
-type ClerkUserRow = {
-  clerkId: string;
-  email: string | null;
-  fullName: string;
-};
-
-function buildFullName(user: ClerkUser): string {
-  const fromFull = (user.full_name ?? "").trim();
-  if (fromFull) return fromFull;
-  const first = (user.first_name ?? "").trim();
-  const last = (user.last_name ?? "").trim();
-  return `${first} ${last}`.trim().replace(/\s+/g, " ");
-}
-
-function pickPrimaryEmail(user: ClerkUser): string | null {
-  const emails = Array.isArray(user.email_addresses)
-    ? user.email_addresses
-    : [];
-  const first = emails[0]?.email_address;
-  return typeof first === "string" && first.trim() ? first.trim() : null;
-}
-
-async function fetchClerkUsers(options: {
-  limit: number;
-  offset: number;
-}): Promise<ClerkUser[]> {
-  const secret = process.env.CLERK_SECRET_KEY;
-  if (!secret) {
-    throw new Error(
-      "Missing CLERK_SECRET_KEY in Convex environment variables.",
-    );
-  }
-
-  const url = new URL("https://api.clerk.com/v1/users");
-  url.searchParams.set("limit", String(options.limit));
-  url.searchParams.set("offset", String(options.offset));
-
-  const result = await fetchWithRetry<ClerkUser[]>(
-    url.toString(),
-    {
-      headers: {
-        Authorization: `Bearer ${secret}`,
-        "Content-Type": "application/json",
-      },
-    },
-    {
-      timeout: 30000,
-      retries: 3,
-      validateResponse: (json): json is ClerkUser[] =>
-        Array.isArray(json) &&
-        json.every(
-          (u) =>
-            u && typeof u === "object" && "id" in u && typeof u.id === "string",
-        ),
-      logPrefix: "Clerk API",
-    },
-  );
-
-  if (!result.ok) {
-    throw new Error(`Clerk API error: ${result.error}`);
-  }
-
-  return result.data;
-}
-
-/**
- * Validate member data
- */
-function validateMemberData(data: {
-  clerkId?: string;
-  email?: string;
-  firstname?: string;
-  lastname?: string;
-  displayName?: string;
-  isActive?: boolean;
-  role?: "admin" | "moderator" | "regular";
-  account?: number;
-  friends?: (string | Id<"members">)[];
-}): ValidationResult {
-  const errors: string[] = [];
-
-  const clerkIdErr = validators.stringLength(data.clerkId, 3, 100, "Clerk ID");
-  if (clerkIdErr) errors.push(clerkIdErr);
-
-  if (data.email) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(data.email)) {
-      errors.push("Invalid email format");
-    }
-  }
-
-  const firstnameErr = validators.stringLength(
-    data.firstname,
-    0,
-    50,
-    "First name",
-  );
-  if (firstnameErr) errors.push(firstnameErr);
-
-  const lastnameErr = validators.stringLength(
-    data.lastname,
-    0,
-    50,
-    "Last name",
-  );
-  if (lastnameErr) errors.push(lastnameErr);
-
-  const displayNameErr = validators.stringLength(
-    data.displayName,
-    0,
-    100,
-    "Display name",
-  );
-  if (displayNameErr) errors.push(displayNameErr);
-
-  if (data.account !== undefined) {
-    if (!Number.isFinite(data.account)) {
-      errors.push("Account balance must be a finite number of cents");
-    } else if (Math.trunc(data.account) !== data.account) {
-      errors.push("Account balance must be an integer number of cents");
-    }
-  }
-
-  if (data.friends && data.friends.length > 500) {
-    errors.push("Too many friends (maximum 500)");
-  }
-
-  return { isValid: errors.length === 0, errors };
-}
-
-async function getActingClerkId(
-  ctx: AuthCtx,
-  clerkId: string | undefined,
-): Promise<string> {
-  const identity = await ctx.auth.getUserIdentity();
-  if (identity) {
-    if (clerkId && identity.subject !== clerkId) {
-      throw new Error("Unauthorized: Clerk ID mismatch");
-    }
-    return identity.subject;
-  }
-
-  if (!clerkId) {
-    throw new Error("Unauthorized: You must be signed in");
-  }
-  return clerkId;
-}
-
-async function getActingMemberByClerkId(ctx: DatabaseContext, clerkId: string) {
-  const member = await ctx.db
-    .query("members")
-    .withIndex("by_clerk_id", (q) => q.eq("clerkId", clerkId))
-    .first();
-
-  if (!member) {
-    throw new Error(
-      "Member profile not found. Please contact an administrator.",
-    );
-  }
-
-  return member;
-}
-
-async function getActingMember(ctx: AuthCtx, clerkId: string | undefined) {
-  const effective = (clerkId ?? "").trim() || undefined;
-  const actingClerkId = await getActingClerkId(ctx, effective);
-  return await getActingMemberByClerkId(ctx, actingClerkId);
-}
-
-/**
- * Generate full name from first and last name
- */
-function generateFullName(firstname?: string, lastname?: string): string {
-  const first = (firstname || "").trim();
-  const last = (lastname || "").trim();
-
-  if (first && last) {
-    return `${first} ${last}`;
-  } else if (first) {
-    return first;
-  } else if (last) {
-    return last;
-  } else {
-    return "";
-  }
-}
-
-function normalizeNameToken(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-
-  let out = "";
-  let shouldCapitalize = true;
-
-  for (const ch of trimmed) {
-    const isLetter = /[A-Za-z]/.test(ch);
-    if (isLetter) {
-      out += shouldCapitalize ? ch.toUpperCase() : ch.toLowerCase();
-      shouldCapitalize = false;
-      continue;
-    }
-
-    out += ch;
-    shouldCapitalize = ch === "-" || ch === "'" || ch === "’";
-  }
-
-  return out;
-}
-
-function normalizePersonName(value: string | undefined): string {
-  const raw = (value ?? "").trim();
-  if (!raw) return "";
-
-  const tokens = raw
-    .split(/\s+/)
-    .map((t) => t.trim())
-    .filter(Boolean)
-    .map(normalizeNameToken);
-
-  return tokens.join(" ");
-}
-
-/**
- * Generate effective display name
- */
-function generateDisplayName(
-  displayName?: string,
-  firstname?: string,
-  lastname?: string,
-  email?: string,
-): string {
-  if (displayName && displayName.trim()) {
-    return displayName.trim();
-  }
-
-  const fullName = generateFullName(firstname, lastname);
-  if (fullName) {
-    return fullName;
-  }
-
-  if (email) {
-    return email.split("@")[0];
-  }
-
-  return "Anonymous User";
-}
-
-function readOptionalDisplayName(value: unknown): string | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const dn = (value as { displayName?: unknown }).displayName;
-  return typeof dn === "string" && dn.trim() ? dn.trim() : undefined;
-}
-
-/**
- * Calculate days since last login
- */
-function calculateDaysSinceLastLogin(lastLoginAt?: number): number | undefined {
-  if (!lastLoginAt) return undefined;
-  return dateUtils.daysSince(lastLoginAt);
-}
-
-/**
- * Determine if member is considered online (last login within 15 minutes)
- */
-function isOnline(lastLoginAt?: number): boolean {
-  if (!lastLoginAt) return false;
-  const now = Date.now();
-  const threshold = now - TIME.FIFTEEN_MINUTES;
-  return lastLoginAt > threshold;
-}
-
-/**
- * Create members with comprehensive options
- *
- * @example
- * Basic member creation
- * const member = await ctx.runMutation(api.functions.members.createMembers, {
- *   data: {
- *     clerkId: "user_1234567890",
- *     email: "john.doe@example.com",
- *     firstname: "John",
- *     lastname: "Doe",
- *     role: "regular"
- *   }
- * });
- *
- * With advanced options
- * const member = await ctx.runMutation(api.functions.members.createMembers, {
- *   data: { ... },
- *   options: {
- *     skipValidation: false,
- *     setActive: true,
- *     autoGenerateDisplayName: true,
- *     initialBalance: 10000,
- *     returnEnhanced: true
- *   }
- * });
- */
 export const createMembers = mutation({
   args: {
     data: v.object({
@@ -387,7 +82,7 @@ export const createMembers = mutation({
     };
 
     if (!options.skipValidation) {
-      const validation = validateMemberData(data);
+      const validation = membersValidators.validateMemberData(data);
 
       if (!validation.isValid) {
         throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
@@ -1084,7 +779,7 @@ export const updateMembers = mutation({
     }
 
     if (!options.skipValidation) {
-      const validation = validateMemberData(args.data);
+      const validation = membersValidators.validateMemberData(args.data);
       if (!validation.isValid) {
         throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
       }
@@ -1303,12 +998,13 @@ export const getMyTournamentHistory = query({
 });
 
 /**
- * Recomputes `members.isActive` based on recent participation.
+ * Recomputes `members.isActive` based on tourCard presence for the current year
+ * and previous year.
  *
  * Definition:
- * - Active if the member has no tourCards (signed up but never played)
- * - Active if the member has a tourCard in either of the two most recent seasons BEFORE the current season
- * - Otherwise inactive
+ * - Active if the member has a tourCard in any season where `season.year` is
+ *   equal to the most recent year in the `seasons` table, or that year minus 1.
+ * - Otherwise inactive.
  */
 export const recomputeMemberActiveFlags = mutation({
   args: {},
@@ -1317,29 +1013,26 @@ export const recomputeMemberActiveFlags = mutation({
 
     const seasons = await ctx.db.query("seasons").collect();
 
-    const sortedSeasons = seasons.slice().sort((a, b) => {
-      if (a.year !== b.year) return b.year - a.year;
-      if (a.number !== b.number) return b.number - a.number;
+    const currentYear =
+      seasons.length > 0 ? Math.max(...seasons.map((s) => s.year)) : null;
+    const previousYear = currentYear !== null ? currentYear - 1 : null;
 
-      const aStart = a.startDate ?? 0;
-      const bStart = b.startDate ?? 0;
-      if (aStart !== bStart) return bStart - aStart;
-
-      return b._creationTime - a._creationTime;
-    });
-
-    const currentSeason = sortedSeasons[0] ?? null;
-    const previousTwoSeasons = sortedSeasons.slice(1, 3);
-    const activeSeasonIds = new Set(previousTwoSeasons.map((s) => s._id));
+    const activeSeasonIds = new Set(
+      seasons
+        .filter((s) =>
+          currentYear === null
+            ? false
+            : s.year === currentYear || s.year === currentYear - 1,
+        )
+        .map((s) => s._id),
+    );
 
     const tourCards = await ctx.db.query("tourCards").collect();
-    const membersWithAnyTourCard = new Set<string>();
-    const membersWithRecentTourCard = new Set<string>();
+    const membersWithActiveYearTourCard = new Set<string>();
 
     for (const tc of tourCards) {
-      membersWithAnyTourCard.add(tc.memberId);
       if (activeSeasonIds.has(tc.seasonId)) {
-        membersWithRecentTourCard.add(tc.memberId);
+        membersWithActiveYearTourCard.add(tc.memberId);
       }
     }
 
@@ -1351,9 +1044,7 @@ export const recomputeMemberActiveFlags = mutation({
     const now = Date.now();
 
     for (const m of members) {
-      const hasAny = membersWithAnyTourCard.has(m._id);
-      const hasRecent = membersWithRecentTourCard.has(m._id);
-      const nextIsActive = hasRecent || !hasAny;
+      const nextIsActive = membersWithActiveYearTourCard.has(m._id);
 
       if (m.isActive !== nextIsActive) {
         await ctx.db.patch(m._id, { isActive: nextIsActive, updatedAt: now });
@@ -1366,7 +1057,8 @@ export const recomputeMemberActiveFlags = mutation({
 
     return {
       ok: true,
-      currentSeasonId: currentSeason?._id ?? null,
+      currentYear,
+      previousYear,
       activeSeasonIds: [...activeSeasonIds],
       membersTotal: members.length,
       updated,
@@ -1522,70 +1214,130 @@ export const deleteMembers = mutation({
       throw new Error("Member not found");
     }
 
+    if (
+      options.transferToMember &&
+      options.transferToMember === args.memberId
+    ) {
+      throw new Error("Cannot transfer data to the same member");
+    }
+
+    if (options.transferToMember && options.cascadeDelete) {
+      throw new Error(
+        "Cannot use transferToMember and cascadeDelete at the same time",
+      );
+    }
+
+    const transferTarget = options.transferToMember
+      ? await ctx.db.get(options.transferToMember)
+      : null;
+    if (options.transferToMember && !transferTarget) {
+      throw new Error("Transfer target member not found");
+    }
+
     let transferredCount = 0;
     let deletedMemberData: MemberDoc | undefined = undefined;
-
     if (options.returnDeletedData) {
       deletedMemberData = member;
     }
 
-    if (options.transferToMember) {
-      const targetMember = await ctx.db.get(options.transferToMember);
-      if (!targetMember) {
-        throw new Error("Target member for data transfer not found");
-      }
+    if (options.softDelete) {
+      await ctx.db.patch(args.memberId, {
+        isActive: false,
+        updatedAt: Date.now(),
+      });
 
+      await logAudit(ctx, {
+        entityType: "members",
+        entityId: args.memberId,
+        action: "deleted",
+        metadata: extractDeleteMetadata({ deleted: false }, options),
+      });
+
+      return {
+        success: true,
+        deleted: false,
+        deactivated: true,
+        deletedData: deletedMemberData,
+      };
+    }
+
+    if (options.transferToMember) {
       const memberTourCards = await ctx.db
         .query("tourCards")
-        .withIndex("by_member", (q) => q.eq("memberId", member._id))
+        .withIndex("by_member", (q) => q.eq("memberId", args.memberId))
         .collect();
 
       for (const tourCard of memberTourCards) {
         await ctx.db.patch(tourCard._id, {
-          memberId: targetMember._id,
+          memberId: options.transferToMember,
           updatedAt: Date.now(),
         });
-        transferredCount++;
+        transferredCount += 1;
+      }
+
+      const memberTransactions = await ctx.db
+        .query("transactions")
+        .withIndex("by_member", (q) => q.eq("memberId", args.memberId))
+        .collect();
+
+      for (const transaction of memberTransactions) {
+        await ctx.db.patch(transaction._id, {
+          memberId: options.transferToMember,
+          updatedAt: Date.now(),
+        });
+        transferredCount += 1;
+      }
+
+      const subscriptions = await ctx.db
+        .query("pushSubscriptions")
+        .withIndex("by_member", (q) => q.eq("memberId", args.memberId))
+        .collect();
+
+      for (const subscription of subscriptions) {
+        await ctx.db.patch(subscription._id, {
+          memberId: options.transferToMember,
+          updatedAt: Date.now(),
+        });
+        transferredCount += 1;
+      }
+    }
+
+    if (options.cascadeDelete) {
+      const memberTourCards = await ctx.db
+        .query("tourCards")
+        .withIndex("by_member", (q) => q.eq("memberId", args.memberId))
+        .collect();
+
+      for (const tourCard of memberTourCards) {
+        const teams = await ctx.db
+          .query("teams")
+          .withIndex("by_tour_card", (q) => q.eq("tourCardId", tourCard._id))
+          .collect();
+        for (const team of teams) {
+          await ctx.db.delete(team._id);
+        }
+
+        await ctx.db.delete(tourCard._id);
+      }
+
+      const memberTransactions = await ctx.db
+        .query("transactions")
+        .withIndex("by_member", (q) => q.eq("memberId", args.memberId))
+        .collect();
+      for (const transaction of memberTransactions) {
+        await ctx.db.delete(transaction._id);
+      }
+
+      const subscriptions = await ctx.db
+        .query("pushSubscriptions")
+        .withIndex("by_member", (q) => q.eq("memberId", args.memberId))
+        .collect();
+      for (const subscription of subscriptions) {
+        await ctx.db.delete(subscription._id);
       }
     }
 
     if (options.removeFriendships) {
-      const allMembers = await ctx.db
-        .query("members")
-        .paginate({ cursor: null, numItems: 1000 });
-
-      if (!allMembers.isDone) {
-        throw new Error(
-          "Member has too many potential friendships to clean up in one operation. " +
-            "Database has >1000 members. Please use admin batch cleanup tool or contact support.",
-        );
-      }
-
-      for (const otherMember of allMembers.page) {
-        if (
-          otherMember._id !== args.memberId &&
-          otherMember.friends.includes(args.memberId)
-        ) {
-          const updatedFriends = otherMember.friends.filter(
-            (friendId) => friendId !== args.memberId,
-          );
-          await ctx.db.patch(otherMember._id, {
-            friends: updatedFriends,
-            updatedAt: Date.now(),
-          });
-        }
-      }
-    }
-
-    if (options.cascadeDelete && !options.transferToMember) {
-      const memberTourCards = await ctx.db
-        .query("tourCards")
-        .withIndex("by_member", (q) => q.eq("memberId", member._id))
-        .collect();
-
-      for (const tourCard of memberTourCards) {
-        await ctx.db.delete(tourCard._id);
-      }
       const allMembers = await ctx.db
         .query("members")
         .paginate({ cursor: null, numItems: 1000 });
@@ -1634,326 +1386,6 @@ export const deleteMembers = mutation({
     };
   },
 });
-
-/**
- * Get optimized members based on query options using indexes
- */
-async function getOptimizedMembers(
-  ctx: DatabaseContext,
-  options: MemberOptimizedQueryOptions,
-): Promise<MemberDoc[]> {
-  const filter = options.filter || {};
-
-  if (filter.clerkId) {
-    const member = await ctx.db
-      .query("members")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", filter.clerkId!))
-      .first();
-    return member ? [member] : [];
-  }
-
-  if (filter.email) {
-    const normalized = normalize.email(filter.email);
-    const member = await ctx.db
-      .query("members")
-      .withIndex("by_email", (q) => q.eq("email", normalized))
-      .first();
-
-    if (member) return [member];
-
-    const raw = filter.email.trim();
-    if (raw && raw !== normalized) {
-      const memberRaw = await ctx.db
-        .query("members")
-        .withIndex("by_email", (q) => q.eq("email", raw))
-        .first();
-      return memberRaw ? [memberRaw] : [];
-    }
-
-    return [];
-  }
-
-  if (filter.role) {
-    return await ctx.db
-      .query("members")
-      .withIndex("by_role", (q) => q.eq("role", filter.role!))
-      .collect();
-  }
-
-  if (options.adminOnly) {
-    return await ctx.db
-      .query("members")
-      .withIndex("by_role", (q) => q.eq("role", "admin"))
-      .collect();
-  }
-
-  return await ctx.db.query("members").collect();
-}
-
-/**
- * Apply comprehensive filters to members
- */
-function applyFilters(
-  members: MemberDoc[],
-  filter: MemberFilterOptions,
-): MemberDoc[] {
-  return members.filter((member) => {
-    if (filter.hasBalance !== undefined) {
-      const hasBalance = member.account > 0;
-      if (hasBalance !== filter.hasBalance) {
-        return false;
-      }
-    }
-
-    if (filter.minBalance !== undefined && member.account < filter.minBalance) {
-      return false;
-    }
-
-    if (filter.maxBalance !== undefined && member.account > filter.maxBalance) {
-      return false;
-    }
-
-    if (filter.hasFriends !== undefined) {
-      const hasFriends = member.friends.length > 0;
-      if (hasFriends !== filter.hasFriends) {
-        return false;
-      }
-    }
-
-    if (filter.isOnline !== undefined) {
-      const memberIsOnline = isOnline(member.lastLoginAt);
-      if (memberIsOnline !== filter.isOnline) {
-        return false;
-      }
-    }
-
-    if (
-      filter.joinedAfter !== undefined &&
-      member._creationTime < filter.joinedAfter
-    ) {
-      return false;
-    }
-
-    if (
-      filter.joinedBefore !== undefined &&
-      member._creationTime > filter.joinedBefore
-    ) {
-      return false;
-    }
-
-    if (filter.lastLoginAfter !== undefined) {
-      if (!member.lastLoginAt || member.lastLoginAt < filter.lastLoginAfter) {
-        return false;
-      }
-    }
-
-    if (filter.lastLoginBefore !== undefined) {
-      if (!member.lastLoginAt || member.lastLoginAt > filter.lastLoginBefore) {
-        return false;
-      }
-    }
-
-    if (filter.searchTerm) {
-      const searchTerm = filter.searchTerm.toLowerCase();
-      const searchableText = [
-        member.firstname || "",
-        member.lastname || "",
-        member.email,
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      if (!searchableText.includes(searchTerm)) {
-        return false;
-      }
-    }
-
-    if (
-      filter.createdAfter !== undefined &&
-      member._creationTime < filter.createdAfter
-    ) {
-      return false;
-    }
-
-    if (
-      filter.createdBefore !== undefined &&
-      member._creationTime > filter.createdBefore
-    ) {
-      return false;
-    }
-
-    if (
-      filter.updatedAfter !== undefined &&
-      (member.updatedAt || 0) < filter.updatedAfter
-    ) {
-      return false;
-    }
-
-    if (
-      filter.updatedBefore !== undefined &&
-      (member.updatedAt || 0) > filter.updatedBefore
-    ) {
-      return false;
-    }
-
-    return true;
-  });
-}
-
-/**
- * Get sorting function based on sort options
- */
-function getSortFunction(sort: MemberSortOptions): MemberSortFunction {
-  if (!sort.sortBy) return undefined;
-
-  const sortOrder = sort.sortOrder === "asc" ? 1 : -1;
-
-  switch (sort.sortBy) {
-    case "firstname":
-      return (a: MemberDoc, b: MemberDoc) =>
-        (a.firstname || "").localeCompare(b.firstname || "") * sortOrder;
-    case "lastname":
-      return (a: MemberDoc, b: MemberDoc) =>
-        (a.lastname || "").localeCompare(b.lastname || "") * sortOrder;
-    case "email":
-      return (a: MemberDoc, b: MemberDoc) =>
-        a.email.localeCompare(b.email) * sortOrder;
-    case "account":
-      return (a: MemberDoc, b: MemberDoc) =>
-        (a.account - b.account) * sortOrder;
-    case "role":
-      return (a: MemberDoc, b: MemberDoc) =>
-        a.role.localeCompare(b.role) * sortOrder;
-    case "createdAt":
-      return (a: MemberDoc, b: MemberDoc) =>
-        (a._creationTime - b._creationTime) * sortOrder;
-    case "updatedAt":
-      return (a: MemberDoc, b: MemberDoc) =>
-        ((a.updatedAt || 0) - (b.updatedAt || 0)) * sortOrder;
-    case "lastLoginAt":
-      return (a: MemberDoc, b: MemberDoc) =>
-        ((a.lastLoginAt || 0) - (b.lastLoginAt || 0)) * sortOrder;
-    default:
-      return undefined;
-  }
-}
-
-/**
- * Enhance a single member with related data
- */
-async function enhanceMember(
-  ctx: DatabaseContext,
-  member: MemberDoc,
-  enhance: MemberEnhancementOptions,
-): Promise<EnhancedMemberDoc> {
-  const enhanced: EnhancedMemberDoc = {
-    ...member,
-    fullName: generateFullName(member.firstname, member.lastname),
-    formattedBalance: formatCents(member.account),
-    hasBalance: member.account > 0,
-    isOnline: isOnline(member.lastLoginAt),
-    daysSinceLastLogin: calculateDaysSinceLastLogin(member.lastLoginAt),
-    friendCount: member.friends.length,
-  };
-
-  if (enhance.includeFriends && member.friends.length > 0) {
-    const friendMembers = await Promise.all(
-      member.friends.map(async (friendId) => {
-        if (typeof friendId === "string") {
-          const byClerk = await ctx.db
-            .query("members")
-            .withIndex("by_clerk_id", (q) => q.eq("clerkId", friendId))
-            .first();
-          if (byClerk) return byClerk;
-          return await ctx.db
-            .query("members")
-            .withIndex("by_email", (q) => q.eq("email", friendId))
-            .first();
-        } else {
-          return await ctx.db.get(friendId);
-        }
-      }),
-    );
-    enhanced.friendMembers = friendMembers.filter(
-      (f): f is MemberDoc => f !== null,
-    );
-  }
-
-  if (enhance.includeTourCards) {
-    const tourCards = await ctx.db
-      .query("tourCards")
-      .withIndex("by_member", (q) => q.eq("memberId", member._id))
-      .collect();
-    enhanced.tourCards = tourCards;
-  }
-
-  if (enhance.includeTeams) {
-    const memberTourCards = await ctx.db
-      .query("tourCards")
-      .withIndex("by_member", (q) => q.eq("memberId", member._id))
-      .collect();
-
-    const teams = await ctx.db.query("teams").collect();
-    const memberTeams = teams.filter((team) =>
-      memberTourCards.some((tc) => tc._id === team.tourCardId),
-    );
-    enhanced.teams = memberTeams;
-  }
-
-  if (enhance.includeTransactions) {
-    enhanced.transactions = [];
-  }
-
-  return enhanced;
-}
-
-/**
- * Generate analytics for members
- */
-async function generateAnalytics(
-  _ctx: DatabaseContext,
-  members: MemberDoc[],
-): Promise<AnalyticsResult> {
-  const now = Date.now();
-  const weekAgo = now - 7 * TIME.MS_PER_DAY;
-
-  const activeMembers = members;
-  const onlineMembers = members.filter((m) => isOnline(m.lastLoginAt));
-  const recentlyActiveMembers = members.filter(
-    (m) => m.lastLoginAt && m.lastLoginAt > weekAgo,
-  );
-
-  return {
-    total: members.length,
-    active: activeMembers.length,
-    inactive: 0,
-    statistics: {
-      totalBalance: members.reduce((sum, m) => sum + m.account, 0),
-      averageBalance:
-        members.length > 0
-          ? members.reduce((sum, m) => sum + m.account, 0) / members.length
-          : 0,
-      membersWithBalance: members.filter((m) => m.account > 0).length,
-      adminCount: members.filter((m) => m.role === "admin").length,
-      moderatorCount: members.filter((m) => m.role === "moderator").length,
-      regularCount: members.filter((m) => m.role === "regular").length,
-      onlineMembers: onlineMembers.length,
-      recentlyActive: recentlyActiveMembers.length,
-      averageFriends:
-        members.length > 0
-          ? members.reduce((sum, m) => sum + m.friends.length, 0) /
-            members.length
-          : 0,
-    },
-    breakdown: members.reduce(
-      (acc, member) => {
-        acc[member.role] = (acc[member.role] || 0) + 1;
-        return acc;
-      },
-      {} as Record<string, number>,
-    ),
-  };
-}
 
 /**
  * Returns counts for all documents that reference a member and would be moved during a merge.

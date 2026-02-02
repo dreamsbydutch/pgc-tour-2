@@ -4,123 +4,21 @@
 
 import { mutation, query } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
-import { v } from "convex/values";
 import { requireAdmin, requireOwnResource } from "../auth";
-
-type TransactionType = Parameters<
-  typeof toSignedAmountCents
->[0]["transactionType"];
-type TransactionStatus = "pending" | "completed" | "failed" | "cancelled";
-
-const transactionTypeValidator = v.union(
-  v.literal("TourCardFee"),
-  v.literal("TournamentWinnings"),
-  v.literal("Withdrawal"),
-  v.literal("Deposit"),
-  v.literal("LeagueDonation"),
-  v.literal("CharityDonation"),
-  v.literal("Payment"),
-  v.literal("Refund"),
-  v.literal("Adjustment"),
-);
-
-const transactionStatusValidator = v.union(
-  v.literal("pending"),
-  v.literal("completed"),
-  v.literal("failed"),
-  v.literal("cancelled"),
-);
-
-function isDebitType(type: string): boolean {
-  return (
-    type === "TourCardFee" ||
-    type === "Withdrawal" ||
-    type === "LeagueDonation" ||
-    type === "CharityDonation"
-  );
-}
-
-function isCreditType(type: string): boolean {
-  return (
-    type === "TournamentWinnings" ||
-    type === "Deposit" ||
-    type === "Refund" ||
-    type === "Payment"
-  );
-}
-
-function toSignedAmountCents(args: {
-  transactionType:
-    | "TourCardFee"
-    | "TournamentWinnings"
-    | "Withdrawal"
-    | "Deposit"
-    | "LeagueDonation"
-    | "CharityDonation"
-    | "Payment"
-    | "Refund"
-    | "Adjustment";
-  amountCents: number;
-}): number {
-  const { transactionType, amountCents } = args;
-
-  if (!Number.isFinite(amountCents) || amountCents === 0) {
-    throw new Error("Amount must be non-zero (in cents)");
-  }
-
-  if (transactionType !== "Adjustment") {
-    const abs = Math.abs(Math.trunc(amountCents));
-    if (abs === 0) throw new Error("Amount must be non-zero (in cents)");
-
-    if (isDebitType(transactionType)) return -abs;
-    if (isCreditType(transactionType)) return abs;
-
-    throw new Error(`Unhandled transaction type: ${transactionType}`);
-  }
-
-  const signed = Math.trunc(amountCents);
-  if (signed === 0) throw new Error("Adjustment amount must be non-zero");
-  return signed;
-}
-
-async function requireOwnMemberResource(
-  ctx: Parameters<typeof requireOwnResource>[0],
-  memberId: Id<"members">,
-) {
-  const member = await ctx.db.get(memberId);
-  if (!member) throw new Error("Member not found");
-  if (!member.clerkId) {
-    await requireAdmin(ctx);
-    return;
-  }
-  await requireOwnResource(ctx, member.clerkId);
-}
-
-/**
- * Resolve a member id from a Clerk user id (or return null if not found).
- */
-async function getMemberIdByClerkId(
-  ctx: Parameters<typeof requireOwnResource>[0],
-  clerkId: string,
-): Promise<Id<"members"> | null> {
-  const member = await ctx.db
-    .query("members")
-    .withIndex("by_clerk_id", (q) => q.eq("clerkId", clerkId))
-    .first();
-  return member?._id ?? null;
-}
+import { transactionsValidators } from "../validators/transactions";
+import {
+  getMemberIdByClerkId,
+  requireOwnMemberResource,
+  toSignedAmountCents,
+} from "../utils/transactions";
+import type {
+  MemberEmailRow,
+  TransactionStatus,
+  TransactionType,
+} from "../types/transactions";
 
 export const createTransactions = mutation({
-  args: {
-    data: v.object({
-      memberId: v.id("members"),
-      seasonId: v.id("seasons"),
-      amount: v.number(),
-      transactionType: transactionTypeValidator,
-      status: v.optional(transactionStatusValidator),
-      processedAt: v.optional(v.number()),
-    }),
-  },
+  args: transactionsValidators.args.createTransactions,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 
@@ -164,24 +62,7 @@ export const createTransactions = mutation({
  * This endpoint uses .collect() and may hit scale limits as transactions grow.
  */
 export const getTransactions = query({
-  args: {
-    options: v.optional(
-      v.object({
-        id: v.optional(v.id("transactions")),
-        ids: v.optional(v.array(v.id("transactions"))),
-        filter: v.optional(
-          v.object({
-            clerkId: v.optional(v.string()),
-            memberId: v.optional(v.id("members")),
-            seasonId: v.optional(v.id("seasons")),
-            transactionType: v.optional(transactionTypeValidator),
-            status: v.optional(transactionStatusValidator),
-          }),
-        ),
-        limit: v.optional(v.number()),
-      }),
-    ),
-  },
+  args: transactionsValidators.args.getTransactions,
   handler: async (ctx, args) => {
     const options = args.options || {};
 
@@ -274,22 +155,7 @@ export const getTransactions = query({
  * });
  */
 export const getTransactionsPage = query({
-  args: {
-    paginationOpts: v.object({
-      numItems: v.number(),
-      cursor: v.union(v.string(), v.null()),
-      id: v.optional(v.number()),
-    }),
-    filter: v.optional(
-      v.object({
-        clerkId: v.optional(v.string()),
-        memberId: v.optional(v.id("members")),
-        seasonId: v.optional(v.id("seasons")),
-        transactionType: v.optional(transactionTypeValidator),
-        status: v.optional(transactionStatusValidator),
-      }),
-    ),
-  },
+  args: transactionsValidators.args.getTransactionsPage,
   handler: async (ctx, args) => {
     const filter = args.filter || {};
 
@@ -356,17 +222,7 @@ export const getTransactionsPage = query({
 });
 
 export const updateTransactions = mutation({
-  args: {
-    transactionId: v.id("transactions"),
-    data: v.object({
-      memberId: v.optional(v.id("members")),
-      seasonId: v.optional(v.id("seasons")),
-      amount: v.optional(v.number()),
-      transactionType: v.optional(transactionTypeValidator),
-      status: v.optional(transactionStatusValidator),
-      processedAt: v.optional(v.number()),
-    }),
-  },
+  args: transactionsValidators.args.updateTransactions,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 
@@ -453,9 +309,7 @@ export const updateTransactions = mutation({
  * Does not modify account balances.
  */
 export const adminBackfillTransactionMemberIds = mutation({
-  args: {
-    limit: v.optional(v.number()),
-  },
+  args: transactionsValidators.args.adminBackfillTransactionMemberIds,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 
@@ -493,7 +347,7 @@ export const adminBackfillTransactionMemberIds = mutation({
 });
 
 export const deleteTransactions = mutation({
-  args: { transactionId: v.id("transactions") },
+  args: transactionsValidators.args.deleteTransactions,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 
@@ -505,13 +359,7 @@ export const deleteTransactions = mutation({
 });
 
 export const adminGetMemberAccountAudit = query({
-  args: {
-    options: v.optional(
-      v.object({
-        sumMode: v.optional(v.union(v.literal("completed"), v.literal("all"))),
-      }),
-    ),
-  },
+  args: transactionsValidators.args.adminGetMemberAccountAudit,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 
@@ -574,8 +422,7 @@ export const adminGetMemberAccountAudit = query({
       }
     }
 
-    const sortKey = (row: { member: { email: string } }) =>
-      row.member.email.toLowerCase();
+    const sortKey = (row: MemberEmailRow) => row.member.email.toLowerCase();
     mismatches.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
     outstandingBalances.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
 
@@ -590,14 +437,7 @@ export const adminGetMemberAccountAudit = query({
 });
 
 export const adminGetMemberLedgerForAudit = query({
-  args: {
-    memberId: v.id("members"),
-    options: v.optional(
-      v.object({
-        sumMode: v.optional(v.union(v.literal("completed"), v.literal("all"))),
-      }),
-    ),
-  },
+  args: transactionsValidators.args.adminGetMemberLedgerForAudit,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 

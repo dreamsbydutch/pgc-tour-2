@@ -7,92 +7,32 @@
  */
 
 import { query, mutation } from "../_generated/server";
-import { v } from "convex/values";
 import { requireAdmin } from "../auth";
-import { processData, dateUtils, validators } from "./_utils";
-import { logAudit, computeChanges, extractDeleteMetadata } from "./_auditLog";
+import { processData } from "../utils/processData";
+import {
+  logAudit,
+  computeChanges,
+  extractDeleteMetadata,
+} from "../utils/auditLog";
+import { tournamentsValidators } from "../validators/tournaments";
+import {
+  applyTournamentFilters,
+  calculateTournamentDuration,
+  enhanceTournament,
+  formatDateRange,
+  generateTournamentAnalytics,
+  getCalculatedStatus,
+  getOptimizedTournaments,
+  getTournamentSortFunction,
+} from "../utils/tournaments";
 import type { Id } from "../_generated/dataModel";
 import type {
-  ValidationResult,
-  AnalyticsResult,
   DeleteResponse,
   TournamentDoc,
-  EnhancedTournamentDoc,
   GolferDoc,
   TournamentGolferDoc,
-  TournamentSortFunction,
-  DatabaseContext,
-  TournamentFilterOptions,
-  TournamentSortOptions,
   TournamentEnhancementOptions,
 } from "../types/types";
-
-/**
- * Validate tournament data
- */
-function validateTournamentData(data: {
-  name?: string;
-  seasonId?: Id<"seasons">;
-  tierId?: Id<"tiers">;
-  courseId?: Id<"courses">;
-  startDate?: number;
-  endDate?: number;
-  status?: "upcoming" | "active" | "completed" | "cancelled";
-}): ValidationResult {
-  const errors: string[] = [];
-
-  const nameErr = validators.stringLength(data.name, 3, 100, "Tournament name");
-  if (nameErr) errors.push(nameErr);
-
-  if (data.startDate && data.endDate && data.startDate >= data.endDate) {
-    errors.push("Start date must be before end date");
-  }
-
-  if (
-    data.status &&
-    !["upcoming", "active", "completed", "cancelled"].includes(data.status)
-  ) {
-    errors.push("Invalid tournament status");
-  }
-
-  return { isValid: errors.length === 0, errors };
-}
-
-/**
- * Calculate tournament duration in days
- */
-function calculateTournamentDuration(
-  startDate: number,
-  endDate: number,
-): number {
-  return dateUtils.daysBetween(startDate, endDate);
-}
-
-/**
- * Format tournament date range for display
- */
-function formatDateRange(startDate: number, endDate: number): string {
-  const start = new Date(startDate).toLocaleDateString();
-  const end = new Date(endDate).toLocaleDateString();
-  return `${start} - ${end}`;
-}
-
-/**
- * Get tournament status based on dates
- */
-function getCalculatedStatus(
-  startDate: number,
-  endDate: number,
-  currentStatus?: string,
-): "upcoming" | "active" | "completed" | "cancelled" {
-  if (currentStatus === "cancelled") return "cancelled";
-
-  const now = Date.now();
-
-  if (now < startDate) return "upcoming";
-  if (now >= startDate && now <= endDate) return "active";
-  return "completed";
-}
 
 /**
  * Create tournaments with comprehensive options
@@ -123,46 +63,14 @@ function getCalculatedStatus(
  * });
  */
 export const createTournaments = mutation({
-  args: {
-    clerkId: v.optional(v.string()),
-    data: v.object({
-      name: v.string(),
-      seasonId: v.id("seasons"),
-      tierId: v.id("tiers"),
-      courseId: v.id("courses"),
-      startDate: v.number(),
-      endDate: v.number(),
-      logoUrl: v.optional(v.string()),
-      apiId: v.optional(v.string()),
-      status: v.optional(
-        v.union(
-          v.literal("upcoming"),
-          v.literal("active"),
-          v.literal("completed"),
-          v.literal("cancelled"),
-        ),
-      ),
-      livePlay: v.optional(v.boolean()),
-      currentRound: v.optional(v.number()),
-    }),
-    options: v.optional(
-      v.object({
-        skipValidation: v.optional(v.boolean()),
-        setActive: v.optional(v.boolean()),
-        autoSetStatus: v.optional(v.boolean()),
-        returnEnhanced: v.optional(v.boolean()),
-        includeStatistics: v.optional(v.boolean()),
-        includeSeason: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: tournamentsValidators.args.createTournaments,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
     const options = args.options || {};
     const data = args.data;
 
     if (!options.skipValidation) {
-      const validation = validateTournamentData(data);
+      const validation = tournamentsValidators.validateTournamentData(data);
 
       if (!validation.isValid) {
         throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
@@ -279,79 +187,7 @@ export const createTournaments = mutation({
  * });
  */
 export const getTournaments = query({
-  args: {
-    options: v.optional(
-      v.object({
-        id: v.optional(v.id("tournaments")),
-        ids: v.optional(v.array(v.id("tournaments"))),
-        filter: v.optional(
-          v.object({
-            seasonId: v.optional(v.id("seasons")),
-            tierId: v.optional(v.id("tiers")),
-            courseId: v.optional(v.id("courses")),
-            tourIds: v.optional(v.array(v.id("tours"))),
-            status: v.optional(
-              v.union(
-                v.literal("upcoming"),
-                v.literal("active"),
-                v.literal("completed"),
-                v.literal("cancelled"),
-              ),
-            ),
-            startAfter: v.optional(v.number()),
-            startBefore: v.optional(v.number()),
-            endAfter: v.optional(v.number()),
-            endBefore: v.optional(v.number()),
-            hasRegistration: v.optional(v.boolean()),
-            livePlay: v.optional(v.boolean()),
-            currentRound: v.optional(v.number()),
-            searchTerm: v.optional(v.string()),
-            createdAfter: v.optional(v.number()),
-            createdBefore: v.optional(v.number()),
-            updatedAfter: v.optional(v.number()),
-            updatedBefore: v.optional(v.number()),
-          }),
-        ),
-        sort: v.optional(
-          v.object({
-            sortBy: v.optional(
-              v.union(
-                v.literal("name"),
-                v.literal("startDate"),
-                v.literal("endDate"),
-                v.literal("status"),
-                v.literal("createdAt"),
-                v.literal("updatedAt"),
-              ),
-            ),
-            sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
-          }),
-        ),
-        pagination: v.optional(
-          v.object({
-            limit: v.optional(v.number()),
-            offset: v.optional(v.number()),
-          }),
-        ),
-        enhance: v.optional(
-          v.object({
-            includeSeason: v.optional(v.boolean()),
-            includeTier: v.optional(v.boolean()),
-            includeCourse: v.optional(v.boolean()),
-            includeTours: v.optional(v.boolean()),
-            includeTeams: v.optional(v.boolean()),
-            includeGolfers: v.optional(v.boolean()),
-            includeLeaderboard: v.optional(v.boolean()),
-            includeStatistics: v.optional(v.boolean()),
-          }),
-        ),
-        activeOnly: v.optional(v.boolean()),
-        upcomingOnly: v.optional(v.boolean()),
-        liveOnly: v.optional(v.boolean()),
-        includeAnalytics: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: tournamentsValidators.args.getTournaments,
   handler: async (ctx, args) => {
     const options = args.options || {};
 
@@ -452,23 +288,7 @@ export const getTournaments = query({
  * member + their tour card for this season.
  */
 export const getTournamentLeaderboardView = query({
-  args: {
-    tournamentId: v.id("tournaments"),
-    options: v.optional(
-      v.object({
-        includeTournamentEnhancements: v.optional(
-          v.object({
-            includeSeason: v.optional(v.boolean()),
-            includeTier: v.optional(v.boolean()),
-            includeCourse: v.optional(v.boolean()),
-          }),
-        ),
-        includeTours: v.optional(v.boolean()),
-        includeViewer: v.optional(v.boolean()),
-        viewerClerkId: v.optional(v.string()),
-      }),
-    ),
-  },
+  args: tournamentsValidators.args.getTournamentLeaderboardView,
   handler: async (ctx, args) => {
     const options = args.options ?? {};
 
@@ -493,7 +313,41 @@ export const getTournamentLeaderboardView = query({
       .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
       .collect();
 
+    const seasonTournaments = await ctx.db
+      .query("tournaments")
+      .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
+      .collect();
+
+    const tournamentStartById = new Map(
+      seasonTournaments.map((t) => [t._id, t.startDate ?? 0]),
+    );
+    const currentTournamentStart = tournament.startDate ?? 0;
+    const isPriorTournament = (tournamentId: Id<"tournaments">): boolean => {
+      return (
+        (tournamentStartById.get(tournamentId) ?? 0) < currentTournamentStart
+      );
+    };
+
     const tourCardIds = Array.from(new Set(teams.map((t) => t.tourCardId)));
+
+    const pointsBeforeTournamentByTourCardId = new Map<
+      Id<"tourCards">,
+      number
+    >();
+    for (const tourCardId of tourCardIds) {
+      const priorTeams = await ctx.db
+        .query("teams")
+        .withIndex("by_tour_card", (q) => q.eq("tourCardId", tourCardId))
+        .collect();
+      const pointsBeforeTournament = priorTeams
+        .filter((t) => isPriorTournament(t.tournamentId))
+        .reduce((sum, t) => sum + (t.points ?? 0), 0);
+      pointsBeforeTournamentByTourCardId.set(
+        tourCardId,
+        pointsBeforeTournament,
+      );
+    }
+
     const tourCards = await Promise.all(
       tourCardIds.map((id) => ctx.db.get(id)),
     );
@@ -503,6 +357,8 @@ export const getTournamentLeaderboardView = query({
 
     const teamsWithTourCard = teams.map((team) => ({
       ...team,
+      pointsBeforeTournament:
+        pointsBeforeTournamentByTourCardId.get(team.tourCardId) ?? 0,
       tourCard: tourCardById.get(team.tourCardId) ?? null,
     }));
 
@@ -559,20 +415,26 @@ export const getTournamentLeaderboardView = query({
       viewer = { member: member ?? null, tourCard: viewerTourCard ?? null };
     }
 
+    const leaderboardLastUpdatedAt =
+      typeof tournament.leaderboardLastUpdatedAt === "number"
+        ? tournament.leaderboardLastUpdatedAt
+        : typeof tournament.updatedAt === "number"
+          ? tournament.updatedAt
+          : null;
+
     return {
       tournament: enhancedTournament,
       teams: teamsWithTourCard,
       golfers: golfersWithStats,
       tours,
       viewer,
+      leaderboardLastUpdatedAt,
     };
   },
 });
 
 export const hasTournamentGolfers = query({
-  args: {
-    tournamentId: v.id("tournaments"),
-  },
+  args: tournamentsValidators.args.hasTournamentGolfers,
   handler: async (ctx, args) => {
     const tournamentGolfer = await ctx.db
       .query("tournamentGolfers")
@@ -586,9 +448,7 @@ export const hasTournamentGolfers = query({
 });
 
 export const getTournamentPickPool = query({
-  args: {
-    tournamentId: v.id("tournaments"),
-  },
+  args: tournamentsValidators.args.getTournamentPickPool,
   handler: async (ctx, args) => {
     const tournamentGolfers = await ctx.db
       .query("tournamentGolfers")
@@ -626,9 +486,7 @@ export const getTournamentPickPool = query({
  * Frontend convenience: get all tournaments for simple list UIs.
  */
 export const getAllTournaments = query({
-  args: {
-    seasonId: v.optional(v.id("seasons")),
-  },
+  args: tournamentsValidators.args.getAllTournaments,
   handler: async (ctx, args) => {
     if (args.seasonId) {
       return await ctx.db
@@ -649,9 +507,7 @@ export const getAllTournaments = query({
  * - `season`
  */
 export const getTournamentWithDetails = query({
-  args: {
-    tournamentId: v.id("tournaments"),
-  },
+  args: tournamentsValidators.args.getTournamentWithDetails,
   handler: async (ctx, args) => {
     const tournament = await ctx.db.get(args.tournamentId);
     if (!tournament) return null;
@@ -692,41 +548,7 @@ export const getTournamentWithDetails = query({
  * });
  */
 export const updateTournaments = mutation({
-  args: {
-    clerkId: v.optional(v.string()),
-    tournamentId: v.id("tournaments"),
-    data: v.object({
-      name: v.optional(v.string()),
-      startDate: v.optional(v.number()),
-      endDate: v.optional(v.number()),
-      seasonId: v.optional(v.id("seasons")),
-      tierId: v.optional(v.id("tiers")),
-      courseId: v.optional(v.id("courses")),
-      logoUrl: v.optional(v.string()),
-      apiId: v.optional(v.string()),
-      status: v.optional(
-        v.union(
-          v.literal("upcoming"),
-          v.literal("active"),
-          v.literal("completed"),
-          v.literal("cancelled"),
-        ),
-      ),
-      livePlay: v.optional(v.boolean()),
-      currentRound: v.optional(v.number()),
-    }),
-    options: v.optional(
-      v.object({
-        skipValidation: v.optional(v.boolean()),
-        updateTimestamp: v.optional(v.boolean()),
-        autoUpdateStatus: v.optional(v.boolean()),
-        returnEnhanced: v.optional(v.boolean()),
-        includeStatistics: v.optional(v.boolean()),
-        includeSeason: v.optional(v.boolean()),
-        includeTier: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: tournamentsValidators.args.updateTournaments,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
     const options = args.options || {};
@@ -749,7 +571,9 @@ export const updateTournaments = mutation({
     }
 
     if (!options.skipValidation) {
-      const validation = validateTournamentData(args.data);
+      const validation = tournamentsValidators.validateTournamentData(
+        args.data,
+      );
       if (!validation.isValid) {
         throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
       }
@@ -858,17 +682,7 @@ export const updateTournaments = mutation({
  * });
  */
 export const deleteTournaments = mutation({
-  args: {
-    tournamentId: v.id("tournaments"),
-    options: v.optional(
-      v.object({
-        softDelete: v.optional(v.boolean()),
-        cascadeDelete: v.optional(v.boolean()),
-        cleanupTeams: v.optional(v.boolean()),
-        returnDeletedData: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: tournamentsValidators.args.deleteTournaments,
   handler: async (ctx, args): Promise<DeleteResponse<TournamentDoc>> => {
     await requireAdmin(ctx);
     const options = args.options || {};
@@ -969,324 +783,3 @@ export const deleteTournaments = mutation({
     }
   },
 });
-
-/**
- * Get optimized tournaments based on query options using indexes
- */
-async function getOptimizedTournaments(
-  ctx: DatabaseContext,
-  options: {
-    filter?: TournamentFilterOptions;
-    activeOnly?: boolean;
-    upcomingOnly?: boolean;
-    liveOnly?: boolean;
-  },
-): Promise<TournamentDoc[]> {
-  const filter = options.filter || {};
-
-  if (filter.seasonId && filter.status) {
-    return await ctx.db
-      .query("tournaments")
-      .withIndex("by_season_status", (q) =>
-        q.eq("seasonId", filter.seasonId!).eq("status", filter.status!),
-      )
-      .collect();
-  }
-
-  if (filter.seasonId) {
-    return await ctx.db
-      .query("tournaments")
-      .withIndex("by_season", (q) => q.eq("seasonId", filter.seasonId!))
-      .collect();
-  }
-
-  if (filter.tierId) {
-    return await ctx.db
-      .query("tournaments")
-      .withIndex("by_tier", (q) => q.eq("tierId", filter.tierId!))
-      .collect();
-  }
-
-  if (filter.courseId) {
-    return await ctx.db
-      .query("tournaments")
-      .withIndex("by_course", (q) => q.eq("courseId", filter.courseId!))
-      .collect();
-  }
-
-  if (filter.status) {
-    return await ctx.db
-      .query("tournaments")
-      .withIndex("by_status", (q) => q.eq("status", filter.status!))
-      .collect();
-  }
-
-  if (options.activeOnly) {
-    return await ctx.db
-      .query("tournaments")
-      .withIndex("by_status", (q) => q.eq("status", "active"))
-      .collect();
-  }
-
-  if (options.upcomingOnly) {
-    return await ctx.db
-      .query("tournaments")
-      .withIndex("by_status", (q) => q.eq("status", "upcoming"))
-      .collect();
-  }
-
-  if (options.liveOnly) {
-    return await ctx.db
-      .query("tournaments")
-      .filter((q) => q.eq(q.field("livePlay"), true))
-      .collect();
-  }
-
-  return await ctx.db.query("tournaments").collect();
-}
-
-/**
- * Apply comprehensive filters to tournaments
- */
-function applyTournamentFilters(
-  tournaments: TournamentDoc[],
-  filter: TournamentFilterOptions,
-): TournamentDoc[] {
-  return tournaments.filter((tournament) => {
-    if (
-      filter.startAfter !== undefined &&
-      tournament.startDate <= filter.startAfter
-    ) {
-      return false;
-    }
-    if (
-      filter.startBefore !== undefined &&
-      tournament.startDate >= filter.startBefore
-    ) {
-      return false;
-    }
-    if (
-      filter.endAfter !== undefined &&
-      tournament.endDate <= filter.endAfter
-    ) {
-      return false;
-    }
-    if (
-      filter.endBefore !== undefined &&
-      tournament.endDate >= filter.endBefore
-    ) {
-      return false;
-    }
-
-    if (
-      filter.livePlay !== undefined &&
-      tournament.livePlay !== filter.livePlay
-    ) {
-      return false;
-    }
-
-    if (
-      filter.currentRound !== undefined &&
-      tournament.currentRound !== filter.currentRound
-    ) {
-      return false;
-    }
-
-    if (filter.searchTerm) {
-      const searchTerm = filter.searchTerm.toLowerCase();
-      const searchableText = [tournament.name].join(" ").toLowerCase();
-
-      if (!searchableText.includes(searchTerm)) {
-        return false;
-      }
-    }
-
-    if (
-      filter.createdAfter !== undefined &&
-      tournament._creationTime < filter.createdAfter
-    ) {
-      return false;
-    }
-    if (
-      filter.createdBefore !== undefined &&
-      tournament._creationTime > filter.createdBefore
-    ) {
-      return false;
-    }
-    if (
-      filter.updatedAfter !== undefined &&
-      (tournament.updatedAt || 0) < filter.updatedAfter
-    ) {
-      return false;
-    }
-    if (
-      filter.updatedBefore !== undefined &&
-      (tournament.updatedAt || 0) > filter.updatedBefore
-    ) {
-      return false;
-    }
-
-    return true;
-  });
-}
-
-/**
- * Get sorting function based on sort options
- */
-function getTournamentSortFunction(
-  sort: TournamentSortOptions,
-): TournamentSortFunction {
-  if (!sort.sortBy) return undefined;
-
-  const sortOrder = sort.sortOrder === "asc" ? 1 : -1;
-
-  switch (sort.sortBy) {
-    case "name":
-      return (a: TournamentDoc, b: TournamentDoc) =>
-        a.name.localeCompare(b.name) * sortOrder;
-    case "startDate":
-      return (a: TournamentDoc, b: TournamentDoc) =>
-        (a.startDate - b.startDate) * sortOrder;
-    case "endDate":
-      return (a: TournamentDoc, b: TournamentDoc) =>
-        (a.endDate - b.endDate) * sortOrder;
-    case "status":
-      return (a: TournamentDoc, b: TournamentDoc) =>
-        (a.status || "").localeCompare(b.status || "") * sortOrder;
-    case "createdAt":
-      return (a: TournamentDoc, b: TournamentDoc) =>
-        (a._creationTime - b._creationTime) * sortOrder;
-    case "updatedAt":
-      return (a: TournamentDoc, b: TournamentDoc) =>
-        ((a.updatedAt || 0) - (b.updatedAt || 0)) * sortOrder;
-    default:
-      return undefined;
-  }
-}
-
-/**
- * Enhance a single tournament with related data
- */
-async function enhanceTournament(
-  ctx: DatabaseContext,
-  tournament: TournamentDoc,
-  enhance: TournamentEnhancementOptions,
-): Promise<EnhancedTournamentDoc> {
-  const enhanced: EnhancedTournamentDoc = {
-    ...tournament,
-    dateRange: formatDateRange(tournament.startDate, tournament.endDate),
-    duration: calculateTournamentDuration(
-      tournament.startDate,
-      tournament.endDate,
-    ),
-    calculatedStatus: getCalculatedStatus(
-      tournament.startDate,
-      tournament.endDate,
-      tournament.status,
-    ),
-  };
-
-  if (enhance.includeSeason) {
-    const season = await ctx.db.get(tournament.seasonId);
-    enhanced.season = season || undefined;
-  }
-
-  if (enhance.includeTier) {
-    const tier = await ctx.db.get(tournament.tierId);
-    enhanced.tier = tier || undefined;
-  }
-
-  if (enhance.includeCourse) {
-    const course = await ctx.db.get(tournament.courseId);
-    enhanced.course = course || undefined;
-  }
-
-  if (enhance.includeTeams) {
-    const teams = await ctx.db
-      .query("teams")
-      .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
-      .collect();
-    enhanced.teams = teams;
-    enhanced.teamCount = teams.length;
-  }
-
-  if (enhance.includeGolfers) {
-    const tournamentGolfers = await ctx.db
-      .query("tournamentGolfers")
-      .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
-      .collect();
-
-    const golfers = await Promise.all(
-      tournamentGolfers.map(async (tg) => {
-        const golfer = await ctx.db.get(tg.golferId);
-        return golfer ? { ...tg, golfer } : null;
-      }),
-    );
-    enhanced.golfers = golfers.filter(Boolean) as Array<
-      TournamentGolferDoc & { golfer: GolferDoc }
-    >;
-  }
-
-  if (enhance.includeStatistics) {
-    const teams = await ctx.db
-      .query("teams")
-      .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
-      .collect();
-
-    enhanced.statistics = {
-      totalTeams: teams.length,
-      activeTeams: teams.length,
-      averageScore:
-        teams.length > 0
-          ? teams.reduce((sum, team) => sum + (team.points || 0), 0) /
-            teams.length
-          : 0,
-      lowestScore:
-        teams.length > 0
-          ? Math.min(...teams.map((team) => team.points || Infinity))
-          : 0,
-      highestScore:
-        teams.length > 0
-          ? Math.max(...teams.map((team) => team.points || 0))
-          : 0,
-    };
-  }
-
-  return enhanced;
-}
-
-/**
- * Generate analytics for tournaments
- */
-async function generateTournamentAnalytics(
-  _ctx: DatabaseContext,
-  tournaments: TournamentDoc[],
-): Promise<AnalyticsResult> {
-  return {
-    total: tournaments.length,
-    active: tournaments.filter((t) => t.status === "active").length,
-    inactive: tournaments.filter((t) => t.status !== "active").length,
-    statistics: {
-      upcoming: tournaments.filter((t) => t.status === "upcoming").length,
-      completed: tournaments.filter((t) => t.status === "completed").length,
-      cancelled: tournaments.filter((t) => t.status === "cancelled").length,
-      withLivePlay: tournaments.filter((t) => t.livePlay === true).length,
-      averageDuration:
-        tournaments.length > 0
-          ? tournaments.reduce(
-              (sum, t) =>
-                sum + calculateTournamentDuration(t.startDate, t.endDate),
-              0,
-            ) / tournaments.length
-          : 0,
-    },
-    breakdown: tournaments.reduce(
-      (acc, tournament) => {
-        const status = tournament.status || "unknown";
-        acc[status] = (acc[status] || 0) + 1;
-        return acc;
-      },
-      {} as Record<string, number>,
-    ),
-  };
-}

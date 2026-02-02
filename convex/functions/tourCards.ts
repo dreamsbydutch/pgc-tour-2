@@ -5,40 +5,19 @@
  */
 
 import { query, mutation } from "../_generated/server";
-import { v } from "convex/values";
-import { requireAdmin, requireOwnResource, getCurrentMember } from "../auth";
-import type { Doc, Id } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
-import type { ValidationResult } from "../types/types";
+import { requireAdmin, getCurrentMember } from "../auth";
+import type { Id } from "../_generated/dataModel";
+import { tourCardsValidators } from "../validators/tourCards";
+import {
+  hasTourCardFeeForSeason,
+  isCompletedTourCardFee,
+  requireTourCardOwner,
+} from "../utils/tourCards";
 
 const DEFAULT_MAX_PARTICIPANTS = 75;
 
 export const createTourCards = mutation({
-  args: {
-    data: v.object({
-      memberId: v.optional(v.id("members")),
-
-      displayName: v.string(),
-      tourId: v.id("tours"),
-      seasonId: v.id("seasons"),
-
-      earnings: v.number(),
-      points: v.number(),
-      wins: v.optional(v.number()),
-      topTen: v.number(),
-      topFive: v.optional(v.number()),
-      madeCut: v.number(),
-      appearances: v.number(),
-      playoff: v.optional(v.number()),
-      currentPosition: v.optional(v.string()),
-    }),
-    options: v.optional(
-      v.object({
-        skipValidation: v.optional(v.boolean()),
-        setActive: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: tourCardsValidators.args.createTourCards,
   handler: async (ctx, args) => {
     const currentMember = await getCurrentMember(ctx);
     const memberId = args.data.memberId ?? currentMember._id;
@@ -46,7 +25,7 @@ export const createTourCards = mutation({
     const skipValidation = args.options?.skipValidation ?? false;
 
     if (!skipValidation) {
-      const validation = validateTourCardData({
+      const validation = tourCardsValidators.validateTourCardData({
         displayName: args.data.displayName,
         earnings: args.data.earnings,
         points: args.data.points,
@@ -119,18 +98,7 @@ export const createTourCards = mutation({
 });
 
 export const getTourCards = query({
-  args: {
-    options: v.optional(
-      v.object({
-        id: v.optional(v.id("tourCards")),
-        memberId: v.optional(v.id("members")),
-        clerkId: v.optional(v.string()),
-        seasonId: v.optional(v.id("seasons")),
-        tourId: v.optional(v.id("tours")),
-        activeOnly: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: tourCardsValidators.args.getTourCards,
   handler: async (ctx, args) => {
     const options = args.options;
 
@@ -209,10 +177,7 @@ export const getTourCards = query({
 });
 
 export const getActiveMembersMissingTourCards = query({
-  args: {
-    seasonId: v.id("seasons"),
-    previousSeasonId: v.optional(v.id("seasons")),
-  },
+  args: tourCardsValidators.args.getActiveMembersMissingTourCards,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 
@@ -292,12 +257,7 @@ export const getActiveMembersMissingTourCards = query({
 });
 
 export const getCurrentYearTourCard = query({
-  args: {
-    options: v.object({
-      clerkId: v.string(),
-      year: v.number(),
-    }),
-  },
+  args: tourCardsValidators.args.getCurrentYearTourCard,
   handler: async (ctx, args) => {
     const member = await ctx.db
       .query("members")
@@ -350,11 +310,7 @@ export const getCurrentYearTourCard = query({
  * tour from the previous calendar year.
  */
 export const getReservedTourSpotsForSeason = query({
-  args: {
-    options: v.object({
-      seasonId: v.id("seasons"),
-    }),
-  },
+  args: tourCardsValidators.args.getReservedTourSpotsForSeason,
   handler: async (ctx, args) => {
     const season = await ctx.db.get(args.options.seasonId);
     if (!season) {
@@ -474,26 +430,7 @@ export const getReservedTourSpotsForSeason = query({
 });
 
 export const updateTourCards = mutation({
-  args: {
-    id: v.id("tourCards"),
-    data: v.object({
-      displayName: v.optional(v.string()),
-      earnings: v.optional(v.number()),
-      points: v.optional(v.number()),
-      wins: v.optional(v.number()),
-      topTen: v.optional(v.number()),
-      topFive: v.optional(v.number()),
-      madeCut: v.optional(v.number()),
-      appearances: v.optional(v.number()),
-      playoff: v.optional(v.number()),
-      currentPosition: v.optional(v.string()),
-    }),
-    options: v.optional(
-      v.object({
-        skipValidation: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: tourCardsValidators.args.updateTourCards,
   handler: async (ctx, args) => {
     const tourCard = await ctx.db.get(args.id);
     if (!tourCard) {
@@ -505,7 +442,7 @@ export const updateTourCards = mutation({
     const skipValidation = args.options?.skipValidation ?? false;
 
     if (!skipValidation) {
-      const validation = validateTourCardData(args.data);
+      const validation = tourCardsValidators.validateTourCardData(args.data);
       if (!validation.isValid) {
         throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
       }
@@ -521,10 +458,7 @@ export const updateTourCards = mutation({
 });
 
 export const switchTourCards = mutation({
-  args: {
-    id: v.id("tourCards"),
-    tourId: v.id("tours"),
-  },
+  args: tourCardsValidators.args.switchTourCards,
   handler: async (ctx, args) => {
     const tourCard = await ctx.db.get(args.id);
     if (!tourCard) {
@@ -572,14 +506,7 @@ export const switchTourCards = mutation({
 });
 
 export const deleteTourCards = mutation({
-  args: {
-    id: v.id("tourCards"),
-    options: v.optional(
-      v.object({
-        softDelete: v.optional(v.boolean()),
-      }),
-    ),
-  },
+  args: tourCardsValidators.args.deleteTourCards,
   handler: async (ctx, args) => {
     const tourCard = await ctx.db.get(args.id);
     if (!tourCard) {
@@ -594,9 +521,7 @@ export const deleteTourCards = mutation({
 });
 
 export const recomputeTourCardsForSeasonAsAdmin = mutation({
-  args: {
-    seasonId: v.id("seasons"),
-  },
+  args: tourCardsValidators.args.recomputeTourCardsForSeasonAsAdmin,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 
@@ -686,9 +611,7 @@ export const recomputeTourCardsForSeasonAsAdmin = mutation({
 });
 
 export const deleteTourCardAndFee = mutation({
-  args: {
-    id: v.id("tourCards"),
-  },
+  args: tourCardsValidators.args.deleteTourCardAndFee,
   handler: async (ctx, args) => {
     const tourCard = await ctx.db.get(args.id);
     if (!tourCard) {
@@ -755,91 +678,3 @@ export const deleteTourCardAndFee = mutation({
     return tourCard;
   },
 });
-
-/**
- * Validate tour card data
- */
-function validateTourCardData(data: {
-  displayName?: string;
-  earnings?: number;
-  points?: number;
-  wins?: number;
-  topTen?: number;
-  appearances?: number;
-  madeCut?: number;
-}): ValidationResult {
-  const errors: string[] = [];
-
-  if (data.displayName && data.displayName.trim().length === 0) {
-    errors.push("Display name cannot be empty");
-  }
-
-  if (data.displayName && data.displayName.trim().length > 100) {
-    errors.push("Display name cannot exceed 100 characters");
-  }
-
-  if (data.earnings !== undefined && data.earnings < 0) {
-    errors.push("Earnings cannot be negative");
-  }
-
-  if (data.points !== undefined && data.points < 0) {
-    errors.push("Points cannot be negative");
-  }
-
-  if (data.wins !== undefined && data.wins < 0) {
-    errors.push("Wins cannot be negative");
-  }
-
-  if (data.topTen !== undefined && data.topTen < 0) {
-    errors.push("Top ten finishes cannot be negative");
-  }
-
-  if (data.appearances !== undefined && data.appearances < 0) {
-    errors.push("Appearances cannot be negative");
-  }
-
-  if (data.madeCut !== undefined && data.madeCut < 0) {
-    errors.push("Made cuts cannot be negative");
-  }
-
-  return { isValid: errors.length === 0, errors };
-}
-
-function isCompletedTourCardFee(tx: Doc<"transactions"> | null): boolean {
-  if (!tx) return false;
-  return tx.status === undefined || tx.status === "completed";
-}
-
-async function requireTourCardOwner(
-  ctx: MutationCtx,
-  tourCard: Doc<"tourCards">,
-) {
-  const member = await ctx.db.get(tourCard.memberId);
-  const clerkId = member?.clerkId;
-  if (!clerkId) {
-    throw new Error("Unauthorized: Tour card owner is not linked to Clerk");
-  }
-  await requireOwnResource(ctx, clerkId);
-}
-
-async function hasTourCardFeeForSeason(
-  ctx: MutationCtx,
-  args: {
-    member: Doc<"members">;
-    seasonId: Id<"seasons">;
-  },
-): Promise<boolean> {
-  const { member, seasonId } = args;
-
-  const existing = await ctx.db
-    .query("transactions")
-    .withIndex("by_member_season_type", (q) =>
-      q
-        .eq("memberId", member._id)
-        .eq("seasonId", seasonId)
-        .eq("transactionType", "TourCardFee"),
-    )
-    .first();
-
-  return isCompletedTourCardFee(existing);
-}

@@ -14,6 +14,15 @@ export type FileFormat = "json" | "csv";
 export type OddsFormat = "percent" | "american" | "decimal" | "fraction";
 export type Display = "value" | "rank";
 
+export type SkillRatingCategoryKey =
+  | "sg_putt"
+  | "sg_arg"
+  | "sg_app"
+  | "sg_ott"
+  | "sg_total"
+  | "driving_acc"
+  | "driving_dist";
+
 export type YesNo = "yes" | "no";
 
 /**
