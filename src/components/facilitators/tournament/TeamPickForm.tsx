@@ -60,7 +60,7 @@ export function TeamPickForm(props: {
 
       {model.hasBalance ? (
         <div className="mx-auto mb-8 w-5/6 text-center text-lg italic text-red-600">
-          {`Please send ${formatMoney(model.accountCents)} to puregolfcollectivetour@gmail.com to unlock your picks.`}
+          {`You currently owe ${formatMoney(model.accountCents)}. Pay your balance by sending payment to puregolfcollectivetour@gmail.com before the start of the next tournament to make picks.`}
         </div>
       ) : null}
 
@@ -118,7 +118,8 @@ function useTeamPickForm(props: {
 
   return useMemo(() => {
     const accountCents = props.member.account ?? 0;
-    const hasBalance = accountCents > 0;
+    const hasBalance = accountCents < 0;
+    const balanceCents = Math.abs(accountCents);
 
     const isButtonDisabled = hasBalance;
 
@@ -147,7 +148,7 @@ function useTeamPickForm(props: {
       kind: "ready" as const,
       onOpenForm,
       hasBalance,
-      accountCents,
+      accountCents: balanceCents,
       isButtonDisabled,
       formattedRank,
       pointsDisplay,
