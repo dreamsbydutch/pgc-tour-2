@@ -425,7 +425,10 @@ export const getCurrentSeason = query({
     }
 
     const upcoming = seasons
-      .filter((season) => typeof season.startDate === "number" && season.startDate > now)
+      .filter(
+        (season) =>
+          typeof season.startDate === "number" && season.startDate > now,
+      )
       .sort((a, b) => (a.startDate ?? 0) - (b.startDate ?? 0));
 
     if (upcoming.length > 0) return upcoming[0];
