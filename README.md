@@ -9,6 +9,10 @@ A modern full-stack application built with:
 - **Analytics**: [PostHog](https://posthog.com) - Product analytics and feature flags
 - **Deployment**: [Vercel](https://vercel.com) - Edge-optimized hosting
 
+## Documentation
+
+Project docs live in [docs/README.md](docs/README.md).
+
 ## 🚀 Quick Start
 
 ### Prerequisites

@@ -93,6 +93,9 @@ export function StandingsTableHeader(props: {
         className={cn(
           "col-span-7 place-self-center font-varela text-base font-bold sm:text-lg",
           props.variant !== "regular" && titleTextClass,
+          props.variant === "gold" || props.variant === "silver"
+            ? "min-[550px]:col-span-5 sm:col-span-5"
+            : "sm:col-span-5",
         )}
       >
         Name
@@ -101,6 +104,9 @@ export function StandingsTableHeader(props: {
         className={cn(
           "col-span-3 place-self-center font-varela text-xs font-bold xs:text-sm sm:text-base",
           props.variant !== "regular" && titleTextClass,
+          props.variant === "gold" || props.variant === "silver"
+            ? "min-[550px]:col-span-2 sm:col-span-2"
+            : "sm:col-span-2",
         )}
       >
         Cup Points
@@ -109,12 +115,63 @@ export function StandingsTableHeader(props: {
         className={cn(
           "col-span-3 place-self-center font-varela text-2xs xs:text-xs sm:text-sm",
           props.variant !== "regular" && titleTextClass,
+          props.variant === "gold" || props.variant === "silver"
+            ? "min-[550px]:col-span-2 sm:col-span-2"
+            : "sm:col-span-2",
         )}
       >
         {props.variant === "gold" || props.variant === "silver"
           ? "Starting Strokes"
           : "Earnings"}
       </div>
+
+      {props.variant === "gold" || props.variant === "silver" ? (
+        <div
+          className={cn(
+            "col-span-2 hidden place-self-center font-varela text-2xs font-bold text-muted-foreground min-[550px]:block sm:text-xs",
+            titleTextClass,
+          )}
+        >
+          Earnings
+        </div>
+      ) : null}
+
+      {props.variant === "gold" || props.variant === "silver" ? (
+        <div
+          className={cn(
+            "col-span-1 hidden place-self-center font-varela text-2xs font-bold text-muted-foreground min-[550px]:block sm:text-xs",
+            titleTextClass,
+          )}
+        >
+          Wins
+        </div>
+      ) : null}
+
+      {props.variant === "gold" || props.variant === "silver" ? (
+        <div
+          className={cn(
+            "col-span-1 hidden place-self-center font-varela text-2xs font-bold text-muted-foreground min-[550px]:block sm:text-xs",
+            titleTextClass,
+          )}
+        >
+          Top 10
+        </div>
+      ) : null}
+
+      {props.variant === "regular" ? (
+        <>
+          <div className="col-span-1 hidden place-self-center font-varela text-2xs font-bold text-muted-foreground sm:block sm:text-xs">
+            Wins
+          </div>
+          <div className="col-span-1 hidden place-self-center font-varela text-2xs font-bold text-muted-foreground sm:block sm:text-xs">
+            Top 10
+          </div>
+          <div className="col-span-2 hidden place-self-center font-varela text-2xs font-bold text-muted-foreground sm:block sm:text-xs">
+            Cuts
+          </div>
+        </>
+      ) : null}
+
       <div className="col-span-1 place-self-center overflow-x-clip">
         {props.friendsOnlyToggle}
       </div>

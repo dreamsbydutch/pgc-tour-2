@@ -12,6 +12,7 @@ import type {
 import {
   cn,
   formatMoneyUsd,
+  formatTeeTimeTimeOfDay,
   formatToPar,
   getLeaderboardRowClass,
   getPositionChangeForTeam,
@@ -19,6 +20,41 @@ import {
 } from "@/lib";
 
 import { PGADropdown, TeamGolfersTable } from "@/displays";
+
+function formatLeaderboardThruDisplay(args: {
+  thru: number | null | undefined;
+  teeTimeDisplay?: string | null | undefined;
+}): string {
+  if (args.thru === 18) return "F";
+  if (args.thru == null || args.thru === 0) {
+    return formatTeeTimeTimeOfDay(args.teeTimeDisplay) ?? "-";
+  }
+  return String(args.thru);
+}
+
+function formatLeaderboardStandingsPosition(args: {
+  points: number;
+  allPoints: number[];
+}): { rank: number; display: string } {
+  const same = args.allPoints.filter((p) => p === args.points).length;
+  const better = args.allPoints.filter((p) => p > args.points).length;
+  const rank = better + 1;
+  return { rank, display: `${same > 1 ? "T" : ""}${rank}` };
+}
+
+function getStandingsPlayoffVariant(rank: number): "gold" | "silver" | null {
+  const goldCut = 15;
+  const silverCut = 35;
+  if (rank <= goldCut) return "gold";
+  if (rank <= silverCut) return "silver";
+  return null;
+}
+
+function getStandingsVariantClass(variant: "gold" | "silver" | null): string {
+  if (variant === "gold") return "font-semibold text-amber-700";
+  if (variant === "silver") return "font-semibold text-slate-600";
+  return "text-muted-foreground";
+}
 
 function ScoreCell(args: {
   value: ReactNode;
@@ -126,7 +162,10 @@ function ScoreDisplay(
           className="col-span-1 sm:col-span-2"
         />
         <ScoreCell
-          value={row.thru ?? "-"}
+          value={formatLeaderboardThruDisplay({
+            thru: row.thru,
+            teeTimeDisplay: row.teeTimeDisplay,
+          })}
           className="col-span-1 sm:col-span-2"
         />
         <div className="col-span-1 hidden sm:flex" />
@@ -156,13 +195,19 @@ function ScoreDisplay(
 
   const row = args.row;
   const isComplete = args.tournamentComplete;
+  const isOut = isPlayerCut(row.position);
 
   const money =
     typeof row.earnings === "number" ? formatMoneyUsd(row.earnings) : "-";
   const points = typeof row.points === "number" ? row.points : "-";
-  const score = row.score == null ? "-" : formatToPar(row.score);
+  const score = formatToPar(row.score);
   const today = row.today == null ? "-" : formatToPar(row.today);
-  const thru = row.thru ?? "-";
+  const thru = isOut
+    ? "-"
+    : formatLeaderboardThruDisplay({
+        thru: row.thru,
+        teeTimeDisplay: row.teeTimeDisplay,
+      });
 
   return (
     <>
@@ -296,11 +341,66 @@ export function LeaderboardListing(props: LeaderboardListingProps) {
               viewerTeamGolferApiIds={model.viewerTeamGolferApiIds}
             />
           ) : (
-            <TeamGolfersTable
-              team={model.row as LeaderboardTeamRow}
-              tournament={model.tournament}
-              allGolfers={model.allGolfers}
-            />
+            <>
+              {model.type === "PGC" && model.standings ? (
+                <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-2 px-2 pt-2 text-xs">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-muted-foreground">Standings</span>
+                    <span
+                      className={getStandingsVariantClass(
+                        model.standings.current.variant,
+                      )}
+                    >
+                      {model.standings.current.position}
+                    </span>
+                    <span className="text-muted-foreground">
+                      ({model.standings.current.points} pts)
+                    </span>
+                  </div>
+
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1",
+                      model.standings.delta === 0
+                        ? "text-muted-foreground"
+                        : model.standings.delta < 0
+                          ? "text-green-700"
+                          : "text-red-700",
+                    )}
+                  >
+                    {model.standings.delta === 0 ? (
+                      <MoveHorizontal className="h-3 w-3" />
+                    ) : model.standings.delta < 0 ? (
+                      <MoveUp className="h-3 w-3" />
+                    ) : (
+                      <MoveDown className="h-3 w-3" />
+                    )}
+                    {model.standings.delta === 0
+                      ? null
+                      : Math.abs(model.standings.delta)}
+                  </span>
+
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-muted-foreground">Projected</span>
+                    <span
+                      className={getStandingsVariantClass(
+                        model.standings.projected.variant,
+                      )}
+                    >
+                      {model.standings.projected.position}
+                    </span>
+                    <span className="text-muted-foreground">
+                      ({model.standings.projected.points} pts)
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+              <TeamGolfersTable
+                team={model.row as LeaderboardTeamRow}
+                tournament={model.tournament}
+                allGolfers={model.allGolfers}
+              />
+            </>
           )}
         </div>
       ) : null}
@@ -369,14 +469,60 @@ function useLeaderboardListing(props: LeaderboardListingProps) {
     const championsCount =
       props.type === "PGC" ? (props.team.championsCount ?? null) : null;
 
-    const scoreDisplay =
-      props.type !== "PGA" && row.position === "CUT"
-        ? "-"
-        : formatToPar(row.score);
+    const scoreDisplay = formatToPar(row.score);
 
     const rankDisplay = row.position ?? "-";
 
     const onToggleOpen = () => setIsOpen((v) => !v);
+
+    const standings = (() => {
+      if (props.type !== "PGC") return null;
+
+      const tourId = props.team.tourCard.tourId ?? null;
+      const tourTeams = props.allTeams.filter(
+        (t) => t.tourCard.tourId === tourId,
+      );
+      const tourTeamsForRanking = tourTeams.length ? tourTeams : [props.team];
+
+      const currentPoints = props.team.pointsBeforeTournament ?? 0;
+      const currentAllPoints = tourTeamsForRanking.map(
+        (t) => t.pointsBeforeTournament ?? 0,
+      );
+      const currentComputed = formatLeaderboardStandingsPosition({
+        points: currentPoints,
+        allPoints: currentAllPoints,
+      });
+
+      const projectedPoints = currentPoints + (props.team.points ?? 0);
+      const projectedAllPoints = tourTeamsForRanking.map((t) => {
+        const base = t.pointsBeforeTournament ?? 0;
+        return base + (t.points ?? 0);
+      });
+      const projectedComputed = formatLeaderboardStandingsPosition({
+        points: projectedPoints,
+        allPoints: projectedAllPoints,
+      });
+
+      const currentPositionDisplay =
+        props.team.tourCard.currentPosition ?? currentComputed.display;
+      const projectedPositionDisplay = projectedComputed.display;
+
+      return {
+        current: {
+          position: currentPositionDisplay,
+          points: currentPoints,
+          rank: currentComputed.rank,
+          variant: getStandingsPlayoffVariant(currentComputed.rank),
+        },
+        projected: {
+          position: projectedPositionDisplay,
+          points: projectedPoints,
+          rank: projectedComputed.rank,
+          variant: getStandingsPlayoffVariant(projectedComputed.rank),
+        },
+        delta: projectedComputed.rank - currentComputed.rank,
+      };
+    })();
 
     return {
       type: props.type,
@@ -395,6 +541,7 @@ function useLeaderboardListing(props: LeaderboardListingProps) {
       posChange,
       showPosChange,
       viewerTeamGolferApiIds: props.viewer?.teamGolferApiIds ?? null,
+      standings,
     };
   }, [isOpen, props]);
 }

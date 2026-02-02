@@ -308,6 +308,7 @@ function useTournamentPage(args: {
       currentRound?: number | null;
       livePlay?: boolean | null;
     };
+    leaderboardLastUpdatedAt?: number | null;
     teams: Array<{
       _id: unknown;
       tourCardId: unknown;
@@ -332,6 +333,9 @@ function useTournamentPage(args: {
         displayName: string;
         tourId: unknown;
         playoff?: number | null;
+        currentPosition?: string | null;
+        points?: number | null;
+        earnings?: number | null;
       };
     }>;
     golfers: Array<{
@@ -688,6 +692,9 @@ function useTournamentPage(args: {
         thru: team.thru ?? null,
         score: team.score ?? null,
         points: team.points ?? null,
+        pointsBeforeTournament:
+          (team as { pointsBeforeTournament?: number | null })
+            .pointsBeforeTournament ?? null,
         earnings: team.earnings ?? null,
         roundOne: team.roundOne ?? null,
         roundTwo: team.roundTwo ?? null,
@@ -708,6 +715,9 @@ function useTournamentPage(args: {
           displayName: teamTourCard?.displayName ?? "Unknown",
           tourId: tourShortForm ? tourShortForm.toLowerCase() : null,
           playoff: teamTourCard?.playoff ?? null,
+          currentPosition: teamTourCard?.currentPosition ?? null,
+          points: teamTourCard?.points ?? null,
+          earnings: teamTourCard?.earnings ?? null,
         },
       };
     });
@@ -735,6 +745,8 @@ function useTournamentPage(args: {
       toggleTours,
       pgaRows,
       pgcRows,
+      leaderboardLastUpdatedAt:
+        leaderboardPayload.leaderboardLastUpdatedAt ?? null,
       viewer: viewerTourCardId
         ? {
             tourCardId: viewerTourCardId,

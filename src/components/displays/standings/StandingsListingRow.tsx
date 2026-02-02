@@ -23,7 +23,7 @@ import {
  * Behavior:
  * - Collapsible: clicking the row toggles a details panel with stats + tournament history.
  * - Friends filter: callers provide `friendsOnly` + `friendIds`; non-friends are hidden when enabled.
- * - Friend management: callers provide `onAddFriend` / `onRemoveFriend` and `isFriendChanging`.
+ * - Friend management (regular only): callers provide `onAddFriend` / `onRemoveFriend` and `isFriendChanging`.
  * - Playoff mode: computes position label and starting strokes from the provided playoff groups.
  *
  * Data inputs:
@@ -97,7 +97,8 @@ export function StandingsListingRow(props: {
         })()
       : null;
 
-  const canFriend = !!props.currentMemberId && !isCurrent;
+  const canFriend =
+    props.mode === "regular" && !!props.currentMemberId && !isCurrent;
 
   const teamsForCard = props.teams.filter(
     (t) => t.tourCardId === props.card._id,
@@ -149,19 +150,68 @@ export function StandingsListingRow(props: {
         {props.renderPositionChange(posChange)}
       </div>
 
-      <div className="col-span-7 flex items-center justify-center place-self-center font-varela text-lg sm:text-xl">
+      <div
+        className={cn(
+          "col-span-7 flex items-center justify-center place-self-center font-varela text-lg sm:col-span-5 sm:text-xl",
+          props.mode === "playoff" && "min-[550px]:col-span-5",
+        )}
+      >
         {props.card.displayName}
       </div>
 
-      <div className="col-span-3 place-self-center font-varela text-sm xs:text-base sm:text-lg">
+      <div
+        className={cn(
+          "col-span-3 place-self-center font-varela text-sm xs:text-base sm:col-span-2 sm:text-lg",
+          props.mode === "playoff" && "min-[550px]:col-span-2",
+        )}
+      >
         {props.card.points}
       </div>
 
-      <div className="col-span-3 place-self-center font-varela text-xs xs:text-sm sm:text-base">
+      <div
+        className={cn(
+          "col-span-3 place-self-center font-varela text-xs xs:text-sm sm:col-span-2 sm:text-base",
+          props.mode === "playoff" && "min-[550px]:col-span-2",
+        )}
+      >
         {props.mode === "playoff"
           ? (startingStrokes ?? "-")
           : formatMoney(props.card.earnings)}
       </div>
+
+      {props.mode === "playoff" ? (
+        <div className="col-span-2 hidden place-self-center font-varela text-xs min-[550px]:block sm:text-sm">
+          {formatMoney(props.card.earnings)}
+        </div>
+      ) : null}
+
+      {props.mode === "playoff" ? (
+        <div className="col-span-1 hidden place-self-center font-varela text-xs min-[550px]:block sm:text-sm">
+          {props.card.wins ?? 0}
+        </div>
+      ) : null}
+
+      {props.mode === "playoff" ? (
+        <div className="col-span-1 hidden place-self-center font-varela text-xs min-[550px]:block sm:text-sm">
+          {props.card.topTen ?? 0}
+        </div>
+      ) : null}
+
+      {props.mode === "regular" ? (
+        <>
+          <div className="col-span-1 hidden place-self-center font-varela text-xs sm:block sm:text-sm">
+            {props.card.wins ?? 0}
+          </div>
+
+          <div className="col-span-1 hidden place-self-center font-varela text-xs sm:block sm:text-sm">
+            {props.card.topTen ?? 0}
+          </div>
+
+          <div className="col-span-2 hidden place-self-center font-varela text-xs sm:block sm:text-sm">
+            {props.card.madeCut ?? 0}/{props.card.appearances ?? 0}
+          </div>
+        </>
+      ) : null}
 
       <div
         className="col-span-1 flex place-self-center"
@@ -184,14 +234,18 @@ export function StandingsListingRow(props: {
           else props.onAddFriend(memberId);
         }}
       >
-        {props.mode === "bumped" && props.tourLogoUrl ? (
-          <div className="max-h-8 min-h-6 min-w-6 max-w-8 place-self-center p-1">
-            <img
-              src={props.tourLogoUrl}
-              alt="Tour"
-              className="h-6 w-6 object-contain"
-            />
-          </div>
+        {props.mode !== "regular" ? (
+          props.tourLogoUrl ? (
+            <div className="max-h-8 min-h-6 min-w-6 max-w-8 place-self-center p-1">
+              <img
+                src={props.tourLogoUrl}
+                alt="Tour"
+                className="h-6 w-6 object-contain"
+              />
+            </div>
+          ) : (
+            <div className="h-6 w-6" />
+          )
         ) : !canFriend ? (
           <div className="h-6 w-6" />
         ) : isFriendChanging ? (
@@ -208,44 +262,45 @@ export function StandingsListingRow(props: {
       </div>
 
       {isOpen ? (
-        <div
-          className="col-span-16 px-2 pb-2"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className="col-span-16 pb-2" onClick={(e) => e.stopPropagation()}>
           <div
             className={cn(
-              "mt-2 rounded-md border p-3",
+              "mt-2 rounded-md border",
               isCurrent && "bg-blue-50",
               !isCurrent && isFriend && "bg-muted/40",
             )}
           >
-            <div className="grid grid-cols-5 gap-2 text-center text-xs font-medium text-muted-foreground">
-              <div>Wins</div>
-              <div>Top 10</div>
-              <div>Cuts</div>
-              <div>Weekday</div>
-              <div>Weekend</div>
-            </div>
-            <div className="mt-1 grid grid-cols-5 gap-2 text-center text-sm">
-              <div>{props.card.wins ?? 0}</div>
-              <div>{props.card.topTen}</div>
-              <div>
-                {props.card.madeCut} / {props.card.appearances}
+            <div className="px-3 pt-3">
+              <div className="sm:hidden">
+                <div className="grid grid-cols-5 gap-2 text-center text-xs font-medium text-muted-foreground">
+                  <div>Wins</div>
+                  <div>Top 10</div>
+                  <div>Cuts</div>
+                  <div>Weekday</div>
+                  <div>Weekend</div>
+                </div>
+                <div className="mt-1 grid grid-cols-5 gap-2 text-center text-sm">
+                  <div>{props.card.wins ?? 0}</div>
+                  <div>{props.card.topTen ?? 0}</div>
+                  <div>
+                    {props.card.madeCut ?? 0} / {props.card.appearances ?? 0}
+                  </div>
+                  <div>{calculateAverageScore(teamsForCard, "weekday")}</div>
+                  <div>{calculateAverageScore(teamsForCard, "weekend")}</div>
+                </div>
               </div>
-              <div>{calculateAverageScore(teamsForCard, "weekday")}</div>
-              <div>{calculateAverageScore(teamsForCard, "weekend")}</div>
-            </div>
 
-            <div className="mt-4 text-xs font-medium text-muted-foreground">
-              Tournament history
+              <div className="mt-4 text-xs font-medium text-muted-foreground">
+                Tournament history
+              </div>
             </div>
 
             {nonPlayoffTournaments.length === 0 ? (
-              <div className="mt-2 text-sm text-muted-foreground">
+              <div className="px-3 pb-3 pt-2 text-sm text-muted-foreground">
                 No tournaments
               </div>
             ) : (
-              <div className="mt-2 overflow-x-auto rounded-md border">
+              <div className="mt-2 overflow-x-auto border-t">
                 <div className="grid sm:hidden" style={mobileGridStyle}>
                   {nonPlayoffTournaments.map((t) => {
                     const tier = props.tierById.get(String(t.tierId));

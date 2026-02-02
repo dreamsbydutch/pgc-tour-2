@@ -2,6 +2,8 @@ import {
   cn,
   formatMonthDay,
   getTournamentTimeline,
+  isNonEmptyString,
+  PGC_LOGO_URL,
   pickLatestSeasonId,
 } from "@/lib";
 import type { LeagueScheduleProps } from "@/lib";
@@ -121,7 +123,7 @@ export function LeagueSchedule({ seasonId, loading }: LeagueScheduleProps) {
                 <TableCell className="min-w-48 text-xs">
                   <div className="flex items-center justify-evenly gap-1 text-center">
                     <img
-                      src={tourney.logoUrl ?? ""}
+                      src={isNonEmptyString(tourney.logoUrl) ? tourney.logoUrl : PGC_LOGO_URL}
                       className={cn(
                         isCurrent ? "h-12 w-12" : "h-8 w-8",
                         "object-contain",

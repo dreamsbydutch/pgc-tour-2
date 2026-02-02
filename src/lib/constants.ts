@@ -4,6 +4,9 @@ import type { TransactionStatus, TransactionType } from "./types";
 
 export const DEFAULT_MAX_PARTICIPANTS = 75;
 
+export const PGC_LOGO_URL =
+  "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPJiXqZRs47Fgtd9BSMeHQ2WnVuLfP8IaTAp6E";
+
 export const PRE_TOURNAMENT_PICK_WINDOW_MS = 4 * 24 * 60 * 60 * 1000;
 
 export const ADMIN_FORM_CONTROL_CLASSNAME =

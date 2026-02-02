@@ -444,6 +444,9 @@ export type LeaderboardTourCardLite = {
   displayName: string;
   tourId?: string | null;
   playoff?: number | null;
+  currentPosition?: string | null;
+  points?: number | null;
+  earnings?: number | null;
 };
 
 export type LeaderboardTeamRow = {
@@ -460,6 +463,7 @@ export type LeaderboardTeamRow = {
   score: number | null;
 
   points: number | null;
+  pointsBeforeTournament?: number | null;
   earnings: number | null;
 
   roundOne: number | null;
@@ -479,6 +483,7 @@ export type LeaderboardViewModelReady = {
   toggleTours: LeaderboardTourToggle[];
   pgaRows: LeaderboardPgaRow[];
   pgcRows: LeaderboardTeamRow[];
+  leaderboardLastUpdatedAt?: number | null;
   viewer?: LeaderboardViewerContext;
 };
 
@@ -515,6 +520,7 @@ export type LeaderboardListingProps =
       type: "PGC";
       tournament: LeaderboardTournamentLite;
       allGolfers: LeaderboardPgaRow[];
+      allTeams: LeaderboardTeamRow[];
       viewer?: LeaderboardViewerContext;
       team: LeaderboardTeamRow;
       isPreTournament?: boolean;

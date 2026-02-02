@@ -43,8 +43,14 @@ export function HomePage() {
           {model.roleBadge}
         </div>
 
-        {model.beforeFirstTournament ? <TourCardOutput /> : null}
-        {model.registrationOpen ? <TourCardForm /> : null}
+        {model.registrationOpen ? (
+          <>
+            <TourCardOutput />
+            <TourCardForm />
+          </>
+        ) : (
+          <TourCardOutput />
+        )}
         {model.accountAlert}
         <TournamentCountdown tourney={tourney} />
         <LeagueSchedule />
@@ -101,7 +107,7 @@ function useHomePage():
   const now = Date.now();
   const registrationOpen = currentSeason?.registrationDeadline
     ? now < currentSeason.registrationDeadline
-    : true;
+    : Boolean(currentSeason);
 
   const firstTournamentRaw = Array.isArray(firstTournamentResult)
     ? (firstTournamentResult[0] ?? null)
@@ -125,7 +131,7 @@ function useHomePage():
 
   const beforeFirstTournament = firstTournament?.startDate
     ? now < firstTournament.startDate
-    : true;
+    : false;
 
   const normalizedRole = typeof role === "string" ? role.trim() : "";
 
@@ -174,7 +180,11 @@ function useHomePage():
       </Link>
     ) : null;
 
-  if (isLoading) {
+  const isSeasonLoading = currentSeason === undefined;
+  const isFirstTournamentLoading =
+    Boolean(currentSeason) && firstTournamentResult === undefined;
+
+  if (isLoading || isSeasonLoading || isFirstTournamentLoading) {
     return { kind: "loading" };
   }
 
