@@ -8,7 +8,12 @@ import type { SeasonDoc, TourDoc } from "../../../../convex/types/types";
 import { AdminEditDeleteActions } from "@/displays";
 import { AdminCrudSection } from "./AdminCrudSection";
 import { Card, CardContent, CardHeader, Field, Skeleton } from "@/ui";
-import { formatCentsAsDollars, normalizeList, parseNumberList } from "@/lib";
+import {
+  formatCentsAsDollars,
+  getErrorMessage,
+  normalizeList,
+  parseNumberList,
+} from "@/lib";
 import { ADMIN_FORM_CONTROL_CLASSNAME } from "@/lib/constants";
 import { adminActionsColumn } from "@/lib";
 
@@ -123,15 +128,6 @@ export function ToursSection({
               placeholder="8, 4, 2"
             />
           </Field>
-
-          <Field label="Description (optional)">
-            <input
-              value={model.form.description}
-              onChange={(e) => model.updateField("description", e.target.value)}
-              disabled={model.submitting}
-              className={ADMIN_FORM_CONTROL_CLASSNAME}
-            />
-          </Field>
         </div>
       }
       formError={model.error}
@@ -200,7 +196,6 @@ function useToursSection({
     name: string;
     shortForm: string;
     logoUrl: string;
-    description: string;
     buyInCents: string;
     playoffSpots: string;
     maxParticipants: string;
@@ -255,7 +250,6 @@ function useToursSection({
     name: "",
     shortForm: "",
     logoUrl: "",
-    description: "",
     buyInCents: "",
     playoffSpots: "",
     maxParticipants: "",
@@ -284,7 +278,6 @@ function useToursSection({
       name: "",
       shortForm: "",
       logoUrl: "",
-      description: "",
       buyInCents: "",
       playoffSpots: "",
       maxParticipants: "",
@@ -294,14 +287,12 @@ function useToursSection({
   };
 
   const loadTour = (t: TourDoc) => {
-    const description = (t as unknown as { description?: string }).description;
     setForm({
       tourId: t._id,
       seasonId: t.seasonId,
       name: t.name,
       shortForm: t.shortForm,
       logoUrl: t.logoUrl,
-      description: description ?? "",
       buyInCents: `${t.buyIn}`,
       playoffSpots: (t.playoffSpots ?? []).join(", "),
       maxParticipants: `${t.maxParticipants ?? ""}`,
@@ -325,7 +316,7 @@ function useToursSection({
       setSuccess("Tour deleted.");
       if (form.tourId === t._id) resetForm();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete tour");
+      setError(getErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -402,9 +393,6 @@ function useToursSection({
             buyIn,
             playoffSpots,
             ...(maxParticipants !== undefined ? { maxParticipants } : {}),
-            ...(form.description.trim()
-              ? { description: form.description.trim() }
-              : { description: "" }),
           },
         });
         setSuccess("Tour updated.");
@@ -418,16 +406,13 @@ function useToursSection({
             buyIn,
             playoffSpots,
             ...(maxParticipants !== undefined ? { maxParticipants } : {}),
-            ...(form.description.trim()
-              ? { description: form.description.trim() }
-              : {}),
           },
         });
         setSuccess("Tour created.");
         resetForm();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save tour");
+      setError(getErrorMessage(err));
     } finally {
       setSubmitting(false);
     }

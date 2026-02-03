@@ -6,34 +6,45 @@ import { validators } from "./common";
 const validateTourData = (data: ValidateTourDataInput): ValidationResult => {
   const errors: string[] = [];
 
-  const nameErr = validators.stringLength(data.name, 3, 100, "Tour name");
-  if (nameErr) errors.push(nameErr);
+  if (data.name !== undefined) {
+    const nameErr = validators.stringLength(data.name, 3, 100, "Tour name");
+    if (nameErr) errors.push(nameErr);
+  }
 
-  const shortFormErr = validators.stringLength(
-    data.shortForm,
-    2,
-    10,
-    "Short form",
-  );
-  if (shortFormErr) errors.push(shortFormErr);
+  if (data.shortForm !== undefined) {
+    const shortFormErr = validators.stringLength(
+      data.shortForm,
+      2,
+      10,
+      "Short form",
+    );
+    if (shortFormErr) errors.push(shortFormErr);
+  }
 
-  const buyInErr = validators.positiveNumber(data.buyIn, "Buy-in amount");
-  if (buyInErr) errors.push(buyInErr);
+  if (data.buyIn !== undefined) {
+    const buyInErr = validators.positiveNumber(data.buyIn, "Buy-in amount");
+    if (buyInErr) errors.push(buyInErr);
+  }
 
   if (data.maxParticipants !== undefined && data.maxParticipants < 1) {
     errors.push("Maximum participants must be at least 1");
   }
 
-  if (data.playoffSpots && data.playoffSpots.length === 0) {
+  if (data.playoffSpots !== undefined && data.playoffSpots.length === 0) {
     errors.push("At least one playoff spot must be defined");
   }
 
-  if (data.playoffSpots && data.playoffSpots.some((spot) => spot < 1)) {
+  if (
+    data.playoffSpots !== undefined &&
+    data.playoffSpots.some((spot) => spot < 1)
+  ) {
     errors.push("All playoff spots must be positive numbers");
   }
 
-  const logoUrlErr = validators.url(data.logoUrl, "Logo URL");
-  if (logoUrlErr) errors.push(logoUrlErr);
+  if (data.logoUrl !== undefined) {
+    const logoUrlErr = validators.url(data.logoUrl, "Logo URL");
+    if (logoUrlErr) errors.push(logoUrlErr);
+  }
 
   return { isValid: errors.length === 0, errors };
 };
@@ -75,7 +86,6 @@ export const toursValidators = {
               maxBuyIn: v.optional(v.number()),
               minParticipants: v.optional(v.number()),
               maxParticipants: v.optional(v.number()),
-              hasDescription: v.optional(v.boolean()),
               searchTerm: v.optional(v.string()),
               playoffSpotsMin: v.optional(v.number()),
               playoffSpotsMax: v.optional(v.number()),

@@ -177,7 +177,6 @@ export interface TourFilterOptions extends BaseFilterOptions {
   maxBuyIn?: number;
   minParticipants?: number;
   maxParticipants?: number;
-  hasDescription?: boolean;
   playoffSpotsMin?: number;
   playoffSpotsMax?: number;
 }
@@ -832,7 +831,6 @@ export interface TourUpdateData {
   buyIn?: number;
   playoffSpots?: number[];
   maxParticipants?: number;
-  description?: string;
   updatedAt?: number;
 }
 
