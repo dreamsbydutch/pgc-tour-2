@@ -595,7 +595,9 @@ export const runPreTournamentGolfersSync: ReturnType<typeof internalAction> =
     handler: async (ctx, args): Promise<unknown> => {
       const now = Date.now();
 
-      const tournamentIdInput = args.tournamentId as Id<"tournaments"> | undefined;
+      const tournamentIdInput = args.tournamentId as
+        | Id<"tournaments">
+        | undefined;
       const target = await ctx.runQuery(
         internal.functions.cronJobs.getPreTournamentGolfersSyncTarget,
         { tournamentId: tournamentIdInput },
@@ -622,18 +624,32 @@ export const runPreTournamentGolfersSync: ReturnType<typeof internalAction> =
       }
 
       const tour = "pga" as const;
-      const [fieldUpdates, rankings] = await Promise.all([
+      const [fieldUpdates, rankings, inPlay] = await Promise.all([
         ctx.runAction(api.functions.datagolf.fetchFieldUpdates, {
-          options: { tour },
+          options: { tour, filterWithdrawn: false },
         }),
         ctx.runAction(api.functions.datagolf.fetchDataGolfRankings, {}),
+        ctx.runAction(api.functions.datagolf.fetchLiveModelPredictions, {
+          options: { tour, onlyActivePlayers: true },
+        }),
       ]);
 
-      const dataGolfEventName =
+      const liveStats = Array.isArray(inPlay.data)
+        ? (inPlay.data as LiveModelPlayer[])
+        : [];
+
+      const dataGolfEventNameFromLive =
+        typeof inPlay.info?.event_name === "string" ? inPlay.info.event_name :
+        "";
+      const dataGolfEventNameFromField =
         typeof (fieldUpdates as { event_name?: unknown }).event_name ===
         "string"
           ? (fieldUpdates as { event_name: string }).event_name
           : "";
+      const dataGolfEventName =
+        dataGolfEventNameFromLive.trim().length > 0
+          ? dataGolfEventNameFromLive
+          : dataGolfEventNameFromField;
 
       if (!dataGolfEventName.trim()) {
         return {
@@ -693,7 +709,7 @@ export const runPreTournamentGolfersSync: ReturnType<typeof internalAction> =
           tournamentId,
           field,
           rankings: rankingsList,
-          liveStats: [],
+          liveStats,
           eventName: dataGolfEventName,
         },
       );
@@ -798,7 +814,15 @@ export const applyDataGolfLiveSync = internalMutation({
       tournament.livePlay === true ||
       Date.now() >= tournament.startDate;
 
+    let tournamentGolfersDeletedNotInField = 0;
+
     if (!tournamentStarted) {
+      const liveFieldApiIds = new Set(
+        (args.liveStats as LiveModelPlayer[]).map((p) => p.dg_id),
+      );
+      const fieldApiIds = new Set(args.field.map((f) => f.dg_id));
+      const activeApiIds = liveFieldApiIds.size > 0 ? liveFieldApiIds : fieldApiIds;
+
       const earliestRoundOneMs = (() => {
         const times = args.field
           .map((f) => (typeof f.r1_teetime === "string" ? f.r1_teetime : null))
@@ -823,6 +847,20 @@ export const applyDataGolfLiveSync = internalMutation({
           startDate: earliestRoundOneMs,
           updatedAt: Date.now(),
         });
+      }
+
+      const existingTournamentGolfers = await ctx.db
+        .query("tournamentGolfers")
+        .withIndex("by_tournament", (q) => q.eq("tournamentId", args.tournamentId))
+        .collect();
+
+      for (const tg of existingTournamentGolfers) {
+        const golfer = await ctx.db.get(tg.golferId);
+        const apiId = golfer?.apiId;
+        if (typeof apiId !== "number" || !activeApiIds.has(apiId)) {
+          await ctx.db.delete(tg._id);
+          tournamentGolfersDeletedNotInField += 1;
+        }
       }
     }
 
@@ -1052,6 +1090,7 @@ export const applyDataGolfLiveSync = internalMutation({
       tournamentGolfersInserted,
       tournamentGolfersPatchedFromField,
       tournamentGolfersUpdated,
+      tournamentGolfersDeletedNotInField,
     });
 
     const inferredRoundIsRunning = isRoundRunningFromLiveStats(
@@ -1104,6 +1143,7 @@ export const applyDataGolfLiveSync = internalMutation({
       tournamentGolfersInserted,
       tournamentGolfersPatchedFromField,
       tournamentGolfersUpdated,
+      tournamentGolfersDeletedNotInField,
       livePlayers: args.liveStats.length,
     } as const;
   },
