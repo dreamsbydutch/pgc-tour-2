@@ -999,11 +999,12 @@ export const getMyTournamentHistory = query({
 
 /**
  * Recomputes `members.isActive` based on tourCard presence for the current year
- * and previous year.
+ * and the prior two years.
  *
  * Definition:
  * - Active if the member has a tourCard in any season where `season.year` is
- *   equal to the most recent year in the `seasons` table, or that year minus 1.
+ *   equal to the most recent year in the `seasons` table, or that year minus 1,
+ *   or that year minus 2.
  * - Otherwise inactive.
  */
 export const recomputeMemberActiveFlags = mutation({
@@ -1016,13 +1017,14 @@ export const recomputeMemberActiveFlags = mutation({
     const currentYear =
       seasons.length > 0 ? Math.max(...seasons.map((s) => s.year)) : null;
     const previousYear = currentYear !== null ? currentYear - 1 : null;
+    const twoYearsAgo = currentYear !== null ? currentYear - 2 : null;
 
     const activeSeasonIds = new Set(
       seasons
         .filter((s) =>
           currentYear === null
             ? false
-            : s.year === currentYear || s.year === currentYear - 1,
+            : s.year === currentYear || s.year === previousYear || s.year === twoYearsAgo,
         )
         .map((s) => s._id),
     );
@@ -1059,6 +1061,7 @@ export const recomputeMemberActiveFlags = mutation({
       ok: true,
       currentYear,
       previousYear,
+      twoYearsAgo,
       activeSeasonIds: [...activeSeasonIds],
       membersTotal: members.length,
       updated,
