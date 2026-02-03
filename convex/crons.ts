@@ -21,6 +21,21 @@ crons.cron(
   {},
 );
 
+// Pre-tournament golfer refresh (field updates -> tournamentGolfers tee times + missing golfers)
+crons.cron(
+  "pre_tournament_golfers_sync_12am",
+  "0 0 * * *",
+  internal.functions.cronJobs.runPreTournamentGolfersSync,
+  {},
+);
+
+crons.cron(
+  "pre_tournament_golfers_sync_12pm",
+  "0 12 * * *",
+  internal.functions.cronJobs.runPreTournamentGolfersSync,
+  {},
+);
+
 // Pre-tournament grouping (field updates + rankings -> tournamentGolfers.group)
 crons.cron(
   "create_groups_for_next_tournament_12pm",

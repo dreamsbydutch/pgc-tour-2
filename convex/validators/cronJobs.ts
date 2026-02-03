@@ -2,6 +2,7 @@ import { v } from "convex/values";
 
 const CronJobNameValidator = v.union(
   v.literal("live_tournament_sync"),
+  v.literal("pre_tournament_golfers_sync"),
   v.literal("recompute_standings"),
   v.literal("create_groups_for_next_tournament"),
 );
@@ -48,6 +49,9 @@ export const cronJobsValidators = {
       ),
     },
     runCreateGroupsForNextTournament: {
+      tournamentId: v.optional(v.id("tournaments")),
+    },
+    runPreTournamentGolfersSync: {
       tournamentId: v.optional(v.id("tournaments")),
     },
     getActiveTournamentIdForCron: {},

@@ -544,6 +544,171 @@ export const runCreateGroupsForNextTournament: ReturnType<
   },
 });
 
+export const getPreTournamentGolfersSyncTarget = internalQuery({
+  args: v.object({ tournamentId: v.optional(v.id("tournaments")) }),
+  handler: async (ctx, args) => {
+    const now = Date.now();
+
+    let tournamentId = args.tournamentId as Id<"tournaments"> | undefined;
+    if (!tournamentId) {
+      const upcoming = await ctx.db
+        .query("tournaments")
+        .withIndex("by_status", (q) => q.eq("status", "upcoming"))
+        .collect();
+
+      const future = upcoming.filter((t) => t.startDate > now);
+      future.sort((a, b) => a.startDate - b.startDate);
+      tournamentId = future[0]?._id;
+    }
+
+    if (!tournamentId) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: "no_upcoming_tournament",
+      } as const;
+    }
+
+    const tournament = await ctx.db.get(tournamentId);
+    if (!tournament) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: "tournament_not_found",
+        tournamentId,
+      } as const;
+    }
+
+    return {
+      ok: true,
+      skipped: false,
+      tournamentId,
+      tournamentName: tournament.name,
+      tournamentStartDate: tournament.startDate,
+    } as const;
+  },
+});
+
+export const runPreTournamentGolfersSync: ReturnType<typeof internalAction> =
+  internalAction({
+    args: cronJobsValidators.args.runPreTournamentGolfersSync,
+    handler: async (ctx, args): Promise<unknown> => {
+      const now = Date.now();
+
+      const tournamentIdInput = args.tournamentId as Id<"tournaments"> | undefined;
+      const target = await ctx.runQuery(
+        internal.functions.cronJobs.getPreTournamentGolfersSyncTarget,
+        { tournamentId: tournamentIdInput },
+      );
+
+      if (target.skipped) return target;
+
+      const tournamentId = target.tournamentId as Id<"tournaments">;
+      const tournamentName = String(target.tournamentName ?? "");
+      const tournamentStartDate = Number(target.tournamentStartDate ?? 0);
+
+      const msUntilStart = tournamentStartDate - now;
+      const maxLeadMs = 10 * 24 * 60 * 60 * 1000;
+      if (msUntilStart > maxLeadMs) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: "too_early",
+          tournamentId,
+          tournamentName,
+          tournamentStartDate,
+          msUntilStart,
+        } as const;
+      }
+
+      const tour = "pga" as const;
+      const [fieldUpdates, rankings] = await Promise.all([
+        ctx.runAction(api.functions.datagolf.fetchFieldUpdates, {
+          options: { tour },
+        }),
+        ctx.runAction(api.functions.datagolf.fetchDataGolfRankings, {}),
+      ]);
+
+      const dataGolfEventName =
+        typeof (fieldUpdates as { event_name?: unknown }).event_name ===
+        "string"
+          ? (fieldUpdates as { event_name: string }).event_name
+          : "";
+
+      if (!dataGolfEventName.trim()) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: "missing_datagolf_event_name",
+          tournamentId,
+          tournamentName,
+        } as const;
+      }
+
+      const compatible = eventNameLooksCompatible(
+        tournamentName,
+        dataGolfEventName,
+      );
+
+      if (!compatible.ok) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: "event_name_mismatch",
+          tournamentId,
+          tournamentName,
+          dataGolfEventName,
+          score: compatible.score,
+          intersection: compatible.intersection,
+          expectedTokens: compatible.expectedTokens,
+          actualTokens: compatible.actualTokens,
+        } as const;
+      }
+
+      const field = Array.isArray((fieldUpdates as { field?: unknown }).field)
+        ? ((fieldUpdates as { field: unknown[] })
+            .field as FieldPlayerWithAllTeeTimes[])
+        : [];
+
+      const rankingsList = Array.isArray(
+        (rankings as { rankings?: unknown }).rankings,
+      )
+        ? ((rankings as { rankings: unknown[] }).rankings as RankedPlayer[])
+        : [];
+
+      if (!field.length) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: "empty_field",
+          tournamentId,
+          tournamentName,
+          dataGolfEventName,
+        } as const;
+      }
+
+      const sync = await ctx.runMutation(
+        internal.functions.cronJobs.applyDataGolfLiveSync,
+        {
+          tournamentId,
+          field,
+          rankings: rankingsList,
+          liveStats: [],
+          eventName: dataGolfEventName,
+        },
+      );
+
+      return {
+        ok: true,
+        skipped: false,
+        tournamentId,
+        tournamentName,
+        dataGolfEventName,
+        sync,
+      } as const;
+    },
+  });
+
 export const getActiveTournamentIdForCron = internalQuery({
   args: cronJobsValidators.args.getActiveTournamentIdForCron,
   handler: async (ctx): Promise<Id<"tournaments"> | null> => {
@@ -633,6 +798,34 @@ export const applyDataGolfLiveSync = internalMutation({
       tournament.livePlay === true ||
       Date.now() >= tournament.startDate;
 
+    if (!tournamentStarted) {
+      const earliestRoundOneMs = (() => {
+        const times = args.field
+          .map((f) => (typeof f.r1_teetime === "string" ? f.r1_teetime : null))
+          .filter((t): t is string => Boolean(t && t.trim().length));
+
+        if (!times.length) return null;
+
+        const parsed = times
+          .map((t) => new Date(t).getTime())
+          .filter((ms) => !Number.isNaN(ms));
+        if (!parsed.length) return null;
+
+        return Math.min(...parsed);
+      })();
+
+      if (
+        typeof earliestRoundOneMs === "number" &&
+        Number.isFinite(earliestRoundOneMs) &&
+        tournament.startDate !== earliestRoundOneMs
+      ) {
+        await ctx.db.patch(args.tournamentId, {
+          startDate: earliestRoundOneMs,
+          updatedAt: Date.now(),
+        });
+      }
+    }
+
     const fieldById = new Map<number, FieldPlayerWithAllTeeTimes>();
     for (const f of args.field) {
       fieldById.set(f.dg_id, f);
@@ -704,6 +897,7 @@ export const applyDataGolfLiveSync = internalMutation({
         await ctx.db.insert("tournamentGolfers", {
           tournamentId: args.tournamentId,
           golferId,
+          group: 0,
           ...(typeof field.r1_teetime === "string"
             ? { roundOneTeeTime: field.r1_teetime }
             : {}),
@@ -2727,6 +2921,13 @@ export const adminRunCronJob = action({
         case "live_tournament_sync": {
           result = await ctx.runAction(
             internal.functions.cronJobs.runLiveTournamentSync,
+            { tournamentId },
+          );
+          break;
+        }
+        case "pre_tournament_golfers_sync": {
+          result = await ctx.runAction(
+            internal.functions.cronJobs.runPreTournamentGolfersSync,
             { tournamentId },
           );
           break;

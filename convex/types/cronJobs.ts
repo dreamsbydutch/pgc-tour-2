@@ -106,6 +106,7 @@ export type TeamsCronUpdate = {
 
 export type CronJobName =
   | "live_tournament_sync"
+  | "pre_tournament_golfers_sync"
   | "recompute_standings"
   | "create_groups_for_next_tournament";
 
