@@ -85,31 +85,34 @@ export function TournamentTeamPickerDialog(props: {
             </div>
           ) : (
             <div className="space-y-4">
-              {model.groups.map((group) => (
-                <TournamentTeamPickerGroup
-                  key={group.groupKey}
-                  group={group}
-                  isCollapsed={
-                    group.groupKey !== 0 &&
-                    group.selectedCount >= 2 &&
-                    !expandedCompletedGroups.has(group.groupKey)
-                  }
-                  onToggleCollapse={() => {
-                    setExpandedCompletedGroups((prev) => {
-                      const next = new Set(prev);
-                      const isCompleted =
-                        group.groupKey !== 0 && group.selectedCount >= 2;
-                      if (!isCompleted) return next;
+              {model.groups
+                .filter((g) => g.groupKey !== 0)
+                .map((group) => (
+                  <TournamentTeamPickerGroup
+                    key={group.groupKey}
+                    group={group}
+                    isCollapsed={
+                      group.groupKey !== 0 &&
+                      group.selectedCount >= 2 &&
+                      !expandedCompletedGroups.has(group.groupKey)
+                    }
+                    onToggleCollapse={() => {
+                      setExpandedCompletedGroups((prev) => {
+                        const next = new Set(prev);
+                        const isCompleted =
+                          group.groupKey !== 0 && group.selectedCount >= 2;
+                        if (!isCompleted) return next;
 
-                      if (next.has(group.groupKey)) next.delete(group.groupKey);
-                      else next.add(group.groupKey);
+                        if (next.has(group.groupKey))
+                          next.delete(group.groupKey);
+                        else next.add(group.groupKey);
 
-                      return next;
-                    });
-                  }}
-                  onToggleGolfer={model.toggleGolfer}
-                />
-              ))}
+                        return next;
+                      });
+                    }}
+                    onToggleGolfer={model.toggleGolfer}
+                  />
+                ))}
 
               <div className="text-center text-sm text-gray-700">
                 {model.totalSelected}/10 selected
