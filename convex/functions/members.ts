@@ -1005,6 +1005,8 @@ export const getMyTournamentHistory = query({
  * - Active if the member has a tourCard in any season where `season.year` is
  *   equal to the most recent year in the `seasons` table, or that year minus 1,
  *   or that year minus 2.
+ * - Also active if the member has never had a tourCard but does have a Clerk ID
+ *   (new member).
  * - Otherwise inactive.
  */
 export const recomputeMemberActiveFlags = mutation({
@@ -1031,8 +1033,10 @@ export const recomputeMemberActiveFlags = mutation({
 
     const tourCards = await ctx.db.query("tourCards").collect();
     const membersWithActiveYearTourCard = new Set<string>();
+    const membersWithAnyTourCard = new Set<string>();
 
     for (const tc of tourCards) {
+      membersWithAnyTourCard.add(tc.memberId);
       if (activeSeasonIds.has(tc.seasonId)) {
         membersWithActiveYearTourCard.add(tc.memberId);
       }
@@ -1043,18 +1047,25 @@ export const recomputeMemberActiveFlags = mutation({
     let updated = 0;
     let activeCount = 0;
     let inactiveCount = 0;
+    let newMembersActiveCount = 0;
     const now = Date.now();
 
     for (const m of members) {
-      const nextIsActive = membersWithActiveYearTourCard.has(m._id);
+      const hasClerkId = typeof m.clerkId === "string" && m.clerkId.trim().length > 0;
+      const isNewMember = hasClerkId && !membersWithAnyTourCard.has(m._id);
+      const nextIsActive = membersWithActiveYearTourCard.has(m._id) || isNewMember;
 
       if (m.isActive !== nextIsActive) {
         await ctx.db.patch(m._id, { isActive: nextIsActive, updatedAt: now });
         updated += 1;
       }
 
-      if (nextIsActive) activeCount += 1;
-      else inactiveCount += 1;
+      if (nextIsActive) {
+        activeCount += 1;
+        if (isNewMember) newMembersActiveCount += 1;
+      } else {
+        inactiveCount += 1;
+      }
     }
 
     return {
@@ -1067,6 +1078,7 @@ export const recomputeMemberActiveFlags = mutation({
       updated,
       activeCount,
       inactiveCount,
+      newMembersActiveCount,
     } as const;
   },
 });

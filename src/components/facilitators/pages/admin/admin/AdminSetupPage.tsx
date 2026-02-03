@@ -37,6 +37,16 @@ import {
  * @returns Admin setup UI with section navigation, optional season filter (for tours/tiers), and section-specific managers.
  */
 export function AdminSetupPage() {
+  const appEnv = import.meta.env.VITE_APP_ENV;
+  const convexUrl = import.meta.env.VITE_CONVEX_URL;
+  const convexHost = useMemo(() => {
+    try {
+      return new URL(convexUrl).host;
+    } catch {
+      return convexUrl;
+    }
+  }, [convexUrl]);
+
   const {
     isAdmin,
     isRoleLoading,
@@ -65,6 +75,10 @@ export function AdminSetupPage() {
         <h1 className="text-3xl font-bold tracking-tight">
           Admin: League Setup
         </h1>
+
+        <div className="text-sm text-muted-foreground">
+          Env: {appEnv} · Convex: {convexHost}
+        </div>
 
         <Unauthenticated>
           <Card>
