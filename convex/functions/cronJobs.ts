@@ -556,9 +556,14 @@ export const getPreTournamentGolfersSyncTarget = internalQuery({
         .withIndex("by_status", (q) => q.eq("status", "upcoming"))
         .collect();
 
-      const future = upcoming.filter((t) => t.startDate > now);
-      future.sort((a, b) => a.startDate - b.startDate);
-      tournamentId = future[0]?._id;
+      const candidates = upcoming.filter((t) => t.endDate > now);
+      const byStartDateAsc = (a: Doc<"tournaments">, b: Doc<"tournaments">) =>
+        a.startDate - b.startDate;
+
+      const sortedCandidates = [...candidates].sort(byStartDateAsc);
+      const sortedUpcoming = [...upcoming].sort(byStartDateAsc);
+
+      tournamentId = (sortedCandidates[0] ?? sortedUpcoming[0])?._id;
     }
 
     if (!tournamentId) {
@@ -611,7 +616,11 @@ export const runPreTournamentGolfersSync: ReturnType<typeof internalAction> =
 
       const msUntilStart = tournamentStartDate - now;
       const maxLeadMs = 10 * 24 * 60 * 60 * 1000;
-      if (msUntilStart > maxLeadMs) {
+      if (
+        Number.isFinite(tournamentStartDate) &&
+        tournamentStartDate > 0 &&
+        msUntilStart > maxLeadMs
+      ) {
         return {
           ok: true,
           skipped: true,
@@ -779,6 +788,55 @@ export const getTournamentDataGolfInPlayLastUpdateForCron = internalQuery({
   },
 });
 
+function parseDataGolfTeeTimeToMs(value: string): number | null {
+  const raw = value.trim();
+  if (!raw) return null;
+
+  const direct = new Date(raw).getTime();
+  if (!Number.isNaN(direct)) return direct;
+
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?(Z|[+-]\d{2}:?\d{2})?$/.exec(
+      raw,
+    );
+
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = match[6] ? Number(match[6]) : 0;
+  const tzRaw = match[7] ?? null;
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hour) ||
+    !Number.isFinite(minute) ||
+    !Number.isFinite(second)
+  ) {
+    return null;
+  }
+
+  if (tzRaw) {
+    const hh = String(hour).padStart(2, "0");
+    const mm = String(minute).padStart(2, "0");
+    const ss = String(second).padStart(2, "0");
+    const normalizedTz =
+      tzRaw === "Z" ? "Z" : tzRaw.replace(/^([+-]\d{2})(\d{2})$/, "$1:$2");
+
+    const iso = `${match[1]}-${match[2]}-${match[3]}T${hh}:${mm}:${ss}${normalizedTz}`;
+    const parsed = new Date(iso).getTime();
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+
+  const utc = Date.UTC(year, month - 1, day, hour, minute, second);
+  return Number.isNaN(utc) ? null : utc;
+}
+
 export const applyDataGolfLiveSync = internalMutation({
   args: cronJobsValidators.args.applyDataGolfLiveSync,
   handler: async (ctx, args) => {
@@ -798,7 +856,10 @@ export const applyDataGolfLiveSync = internalMutation({
       tournament.status === "active" ||
       tournament.status === "completed" ||
       tournament.livePlay === true ||
-      Date.now() >= tournament.startDate;
+      (tournament.status !== "upcoming" &&
+        Number.isFinite(tournament.startDate) &&
+        tournament.startDate > 0 &&
+        Date.now() >= tournament.startDate);
 
     let tournamentGolfersDeletedNotInField = 0;
 
@@ -818,8 +879,8 @@ export const applyDataGolfLiveSync = internalMutation({
         if (!times.length) return null;
 
         const parsed = times
-          .map((t) => new Date(t).getTime())
-          .filter((ms) => !Number.isNaN(ms));
+          .map((t) => parseDataGolfTeeTimeToMs(t))
+          .filter((ms): ms is number => typeof ms === "number");
         if (!parsed.length) return null;
 
         return Math.min(...parsed);
@@ -925,16 +986,16 @@ export const applyDataGolfLiveSync = internalMutation({
           tournamentId: args.tournamentId,
           golferId,
           group: 0,
-          ...(typeof field.r1_teetime === "string"
+          ...(typeof field.r1_teetime === "string" && field.r1_teetime.trim().length
             ? { roundOneTeeTime: field.r1_teetime }
             : {}),
-          ...(typeof field.r2_teetime === "string"
+          ...(typeof field.r2_teetime === "string" && field.r2_teetime.trim().length
             ? { roundTwoTeeTime: field.r2_teetime }
             : {}),
-          ...(typeof field.r3_teetime === "string"
+          ...(typeof field.r3_teetime === "string" && field.r3_teetime.trim().length
             ? { roundThreeTeeTime: field.r3_teetime }
             : {}),
-          ...(typeof field.r4_teetime === "string"
+          ...(typeof field.r4_teetime === "string" && field.r4_teetime.trim().length
             ? { roundFourTeeTime: field.r4_teetime }
             : {}),
           ...(typeof ranking?.owgr_rank === "number"
@@ -953,16 +1014,16 @@ export const applyDataGolfLiveSync = internalMutation({
         tournamentGolfersInserted += 1;
       } else {
         const patch: Partial<Doc<"tournamentGolfers">> = {
-          ...(typeof field.r1_teetime === "string"
+          ...(typeof field.r1_teetime === "string" && field.r1_teetime.trim().length
             ? { roundOneTeeTime: field.r1_teetime }
             : {}),
-          ...(typeof field.r2_teetime === "string"
+          ...(typeof field.r2_teetime === "string" && field.r2_teetime.trim().length
             ? { roundTwoTeeTime: field.r2_teetime }
             : {}),
-          ...(typeof field.r3_teetime === "string"
+          ...(typeof field.r3_teetime === "string" && field.r3_teetime.trim().length
             ? { roundThreeTeeTime: field.r3_teetime }
             : {}),
-          ...(typeof field.r4_teetime === "string"
+          ...(typeof field.r4_teetime === "string" && field.r4_teetime.trim().length
             ? { roundFourTeeTime: field.r4_teetime }
             : {}),
           ...(typeof ranking?.owgr_rank === "number"
