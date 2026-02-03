@@ -624,32 +624,18 @@ export const runPreTournamentGolfersSync: ReturnType<typeof internalAction> =
       }
 
       const tour = "pga" as const;
-      const [fieldUpdates, rankings, inPlay] = await Promise.all([
+      const [fieldUpdates, rankings] = await Promise.all([
         ctx.runAction(api.functions.datagolf.fetchFieldUpdates, {
           options: { tour, filterWithdrawn: false },
         }),
         ctx.runAction(api.functions.datagolf.fetchDataGolfRankings, {}),
-        ctx.runAction(api.functions.datagolf.fetchLiveModelPredictions, {
-          options: { tour, onlyActivePlayers: true },
-        }),
       ]);
-
-      const liveStats = Array.isArray(inPlay.data)
-        ? (inPlay.data as LiveModelPlayer[])
-        : [];
-
-      const dataGolfEventNameFromLive =
-        typeof inPlay.info?.event_name === "string" ? inPlay.info.event_name :
-        "";
       const dataGolfEventNameFromField =
         typeof (fieldUpdates as { event_name?: unknown }).event_name ===
         "string"
           ? (fieldUpdates as { event_name: string }).event_name
           : "";
-      const dataGolfEventName =
-        dataGolfEventNameFromLive.trim().length > 0
-          ? dataGolfEventNameFromLive
-          : dataGolfEventNameFromField;
+      const dataGolfEventName = dataGolfEventNameFromField;
 
       if (!dataGolfEventName.trim()) {
         return {
@@ -709,7 +695,7 @@ export const runPreTournamentGolfersSync: ReturnType<typeof internalAction> =
           tournamentId,
           field,
           rankings: rankingsList,
-          liveStats,
+          liveStats: [],
           eventName: dataGolfEventName,
         },
       );
@@ -821,7 +807,8 @@ export const applyDataGolfLiveSync = internalMutation({
         (args.liveStats as LiveModelPlayer[]).map((p) => p.dg_id),
       );
       const fieldApiIds = new Set(args.field.map((f) => f.dg_id));
-      const activeApiIds = liveFieldApiIds.size > 0 ? liveFieldApiIds : fieldApiIds;
+      const activeApiIds =
+        liveFieldApiIds.size > 0 ? liveFieldApiIds : fieldApiIds;
 
       const earliestRoundOneMs = (() => {
         const times = args.field
@@ -851,7 +838,9 @@ export const applyDataGolfLiveSync = internalMutation({
 
       const existingTournamentGolfers = await ctx.db
         .query("tournamentGolfers")
-        .withIndex("by_tournament", (q) => q.eq("tournamentId", args.tournamentId))
+        .withIndex("by_tournament", (q) =>
+          q.eq("tournamentId", args.tournamentId),
+        )
         .collect();
 
       for (const tg of existingTournamentGolfers) {
