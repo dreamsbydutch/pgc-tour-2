@@ -23,6 +23,7 @@ import {
   buildTournamentUrl,
   requireAdminForAction,
   requireAdminForQuery,
+  buildGroupsEmailLeaderboardTemplateParams,
   sendBrevoTemplateEmailBatch,
   sendGroupsEmailImpl,
 } from "../utils/emails";
@@ -124,7 +125,8 @@ export const getActiveTourCardRecipientsForTournament = internalQuery({
 
 /**
  * Lists unique email recipients for the “missing team” reminder.
- * Targets members with an “active” tour card (same season as tournament) but no team submitted.
+ * Targets members where `isActive !== false` who have no team submitted for that upcoming tournament,
+ * including members with no tour card.
  */
 export const getMissingTeamReminderRecipientsForUpcomingTournament =
   internalQuery({
@@ -143,14 +145,14 @@ export const getMissingTeamReminderRecipientsForUpcomingTournament =
         } as const;
       }
 
-      const tourCards = await ctx.db
-        .query("tourCards")
-        .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-        .collect();
-
       const teams = await ctx.db
         .query("teams")
         .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
+        .collect();
+
+      const tourCards = await ctx.db
+        .query("tourCards")
+        .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
         .collect();
 
       const tourCardsWithTeams = new Set<string>(
@@ -173,14 +175,75 @@ export const getMissingTeamReminderRecipientsForUpcomingTournament =
         [...missingByMemberId.keys()].map((memberId) => ctx.db.get(memberId)),
       );
 
-      const recipients = members
-        .filter((m): m is Doc<"members"> => Boolean(m))
-        .filter((m) => m.isActive !== false)
-        .map((member) => ({
-          email: member.email,
+      const activeMembers = (await ctx.db.query("members").collect()).filter(
+        (m) => m.isActive !== false,
+      );
+
+      const membersWithTourCards = new Set<Id<"members">>();
+      for (const tc of tourCards) membersWithTourCards.add(tc.memberId);
+
+      const missingByEmail = new Map<
+        string,
+        {
+          email: string;
+          name: string;
+          missingTeamCount: number;
+        }
+      >();
+
+      for (const member of members.filter((m): m is Doc<"members"> =>
+        Boolean(m),
+      )) {
+        if (member.isActive === false) continue;
+        const email = (member.email ?? "").trim();
+        if (!email) continue;
+        const key = email.toLowerCase();
+        const count = missingByMemberId.get(member._id) ?? 1;
+        if (!missingByEmail.has(key)) {
+          missingByEmail.set(key, {
+            email,
+            name: formatMemberName(member),
+            missingTeamCount: count,
+          });
+        } else {
+          const existing = missingByEmail.get(key)!;
+          existing.missingTeamCount = Math.max(
+            existing.missingTeamCount,
+            count,
+          );
+        }
+      }
+
+      const teamTourCardIds = Array.from(
+        new Set(teams.map((t) => t.tourCardId)),
+      ) as Id<"tourCards">[];
+      const teamTourCards = await Promise.all(
+        teamTourCardIds.map((id) => ctx.db.get(id)),
+      );
+      const membersWithAnyTeam = new Set<Id<"members">>();
+      for (const tc of teamTourCards) {
+        if (tc) membersWithAnyTeam.add(tc.memberId);
+      }
+
+      for (const member of activeMembers) {
+        if (!member || member.isActive === false) continue;
+        const email = (member.email ?? "").trim();
+        if (!email) continue;
+        if (membersWithAnyTeam.has(member._id)) continue;
+        const key = email.toLowerCase();
+        if (missingByEmail.has(key)) continue;
+
+        const missingTeamCount = membersWithTourCards.has(member._id) ? 1 : 1;
+        missingByEmail.set(key, {
+          email,
           name: formatMemberName(member),
-          missingTeamCount: missingByMemberId.get(member._id) ?? 1,
-        }));
+          missingTeamCount,
+        });
+      }
+
+      const recipients = [...missingByEmail.values()].sort((a, b) =>
+        a.email.localeCompare(b.email),
+      );
 
       return {
         ok: true,
@@ -314,89 +377,10 @@ export const adminGetGroupsEmailPreview: ReturnType<typeof query> = query({
       .filter((m) => m.isActive !== false).length;
 
     const championsComputed = previous
-      ? await (async () => {
-          const [pos1, posT1] = await Promise.all([
-            ctx.db
-              .query("teams")
-              .withIndex("by_tournament_position", (q) =>
-                q.eq("tournamentId", previous._id).eq("position", "1"),
-              )
-              .collect(),
-            ctx.db
-              .query("teams")
-              .withIndex("by_tournament_position", (q) =>
-                q.eq("tournamentId", previous._id).eq("position", "T1"),
-              )
-              .collect(),
-          ]);
-
-          const winners = [...pos1, ...posT1];
-          if (winners.length === 0) return "";
-
-          const tourCardIds = Array.from(
-            new Set(winners.map((t) => t.tourCardId)),
-          );
-          const tourCards = await Promise.all(
-            tourCardIds.map((id) => ctx.db.get(id)),
-          );
-
-          const tourCardDocs = tourCards.filter((tc): tc is Doc<"tourCards"> =>
-            Boolean(tc),
-          );
-
-          const tourIdSet = new Set(tourCardDocs.map((tc) => tc.tourId));
-
-          const tours = await Promise.all(
-            [...tourIdSet].map((tourId) => ctx.db.get(tourId)),
-          );
-          const shortFormByTourId = new Map(
-            tours
-              .filter((t): t is Doc<"tours"> => Boolean(t))
-              .map((t) => [t._id, t.shortForm] as const),
-          );
-
-          const tourCardById = new Map(
-            tourCardDocs.map((tc) => [tc._id, tc] as const),
-          );
-
-          const formatScore = (score: unknown) => {
-            if (typeof score !== "number" || !Number.isFinite(score)) return "";
-            if (score === 0) return "E";
-            return score > 0 ? `+${score}` : `${score}`;
-          };
-
-          const entries = winners
-            .map((team) => {
-              const tc = tourCardById.get(team.tourCardId);
-              if (!tc) return null;
-              const tourShort = shortFormByTourId.get(tc.tourId) ?? "";
-              const scoreToPar = formatScore(team.score);
-              const scorePart = scoreToPar ? ` (${scoreToPar})` : "";
-              return {
-                tourShort,
-                displayName: tc.displayName,
-                text: `${tc.displayName}${scorePart}`,
-              };
-            })
-            .filter(Boolean) as Array<{
-            tourShort: string;
-            displayName: string;
-            text: string;
-          }>;
-
-          entries.sort((a, b) => {
-            if (a.tourShort !== b.tourShort) {
-              return a.tourShort.localeCompare(b.tourShort);
-            }
-            return a.displayName.localeCompare(b.displayName);
-          });
-
-          const texts = entries.map((e) => e.text);
-          if (texts.length === 0) return "";
-          if (texts.length === 1) return texts[0] ?? "";
-          if (texts.length === 2) return `${texts[0]} and ${texts[1]}`;
-          return `${texts.slice(0, -1).join(", ")}, and ${texts[texts.length - 1]}`;
-        })()
+      ? await getChampionsStringForTournamentId({
+          ctx,
+          tournamentId: previous._id,
+        })
       : "";
 
     return {
@@ -491,12 +475,26 @@ export const sendMissingTeamReminderForUpcomingTournament: ReturnType<
       "BREVO_MISSING_TEAM_REMINDER_TEMPLATE_ID",
     );
 
+    const baseUrl = getAppBaseUrl({ allowLocalhostFallback: false });
+    const nextUpUrl = buildTournamentUrl({
+      baseUrl,
+      tournamentId: String(tournament._id),
+    });
+    const nextUpLogoUrl =
+      typeof tournament.logoUrl === "string" && tournament.logoUrl
+        ? tournament.logoUrl
+        : "";
+    const nextUpLogoDisplay = nextUpLogoUrl ? "inline-block" : "none";
+
     const recipients = context.recipients.map((r) => ({
       email: r.email,
       name: r.name,
       params: {
         tournamentName: tournament.name,
         missingTeamCount: r.missingTeamCount,
+        nextUpUrl,
+        nextUpLogoUrl,
+        nextUpLogoDisplay,
       },
     }));
 
@@ -586,41 +584,10 @@ export const sendGroupsEmailTest: ReturnType<typeof action> = action({
     const meRow = meIndex >= 10 ? leaderboardRows[meIndex] : null;
     const meRowDisplay = meRow ? "table-row" : "none";
 
-    const leaderboardParams = Object.fromEntries(
-      Array.from({ length: 10 }, (_, idx) => {
-        const row = top10[idx] ?? {};
-        const n = idx + 1;
-
-        const isChampion = row.isChampion === true;
-        const isMe =
-          recipientTourCardId &&
-          typeof row.tourCardId !== "undefined" &&
-          String(row.tourCardId) === recipientTourCardId;
-
-        const baseBg = idx % 2 === 0 ? "#ffffff" : "#f8fafc";
-        let bg = baseBg;
-        let borderLeft = "0px solid transparent";
-
-        if (isChampion) {
-          bg = "#fef3c7";
-          borderLeft = "3px solid #f59e0b";
-        }
-
-        if (isMe) {
-          bg = isChampion ? "#fef3c7" : "#dbeafe";
-          borderLeft = "3px solid #2563eb";
-        }
-
-        return [
-          [`leaderboardTop${n}Pos`, row.position ?? ""],
-          [`leaderboardTop${n}Name`, row.displayName ?? ""],
-          [`leaderboardTop${n}Tour`, row.tourShortForm ?? ""],
-          [`leaderboardTop${n}Score`, row.scoreText ?? ""],
-          [`leaderboardTop${n}Bg`, bg],
-          [`leaderboardTop${n}BorderLeft`, borderLeft],
-        ];
-      }).flat(),
-    );
+    const leaderboardParams = buildGroupsEmailLeaderboardTemplateParams({
+      leaderboardRows,
+      recipientTourCardId,
+    });
 
     const summary = await sendBrevoTemplateEmailBatch({
       apiKey,
@@ -642,13 +609,6 @@ export const sendGroupsEmailTest: ReturnType<typeof action> = action({
             nextUpUrl,
             nextUpLogoUrl,
             nextUpLogoDisplay,
-            leaderboardMeRowDisplay: meRowDisplay,
-            leaderboardMePos: meRow?.position ?? "",
-            leaderboardMeName: meRow?.displayName ?? "",
-            leaderboardMeTour: meRow?.tourShortForm ?? "",
-            leaderboardMeScore: meRow?.scoreText ?? "",
-            leaderboardMeBg: "#dbeafe",
-            leaderboardMeBorderLeft: "3px solid #2563eb",
             ...leaderboardParams,
             customBlurb,
           },
@@ -823,6 +783,17 @@ export const sendMissingTeamReminderEmailTest: ReturnType<typeof action> =
 
       const tournament = context.tournament;
 
+      const baseUrl = getAppBaseUrl({ allowLocalhostFallback: true });
+      const nextUpUrl = buildTournamentUrl({
+        baseUrl,
+        tournamentId: String(tournament._id),
+      });
+      const nextUpLogoUrl =
+        typeof tournament.logoUrl === "string" && tournament.logoUrl
+          ? tournament.logoUrl
+          : "";
+      const nextUpLogoDisplay = nextUpLogoUrl ? "inline-block" : "none";
+
       const summary = await sendBrevoTemplateEmailBatch({
         apiKey,
         templateId,
@@ -832,6 +803,9 @@ export const sendMissingTeamReminderEmailTest: ReturnType<typeof action> =
             params: {
               tournamentName: tournament.name,
               missingTeamCount: context.recipients.length,
+              nextUpUrl,
+              nextUpLogoUrl,
+              nextUpLogoDisplay,
             },
           },
         ],

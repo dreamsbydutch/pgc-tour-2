@@ -15,11 +15,11 @@ import type {
   SendGroupsEmailImplArgs,
 } from "../types/emails";
 
-export function formatMemberName(member: Doc<"members">): string | undefined {
+export function formatMemberName(member: Doc<"members">): string {
   const first = (member.firstname ?? "").trim();
   const last = (member.lastname ?? "").trim();
-  const full = `${first} ${last}`.trim();
-  return full.length > 0 ? full : undefined;
+  const full = `${first[0]}. ${last}`.trim();
+  return full.length > 0 ? full : "";
 }
 
 export function formatScoreToPar(score: number | undefined): string {
@@ -52,6 +52,71 @@ export function formatNameListWithAnd(values: string[]): string {
   if (values.length === 1) return values[0] ?? "";
   if (values.length === 2) return `${values[0]} and ${values[1]}`;
   return `${values.slice(0, -1).join(", ")}, and ${values[values.length - 1]}`;
+}
+
+export function buildGroupsEmailLeaderboardTemplateParams(args: {
+  leaderboardRows: LeaderboardTopRow[];
+  recipientTourCardId: string;
+}): Record<string, string> {
+  const recipientTourCardId = (args.recipientTourCardId ?? "").trim();
+  const leaderboardRows = args.leaderboardRows ?? [];
+
+  const top10 = leaderboardRows.slice(0, 10);
+
+  const meIndex = recipientTourCardId
+    ? leaderboardRows.findIndex(
+        (row) =>
+          typeof row.tourCardId !== "undefined" &&
+          String(row.tourCardId) === recipientTourCardId,
+      )
+    : -1;
+
+  const meRow = meIndex >= 10 ? leaderboardRows[meIndex] : null;
+  const meRowDisplay = meRow ? "table-row" : "none";
+
+  const params: Record<string, string> = {
+    leaderboardMeRowDisplay: meRowDisplay,
+    leaderboardMePos: meRow?.position ?? "",
+    leaderboardMeName: meRow?.displayName ?? "",
+    leaderboardMeTour: meRow?.tourShortForm ?? "",
+    leaderboardMeScore: meRow?.scoreText ?? "",
+    leaderboardMeBg: "#dbeafe",
+    leaderboardMeBorderLeft: "3px solid #2563eb",
+  };
+
+  for (let idx = 0; idx < 10; idx += 1) {
+    const row = top10[idx] ?? ({} as Partial<LeaderboardTopRow>);
+    const n = idx + 1;
+
+    const isChampion = row.isChampion === true;
+    const isMe =
+      Boolean(recipientTourCardId) &&
+      typeof row.tourCardId !== "undefined" &&
+      String(row.tourCardId) === recipientTourCardId;
+
+    const baseBg = idx % 2 === 0 ? "#ffffff" : "#f8fafc";
+    let bg = baseBg;
+    let borderLeft = "0px solid transparent";
+
+    if (isChampion) {
+      bg = "#fef3c7";
+      borderLeft = "3px solid #f59e0b";
+    }
+
+    if (isMe) {
+      bg = isChampion ? "#fef3c7" : "#dbeafe";
+      borderLeft = "3px solid #2563eb";
+    }
+
+    params[`leaderboardTop${n}Pos`] = row.position ?? "";
+    params[`leaderboardTop${n}Name`] = row.displayName ?? "";
+    params[`leaderboardTop${n}Tour`] = row.tourShortForm ?? "";
+    params[`leaderboardTop${n}Score`] = row.scoreText ?? "";
+    params[`leaderboardTop${n}Bg`] = bg;
+    params[`leaderboardTop${n}BorderLeft`] = borderLeft;
+  }
+
+  return params;
 }
 
 export async function getLeaderboardRowsForTournament(

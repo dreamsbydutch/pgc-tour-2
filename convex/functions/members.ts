@@ -1022,15 +1022,17 @@ export const recomputeMemberActiveFlags = mutation({
         .filter((s) =>
           currentYear === null
             ? false
-            : s.year === currentYear || s.year === currentYear - 1,
+            : s.year === currentYear || s.year === previousYear,
         )
         .map((s) => s._id),
     );
 
     const tourCards = await ctx.db.query("tourCards").collect();
     const membersWithActiveYearTourCard = new Set<string>();
+    const membersWithAnyTourCard = new Set<string>();
 
     for (const tc of tourCards) {
+      membersWithAnyTourCard.add(tc.memberId);
       if (activeSeasonIds.has(tc.seasonId)) {
         membersWithActiveYearTourCard.add(tc.memberId);
       }
@@ -1044,7 +1046,11 @@ export const recomputeMemberActiveFlags = mutation({
     const now = Date.now();
 
     for (const m of members) {
-      const nextIsActive = membersWithActiveYearTourCard.has(m._id);
+      const hasClerkId =
+        typeof m.clerkId === "string" && m.clerkId.trim().length > 0;
+      const isNewMember = hasClerkId && !membersWithAnyTourCard.has(m._id);
+      const nextIsActive =
+        membersWithActiveYearTourCard.has(m._id) || isNewMember;
 
       if (m.isActive !== nextIsActive) {
         await ctx.db.patch(m._id, { isActive: nextIsActive, updatedAt: now });
