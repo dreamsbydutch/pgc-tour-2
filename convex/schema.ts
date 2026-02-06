@@ -108,8 +108,7 @@ const schema = defineSchema({
     updatedAt: v.optional(v.number()),
   })
     .index("by_name", ["name"])
-    .index("by_api_id", ["apiId"])
-    .index("by_location", ["location"]),
+    .index("by_api_id", ["apiId"]),
 
   // =========================================================================
   // TOURNAMENTS & COMPETITION

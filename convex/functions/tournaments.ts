@@ -6,7 +6,7 @@
  * through flexible configuration rather than multiple specialized functions.
  */
 
-import { query, mutation } from "../_generated/server";
+import { query, internalQuery, mutation, internalMutation } from "../_generated/server";
 import { requireAdmin } from "../auth";
 import { processData } from "../utils/processData";
 import {
@@ -23,16 +23,24 @@ import {
   generateTournamentAnalytics,
   getCalculatedStatus,
   getOptimizedTournaments,
+  getPlayoffTournamentsBySeason,
   getTournamentSortFunction,
 } from "../utils/tournaments";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type {
   DeleteResponse,
   TournamentDoc,
   GolferDoc,
   TournamentGolferDoc,
   TournamentEnhancementOptions,
+  EnhancedTournamentDoc,
 } from "../types/types";
+import { isPlayoffTier } from "../utils";
+import {
+  TeamsCronGolferSnap,
+  TeamsCronTournamentSnap,
+} from "../types/cronJobs";
+import { internal } from "../_generated/api";
 
 /**
  * Create tournaments with comprehensive options
@@ -273,6 +281,165 @@ export const getTournaments = query({
     return basicTournaments;
   },
 });
+export const getTournaments_Internal = internalQuery({
+  args: tournamentsValidators.args.fetchTournamentOptions,
+  handler: async (ctx, args) => {
+    const now = parseInt(new Date().toISOString());
+    if (args.tournamentId) {
+      const tournament = await ctx.db.get(args.tournamentId);
+      if (!tournament) return undefined;
+
+      return await enhanceTournament(ctx, tournament, args || {});
+    }
+    if (args.tournamentIds) {
+      const tournaments = await Promise.all(
+        args.tournamentIds.map(async (id) => {
+          const tournament = await ctx.db.get(id);
+          return tournament
+            ? await enhanceTournament(ctx, tournament, args || {})
+            : undefined;
+        }),
+      );
+      return tournaments.filter((t) => t !== undefined);
+    }
+    if (args.tournamentType === "active") {
+      let tournament = await ctx.db
+        .query("tournaments")
+        .withIndex("by_status", (q) => q.eq("status", "active"))
+        .first();
+      if (!tournament) {
+        tournament = await ctx.db
+          .query("tournaments")
+          .filter((q) =>
+            q.and(
+              q.eq(q.field("livePlay"), true),
+              q.neq(q.field("status"), "completed"),
+              q.neq(q.field("status"), "cancelled"),
+            ),
+          )
+          .first();
+        if (!tournament) {
+          tournament = await ctx.db
+            .query("tournaments")
+            .withIndex("by_dates", (q) => q.lte("startDate", now))
+            .filter((q) =>
+              q.and(
+                q.gte(q.field("endDate"), now),
+                q.neq(q.field("status"), "completed"),
+                q.neq(q.field("status"), "cancelled"),
+              ),
+            )
+            .first();
+        }
+        if (!tournament) {
+          return undefined;
+        }
+      }
+
+      return await enhanceTournament(ctx, tournament, args || {});
+    }
+    if (args.tournamentType === "next") {
+      let upcomingTournaments = await ctx.db
+        .query("tournaments")
+        .withIndex("by_status", (q) => q.eq("status", "upcoming"))
+        .collect();
+
+      const future = upcomingTournaments.filter((t) => t.startDate > now);
+      future.sort((a, b) => a.startDate - b.startDate);
+      const nextTournament = future[0];
+      if (!nextTournament) {
+        return undefined;
+      }
+
+      return await enhanceTournament(ctx, nextTournament, args || {});
+    }
+    if (args.tournamentType === "recent") {
+      let upcomingTournaments = await ctx.db
+        .query("tournaments")
+        .withIndex("by_status", (q) => q.eq("status", "completed"))
+        .collect();
+
+      const future = upcomingTournaments.filter((t) => t.startDate > now);
+      future.sort((a, b) => b.startDate - a.startDate);
+      const nextTournament = future[0];
+      if (!nextTournament) {
+        return undefined;
+      }
+
+      return await enhanceTournament(ctx, nextTournament, args || {});
+    }
+    if (args.tournamentType === "completed") {
+      let upcomingTournaments = await ctx.db
+        .query("tournaments")
+        .withIndex("by_status", (q) => q.eq("status", "completed"))
+        .collect();
+      if (!upcomingTournaments.length) {
+        return undefined;
+      }
+      if (args.seasonId) {
+        upcomingTournaments = upcomingTournaments.filter(
+          (t) => t.seasonId === args.seasonId,
+        );
+      }
+      if (args.tierId) {
+        upcomingTournaments = upcomingTournaments.filter(
+          (t) => t.tierId === args.tierId,
+        );
+      }
+      upcomingTournaments.sort((a, b) => a.startDate - b.startDate);
+
+      return await Promise.all(
+        upcomingTournaments.map((t) => enhanceTournament(ctx, t, args || {})),
+      );
+    }
+    if (args.tournamentType === "upcoming") {
+      let upcomingTournaments = await ctx.db
+        .query("tournaments")
+        .withIndex("by_status", (q) => q.eq("status", "upcoming"))
+        .collect();
+      if (!upcomingTournaments.length) {
+        return undefined;
+      }
+      if (args.seasonId) {
+        upcomingTournaments = upcomingTournaments.filter(
+          (t) => t.seasonId === args.seasonId,
+        );
+      }
+      if (args.tierId) {
+        upcomingTournaments = upcomingTournaments.filter(
+          (t) => t.tierId === args.tierId,
+        );
+      }
+      upcomingTournaments.sort((a, b) => a.startDate - b.startDate);
+
+      return await Promise.all(
+        upcomingTournaments.map((t) => enhanceTournament(ctx, t, args || {})),
+      );
+    }
+    if (args.tournamentType === "all") {
+      let upcomingTournaments = await ctx.db.query("tournaments").collect();
+      if (!upcomingTournaments.length) {
+        return undefined;
+      }
+      if (args.seasonId) {
+        upcomingTournaments = upcomingTournaments.filter(
+          (t) => t.seasonId === args.seasonId,
+        );
+      }
+      if (args.tierId) {
+        upcomingTournaments = upcomingTournaments.filter(
+          (t) => t.tierId === args.tierId,
+        );
+      }
+      upcomingTournaments.sort((a, b) => a.startDate - b.startDate);
+
+      return await Promise.all(
+        upcomingTournaments.map((t) => enhanceTournament(ctx, t, args || {})),
+      );
+    }
+    return undefined;
+  },
+});
 
 /**
  * Tournament leaderboard “view model” payload for the tournament screen.
@@ -434,7 +601,7 @@ export const getTournamentLeaderboardView = query({
 });
 
 export const hasTournamentGolfers = query({
-  args: tournamentsValidators.args.hasTournamentGolfers,
+  args: tournamentsValidators.args.tournamentId,
   handler: async (ctx, args) => {
     const tournamentGolfer = await ctx.db
       .query("tournamentGolfers")
@@ -448,7 +615,7 @@ export const hasTournamentGolfers = query({
 });
 
 export const getTournamentPickPool = query({
-  args: tournamentsValidators.args.getTournamentPickPool,
+  args: tournamentsValidators.args.tournamentId,
   handler: async (ctx, args) => {
     const tournamentGolfers = await ctx.db
       .query("tournamentGolfers")
@@ -499,31 +666,6 @@ export const getAllTournaments = query({
   },
 });
 
-/**
- * Frontend convenience: fetch a tournament with its related docs.
- *
- * Includes:
- * - `course`
- * - `season`
- */
-export const getTournamentWithDetails = query({
-  args: tournamentsValidators.args.getTournamentWithDetails,
-  handler: async (ctx, args) => {
-    const tournament = await ctx.db.get(args.tournamentId);
-    if (!tournament) return null;
-
-    const [course, season] = await Promise.all([
-      tournament.courseId ? ctx.db.get(tournament.courseId) : null,
-      tournament.seasonId ? ctx.db.get(tournament.seasonId) : null,
-    ]);
-
-    return {
-      tournament,
-      course,
-      season,
-    };
-  },
-});
 
 /**
  * Update tournaments with comprehensive options
@@ -781,5 +923,23 @@ export const deleteTournaments = mutation({
         deletedData: deletedTournamentData,
       };
     }
+  },
+});
+
+export const markTournamentCompleted = internalMutation({
+  args: tournamentsValidators.args.tournamentId,
+  handler: async (ctx, args) => {
+    const tournament = await ctx.db.get(args.tournamentId);
+    if (!tournament) throw new Error("Tournament not found");
+
+    await ctx.db.patch(args.tournamentId, {
+      status: "completed",
+      currentRound: 5,
+      livePlay: false,
+      leaderboardLastUpdatedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    return { ok: true };
   },
 });

@@ -62,9 +62,13 @@ export interface EnhancedTournamentDoc extends TournamentDoc {
   course?: CourseDoc;
   tours?: TourDoc[];
   teams?: TeamDoc[];
+  tourCards?: TourCardDoc[];
   teamCount?: number;
-  golfers?: (TournamentGolferDoc & { golfer: GolferDoc | null })[];
+  golfers?: (TournamentGolferDoc & GolferDoc)[];
   statistics?: TournamentStatistics;
+  isPlayoff?: boolean;
+  eventIndex?: number;
+  firstPlayoffTournamentId?: Id<"tournaments"> | null;
 }
 
 export interface TourStatistics {
@@ -254,8 +258,11 @@ export interface TournamentEnhancementOptions extends BaseEnhancementOptions {
   includeCourse?: boolean;
   includeTours?: boolean;
   includeTeams?: boolean;
+  includeTourCards?: boolean;
   includeGolfers?: boolean;
   includeLeaderboard?: boolean;
+  includePlayoffs?: boolean;
+  includeInPlayData?: boolean;
 }
 
 export interface TournamentQueryOptions

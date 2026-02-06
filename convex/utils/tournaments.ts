@@ -1,4 +1,3 @@
-import { dateUtils } from "./dateUtils";
 import type { TournamentStatus } from "../types/tournaments";
 import type {
   AnalyticsResult,
@@ -12,6 +11,9 @@ import type {
   TournamentSortFunction,
   TournamentSortOptions,
 } from "../types/types";
+import { Doc, Id } from "../_generated/dataModel";
+import { QueryCtx } from "../_generated/server";
+import { isPlayoffTier } from "./validation";
 
 /**
  * Calculate tournament duration in days.
@@ -20,7 +22,7 @@ export function calculateTournamentDuration(
   startDate: number,
   endDate: number,
 ): number {
-  return dateUtils.daysBetween(startDate, endDate);
+  return (endDate - startDate) / (1000 * 60 * 60 * 24);
 }
 
 /**
@@ -289,6 +291,22 @@ export async function enhanceTournament(
     enhanced.teamCount = teams.length;
   }
 
+  if (enhance.includeTourCards) {
+    const tourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
+      .collect();
+    enhanced.tourCards = tourCards;
+  }
+
+  if (enhance.includeTours) {
+    const tours = await ctx.db
+      .query("tours")
+      .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
+      .collect();
+    enhanced.tours = tours;
+  }
+
   if (enhance.includeGolfers) {
     const tournamentGolfers = await ctx.db
       .query("tournamentGolfers")
@@ -298,11 +316,11 @@ export async function enhanceTournament(
     const golfers = await Promise.all(
       tournamentGolfers.map(async (tg) => {
         const golfer = await ctx.db.get(tg.golferId);
-        return golfer ? { ...tg, golfer } : null;
+        return golfer ? { ...tg, ...golfer } : null;
       }),
     );
     enhanced.golfers = golfers.filter(Boolean) as Array<
-      TournamentGolferDoc & { golfer: GolferDoc }
+      TournamentGolferDoc & GolferDoc
     >;
   }
 
@@ -329,6 +347,42 @@ export async function enhanceTournament(
           ? Math.max(...teams.map((team) => team.points || 0))
           : 0,
     };
+  }
+
+  if (enhance.includePlayoffs) {
+    const tier = await ctx.db.get(tournament.tierId);
+    const isPlayoff = isPlayoffTier((tier?.name as string | undefined) ?? null);
+
+    let eventIndex: 1 | 2 | 3 = 1;
+    let firstPlayoffTournamentId: Id<"tournaments"> | null = null;
+
+    if (isPlayoff) {
+      const tournaments: Doc<"tournaments">[] = await ctx.db
+        .query("tournaments")
+        .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
+        .collect();
+
+      const withTier = await Promise.all(
+        tournaments.map(async (t) => {
+          const tier = await ctx.db.get(t.tierId);
+          return {
+            tournament: t,
+            tierName: (tier?.name as string | undefined) ?? null,
+          };
+        }),
+      );
+
+      const playoffEvents = withTier
+        .filter(({ tierName }) => isPlayoffTier(tierName))
+        .map(({ tournament }) => tournament)
+        .sort((a, b) => a.startDate - b.startDate);
+      const idx = playoffEvents.findIndex((t) => t._id === tournament._id);
+      eventIndex = idx === -1 ? 1 : (Math.min(3, idx + 1) as 1 | 2 | 3);
+      firstPlayoffTournamentId = playoffEvents[0]?._id ?? null;
+    }
+    enhanced.isPlayoff = isPlayoff;
+    enhanced.eventIndex = eventIndex;
+    enhanced.firstPlayoffTournamentId = firstPlayoffTournamentId;
   }
 
   return enhanced;
@@ -368,4 +422,29 @@ export async function generateTournamentAnalytics(
       {} as Record<string, number>,
     ),
   };
+}
+
+export async function getPlayoffTournamentsBySeason(
+  ctx: QueryCtx,
+  seasonId: Id<"seasons">,
+) {
+  const tournaments: Doc<"tournaments">[] = await ctx.db
+    .query("tournaments")
+    .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
+    .collect();
+
+  const withTier = await Promise.all(
+    tournaments.map(async (t) => {
+      const tier = await ctx.db.get(t.tierId);
+      return {
+        tournament: t,
+        tierName: (tier?.name as string | undefined) ?? null,
+      };
+    }),
+  );
+
+  return withTier
+    .filter(({ tierName }) => isPlayoffTier(tierName))
+    .map(({ tournament }) => tournament)
+    .sort((a, b) => a.startDate - b.startDate);
 }

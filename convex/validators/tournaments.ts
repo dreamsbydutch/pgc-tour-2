@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import type { ValidateTournamentDataInput } from "../types/tournaments";
-import type { ValidationResult } from "../types/types";
 import { validators } from "./common";
+import { ValidationResult } from "../types/types";
 
 export const tournamentsValidators = {
   args: {
@@ -113,6 +113,37 @@ export const tournamentsValidators = {
         }),
       ),
     },
+    tournamentId: {
+      tournamentId: v.id("tournaments"),
+    },
+    optionalTournamentId: {
+      tournamentId: v.optional(v.id("tournaments")),
+    },
+    fetchTournamentOptions: {
+      seasonId: v.optional(v.id("seasons")),
+      tierId: v.optional(v.id("tiers")),
+      tournamentId: v.optional(v.id("tournaments")),
+      tournamentIds: v.optional(v.array(v.id("tournaments"))),
+      tournamentType: v.optional(
+        v.union(
+          v.literal("active"),
+          v.literal("next"),
+          v.literal("recent"),
+          v.literal("completed"),
+          v.literal("upcoming"),
+          v.literal("all"),
+        ),
+      ),
+      includeSeason: v.optional(v.boolean()),
+      includeTier: v.optional(v.boolean()),
+      includeCourse: v.optional(v.boolean()),
+      includeTours: v.optional(v.boolean()),
+      includeTeams: v.optional(v.boolean()),
+      includeGolfers: v.optional(v.boolean()),
+      includeTourCards: v.optional(v.boolean()),
+      includeLeaderboard: v.optional(v.boolean()),
+      includePlayoffs: v.optional(v.boolean()),
+    },
     getTournamentLeaderboardView: {
       tournamentId: v.id("tournaments"),
       options: v.optional(
@@ -130,17 +161,8 @@ export const tournamentsValidators = {
         }),
       ),
     },
-    hasTournamentGolfers: {
-      tournamentId: v.id("tournaments"),
-    },
-    getTournamentPickPool: {
-      tournamentId: v.id("tournaments"),
-    },
     getAllTournaments: {
       seasonId: v.optional(v.id("seasons")),
-    },
-    getTournamentWithDetails: {
-      tournamentId: v.id("tournaments"),
     },
     updateTournaments: {
       clerkId: v.optional(v.string()),
@@ -215,4 +237,4 @@ export const tournamentsValidators = {
 
     return { isValid: errors.length === 0, errors };
   },
-} as const;
+};
