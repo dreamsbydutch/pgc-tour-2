@@ -231,19 +231,6 @@ export const getCourseByApiId = query({
 });
 
 /**
- * Get courses by location
- */
-export const getCoursesByLocation = query({
-  args: coursesValidators.args.getCoursesByLocation,
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("courses")
-      .withIndex("by_location", (q) => q.eq("location", args.location))
-      .collect();
-  },
-});
-
-/**
  * Update courses with comprehensive options
  *
  * @example

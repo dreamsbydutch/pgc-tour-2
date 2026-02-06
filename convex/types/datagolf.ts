@@ -533,14 +533,13 @@ export interface LiveModelPredictionsOptions {
 }
 
 export interface LiveModelPlayer {
-  country: string;
+  country?: string | undefined;
   current_pos: string;
   current_score: number;
   dg_id: number;
   end_hole: number;
   make_cut: number;
   player_name: string;
-  player_num: number;
   round: number;
   thru: string;
   today: number;

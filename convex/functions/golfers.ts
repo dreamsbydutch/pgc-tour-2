@@ -9,7 +9,6 @@
 import { action, mutation, query } from "../_generated/server";
 import { api } from "../_generated/api";
 import { processData } from "../utils/processData";
-import { normalize } from "../utils/normalize";
 import {
   applyFilters,
   chunkArray,
@@ -1096,5 +1095,27 @@ export const adminDedupeGolfersByName = mutation({
       updatedTournamentGolfers,
       updatedTeams,
     };
+  },
+});
+
+export const getGolferIdsByApiIds = internalQuery({
+  args: cronJobsValidators.args.getGolferIdsByApiIds,
+  handler: async (ctx, args) => {
+    const unique = Array.from(new Set(args.apiIds));
+
+    const rows = await Promise.all(
+      unique.map(async (apiId) => {
+        const golfer = await ctx.db
+          .query("golfers")
+          .withIndex("by_api_id", (q) => q.eq("apiId", apiId))
+          .first();
+        return {
+          apiId,
+          golferId: golfer?._id ?? null,
+        };
+      }),
+    );
+
+    return rows;
   },
 });

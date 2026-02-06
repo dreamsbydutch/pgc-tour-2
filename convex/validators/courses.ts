@@ -167,7 +167,6 @@ export const coursesValidators = {
       courseId: v.id("courses"),
       options: v.optional(
         v.object({
-          softDelete: v.optional(v.boolean()),
           cascadeDelete: v.optional(v.boolean()),
           replacementCourseId: v.optional(v.id("courses")),
           returnDeletedData: v.optional(v.boolean()),
