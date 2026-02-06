@@ -21,9 +21,6 @@ export const cronJobsValidators = {
         }),
       ),
     },
-    getCreateGroupsTarget: {
-      tournamentId: v.optional(v.id("tournaments")),
-    },
     copyFromFirstPlayoff: {
       tournamentId: v.id("tournaments"),
       firstPlayoffTournamentId: v.id("tournaments"),
@@ -51,6 +48,9 @@ export const cronJobsValidators = {
       tournamentId: v.optional(v.id("tournaments")),
     },
     getActiveTournamentIdForCron: {},
+    runPreTournamentGolfersSync: {
+      tournamentId: v.optional(v.id("tournaments")),
+    },
     getTournamentNameForCron: {
       tournamentId: v.id("tournaments"),
     },

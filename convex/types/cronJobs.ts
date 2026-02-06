@@ -15,23 +15,7 @@ export type EnhancedGolfer = FieldPlayer & {
   ranking?: RankedPlayer;
 };
 
-export type CreateGroupsTarget =
-  | {
-      ok: true;
-      skipped: true;
-      reason: string;
-      tournamentId?: Id<"tournaments">;
-    }
-  | {
-      ok: true;
-      skipped: false;
-      tournamentId: Id<"tournaments">;
-      tournamentName: string;
-      isPlayoff: boolean;
-      eventIndex: 1 | 2 | 3;
-      firstPlayoffTournamentId: Id<"tournaments"> | null;
-      seasonId: Id<"seasons">;
-    };
+
 
 export type TeamsCronGolferSnap = {
   apiId: number;
@@ -55,6 +39,7 @@ export type TeamsCronGolferSnap = {
 export type TeamsCronTournamentSnap = {
   tournamentId: Id<"tournaments">;
   tournamentApiId: string | null;
+  tournamentName: string;
   seasonId: Id<"seasons">;
   startDate: number;
   currentRound: number;
@@ -63,6 +48,8 @@ export type TeamsCronTournamentSnap = {
   tierPoints: number[];
   tierPayouts: number[];
   isPlayoff: boolean;
+  eventIndex: 0 | 1 | 2 | 3;
+  firstPlayoffTournamentId: Id<"tournaments"> | null;
   teams: Doc<"teams">[];
   tourCards: Doc<"tourCards">[];
   golfers: TeamsCronGolferSnap[];
@@ -136,4 +123,11 @@ export type BuildUsageRateByGolferApiIdTeam = {
 
 export type BuildUsageRateByGolferApiIdOptions = {
   teams: BuildUsageRateByGolferApiIdTeam[];
+};
+
+export type GroupLimits = {
+  GROUP_1: { percentage: number; maxCount: number };
+  GROUP_2: { percentage: number; maxCount: number };
+  GROUP_3: { percentage: number; maxCount: number };
+  GROUP_4: { percentage: number; maxCount: number };
 };
