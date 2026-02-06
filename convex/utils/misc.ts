@@ -1,3 +1,9 @@
+import { CENTS_PER_DOLLAR, MS_PER_DAY } from "../functions/_constants";
+import {
+  BuildUsageRateByGolferApiIdOptions,
+  TeamsCronGolferSnap,
+} from "../types/cronJobs";
+
 export function getPath<T = unknown, R = unknown>(
   obj: T,
   path: string,
@@ -124,3 +130,174 @@ export function getGolferTeeTime(golfer: {
 
   return teeTime;
 }
+
+export function parsePositionNumber(position?: string | null): number | null {
+  if (!position) return null;
+  const stripped = String(position).trim().replace(/^T/i, "");
+  const num = Number.parseInt(stripped, 10);
+  return Number.isFinite(num) ? num : null;
+}
+
+export function computePosChange(
+  prevPosition?: string,
+  nextPosition?: string,
+): number {
+  const prevNum = parsePositionNumber(prevPosition);
+  const nextNum = parsePositionNumber(nextPosition);
+  if (prevNum === null || nextNum === null) return 0;
+  return prevNum - nextNum;
+}
+
+export function roundToDecimalPlace(
+  value: number,
+  decimalPlaces: number = 1,
+): number {
+  const factor = Math.pow(10, decimalPlaces);
+  return Math.round(value * factor) / factor;
+}
+
+export function buildUsageRateByGolferApiId(
+  options: BuildUsageRateByGolferApiIdOptions,
+): Map<number, number> {
+  const counts = new Map<number, number>();
+  const totalTeams = options.teams.length;
+  if (totalTeams === 0) return new Map();
+
+  for (const team of options.teams) {
+    for (const golferApiId of team.golferIds) {
+      counts.set(golferApiId, (counts.get(golferApiId) ?? 0) + 1);
+    }
+  }
+
+  const rate = new Map<number, number>();
+  for (const [golferApiId, count] of counts.entries()) {
+    rate.set(golferApiId, count / totalTeams);
+  }
+
+  return rate;
+}
+
+export function formatCents(cents: number): string {
+  return `$${(cents / CENTS_PER_DOLLAR).toFixed(2)}`;
+}
+export function sumArray(values: number[]): number {
+  return values.reduce((sum, val) => sum + val, 0);
+}
+export function avgArray(
+  nums: Array<number | null | undefined>,
+): number | undefined {
+  const list = nums.filter(
+    (n): n is number => typeof n === "number" && Number.isFinite(n),
+  );
+  if (!list.length) return undefined;
+  return list.reduce((a, b) => a + b, 0) / list.length;
+}
+export const getRoundScore = (
+  g: {
+    roundOne: number | null | undefined;
+    roundTwo: number | null | undefined;
+    roundThree: number | null | undefined;
+    roundFour: number | null | undefined;
+  },
+  round: 1 | 2 | 3 | 4,
+) =>
+  round === 1
+    ? g.roundOne
+    : round === 2
+      ? g.roundTwo
+      : round === 3
+        ? g.roundThree
+        : g.roundFour;
+export const avgArrayToPar = (
+  obj: {
+    roundOne: number | null | undefined;
+    roundTwo: number | null | undefined;
+    roundThree: number | null | undefined;
+    roundFour: number | null | undefined;
+  }[],
+  round: 1 | 2 | 3 | 4,
+  par: number,
+) => {
+  const vals = obj.map((g) => {
+    const r = getRoundScore(g, round);
+    return typeof r === "number" ? r - par : undefined;
+  });
+  return avgArray(vals);
+};
+export const avgToday = (golfers: { today: number | null | undefined }[]) =>
+  avgArray(golfers.map((g) => g.today));
+export const avgThru = (golfers: { thru: number | null | undefined }[]) =>
+  avgArray(golfers.map((g) => g.thru));
+export const selectionCountByPlayoffTournamentRound = (
+  eventNumber: 0 | 1 | 2 | 3,
+  round: 1 | 2 | 3 | 4,
+) => {
+  if (eventNumber <= 1) return round <= 2 ? 10 : 5;
+  if (eventNumber === 2) return 5;
+  return 3;
+};
+export const pickTopNGolfersForRound = (
+  golfers: TeamsCronGolferSnap[],
+  round: 1 | 2 | 3 | 4,
+  liveMode: boolean,
+  n: number,
+  par: number,
+) => {
+  return [...golfers]
+    .sort((a, b) => {
+      const aRound = getRoundScore(a, round);
+      const bRound = getRoundScore(b, round);
+      const va = liveMode ? a.today : (aRound ?? par + 8) - par;
+      const vb = liveMode ? b.today : (bRound ?? par + 8) - par;
+      if (va !== vb) return (va ?? 8) - (vb ?? 8);
+      if (a.score !== b.score) return (a.score ?? 8) - (b.score ?? 8);
+      return (a.apiId ?? 0) - (b.apiId ?? 0);
+    })
+    .slice(0, n);
+};
+
+export const normalize = {
+  email(email: string): string {
+    return email.trim().toLowerCase();
+  },
+
+  name(name: string): string {
+    return name.trim().replace(/\s+/g, " ");
+  },
+} as const;
+
+export const dateUtils = {
+  daysBetween(startMs: number, endMs: number): number {
+    return Math.floor((endMs - startMs) / MS_PER_DAY);
+  },
+
+  daysUntil(futureMs: number): number {
+    return Math.floor((futureMs - Date.now()) / MS_PER_DAY);
+  },
+
+  daysSince(pastMs: number): number {
+    return Math.floor((Date.now() - pastMs) / MS_PER_DAY);
+  },
+} as const;
+
+export const earliestTimeStr = (
+  times: Array<string | null | undefined>,
+  position = 1,
+) => {
+  const valid = times.filter((t): t is string => Boolean(t && t.trim().length));
+  if (!valid.length) return undefined;
+  const pos = Math.max(1, Math.floor(position));
+  try {
+    const parsed = valid
+      .map((t) => ({ t, d: new Date(t).getTime() }))
+      .filter(({ d }) => !Number.isNaN(d));
+    if (parsed.length === valid.length && parsed.length > 0) {
+      parsed.sort((a, b) => a.d - b.d);
+      return parsed[pos - 1]?.t;
+    }
+  } catch (err) {
+    void err;
+  }
+  const sorted = [...valid].sort();
+  return sorted[pos - 1];
+};

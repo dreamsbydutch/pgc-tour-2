@@ -15,6 +15,7 @@ import type {
   TournamentDoc,
   TournamentGolferDoc,
 } from "../types/types";
+import { GroupLimits } from "../types/cronJobs";
 
 export function normalizeCountry(country?: string): string | undefined {
   const trimmed = country?.trim();
@@ -502,4 +503,50 @@ export async function generateAnalytics(
     },
     breakdown: countryBreakdown,
   };
+}
+
+export function determineGroupIndex<T>(
+  currentIndex: number,
+  totalGolfers: number,
+  groups: T[][],
+  groupLimits: GroupLimits,
+): number {
+  const remainingGolfers = totalGolfers - currentIndex;
+
+  if (
+    groups[0].length < totalGolfers * groupLimits.GROUP_1.percentage &&
+    groups[0].length < groupLimits.GROUP_1.maxCount
+  ) {
+    return 0;
+  }
+
+  if (
+    groups[1].length < totalGolfers * groupLimits.GROUP_2.percentage &&
+    groups[1].length < groupLimits.GROUP_2.maxCount
+  ) {
+    return 1;
+  }
+
+  if (
+    groups[2].length < totalGolfers * groupLimits.GROUP_3.percentage &&
+    groups[2].length < groupLimits.GROUP_3.maxCount
+  ) {
+    return 2;
+  }
+
+  if (
+    groups[3].length < totalGolfers * groupLimits.GROUP_4.percentage &&
+    groups[3].length < groupLimits.GROUP_4.maxCount
+  ) {
+    return 3;
+  }
+
+  if (
+    remainingGolfers <= groups[3].length + groups[4].length * 0.5 ||
+    remainingGolfers === 1
+  ) {
+    return 4;
+  }
+
+  return currentIndex % 2 ? 3 : 4;
 }

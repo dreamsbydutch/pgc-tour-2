@@ -1,4 +1,3 @@
-import { formatCents } from "./formatCents";
 import { sumArray } from "./sumArray";
 import type {
   AnalyticsResult,
@@ -13,6 +12,7 @@ import type {
   TourSortFunction,
   TourSortOptions,
 } from "../types/types";
+import { formatCents } from "./misc";
 
 /**
  * Get optimized tours based on query options using indexes

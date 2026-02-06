@@ -25,3 +25,14 @@ export const URL_PROTOCOLS = ["http:", "https:"] as const;
 
 export const SEASON_MIN_YEAR = 2000 as const;
 export const SEASON_MAX_FUTURE_YEARS = 2 as const;
+
+export const EXCLUDED_GOLFER_IDS = new Set([18417]);
+
+export const GROUP_LIMITS = {
+  GROUP_1: { percentage: 0.1, maxCount: 10 },
+  GROUP_2: { percentage: 0.175, maxCount: 16 },
+  GROUP_3: { percentage: 0.225, maxCount: 22 },
+  GROUP_4: { percentage: 0.25, maxCount: 30 },
+} as const;
+
+export const MAX_PRETOURNAMENT_LEADTIME = 3 * 24 * 60 * 60 * 1000;

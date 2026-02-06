@@ -25,3 +25,25 @@ export function isValidTournamentStatus(
     status === "upcoming" || status === "current" || status === "completed"
   );
 }
+
+export function isDebitType(type: string): boolean {
+  return (
+    type === "TourCardFee" ||
+    type === "Withdrawal" ||
+    type === "LeagueDonation" ||
+    type === "CharityDonation"
+  );
+}
+
+export function isCreditType(type: string): boolean {
+  return (
+    type === "TournamentWinnings" ||
+    type === "Deposit" ||
+    type === "Refund" ||
+    type === "Payment"
+  );
+}
+
+export function isPlayoffTier(tierName?: string | null): boolean {
+  return (tierName ?? "").toLowerCase().includes("playoff");
+}

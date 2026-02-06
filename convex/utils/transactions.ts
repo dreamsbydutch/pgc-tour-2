@@ -1,24 +1,7 @@
 import type { Id } from "../_generated/dataModel";
 import { requireAdmin, requireOwnResource } from "../auth";
 import type { ToSignedAmountCentsArgs } from "../types/transactions";
-
-function isDebitType(type: string): boolean {
-  return (
-    type === "TourCardFee" ||
-    type === "Withdrawal" ||
-    type === "LeagueDonation" ||
-    type === "CharityDonation"
-  );
-}
-
-function isCreditType(type: string): boolean {
-  return (
-    type === "TournamentWinnings" ||
-    type === "Deposit" ||
-    type === "Refund" ||
-    type === "Payment"
-  );
-}
+import { isCreditType, isDebitType } from "./validation";
 
 export function toSignedAmountCents(args: ToSignedAmountCentsArgs): number {
   const { transactionType, amountCents } = args;
