@@ -9,9 +9,6 @@ export const PGC_LOGO_URL =
 
 export const PRE_TOURNAMENT_PICK_WINDOW_MS = 4 * 24 * 60 * 60 * 1000;
 
-export const ADMIN_FORM_CONTROL_CLASSNAME =
-  "w-full rounded-md border px-3 py-2 text-sm";
-
 export const NAV_ITEMS: NavigationItemConfig[] = [
   { href: "/", icon: Home, label: "HOME" },
   { href: "/tournament", icon: List, label: "LEADERBOARD" },
@@ -19,20 +16,6 @@ export const NAV_ITEMS: NavigationItemConfig[] = [
   { href: "/rulebook", icon: BookText, label: "RULEBOOK" },
 ] as const;
 
-export const ADMIN_DASHBOARD_VIEWS = [
-  "dashboard",
-  "leagueSetup",
-  "missingTourCards",
-  "tournaments",
-  "tourCards",
-  "seasons",
-  "teams",
-  "golfers",
-  "memberMerge",
-  "accountAudit",
-  "crons",
-  "datagolfFieldPreview",
-] as const;
 
 export const TRANSACTION_TYPES: TransactionType[] = [
   "TourCardFee",

@@ -24,6 +24,8 @@ export interface UseRoleAccessReturn {
   isAuthenticated: boolean;
   /** True if role data is loading */
   isLoading: boolean;
+  /** Clerk user object (if signed in) */
+  clerkUser: ReturnType<typeof useUser>["user"];
   /** Current member data */
   member: MemberDoc | null | undefined;
 }
@@ -118,6 +120,7 @@ export function useRoleAccess(): UseRoleAccessReturn {
     isRegular,
     isAuthenticated,
     isLoading: isLoading,
+    clerkUser: user,
     member:
       member &&
       typeof member === "object" &&

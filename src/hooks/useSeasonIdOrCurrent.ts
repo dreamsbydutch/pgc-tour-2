@@ -21,7 +21,6 @@ export function useSeasonIdOrCurrent(seasonId?: Id<"seasons">) {
     !seasonId && currentSeason === null
       ? {
           options: {
-            pagination: { limit: 50 },
             sort: { sortBy: "year", sortOrder: "desc" },
           },
         }

@@ -3,20 +3,6 @@ import type { EnhancedTournamentDoc } from "convex/types/types";
 import type { ComponentType, Dispatch, ReactNode, SetStateAction } from "react";
 import type { LucideIcon } from "lucide-react";
 
-export type AdminDashboardView =
-  | "dashboard"
-  | "leagueSetup"
-  | "missingTourCards"
-  | "tournaments"
-  | "tourCards"
-  | "seasons"
-  | "teams"
-  | "golfers"
-  | "memberMerge"
-  | "accountAudit"
-  | "crons"
-  | "datagolfFieldPreview";
-
 export type TransactionType =
   | "TourCardFee"
   | "TournamentWinnings"
@@ -57,50 +43,6 @@ export type AdminDataTableColumn<T> = {
   cellClassName?: string;
 };
 
-/**
- * Props for ToursToggle component
- */
-export interface ToursToggleProps {
-  tours: {
-    id: string;
-    shortForm: string;
-    logoUrl?: string | null;
-  }[];
-  activeTourId: string;
-  onChangeTourId: (tourId: string) => void;
-  extraToggles?: {
-    id: string;
-    shortForm: string;
-    logoUrl?: string | null;
-  }[];
-  sort?: boolean;
-  loading?: boolean;
-}
-
-/**
- * Props for AdminPanel component.
- */
-export interface AdminPanelProps {
-  loading?: boolean;
-  activeView?: AdminDashboardView;
-  onViewChange?: (view: AdminDashboardView) => void;
-}
-
-/**
- * Tournament metadata used by `TournamentCountdown`.
- */
-export interface TournamentCountdownTourney {
-  name: string;
-  logoUrl?: string | null;
-  startDate: number;
-}
-
-/**
- * Props for `TournamentCountdown`.
- */
-export interface TournamentCountdownProps {
-  tourney?: TournamentCountdownTourney;
-}
 
 /**
  * Props for `TourCardChangeButton`.
@@ -145,21 +87,7 @@ export type TourCardFormButtonProps =
   | TourCardFormButtonLoadedProps
   | { loading: true };
 
-export interface ChampionshipWinTournament {
-  tournamentId: Id<"tournaments">;
-  name: string;
-  logoUrl: string | null;
-  startDate: number;
-  seasonId: Id<"seasons">;
-  tierName: string | null;
-}
 
-export interface LittleFuckerProps {
-  wins?: ChampionshipWinTournament[];
-  showSeasonText?: boolean;
-  className?: string;
-  loading?: boolean;
-}
 
 export interface LittleFuckerSkeletonProps {
   showSeasonText?: boolean;
@@ -180,7 +108,6 @@ export type LeaderboardHeaderProps =
   | LeaderboardHeaderLoadedProps
   | { loading: true };
 
-export type LeaderboardHeaderGroupMode = "schedule" | "tier";
 
 type LeaderboardHeaderDropdownLoadedProps = {
   activeTourney: EnhancedTournamentDoc;
@@ -197,13 +124,6 @@ export type LeaderboardHeaderDropdownProps =
   | LeaderboardHeaderDropdownLoadedProps
   | { loading: true; className?: string };
 
-/**
- * Props for `LeagueSchedule`.
- */
-export interface LeagueScheduleProps {
-  seasonId?: Id<"seasons">;
-  loading?: boolean;
-}
 
 /**
  * View options for `HomePageListingsContainer`.
@@ -375,17 +295,7 @@ export interface FriendManagementHook {
   };
 }
 
-/**
- * Type for the countdown time left
- */
-export type TimeLeftType = {
-  days: number;
-  hours: number;
-  minutes: number;
-  seconds: number;
-} | null;
 
-export type LeaderboardVariant = "regular" | "playoff" | "historical";
 
 export type LeaderboardTourToggle = {
   id: string;
@@ -500,36 +410,3 @@ export type LeaderboardViewModel =
   | LeaderboardViewModelLoading
   | LeaderboardViewModelError
   | LeaderboardViewModelReady;
-
-/**
- * Props for `LeaderboardView`.
- */
-export interface LeaderboardViewProps {
-  model: LeaderboardViewModel;
-  activeTourId: string;
-  onChangeTourId: (tourId: string) => void;
-  variant: LeaderboardVariant;
-  isPreTournament?: boolean;
-}
-
-/**
- * Props for `LeaderboardListing`.
- */
-export type LeaderboardListingProps =
-  | {
-      type: "PGC";
-      tournament: LeaderboardTournamentLite;
-      allGolfers: LeaderboardPgaRow[];
-      allTeams: LeaderboardTeamRow[];
-      viewer?: LeaderboardViewerContext;
-      team: LeaderboardTeamRow;
-      isPreTournament?: boolean;
-    }
-  | {
-      type: "PGA";
-      tournament: LeaderboardTournamentLite;
-      allGolfers: LeaderboardPgaRow[];
-      viewer?: LeaderboardViewerContext;
-      golfer: LeaderboardPgaRow;
-      isPreTournament?: boolean;
-    };
