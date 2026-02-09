@@ -256,15 +256,9 @@ export const runLiveTournamentSync: ReturnType<typeof internalAction> =
 
       let fieldUpdates: unknown = null;
       let rankings: unknown = null;
+
       try {
-        [fieldUpdates, rankings] = await Promise.all([
-          tournamentStarted
-            ? Promise.resolve(null)
-            : ctx.runAction(api.functions.datagolf.fetchFieldUpdates, {
-                options: { tour: "pga" },
-              }),
-          ctx.runAction(api.functions.datagolf.fetchDataGolfRankings, {}),
-        ]);
+        rankings = await ctx.runAction(api.functions.datagolf.fetchDataGolfRankings, {});
       } catch (err) {
         return {
           ok: false,
@@ -273,6 +267,23 @@ export const runLiveTournamentSync: ReturnType<typeof internalAction> =
           tournamentId: tournament._id,
           error: err instanceof Error ? err.message : String(err),
         } as const;
+      }
+
+      try {
+        fieldUpdates = await ctx.runAction(api.functions.datagolf.fetchFieldUpdates, {
+          options: { tour: "pga" },
+        });
+      } catch (err) {
+        if (!tournamentStarted) {
+          return {
+            ok: false,
+            skipped: false,
+            reason: "datagolf_fetch_failed",
+            tournamentId: tournament._id,
+            error: err instanceof Error ? err.message : String(err),
+          } as const;
+        }
+        fieldUpdates = null;
       }
 
       const field = (fieldUpdates as { field?: unknown } | null | undefined)

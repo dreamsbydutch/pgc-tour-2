@@ -1354,14 +1354,30 @@ export const applyDataGolfLiveSync = internalMutation({
         makeCut: live.make_cut,
         topTen: live.top_10 ?? undefined,
         win: live.win ?? undefined,
-        roundOne: live.R1 ? roundToDecimalPlace(live.R1, 0) : undefined,
-        roundTwo: live.R2 ? roundToDecimalPlace(live.R2, 0) : undefined,
-        roundThree: live.R3 ? roundToDecimalPlace(live.R3, 0) : undefined,
-        roundFour: live.R4 ? roundToDecimalPlace(live.R4, 0) : undefined,
-        roundOneTeeTime: field?.r1_teetime ?? undefined,
-        roundTwoTeeTime: field?.r2_teetime ?? undefined,
-        roundThreeTeeTime: field?.r3_teetime ?? undefined,
-        roundFourTeeTime: field?.r4_teetime ?? undefined,
+        roundOne:
+          typeof live.R1 === "number"
+            ? roundToDecimalPlace(live.R1, 0)
+            : undefined,
+        roundTwo:
+          typeof live.R2 === "number"
+            ? roundToDecimalPlace(live.R2, 0)
+            : undefined,
+        roundThree:
+          typeof live.R3 === "number"
+            ? roundToDecimalPlace(live.R3, 0)
+            : undefined,
+        roundFour:
+          typeof live.R4 === "number"
+            ? roundToDecimalPlace(live.R4, 0)
+            : undefined,
+        roundOneTeeTime:
+          field?.r1_teetime ?? existingTournamentGolfer.roundOneTeeTime,
+        roundTwoTeeTime:
+          field?.r2_teetime ?? existingTournamentGolfer.roundTwoTeeTime,
+        roundThreeTeeTime:
+          field?.r3_teetime ?? existingTournamentGolfer.roundThreeTeeTime,
+        roundFourTeeTime:
+          field?.r4_teetime ?? existingTournamentGolfer.roundFourTeeTime,
         worldRank: ranking?.owgr_rank ?? undefined,
         rating: normalizeDgSkillEstimateToPgcRating(
           ranking?.dg_skill_estimate ?? -1.875,

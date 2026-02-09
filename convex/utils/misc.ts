@@ -560,27 +560,53 @@ export const awardTeamPlayoffPoints = (
   tournament: EnhancedTournamentDoc,
   team: EnhancedTournamentTeamDoc,
 ) => {
-  return avgAwards(
-    tournament.tier?.points ?? [],
-    tournament.teams?.filter((t) => (t.score ?? 500) < (team.score ?? 500))
-      .length ?? 0,
-    tournament.teams?.filter((t) => (t.score ?? 500) === (team.score ?? 500))
-      .length ?? 0,
+  return roundToDecimalPlace(
+    avgAwards(
+      tournament.tier?.points ?? [],
+      tournament.teams?.filter(
+        (t) =>
+          t.tourId &&
+          t.tourId === team.tourId &&
+          calculateScoreForSorting(t.position, t.score) <
+            calculateScoreForSorting(team.position, team.score),
+      ).length ?? 0,
+      tournament.teams?.filter(
+        (t) =>
+          t.tourId &&
+          t.tourId === team.tourId &&
+          calculateScoreForSorting(t.position, t.score) ===
+            calculateScoreForSorting(team.position, team.score),
+      ).length ?? 0,
+    ),
+    0,
   );
 };
 export const awardTeamEarnings = (
   tournament: EnhancedTournamentDoc,
   team: EnhancedTournamentTeamDoc,
+  isPlayoff: boolean,
 ) => {
-  return avgAwards(
-    tournament.tier?.payouts ?? [],
-    tournament.teams?.filter((t) => (t.score ?? 500) < (team.score ?? 500))
-      .length ?? 0,
-    tournament.teams?.filter((t) => (t.score ?? 500) === (team.score ?? 500))
-      .length ?? 0,
+  return roundToDecimalPlace(
+    avgAwards(
+      tournament.tier?.payouts ?? [],
+      tournament.teams?.filter(
+        (t) =>
+          t.tourId &&
+          (isPlayoff ? t.playoff === team.playoff : t.tourId === team.tourId) &&
+          calculateScoreForSorting(t.position, t.score) <
+            calculateScoreForSorting(team.position, team.score),
+      ).length ?? 0,
+      tournament.teams?.filter(
+        (t) =>
+          t.tourId &&
+          (isPlayoff ? t.playoff === team.playoff : t.tourId === team.tourId) &&
+          calculateScoreForSorting(t.position, t.score) ===
+            calculateScoreForSorting(team.position, team.score),
+      ).length ?? 0,
+    ),
+    0,
   );
 };
-
 
 export function calculateScoreForSorting(
   position: string | null | undefined,

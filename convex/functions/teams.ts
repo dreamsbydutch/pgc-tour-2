@@ -48,9 +48,9 @@ import {
   earliestTimeStr,
   insertReplacementGolfers,
   updateScoreForRound,
+  roundToDecimalPlace,
 } from "../utils/misc";
 import { api, internal } from "../_generated/api";
-import { getCurrentSeason } from "./seasons";
 import { checkCompatabilityOfEventNames } from "../utils/datagolf";
 
 type TeamImportShape = {
@@ -471,7 +471,8 @@ export const importTeamsFromJson = mutation({
 
     const currentYear = new Date().getFullYear();
 
-    const currentSeason = await ctx.db.query("seasons")
+    const currentSeason = await ctx.db
+      .query("seasons")
       .withIndex("by_year", (q) => q.eq("year", currentYear))
       .first();
     if (!currentSeason) {
@@ -492,8 +493,7 @@ export const importTeamsFromJson = mutation({
       const normalized = normalizeTeamsJson(args.teamsJson);
       parsed = JSON.parse(normalized) as unknown;
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Invalid JSON input";
+      const message = err instanceof Error ? err.message : "Invalid JSON input";
       throw new Error(`Invalid teams JSON: ${message}`);
     }
     if (!Array.isArray(parsed)) {
@@ -923,6 +923,7 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
             internal.functions.tournaments.getTournaments_Internal,
             {
               tournamentId: args.tournamentId,
+              includeTier: true,
               includeTeams: true,
               includeTourCards: true,
               includePlayoffs: true,
@@ -934,6 +935,7 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
             internal.functions.tournaments.getTournaments_Internal,
             {
               tournamentType: "active",
+              includeTier: true,
               includeTeams: true,
               includeTourCards: true,
               includePlayoffs: true,
@@ -970,6 +972,10 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
           tournament.golfers?.filter((g) =>
             team.golferIds.includes(g.apiId ?? -1),
           ) ?? [];
+
+        console.log(
+          `Initial team golfers for team ${team._id}: ${teamGolfers.length}`,
+        );
 
         while (teamGolfers.length < 10) {
           teamGolfers = insertReplacementGolfers(
@@ -1057,7 +1063,7 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
         const activeGolfers =
           activeGolferSet.length > 0
             ? activeGolferSet[0]
-            : completedGolferSet[0];
+            : (completedGolferSet[completedGolferSet.length - 1] ?? r0Golfers);
 
         updatedTeam.round = activeGolfers.teamRound;
         if (activeGolfers.roundState === "active") {
@@ -1181,18 +1187,20 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
           }
         }
         const scoreParts = [
-          updatedTeam.roundOne,
-          updatedTeam.roundTwo,
-          updatedTeam.roundThree,
-          updatedTeam.roundFour,
+          (updatedTeam.roundOne ?? 0) - (tournament.course?.par ?? 72),
+          (updatedTeam.roundTwo ?? 0) - (tournament.course?.par ?? 72),
+          (updatedTeam.roundThree ?? 0) - (tournament.course?.par ?? 72),
+          (updatedTeam.roundFour ?? 0) - (tournament.course?.par ?? 72),
           updatedTeam.today,
           bonusStrokes,
         ].map((score) => score ?? 0);
-        updatedTeam.score = scoreParts.reduce((sum, score) => sum + score, 0);
+        updatedTeam.score = roundToDecimalPlace(
+          scoreParts.reduce((sum, score) => sum + score, 0),
+          1,
+        );
 
         updates.push(updatedTeam);
       }
-
       for (const team of updates) {
         const sameScoreCount = tournament.isPlayoff
           ? updates.filter(
@@ -1219,7 +1227,11 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
 
         team.position = `${sameScoreCount > 1 ? "T" : ""}${betterScoreCount + 1}`;
         team.points = awardTeamPlayoffPoints(tournament, team);
-        team.earnings = awardTeamEarnings(tournament, team);
+        team.earnings = awardTeamEarnings(
+          tournament,
+          team,
+          tournament.isPlayoff ?? false,
+        );
         team.win = tournament.isPlayoff
           ? updates.filter(
               (t) =>
@@ -1333,7 +1345,8 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
                 );
                 outputTeam.position =
                   tiedEarnings.filter(
-                    (t) => (t.earnings ?? 0) > (tiedTeamEarnings?.earnings ?? 0),
+                    (t) =>
+                      (t.earnings ?? 0) > (tiedTeamEarnings?.earnings ?? 0),
                   ).length === 0
                     ? "1"
                     : "T2";

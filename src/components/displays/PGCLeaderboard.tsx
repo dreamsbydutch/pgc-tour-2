@@ -13,8 +13,7 @@ import { MoveDown, MoveHorizontal, MoveUp } from "lucide-react";
 import { Table, TableBody, TableHeader, TableRow } from "@/components/ui";
 import {
   EnhancedTournamentGolferDoc,
-  TeamDoc,
-  TourCardDoc,
+  EnhancedTournamentTeamDoc,
   TournamentDoc,
 } from "convex/types/types";
 import { calculateScoreForSorting } from "convex/utils";
@@ -36,9 +35,7 @@ import { calculateScoreForSorting } from "convex/utils";
  * @returns A sequence of clickable leaderboard rows.
  */
 export function PGCLeaderboard(props: {
-  teams: (TeamDoc & {
-    tourId?: string | undefined;
-    tourCard?: TourCardDoc;
+  teams: (EnhancedTournamentTeamDoc & {
     teamGolfers?: EnhancedTournamentGolferDoc[];
     posChange: number;
   })[];
@@ -64,7 +61,7 @@ export function PGCLeaderboard(props: {
         : props.activeTourId === "silver"
           ? 2
           : 1;
-    sorted = sorted.filter((t) => (t.tourCard?.playoff ?? 0) === playoffLevel);
+    sorted = sorted.filter((t) => (t.playoff ?? 0) === playoffLevel);
   } else {
     sorted = sorted.filter((t) => t.tourId === props.activeTourId);
   }
@@ -73,7 +70,6 @@ export function PGCLeaderboard(props: {
     <>
       {sorted.map((team) => (
         <>
-          {team.tourId}
           <LeaderboardListing
             key={team._id}
             tournament={props.tournament}
@@ -115,10 +111,9 @@ function LeaderboardListing({
     livePlay?: boolean | null;
     name: string;
   };
-  team: TeamDoc & {
-    posChange: number;
-    tourCard?: { displayName: string };
+  team: EnhancedTournamentTeamDoc & {
     teamGolfers?: EnhancedTournamentGolferDoc[];
+    posChange: number;
   };
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -145,7 +140,7 @@ function LeaderboardListing({
         </div>
 
         <div className="col-span-4 flex items-center justify-center place-self-center font-varela text-lg sm:col-span-10">
-          {team.tourCard?.displayName}
+          {team.displayName}
         </div>
 
         <div className="col-span-2 place-self-center font-varela text-base sm:col-span-5">
@@ -394,8 +389,12 @@ function ScoreDisplay(props: {
           isPlayerCut(props.team.position)
             ? "-"
             : props.tournamentComplete
-              ? props.team.points
-              : props.team.today
+              ? (props.team.points ?? 0 > 0)
+                ? props.team.points
+                : "-"
+              : (props.team.today ?? 0 > 0)
+                ? props.team.today
+                : "-"
         }
         className="col-span-1 sm:col-span-2"
       />
@@ -404,8 +403,10 @@ function ScoreDisplay(props: {
           isPlayerCut(props.team.position)
             ? "-"
             : props.tournamentComplete
-              ? formatMoney(props.team.earnings ?? 0, false)
-              : props.team.thru
+              ? (props.team.earnings ?? 0) > 0
+                ? formatMoney(props.team.earnings ?? 0, false)
+                : "-"
+              : (props.team.thru ?? "-")
         }
         className="col-span-1 sm:col-span-2"
       />

@@ -363,22 +363,22 @@ function ScoreDisplay(props: {
         />
         <div className="col-span-1 hidden sm:flex" />
         <ScoreCell
-          value={props.golfer.roundOne ?? "-"}
+          value={props.golfer.roundOne > 0 ? props.golfer.roundOne : "-"}
           className="col-span-1"
           hiddenOnMobile
         />
         <ScoreCell
-          value={props.golfer.roundTwo ?? "-"}
+          value={props.golfer.roundTwo > 0 ? props.golfer.roundTwo : "-"}
           className="col-span-1"
           hiddenOnMobile
         />
         <ScoreCell
-          value={props.golfer.roundThree ?? "-"}
+          value={props.golfer.roundThree > 0 ? props.golfer.roundThree : "-"}
           className="col-span-1"
           hiddenOnMobile
         />
         <ScoreCell
-          value={props.golfer.roundFour ?? "-"}
+          value={props.golfer.roundFour > 0 ? props.golfer.roundFour : "-"}
           className="col-span-1"
           hiddenOnMobile
         />
@@ -399,22 +399,22 @@ function ScoreDisplay(props: {
         />
         <div className="col-span-1 hidden sm:flex" />
         <ScoreCell
-          value={props.golfer.roundOne ?? "-"}
+          value={props.golfer.roundOne > 0 ? props.golfer.roundOne : "-"}
           className="col-span-1"
           hiddenOnMobile
         />
         <ScoreCell
-          value={props.golfer.roundTwo ?? "-"}
+          value={props.golfer.roundTwo > 0 ? props.golfer.roundTwo : "-"}
           className="col-span-1"
           hiddenOnMobile
         />
         <ScoreCell
-          value={props.golfer.roundThree ?? "-"}
+          value={props.golfer.roundThree > 0 ? props.golfer.roundThree : "-"}
           className="col-span-1"
           hiddenOnMobile
         />
         <ScoreCell
-          value={props.golfer.roundFour ?? "-"}
+          value={props.golfer.roundFour > 0 ? props.golfer.roundFour : "-"}
           className="col-span-1"
           hiddenOnMobile
         />
@@ -445,22 +445,22 @@ function ScoreDisplay(props: {
       )}
       <div className="col-span-1 hidden sm:flex" />
       <ScoreCell
-        value={props.golfer.roundOne ?? "-"}
+        value={props.golfer.roundOne > 0 ? props.golfer.roundOne : "-"}
         className="col-span-1"
         hiddenOnMobile
       />
       <ScoreCell
-        value={props.golfer.roundTwo ?? "-"}
+        value={props.golfer.roundTwo > 0 ? props.golfer.roundTwo : "-"}
         className="col-span-1"
         hiddenOnMobile
       />
       <ScoreCell
-        value={props.golfer.roundThree ?? "-"}
+        value={props.golfer.roundThree > 0 ? props.golfer.roundThree : "-"}
         className="col-span-1"
         hiddenOnMobile
       />
       <ScoreCell
-        value={props.golfer.roundFour ?? "-"}
+        value={props.golfer.roundFour > 0 ? props.golfer.roundFour : "-"}
         className="col-span-1"
         hiddenOnMobile
       />
