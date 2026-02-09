@@ -984,6 +984,7 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
           );
         }
 
+        updatedTeam.golferIds = teamGolfers.map((g) => g.apiId ?? -1);
         const r0Golfers = categorizeTeamGolfersForRound(
           teamGolfers,
           0,
