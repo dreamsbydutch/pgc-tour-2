@@ -449,9 +449,7 @@ export const getTournaments_Internal = internalQuery({
  * - tournament golfers for the tournament (with golfer embedded)
  * - tours for the tournament's season (for toggles)
  *
- * This query does not enforce auth (matches current repo convention). If you
- * pass `viewerClerkId`, it is used only as a best-effort to return the current
- * member + their tour card for this season.
+ * This query does not enforce auth (matches current repo convention).
  */
 export const getTournamentLeaderboardView = query({
   args: {

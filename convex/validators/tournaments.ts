@@ -136,21 +136,8 @@ export const tournamentsValidators = {
       includePlayoffs: v.optional(v.boolean()),
     },
     getTournamentLeaderboardView: {
-      tournamentId: v.id("tournaments"),
-      options: v.optional(
-        v.object({
-          includeTournamentEnhancements: v.optional(
-            v.object({
-              includeSeason: v.optional(v.boolean()),
-              includeTier: v.optional(v.boolean()),
-              includeCourse: v.optional(v.boolean()),
-            }),
-          ),
-          includeTours: v.optional(v.boolean()),
-          includeViewer: v.optional(v.boolean()),
-          viewerClerkId: v.optional(v.string()),
-        }),
-      ),
+      tournamentId: v.optional(v.id("tournaments")),
+      memberId: v.optional(v.id("members")),
     },
     getAllTournaments: {
       seasonId: v.optional(v.id("seasons")),
