@@ -795,6 +795,7 @@ export const updateTeams_Internal = internalMutation({
     updates: v.array(
       v.object({
         teamId: v.id("teams"),
+        golferIds: v.optional(v.array(v.number())),
         round: v.optional(v.number()),
         roundOne: v.optional(v.number()),
         roundTwo: v.optional(v.number()),
@@ -827,6 +828,7 @@ export const updateTeams_Internal = internalMutation({
       if (existing.tournamentId !== args.tournamentId) continue;
 
       await ctx.db.patch(u.teamId, {
+        golferIds: u.golferIds,
         round: u.round,
         roundOne: u.roundOne,
         roundTwo: u.roundTwo,
