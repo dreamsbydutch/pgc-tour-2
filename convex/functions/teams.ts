@@ -1065,7 +1065,9 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
             ? activeGolferSet[0]
             : (completedGolferSet[completedGolferSet.length - 1] ?? r0Golfers);
 
-        updatedTeam.round = activeGolfers.teamRound;
+        updatedTeam.round =
+          activeGolfers.teamRound +
+          (activeGolfers.roundState === "completed" ? 0.5 : 0);
         if (activeGolfers.roundState === "active") {
           updatedTeam.today =
             avgArray(activeGolfers.active.map((g) => g.today)) ?? 0;
