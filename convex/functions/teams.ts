@@ -1361,6 +1361,7 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
 
       const updatesForMutation = updates.map((team) => ({
         teamId: team.teamId,
+        golferIds: team.golferIds,
         round: team.round,
         roundOne: team.roundOne,
         roundTwo: team.roundTwo,
