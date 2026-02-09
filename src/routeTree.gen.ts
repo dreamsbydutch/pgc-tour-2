@@ -16,8 +16,6 @@ import { Route as HistoryRouteImport } from './routes/history'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ArticlesIndexRouteImport } from './routes/articles/index'
-import { Route as ArticlesSlugRouteImport } from './routes/articles/$slug'
 
 const TournamentRoute = TournamentRouteImport.update({
   id: '/tournament',
@@ -54,16 +52,6 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ArticlesIndexRoute = ArticlesIndexRouteImport.update({
-  id: '/articles/',
-  path: '/articles/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ArticlesSlugRoute = ArticlesSlugRouteImport.update({
-  id: '/articles/$slug',
-  path: '/articles/$slug',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -73,8 +61,6 @@ export interface FileRoutesByFullPath {
   '/rulebook': typeof RulebookRoute
   '/standings': typeof StandingsRoute
   '/tournament': typeof TournamentRoute
-  '/articles/$slug': typeof ArticlesSlugRoute
-  '/articles': typeof ArticlesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -84,8 +70,6 @@ export interface FileRoutesByTo {
   '/rulebook': typeof RulebookRoute
   '/standings': typeof StandingsRoute
   '/tournament': typeof TournamentRoute
-  '/articles/$slug': typeof ArticlesSlugRoute
-  '/articles': typeof ArticlesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -96,8 +80,6 @@ export interface FileRoutesById {
   '/rulebook': typeof RulebookRoute
   '/standings': typeof StandingsRoute
   '/tournament': typeof TournamentRoute
-  '/articles/$slug': typeof ArticlesSlugRoute
-  '/articles/': typeof ArticlesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -109,8 +91,6 @@ export interface FileRouteTypes {
     | '/rulebook'
     | '/standings'
     | '/tournament'
-    | '/articles/$slug'
-    | '/articles'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -120,8 +100,6 @@ export interface FileRouteTypes {
     | '/rulebook'
     | '/standings'
     | '/tournament'
-    | '/articles/$slug'
-    | '/articles'
   id:
     | '__root__'
     | '/'
@@ -131,8 +109,6 @@ export interface FileRouteTypes {
     | '/rulebook'
     | '/standings'
     | '/tournament'
-    | '/articles/$slug'
-    | '/articles/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -143,8 +119,6 @@ export interface RootRouteChildren {
   RulebookRoute: typeof RulebookRoute
   StandingsRoute: typeof StandingsRoute
   TournamentRoute: typeof TournamentRoute
-  ArticlesSlugRoute: typeof ArticlesSlugRoute
-  ArticlesIndexRoute: typeof ArticlesIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -198,20 +172,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/articles/': {
-      id: '/articles/'
-      path: '/articles'
-      fullPath: '/articles'
-      preLoaderRoute: typeof ArticlesIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/articles/$slug': {
-      id: '/articles/$slug'
-      path: '/articles/$slug'
-      fullPath: '/articles/$slug'
-      preLoaderRoute: typeof ArticlesSlugRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -223,8 +183,6 @@ const rootRouteChildren: RootRouteChildren = {
   RulebookRoute: RulebookRoute,
   StandingsRoute: StandingsRoute,
   TournamentRoute: TournamentRoute,
-  ArticlesSlugRoute: ArticlesSlugRoute,
-  ArticlesIndexRoute: ArticlesIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
