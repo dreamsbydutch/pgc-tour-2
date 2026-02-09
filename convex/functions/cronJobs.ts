@@ -1,4 +1,9 @@
-import { internalAction, internalMutation } from "../_generated/server";
+import {
+  action,
+  internalAction,
+  internalMutation,
+  mutation,
+} from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type {
@@ -75,6 +80,16 @@ export const updateGolfersWorldRankFromDataGolfInput: ReturnType<
     } as const;
   },
 });
+export const updateGolfersWorldRankFromDataGolfInput_Public: ReturnType<
+  typeof action
+> = action({
+  handler: async (ctx) => {
+    return await ctx.runAction(
+      internal.functions.cronJobs.updateGolfersWorldRankFromDataGolfInput,
+      {},
+    );
+  },
+});
 
 /**
  * Keeps the application's "active tournament" in sync with DataGolf.
@@ -149,6 +164,18 @@ export const runLiveTournamentSync: ReturnType<typeof internalAction> =
           current_pos: a.current_pos,
           thru: parseThruFromLiveModel(a.thru),
         })),
+      );
+      const inferredCurrentRound =
+        liveStats.length > 0
+          ? liveStats.reduce(
+              (max, player) =>
+                Math.max(max, Number.isFinite(player.round) ? player.round : 0),
+              0,
+            )
+          : 0;
+      const resolvedCurrentRound = Math.max(
+        Number.isFinite(dataGolfCurrentRound) ? (dataGolfCurrentRound ?? 0) : 0,
+        inferredCurrentRound,
       );
       const tournamentCompletedFromLiveStats =
         liveStats.length > 0 && !roundIsRunning;
@@ -278,16 +305,13 @@ export const runLiveTournamentSync: ReturnType<typeof internalAction> =
         );
 
         if (!compatible.ok) {
-          console.log(
-            "runLiveTournamentSync: event_name_mismatch (skipped)",
-            {
-              tournamentId: tournament._id,
-              tournamentName: tournament.name,
-              dataGolfEventName,
-              score: compatible.score,
-              intersection: compatible.intersection,
-            },
-          );
+          console.log("runLiveTournamentSync: event_name_mismatch (skipped)", {
+            tournamentId: tournament._id,
+            tournamentName: tournament.name,
+            dataGolfEventName,
+            score: compatible.score,
+            intersection: compatible.intersection,
+          });
 
           return {
             ok: true,
@@ -307,7 +331,7 @@ export const runLiveTournamentSync: ReturnType<typeof internalAction> =
         {
           tournamentId: tournament._id,
           currentRound:
-            dataGolfCurrentRound ??
+            (resolvedCurrentRound > 0 ? resolvedCurrentRound : undefined) ??
             (!tournamentStarted && fieldUpdates
               ? (fieldUpdates as { current_round: number }).current_round
               : undefined),
@@ -348,6 +372,14 @@ export const runLiveTournamentSync: ReturnType<typeof internalAction> =
       };
     },
   });
+export const runLiveTournamentSync_Public: ReturnType<typeof action> = action({
+  handler: async (ctx) => {
+    return await ctx.runAction(
+      internal.functions.cronJobs.runLiveTournamentSync,
+      {},
+    );
+  },
+});
 
 /**
  * Creates groups and tournament golfers for the next scheduled tournament.
@@ -518,6 +550,16 @@ export const runCreateGroupsForNextTournament: ReturnType<
     };
   },
 });
+export const runCreateGroupsForNextTournament_Public: ReturnType<
+  typeof action
+> = action({
+  handler: async (ctx) => {
+    return await ctx.runAction(
+      internal.functions.cronJobs.runCreateGroupsForNextTournament,
+      {},
+    );
+  },
+});
 
 /**
  * Recomputes season standings for all tour cards.
@@ -662,5 +704,15 @@ export const recomputeStandingsForCurrentSeason = internalMutation({
       seasonId: currentSeason.season._id,
       tourCardsUpdated: updated,
     } as const;
+  },
+});
+export const recomputeStandingsForCurrentSeason_Public: ReturnType<
+  typeof mutation
+> = mutation({
+  handler: async (ctx) => {
+    return await ctx.runMutation(
+      internal.functions.cronJobs.recomputeStandingsForCurrentSeason,
+      {},
+    );
   },
 });

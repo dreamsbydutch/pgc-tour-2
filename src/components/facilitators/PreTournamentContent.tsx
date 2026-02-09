@@ -20,7 +20,7 @@ import {
   EnhancedTournamentDoc,
   EnhancedTournamentTeamDoc,
 } from "convex/types/types";
-import { SignedOut } from "@clerk/tanstack-react-start";
+import { SignedOut, useClerk } from "@clerk/tanstack-react-start";
 
 /**
  * Renders the pre-tournament pick experience.
@@ -195,8 +195,9 @@ function usePreTournamentContentModel(props: {
 
   useEffect(() => {
     const openAt = props.tournament.startDate - PRE_TOURNAMENT_PICK_WINDOW_MS;
+    const closedAt = props.tournament.startDate;
     const now = Date.now();
-    if (now >= openAt) {
+    if (now >= openAt && now < closedAt) {
       setIsPickWindowOpen(true);
       return;
     }
@@ -300,12 +301,13 @@ function usePreTournamentContentModel(props: {
 }
 
 function SignInPrompt() {
+  const { openSignIn } = useClerk();
   return (
     <div className="text-center">
       <p className="font-medium text-red-800">Please sign in to pick a team.</p>
       <Button
         onClick={() => {
-          window.location.href = "/sign-in";
+          openSignIn();
         }}
         variant="outline"
         className="mt-4"

@@ -9,8 +9,8 @@ import {
   formatToPar,
   isPlayerCut,
 } from "@/lib";
-import { MoveDown, MoveHorizontal, MoveUp, Table } from "lucide-react";
-import { TableBody, TableHeader, TableRow } from "@/components/ui";
+import { MoveDown, MoveHorizontal, MoveUp } from "lucide-react";
+import { Table, TableBody, TableHeader, TableRow } from "@/components/ui";
 import {
   EnhancedTournamentGolferDoc,
   TeamDoc,
@@ -37,6 +37,7 @@ import { calculateScoreForSorting } from "convex/utils";
  */
 export function PGCLeaderboard(props: {
   teams: (TeamDoc & {
+    tourId?: string | undefined;
     tourCard?: TourCardDoc;
     teamGolfers?: EnhancedTournamentGolferDoc[];
     posChange: number;
@@ -65,19 +66,20 @@ export function PGCLeaderboard(props: {
           : 1;
     sorted = sorted.filter((t) => (t.tourCard?.playoff ?? 0) === playoffLevel);
   } else {
-    sorted = sorted.filter(
-      (t) => (t.tourCard?.tourId ?? "") === props.activeTourId,
-    );
+    sorted = sorted.filter((t) => t.tourId === props.activeTourId);
   }
 
   return (
     <>
       {sorted.map((team) => (
-        <LeaderboardListing
-          key={team._id}
-          tournament={props.tournament}
-          team={team}
-        />
+        <>
+          {team.tourId}
+          <LeaderboardListing
+            key={team._id}
+            tournament={props.tournament}
+            team={team}
+          />
+        </>
       ))}
     </>
   );
@@ -189,7 +191,11 @@ function TeamGolfersTable(props: {
 }) {
   const sortedTeamGolfers = useTeamGolfersTable(props.teamGolfers!);
 
-  const GolferScoreCells = ({ golfer }: { golfer: EnhancedTournamentGolferDoc }) => {
+  const GolferScoreCells = ({
+    golfer,
+  }: {
+    golfer: EnhancedTournamentGolferDoc;
+  }) => {
     if (isPlayerCut(golfer.position)) {
       return (
         <>

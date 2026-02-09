@@ -1344,7 +1344,6 @@ export const applyDataGolfLiveSync = internalMutation({
       const updated = {
         tournamentId: args.tournamentId,
         golferId: golfer._id,
-        dg_id: golferApiId,
         position: nextPosition,
         posChange: nextPosChange,
         score: roundToDecimalPlace(live.current_score, 0),

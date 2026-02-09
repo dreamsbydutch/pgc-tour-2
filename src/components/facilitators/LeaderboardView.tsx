@@ -74,7 +74,15 @@ export function LeaderboardView(props: {
           )}
         </div>
         <ToursToggle
-          tours={props.tours}
+          tours={[
+            ...props.tours,
+            {
+              _id: "pga",
+              shortForm: "PGA",
+              logoUrl:
+                "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPHn0reMa1Sl6K8NiXDVstIvkZcpyWUmEoY3xj",
+            },
+          ]}
           activeTourId={props.activeTourId}
           onChangeTourId={props.onChangeTourId}
         />
@@ -82,7 +90,7 @@ export function LeaderboardView(props: {
           tournamentOver={tournamentOver}
           activeTourShortForm={activeTourShortForm}
         />
-        {props.activeTourId === "pga" ? (
+        {props.activeTourId !== "pga" ? (
           <PGCLeaderboard
             teams={leaderboardTeams}
             tournament={props.tournament}
@@ -90,15 +98,17 @@ export function LeaderboardView(props: {
             variant={props.variant}
           />
         ) : (
-          <PGALeaderboard
-            golfers={props.golfers}
-            tournament={props.tournament}
-            currentTeam={
-              leaderboardTeams.find(
-                (t) => t.tourCardId === props.userTourCard?._id,
-              ) ?? undefined
-            }
-          />
+          <>
+            <PGALeaderboard
+              golfers={props.golfers}
+              tournament={props.tournament}
+              currentTeam={
+                leaderboardTeams.find(
+                  (t) => t.tourCardId === props.userTourCard?._id,
+                ) ?? undefined
+              }
+            />
+          </>
         )}
       </div>
     </div>

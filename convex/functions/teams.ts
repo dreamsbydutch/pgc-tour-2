@@ -50,6 +50,92 @@ import {
   updateScoreForRound,
 } from "../utils/misc";
 import { api, internal } from "../_generated/api";
+import { getCurrentSeason } from "./seasons";
+import { checkCompatabilityOfEventNames } from "../utils/datagolf";
+
+type TeamImportShape = {
+  golferIds: number[];
+  earnings?: number;
+  points?: number;
+  makeCut?: number;
+  position?: string;
+  pastPosition?: string;
+  score?: number;
+  topTen?: number;
+  topFive?: number;
+  topThree?: number;
+  win?: number;
+  today?: number;
+  thru?: number;
+  round?: number;
+  roundOneTeeTime?: string;
+  roundOne?: number;
+  roundTwoTeeTime?: string;
+  roundTwo?: number;
+  roundThreeTeeTime?: string;
+  roundThree?: number;
+  roundFourTeeTime?: string;
+  roundFour?: number;
+};
+
+const readNumber = (value: unknown): number | undefined => {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+};
+
+const readString = (value: unknown): string | undefined => {
+  return typeof value === "string" && value.trim().length > 0
+    ? value
+    : undefined;
+};
+
+const normalizeTeamsJson = (input: string): string => {
+  const quotedKeys = input.replace(
+    /([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:/g,
+    '$1"$2":',
+  );
+  return quotedKeys.replace(/,\s*(\}|\])/g, "$1");
+};
+
+const parseTeamImportRow = (value: unknown): TeamImportShape | null => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const rawGolferIds = Array.isArray(record.golferIds) ? record.golferIds : [];
+  const golferIds = rawGolferIds.filter(
+    (id): id is number => typeof id === "number" && Number.isFinite(id),
+  );
+
+  if (golferIds.length === 0) return null;
+
+  return {
+    golferIds,
+    earnings: readNumber(record.earnings),
+    points: readNumber(record.points),
+    makeCut: readNumber(record.makeCut),
+    position: readString(record.position),
+    pastPosition: readString(record.pastPosition),
+    score: readNumber(record.score),
+    topTen: readNumber(record.topTen),
+    topFive: readNumber(record.topFive),
+    topThree: readNumber(record.topThree),
+    win: readNumber(record.win),
+    today: readNumber(record.today),
+    thru: readNumber(record.thru),
+    round: readNumber(record.round),
+    roundOneTeeTime: readString(record.roundOneTeeTime),
+    roundOne: readNumber(record.roundOne),
+    roundTwoTeeTime: readString(record.roundTwoTeeTime),
+    roundTwo: readNumber(record.roundTwo),
+    roundThreeTeeTime: readString(record.roundThreeTeeTime),
+    roundThree: readNumber(record.roundThree),
+    roundFourTeeTime: readString(record.roundFourTeeTime),
+    roundFour: readNumber(record.roundFour),
+  };
+};
 
 /**
  * Create a team.
@@ -369,6 +455,103 @@ export const adminSeedTeamsForTournamentFromTourCards = mutation({
       skipped,
       dryRun,
       createdTeamIds,
+    };
+  },
+});
+
+export const importTeamsFromJson = mutation({
+  args: teamsValidators.args.importTeamsFromJson,
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+
+    const tournament = await ctx.db.get(args.tournamentId);
+    if (!tournament) {
+      throw new Error("Tournament not found");
+    }
+
+    const currentYear = new Date().getFullYear();
+
+    const currentSeason = await ctx.db.query("seasons")
+      .withIndex("by_year", (q) => q.eq("year", currentYear))
+      .first();
+    if (!currentSeason) {
+      throw new Error("Current season not found");
+    }
+
+    const tourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_season", (q) => q.eq("seasonId", currentSeason._id))
+      .collect();
+
+    if (tourCards.length === 0) {
+      throw new Error("No tour cards found for current season");
+    }
+
+    let parsed: unknown;
+    try {
+      const normalized = normalizeTeamsJson(args.teamsJson);
+      parsed = JSON.parse(normalized) as unknown;
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Invalid JSON input";
+      throw new Error(`Invalid teams JSON: ${message}`);
+    }
+    if (!Array.isArray(parsed)) {
+      throw new Error("teamsJson must be a JSON array");
+    }
+
+    let inserted = 0;
+    let skipped = 0;
+    const errors: string[] = [];
+
+    for (let index = 0; index < parsed.length; index += 1) {
+      const mapped = parseTeamImportRow(parsed[index]);
+      if (!mapped) {
+        skipped += 1;
+        errors.push(`Row ${index + 1}: invalid team shape`);
+        continue;
+      }
+
+      const seed = hashStringToUint32(`${args.tournamentId}:${index}`);
+      const tourCard = tourCards[seed % tourCards.length];
+
+      await ctx.db.insert("teams", {
+        tournamentId: args.tournamentId,
+        tourCardId: tourCard._id,
+        golferIds: mapped.golferIds,
+        earnings: mapped.earnings,
+        points: mapped.points,
+        makeCut: mapped.makeCut,
+        position: mapped.position,
+        pastPosition: mapped.pastPosition,
+        score: mapped.score,
+        topTen: mapped.topTen,
+        topFive: mapped.topFive,
+        topThree: mapped.topThree,
+        win: mapped.win,
+        today: mapped.today,
+        thru: mapped.thru,
+        round: mapped.round,
+        roundOneTeeTime: mapped.roundOneTeeTime,
+        roundOne: mapped.roundOne,
+        roundTwoTeeTime: mapped.roundTwoTeeTime,
+        roundTwo: mapped.roundTwo,
+        roundThreeTeeTime: mapped.roundThreeTeeTime,
+        roundThree: mapped.roundThree,
+        roundFourTeeTime: mapped.roundFourTeeTime,
+        roundFour: mapped.roundFour,
+        updatedAt: Date.now(),
+      });
+
+      inserted += 1;
+    }
+
+    return {
+      tournamentId: tournament._id,
+      seasonId: currentSeason._id,
+      inserted,
+      skipped,
+      errors,
     };
   },
 });
@@ -775,7 +958,8 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
         } as const;
       }
 
-      const updates: (EnhancedTournamentTeamDoc & { teamId: Id<"teams"> })[] = [];
+      const updates: (EnhancedTournamentTeamDoc & { teamId: Id<"teams"> })[] =
+        [];
       for (const team of tournament.teams) {
         const updatedTeam: EnhancedTournamentTeamDoc & { teamId: Id<"teams"> } =
           {
@@ -1080,55 +1264,111 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
           10,
         );
         if (Number.isFinite(eventId)) {
-          let dataGolfEventData: unknown;
+          let dataGolfEventData: unknown = null;
+          let hasLiveEvent = false;
           try {
-            dataGolfEventData = await ctx.runAction(
-              api.functions.datagolf.fetchHistoricalEventDataEvents,
-              {
-                options: {
-                  tour: "pga",
-                  eventId,
-                  year: new Date(tournament.startDate).getFullYear(),
-                },
-              },
+            const liveStats = await ctx.runAction(
+              api.functions.datagolf.fetchLiveTournamentStats,
+              { options: {} },
             );
+            const liveEventName = (liveStats as { event_name?: unknown })
+              ?.event_name;
+            if (
+              typeof liveEventName === "string" &&
+              liveEventName.trim().length > 0
+            ) {
+              hasLiveEvent = checkCompatabilityOfEventNames(
+                tournament.name,
+                liveEventName,
+              ).ok;
+            }
           } catch {
+            hasLiveEvent = false;
+          }
+
+          if (!hasLiveEvent) {
+            try {
+              dataGolfEventData = await ctx.runAction(
+                api.functions.datagolf.fetchHistoricalEventDataEvents,
+                {
+                  options: {
+                    tour: "pga",
+                    eventId,
+                    year: new Date(tournament.startDate).getFullYear(),
+                  },
+                },
+              );
+            } catch {
+              dataGolfEventData = null;
+            }
+          }
+
+          const eventStats =
+            dataGolfEventData && typeof dataGolfEventData === "object"
+              ? (dataGolfEventData as { event_stats?: unknown }).event_stats
+              : undefined;
+          if (!Array.isArray(eventStats)) {
             dataGolfEventData = null;
           }
 
-          const tiedEarnings = tiedTeams.map((team) => {
-            return {
-              id: team._id,
-              earnings: team.golferIds.reduce((sum, golferId) => {
-                const golfer = (
-                  dataGolfEventData as { event_stats?: unknown[] } | null
-                )?.event_stats?.find(
-                  (g) => (g as { dg_id?: unknown }).dg_id === golferId,
-                ) as { earnings?: number } | undefined;
-                return sum + (golfer?.earnings ?? 0);
-              }, 0),
-            };
-          });
+          if (dataGolfEventData) {
+            const tiedEarnings = tiedTeams.map((team) => {
+              return {
+                id: team._id,
+                earnings: team.golferIds.reduce((sum, golferId) => {
+                  const golfer = (
+                    dataGolfEventData as { event_stats?: unknown[] } | null
+                  )?.event_stats?.find(
+                    (g) => (g as { dg_id?: unknown }).dg_id === golferId,
+                  ) as { earnings?: number } | undefined;
+                  return sum + (golfer?.earnings ?? 0);
+                }, 0),
+              };
+            });
 
-          for (const outputTeam of updates) {
-            if (outputTeam.position === "T1") {
-              const tiedTeamEarnings = tiedEarnings.find(
-                (t) => t.id === outputTeam._id,
-              );
-              outputTeam.position =
-                tiedEarnings.filter(
-                  (t) => (t.earnings ?? 0) > (tiedTeamEarnings?.earnings ?? 0),
-                ).length === 0
-                  ? "1"
-                  : "T2";
+            for (const outputTeam of updates) {
+              if (outputTeam.position === "T1") {
+                const tiedTeamEarnings = tiedEarnings.find(
+                  (t) => t.id === outputTeam._id,
+                );
+                outputTeam.position =
+                  tiedEarnings.filter(
+                    (t) => (t.earnings ?? 0) > (tiedTeamEarnings?.earnings ?? 0),
+                  ).length === 0
+                    ? "1"
+                    : "T2";
+              }
             }
           }
         }
       }
 
+      const updatesForMutation = updates.map((team) => ({
+        teamId: team.teamId,
+        round: team.round,
+        roundOne: team.roundOne,
+        roundTwo: team.roundTwo,
+        roundThree: team.roundThree,
+        roundFour: team.roundFour,
+        today: team.today,
+        thru: team.thru,
+        score: team.score,
+        position: team.position,
+        pastPosition: team.pastPosition,
+        points: team.points,
+        earnings: team.earnings,
+        makeCut: team.makeCut,
+        topTen: team.topTen,
+        win: team.win,
+        roundOneTeeTime: team.roundOneTeeTime,
+        roundTwoTeeTime: team.roundTwoTeeTime,
+        roundThreeTeeTime: team.roundThreeTeeTime,
+        roundFourTeeTime: team.roundFourTeeTime,
+      }));
+
       await ctx.runMutation(internal.functions.teams.updateTeams_Internal, {
         tournamentId: tournament._id,
-        updates,
+        updates: updatesForMutation,
       });
     },
   });

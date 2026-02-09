@@ -37,11 +37,17 @@ export function PGALeaderboard(props: {
 }) {
   const nonCut = props.golfers.filter((r) => !isPlayerCut(r.position));
   const cut = props.golfers.filter((r) => isPlayerCut(r.position));
-  nonCut.sort(
-    (a, b) =>
-      calculateScoreForSorting(a.position, a.score) -
-      calculateScoreForSorting(b.position, b.score),
-  );
+  nonCut
+    .sort(
+      (a, b) =>
+        calculateScoreForSorting(a.position, a.score) -
+        calculateScoreForSorting(b.position, b.score),
+    )
+    .sort(
+      (a, b) =>
+        +(a.position ?? "").replace("T", "") -
+        +(b.position ?? "").replace("T", ""),
+    );
   cut
     .sort(
       (a, b) =>
@@ -49,7 +55,11 @@ export function PGALeaderboard(props: {
         calculateScoreForSorting(b.position, b.score),
     )
     .sort((a, b) => (a.group ?? 999) - (b.group ?? 999))
-    .sort((a, b) => (a.position ?? "").localeCompare(b.position ?? ""));
+    .sort(
+      (a, b) =>
+        +(a.position ?? "").replace("T", "") -
+        +(b.position ?? "").replace("T", ""),
+    );
   const sortedGolfers = [...nonCut, ...cut];
 
   return (

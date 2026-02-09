@@ -125,6 +125,10 @@ export const teamsValidators = {
       skipExisting: v.optional(v.boolean()),
       allowFallbackToAllGolfers: v.optional(v.boolean()),
     },
+    importTeamsFromJson: {
+      tournamentId: v.id("tournaments"),
+      teamsJson: v.string(),
+    },
     getTeamsPage: {
       filter: v.object({
         tournamentId: v.optional(v.id("tournaments")),
