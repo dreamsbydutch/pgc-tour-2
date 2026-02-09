@@ -1,10 +1,14 @@
 import { TIME } from "../functions/_constants";
-import { dateUtils } from "./dateUtils";
-import { formatCents } from "./formatCents";
 import { fetchWithRetry } from "./externalFetch";
-import { normalize } from "./normalize";
 import type { AuthCtx } from "../types/functionUtils";
-import type { ClerkUser, FetchClerkUsersOptions } from "../types/members";
+import type {
+  ClerkUser,
+  FetchClerkUsersOptions,
+  MembersOrderBy,
+  MembersWhereCondition,
+  MembersWhereOp,
+  MembersWhereValue,
+} from "../types/members";
 import type {
   AnalyticsResult,
   DatabaseContext,
@@ -16,6 +20,7 @@ import type {
   MemberSortFunction,
   MemberSortOptions,
 } from "../types/types";
+import { dateUtils, formatCents, normalize } from "./misc";
 
 export function buildFullName(user: ClerkUser): string {
   const fromFull = (user.full_name ?? "").trim();
@@ -508,5 +513,152 @@ export async function generateAnalytics(
       },
       {} as Record<string, number>,
     ),
+  };
+}
+
+function getMemberFieldValue(member: MemberDoc, field: string): unknown {
+  if (field === "fullName") {
+    return generateFullName(member.firstname, member.lastname);
+  }
+
+  if (field === "formattedBalance") {
+    return formatCents(member.account);
+  }
+
+  if (field === "effectiveDisplayName") {
+    return generateDisplayName(member.firstname, member.lastname, member.email);
+  }
+
+  if (field === "hasBalance") {
+    return member.account > 0;
+  }
+
+  if (field === "isOnline") {
+    return isOnline(member.lastLoginAt);
+  }
+
+  if (field === "daysSinceLastLogin") {
+    return calculateDaysSinceLastLogin(member.lastLoginAt);
+  }
+
+  if (field === "friendCount") {
+    return member.friends.length;
+  }
+
+  return (member as unknown as Record<string, unknown>)[field];
+}
+
+function asComparableString(
+  value: string,
+  caseInsensitive: boolean | undefined,
+): string {
+  return caseInsensitive ? value.toLowerCase() : value;
+}
+
+function matchesWhereCondition(
+  member: MemberDoc,
+  condition: MembersWhereCondition,
+): boolean {
+  const op: MembersWhereOp = condition.op ?? "eq";
+  const fieldValue = getMemberFieldValue(member, condition.field);
+
+  if (op === "exists") {
+    if (condition.value === false) {
+      return fieldValue === null || fieldValue === undefined;
+    }
+    return fieldValue !== null && fieldValue !== undefined;
+  }
+
+  if (op === "in") {
+    const values = condition.values ?? [];
+    return values.some(
+      (v) => v === (fieldValue as unknown as MembersWhereValue),
+    );
+  }
+
+  if (op === "includes") {
+    const needle = condition.value;
+    if (needle === undefined) return false;
+    if (!Array.isArray(fieldValue)) return false;
+    return (fieldValue as unknown[]).some((v) => v === needle);
+  }
+
+  if (op === "contains" || op === "startsWith" || op === "endsWith") {
+    const needle = condition.value;
+    if (typeof needle !== "string") return false;
+    if (typeof fieldValue !== "string") return false;
+
+    const haystack = asComparableString(fieldValue, condition.caseInsensitive);
+    const query = asComparableString(needle, condition.caseInsensitive);
+
+    if (op === "contains") return haystack.includes(query);
+    if (op === "startsWith") return haystack.startsWith(query);
+    return haystack.endsWith(query);
+  }
+
+  if (op === "gt" || op === "gte" || op === "lt" || op === "lte") {
+    const needle = condition.value;
+    if (typeof needle !== "number") return false;
+    if (typeof fieldValue !== "number") return false;
+
+    if (op === "gt") return fieldValue > needle;
+    if (op === "gte") return fieldValue >= needle;
+    if (op === "lt") return fieldValue < needle;
+    return fieldValue <= needle;
+  }
+
+  if (op === "neq") {
+    return fieldValue !== (condition.value as unknown as MembersWhereValue);
+  }
+
+  return fieldValue === (condition.value as unknown as MembersWhereValue);
+}
+
+export function applyWhereConditions(
+  members: MemberDoc[],
+  where: MembersWhereCondition[] | undefined,
+): MemberDoc[] {
+  if (!where || where.length === 0) return members;
+  return members.filter((m) => where.every((c) => matchesWhereCondition(m, c)));
+}
+
+export function buildOrderByComparator(orderBy: MembersOrderBy[]) {
+  const clauses = orderBy.filter((c) => typeof c.field === "string" && c.field);
+
+  return (a: MemberDoc, b: MemberDoc): number => {
+    for (const clause of clauses) {
+      const direction = clause.direction ?? "asc";
+      const nulls = clause.nulls ?? "last";
+
+      const aVal = getMemberFieldValue(a, clause.field);
+      const bVal = getMemberFieldValue(b, clause.field);
+
+      const aNullish = aVal === null || aVal === undefined;
+      const bNullish = bVal === null || bVal === undefined;
+
+      if (aNullish || bNullish) {
+        if (aNullish && bNullish) continue;
+        const nullCmp = aNullish ? 1 : -1;
+        return nulls === "first" ? -nullCmp : nullCmp;
+      }
+
+      let cmp = 0;
+
+      if (typeof aVal === "number" && typeof bVal === "number") {
+        cmp = aVal - bVal;
+      } else if (typeof aVal === "boolean" && typeof bVal === "boolean") {
+        cmp = Number(aVal) - Number(bVal);
+      } else {
+        const aStr = asComparableString(String(aVal), clause.caseInsensitive);
+        const bStr = asComparableString(String(bVal), clause.caseInsensitive);
+        cmp = aStr.localeCompare(bStr);
+      }
+
+      if (cmp !== 0) {
+        return direction === "desc" ? -cmp : cmp;
+      }
+    }
+
+    return 0;
   };
 }

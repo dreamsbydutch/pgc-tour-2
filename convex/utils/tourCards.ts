@@ -1,4 +1,4 @@
-import { requireOwnResource } from "../auth";
+import { requireOwnResource } from "./auth";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 

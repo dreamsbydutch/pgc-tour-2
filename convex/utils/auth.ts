@@ -5,7 +5,7 @@
  * Uses Clerk authentication with role-based access control.
  */
 
-import { MutationCtx, QueryCtx } from "./_generated/server";
+import { MutationCtx, QueryCtx } from "../_generated/server";
 
 type AuthContext = QueryCtx | MutationCtx;
 

@@ -6,19 +6,16 @@
  * through flexible configuration rather than multiple specialized functions.
  */
 
-import { query, mutation, action } from "../_generated/server";
+import { query, mutation, action, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
-import { requireAdmin } from "../auth";
-import type { AuthCtx } from "../types/functionUtils";
-import { requireAdminByClerkId } from "../utils/authByClerkId";
+import { requireAdmin } from "../utils/auth";
+import { internal } from "../_generated/api";
 import {
   logAudit,
   computeChanges,
   extractDeleteMetadata,
 } from "../utils/auditLog";
-import { formatCents } from "../utils/formatCents";
-import { normalize } from "../utils/normalize";
-import { processData } from "../utils/processData";
+import { processData } from "../utils/batchProcess";
 import {
   applyFilters,
   buildFullName,
@@ -32,15 +29,225 @@ import {
   getSortFunction,
   getOptimizedMembers,
   isOnline,
-  normalizePersonName,
   pickPrimaryEmail,
   readOptionalDisplayName,
+  applyWhereConditions,
+  buildOrderByComparator,
 } from "../utils/members";
 import { membersValidators } from "../validators/members";
 import type { DeleteResponse, MemberDoc } from "../types/types";
 
 import type { ClerkUser, ClerkUserRow } from "../types/members";
+import { formatCents, normalize } from "../utils";
 
+export const getIsAdminByClerkId_Internal = internalQuery({
+  args: { clerkId: v.string() },
+  handler: async (ctx, args) => {
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
+      .first();
+
+    return {
+      ok: true,
+      isAdmin: Boolean(member && member.role === "admin"),
+    } as const;
+  },
+});
+
+export const getEnhancedMembersLinkInfo_Internal = internalQuery({
+  args: {
+    clerkIds: v.array(v.string()),
+    emails: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const linkedByClerkId: Record<string, string> = {};
+    const suggestedByEmail: Record<
+      string,
+      { memberId: string; email: string }
+    > = {};
+
+    const uniqueClerkIds = Array.from(
+      new Set(args.clerkIds.map((c) => c.trim())),
+    ).filter(Boolean);
+    const uniqueEmails = Array.from(
+      new Set(args.emails.map((e) => e.trim())),
+    ).filter(Boolean);
+
+    for (const clerkId of uniqueClerkIds) {
+      const member = await ctx.db
+        .query("members")
+        .withIndex("by_clerk_id", (q) => q.eq("clerkId", clerkId))
+        .first();
+      if (member) linkedByClerkId[clerkId] = member._id;
+    }
+
+    for (const email of uniqueEmails) {
+      const member = await ctx.db
+        .query("members")
+        .withIndex("by_email", (q) => q.eq("email", email))
+        .first();
+
+      if (member && !member.clerkId) {
+        suggestedByEmail[email] = { memberId: member._id, email: member.email };
+      }
+    }
+
+    return { ok: true, linkedByClerkId, suggestedByEmail } as const;
+  },
+});
+
+/**
+ * Fetches a page of Clerk users and enriches each row with member linking info.
+ *
+ * This is intended for admin tooling: it returns Clerk users along with:
+ * - `linkedMemberId` when there is a `members` row with matching `members.clerkId`.
+ * - `suggestedMemberId` when there is an *unlinked* member whose email matches the Clerk user.
+ *
+ * Auth:
+ * - If the action is called without an authenticated Convex identity, it uses `args.clerkId`
+ *   and verifies the member is an admin.
+ *
+ * @param ctx Convex action context.
+ * @param args.clerkId Optional acting Clerk id (used only for fallback admin checks).
+ * @param args.options Pagination options.
+ * @returns A page of Clerk-user rows with linking suggestions.
+ */
+export const getEnhancedMembers = action({
+  args: {
+    clerkId: v.optional(v.string()),
+    options: v.optional(
+      v.object({
+        limit: v.optional(v.number()),
+        offset: v.optional(v.number()),
+      }),
+    ),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    ok: true;
+    offset: number;
+    limit: number;
+    fetched: number;
+    users: Array<{
+      clerkId: string;
+      email: string | null;
+      fullName: string;
+      linkedMemberId: string | null;
+      suggestedMemberId: string | null;
+      suggestedMemberEmail: string | null;
+    }>;
+  }> => {
+    const identity = await ctx.auth.getUserIdentity();
+
+    const passedClerkId = args.clerkId?.trim();
+    if (identity && passedClerkId && identity.subject !== passedClerkId) {
+      throw new Error("Unauthorized: Clerk ID mismatch");
+    }
+
+    const effectiveClerkId = (identity?.subject ?? passedClerkId ?? "").trim();
+    if (!effectiveClerkId) {
+      throw new Error("Unauthorized: You must be signed in");
+    }
+
+    const adminCheck = await ctx.runQuery(
+      internal.functions.members.getIsAdminByClerkId_Internal,
+      { clerkId: effectiveClerkId },
+    );
+    if (!adminCheck.isAdmin) {
+      throw new Error("Forbidden: Admin access required");
+    }
+
+    const limit = Math.max(1, Math.min(args.options?.limit ?? 50, 200));
+    const offset = Math.max(0, args.options?.offset ?? 0);
+
+    const clerkUsers = await fetchClerkUsers({ limit, offset });
+    const users: ClerkUserRow[] = clerkUsers
+      .filter((u): u is ClerkUser => !!u && typeof u.id === "string")
+      .map((u) => ({
+        clerkId: u.id,
+        email: pickPrimaryEmail(u),
+        fullName: buildFullName(u),
+      }));
+
+    const normalizedEmails = users
+      .map((u) =>
+        typeof u.email === "string" ? normalize.email(u.email) : null,
+      )
+      .filter((e): e is string => typeof e === "string" && e.trim().length > 0);
+
+    const linkInfo = await ctx.runQuery(
+      internal.functions.members.getEnhancedMembersLinkInfo_Internal,
+      {
+        clerkIds: users.map((u) => u.clerkId),
+        emails: normalizedEmails,
+      },
+    );
+
+    const enhanced = users.map((u) => {
+      const linkedMemberId = linkInfo.linkedByClerkId[u.clerkId] ?? null;
+      if (linkedMemberId) {
+        return {
+          ...u,
+          linkedMemberId,
+          suggestedMemberId: null,
+          suggestedMemberEmail: null,
+        };
+      }
+
+      const normalizedEmail =
+        typeof u.email === "string" ? normalize.email(u.email) : null;
+      const suggestion =
+        normalizedEmail && normalizedEmail.trim().length > 0
+          ? (linkInfo.suggestedByEmail[normalizedEmail] ?? null)
+          : null;
+
+      return {
+        ...u,
+        linkedMemberId: null,
+        suggestedMemberId: suggestion ? suggestion.memberId : null,
+        suggestedMemberEmail: suggestion ? suggestion.email : null,
+      };
+    });
+
+    return {
+      ok: true,
+      offset,
+      limit,
+      fetched: clerkUsers.length,
+      users: enhanced,
+    };
+  },
+});
+
+/**
+ * Creates a new member.
+ *
+ * Auth:
+ * - Requires an admin (via `requireAdmin`).
+ *
+ * Validation:
+ * - By default, validates the incoming payload and enforces uniqueness for both `clerkId` and `email`.
+ * - Set `options.skipValidation` to bypass validation/uniqueness checks.
+ *
+ * Options:
+ * - `initialBalance` overrides `data.account`.
+ * - `recordLogin` sets `lastLoginAt` to now.
+ * - `returnEnhanced` returns an enriched member via `enhanceMember`.
+ *
+ * @param ctx Convex mutation context.
+ * @param args.data Core member fields.
+ * @param args.options Optional behavior flags.
+ * @returns The created member document, or an enhanced member when `returnEnhanced` is true.
+ *
+ * @example
+ * const member = await ctx.runMutation(api.functions.members.createMembers, {
+ *   data: { clerkId: "user_123", email: "test@example.com", firstname: "Pat" },
+ *   options: { initialBalance: 2500, returnEnhanced: true, includeFriends: true },
+ * });
+ */
 export const createMembers = mutation({
   args: {
     data: v.object({
@@ -200,6 +407,25 @@ export const createMembers = mutation({
  *     }
  *   }
  * });
+ *
+ * Generic where + orderBy (filter/sort by arbitrary fields)
+ *
+ * Supported derived fields in `where`/`orderBy`:
+ * - `fullName`, `formattedBalance`, `effectiveDisplayName`, `hasBalance`, `isOnline`,
+ *   `daysSinceLastLogin`, `friendCount`
+ * const result = await ctx.runQuery(api.functions.members.getMembers, {
+ *   options: {
+ *     where: [
+ *       { field: "email", op: "contains", value: "@example.com", caseInsensitive: true },
+ *       { field: "hasBalance", op: "eq", value: true },
+ *     ],
+ *     orderBy: [
+ *       { field: "account", direction: "desc" },
+ *       { field: "lastname", direction: "asc", caseInsensitive: true },
+ *     ],
+ *     pagination: { limit: 100, offset: 0 },
+ *   }
+ * });
  */
 export const getMembers = query({
   args: {
@@ -208,6 +434,62 @@ export const getMembers = query({
         id: v.optional(v.id("members")),
         ids: v.optional(v.array(v.id("members"))),
         clerkId: v.optional(v.string()),
+        where: v.optional(
+          v.array(
+            v.object({
+              field: v.string(),
+              op: v.optional(
+                v.union(
+                  v.literal("eq"),
+                  v.literal("neq"),
+                  v.literal("in"),
+                  v.literal("gt"),
+                  v.literal("gte"),
+                  v.literal("lt"),
+                  v.literal("lte"),
+                  v.literal("contains"),
+                  v.literal("startsWith"),
+                  v.literal("endsWith"),
+                  v.literal("includes"),
+                  v.literal("exists"),
+                ),
+              ),
+              value: v.optional(
+                v.union(
+                  v.string(),
+                  v.number(),
+                  v.boolean(),
+                  v.null(),
+                  v.id("members"),
+                ),
+              ),
+              values: v.optional(
+                v.array(
+                  v.union(
+                    v.string(),
+                    v.number(),
+                    v.boolean(),
+                    v.null(),
+                    v.id("members"),
+                  ),
+                ),
+              ),
+              caseInsensitive: v.optional(v.boolean()),
+            }),
+          ),
+        ),
+        orderBy: v.optional(
+          v.array(
+            v.object({
+              field: v.string(),
+              direction: v.optional(
+                v.union(v.literal("asc"), v.literal("desc")),
+              ),
+              nulls: v.optional(v.union(v.literal("first"), v.literal("last"))),
+              caseInsensitive: v.optional(v.boolean()),
+            }),
+          ),
+        ),
         filter: v.optional(
           v.object({
             clerkId: v.optional(v.string()),
@@ -307,10 +589,14 @@ export const getMembers = query({
 
     let members = await getOptimizedMembers(ctx, options);
 
+    members = applyWhereConditions(members, options.where);
     members = applyFilters(members, options.filter || {});
 
     const processedMembers = processData(members, {
-      sort: getSortFunction(options.sort || {}),
+      sort:
+        options.orderBy && options.orderBy.length > 0
+          ? buildOrderByComparator(options.orderBy)
+          : getSortFunction(options.sort || {}),
       limit: options.pagination?.limit,
       skip: options.pagination?.offset,
     });
@@ -463,258 +749,41 @@ export const ensureMemberForCurrentClerkUser = mutation({
 });
 
 /**
- * Admin tool: link an existing member to a Clerk user.
- */
-export const adminLinkMemberToClerkUser = mutation({
-  args: {
-    adminClerkId: v.optional(v.string()),
-    memberId: v.id("members"),
-    clerkId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx);
-
-    const existing = await ctx.db
-      .query("members")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-    if (existing) {
-      throw new Error("That Clerk user is already linked to a member.");
-    }
-
-    const member = await ctx.db.get(args.memberId);
-    if (!member) throw new Error("Member not found.");
-    if (member.clerkId && member.clerkId !== args.clerkId) {
-      throw new Error("Member is already linked to a different Clerk user.");
-    }
-
-    await ctx.db.patch(args.memberId, {
-      clerkId: args.clerkId,
-      updatedAt: Date.now(),
-    });
-
-    return { ok: true as const, memberId: args.memberId };
-  },
-});
-
-/**
- * Admin tool: create a new member for a given Clerk user.
- */
-export const adminCreateMemberForClerkUser = mutation({
-  args: {
-    adminClerkId: v.optional(v.string()),
-    clerkId: v.string(),
-    email: v.string(),
-    firstname: v.optional(v.string()),
-    lastname: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx);
-
-    const existing = await ctx.db
-      .query("members")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-    if (existing) return { ok: true as const, memberId: existing._id };
-
-    const rawEmail = args.email.trim();
-    const email = normalize.email(rawEmail);
-    if (!email) throw new Error("Email is required.");
-
-    let byEmail = await ctx.db
-      .query("members")
-      .withIndex("by_email", (q) => q.eq("email", email))
-      .first();
-
-    if (!byEmail && rawEmail && rawEmail !== email) {
-      byEmail = await ctx.db
-        .query("members")
-        .withIndex("by_email", (q) => q.eq("email", rawEmail))
-        .first();
-    }
-
-    if (byEmail) {
-      if (byEmail.clerkId && byEmail.clerkId !== args.clerkId) {
-        throw new Error(
-          "Member with this email is already linked to a Clerk user.",
-        );
-      }
-
-      await ctx.db.patch(byEmail._id, {
-        clerkId: args.clerkId,
-        ...(byEmail.email !== email ? { email } : {}),
-        ...(args.firstname && !byEmail.firstname
-          ? { firstname: args.firstname }
-          : {}),
-        ...(args.lastname && !byEmail.lastname
-          ? { lastname: args.lastname }
-          : {}),
-        updatedAt: Date.now(),
-      });
-
-      return { ok: true as const, memberId: byEmail._id };
-    }
-
-    const id = await ctx.db.insert("members", {
-      clerkId: args.clerkId,
-      email,
-      firstname: args.firstname,
-      lastname: args.lastname,
-      role: "regular",
-      account: 0,
-      friends: [],
-      updatedAt: Date.now(),
-    });
-
-    return { ok: true as const, memberId: id };
-  },
-});
-/**
- * Get members with cursor-based pagination (for large datasets)
+ * Updates a member by `memberId`.
  *
- * Returns cursor-paginated results to handle large member tables efficiently.
- * Use this instead of getMembers when dealing with potentially large result sets.
+ * Auth:
+ * - Admins can update any member.
+ * - Non-admins can only update their own member record.
+ * - Non-admins cannot change: `role`, `account`, or `isActive`.
+ *
+ * Validation:
+ * - By default, validates the patch payload and enforces email uniqueness.
+ * - Set `options.skipValidation` to bypass validation/uniqueness checks.
+ *
+ * Side effects:
+ * - When first/last name changes, the member’s tour card display name may be updated for the current season
+ *   (or the latest tour card) to keep UI-facing names consistent.
+ * - Writes an audit log entry when changes are applied.
+ *
+ * @param ctx Convex mutation context.
+ * @param args.clerkId Optional acting Clerk id (used to resolve the acting member).
+ * @param args.memberId Member document id to update.
+ * @param args.data Patch object.
+ * @param args.options Optional behavior flags.
+ * @returns The updated member document, or an enhanced member when `returnEnhanced` is true.
  *
  * @example
- * First page
- * const firstPage = await ctx.runQuery(api.functions.members.getMembersPage, {
- *   paginationOpts: { numItems: 50 }
+ * const updated = await ctx.runMutation(api.functions.members.updateMembers, {
+ *   memberId,
+ *   data: { firstname: "Pat", lastname: "Golfer" },
  * });
- *
- * Next page
- * if (!firstPage.isDone) {
- *   const nextPage = await ctx.runQuery(api.functions.members.getMembersPage, {
- *     paginationOpts: { numItems: 50, cursor: firstPage.continueCursor }
- *   });
- * }
- */
-export const getMembersPage = query({
-  args: {
-    paginationOpts: v.object({
-      numItems: v.number(),
-      cursor: v.union(v.string(), v.null()),
-      id: v.optional(v.number()),
-    }),
-    options: v.optional(
-      v.object({
-        filter: v.optional(
-          v.object({
-            clerkId: v.optional(v.string()),
-            email: v.optional(v.string()),
-            role: v.optional(
-              v.union(
-                v.literal("admin"),
-                v.literal("moderator"),
-                v.literal("regular"),
-              ),
-            ),
-            searchTerm: v.optional(v.string()),
-          }),
-        ),
-      }),
-    ),
-  },
-  handler: async (ctx, args) => {
-    const options = args.options || {};
-    const filter = options.filter || {};
-
-    if (filter.clerkId) {
-      return await ctx.db
-        .query("members")
-        .withIndex("by_clerk_id", (q) => q.eq("clerkId", filter.clerkId!))
-        .paginate(args.paginationOpts);
-    }
-
-    if (filter.role) {
-      return await ctx.db
-        .query("members")
-        .withIndex("by_role", (q) => q.eq("role", filter.role!))
-        .paginate(args.paginationOpts);
-    }
-
-    const result = await ctx.db.query("members").paginate(args.paginationOpts);
-
-    if (filter.email || filter.searchTerm) {
-      const filtered = result.page.filter((member) => {
-        if (filter.email && member.email !== filter.email) return false;
-        if (filter.searchTerm) {
-          const searchLower = filter.searchTerm.toLowerCase();
-          const searchableText = [
-            member.firstname,
-            member.lastname,
-            member.email,
-          ]
-            .join(" ")
-            .toLowerCase();
-          if (!searchableText.includes(searchLower)) return false;
-        }
-        return true;
-      });
-
-      return {
-        ...result,
-        page: filtered,
-      };
-    }
-
-    return result;
-  },
-});
-
-/**
- * Admin/support query: list members with minimal fields for Clerk linking.
- * Returns a single page with cursor for safe pagination.
- */
-export const listMembersForClerkLinking = query({
-  args: {
-    cursor: v.optional(v.string()),
-    numItems: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const pageSize = Math.min(args.numItems ?? 100, 1000);
-
-    const result = await ctx.db.query("members").paginate({
-      cursor: args.cursor ?? null,
-      numItems: pageSize,
-    });
-
-    return {
-      members: result.page.map((m) => ({
-        _id: m._id,
-        clerkId: m.clerkId,
-        email: m.email,
-        firstname: m.firstname,
-        lastname: m.lastname,
-        role: m.role,
-      })),
-      continueCursor: result.continueCursor,
-      isDone: result.isDone,
-    };
-  },
-});
-
-/**
- * Update members with comprehensive options
  *
  * @example
- * Basic update
- * const updatedMember = await ctx.runMutation(api.functions.members.updateMembers, {
- *   memberId: "member123",
- *   data: { firstname: "John", lastname: "Smith" }
- * });
- *
- * Advanced update with options
- * const result = await ctx.runMutation(api.functions.members.updateMembers, {
- *   memberId: "member123",
+ * const updated = await ctx.runMutation(api.functions.members.updateMembers, {
+ *   clerkId,
+ *   memberId,
  *   data: { account: 50000 },
- *   options: {
- *     skipValidation: false,
- *     updateTimestamp: true,
- *     recordLogin: true,
- *     autoUpdateDisplayName: true,
- *     returnEnhanced: true,
- *     includeFriends: true
- *   }
+ *   options: { returnEnhanced: true, includeFriends: true },
  * });
  */
 export const updateMembers = mutation({
@@ -722,6 +791,7 @@ export const updateMembers = mutation({
     clerkId: v.optional(v.string()),
     memberId: v.id("members"),
     data: v.object({
+      clerkId: v.optional(v.string()),
       email: v.optional(v.string()),
       firstname: v.optional(v.string()),
       lastname: v.optional(v.string()),
@@ -767,6 +837,9 @@ export const updateMembers = mutation({
     }
 
     if (!adminUser) {
+      if (args.data.clerkId !== undefined) {
+        throw new Error("Forbidden: Only admins can change clerkId");
+      }
       if (args.data.role !== undefined) {
         throw new Error("Forbidden: Only admins can change roles");
       }
@@ -811,7 +884,24 @@ export const updateMembers = mutation({
     const updateData: Partial<MemberDoc> = {
       ...args.data,
       ...(args.data.email ? { email: normalize.email(args.data.email) } : {}),
+      ...(args.data.clerkId ? { clerkId: args.data.clerkId.trim() } : {}),
     };
+
+    if (adminUser && args.data.clerkId !== undefined) {
+      const nextClerkId = args.data.clerkId.trim();
+      if (!nextClerkId) {
+        throw new Error("clerkId cannot be empty");
+      }
+
+      const existing = await ctx.db
+        .query("members")
+        .withIndex("by_clerk_id", (q) => q.eq("clerkId", nextClerkId))
+        .first();
+
+      if (existing && existing._id !== args.memberId) {
+        throw new Error("That Clerk user is already linked to a member.");
+      }
+    }
 
     if (options.recordLogin) {
       updateData.lastLoginAt = Date.now();
@@ -918,283 +1008,37 @@ export const updateMembers = mutation({
   },
 });
 
-export const getMyTournamentHistory = query({
-  args: {
-    options: v.optional(
-      v.object({
-        limit: v.optional(v.number()),
-      }),
-    ),
-  },
-  handler: async (ctx, args) => {
-    const member = await getActingMember(ctx, undefined);
-    const limit = args.options?.limit;
-
-    const tourCards = await ctx.db
-      .query("tourCards")
-      .withIndex("by_member", (q) => q.eq("memberId", member._id))
-      .collect();
-
-    if (tourCards.length === 0) {
-      return [];
-    }
-
-    const teamsNested = await Promise.all(
-      tourCards.map((tc) =>
-        ctx.db
-          .query("teams")
-          .withIndex("by_tour_card", (q) => q.eq("tourCardId", tc._id))
-          .collect(),
-      ),
-    );
-    const teams = teamsNested.flat();
-
-    const tournamentIds = Array.from(new Set(teams.map((t) => t.tournamentId)));
-
-    const tournaments = await Promise.all(
-      tournamentIds.map((id) => ctx.db.get(id)),
-    );
-
-    const tournamentById = new Map(
-      tournaments
-        .filter((t): t is NonNullable<typeof t> => t !== null)
-        .map((t) => [t._id, t]),
-    );
-
-    const tourCardById = new Map(tourCards.map((tc) => [tc._id, tc]));
-
-    const rows = teams
-      .map((team) => {
-        const tournament = tournamentById.get(team.tournamentId);
-        const tourCard = tourCardById.get(team.tourCardId);
-        if (!tournament || !tourCard) return null;
-
-        return {
-          teamId: team._id,
-          tournamentId: tournament._id,
-          tournamentName: tournament.name,
-          tournamentStartDate: tournament.startDate,
-          tournamentEndDate: tournament.endDate,
-          seasonId: tournament.seasonId,
-          tourCardId: tourCard._id,
-          tourCardDisplayName: tourCard.displayName,
-          teamName: tourCard.displayName,
-          points: team.points,
-          position: team.position,
-          earnings: team.earnings,
-          updatedAt: team.updatedAt,
-        };
-      })
-      .filter((row): row is NonNullable<typeof row> => row !== null)
-      .sort((a, b) => {
-        const aTime = a.tournamentStartDate ?? 0;
-        const bTime = b.tournamentStartDate ?? 0;
-        if (aTime !== bTime) return bTime - aTime;
-        return (b.updatedAt ?? 0) - (a.updatedAt ?? 0);
-      });
-
-    return limit !== undefined ? rows.slice(0, limit) : rows;
-  },
-});
-
 /**
- * Recomputes `members.isActive` based on tourCard presence for the current year
- * and previous year.
+ * Deletes (or deactivates) a member.
  *
- * Definition:
- * - Active if the member has a tourCard in any season where `season.year` is
- *   equal to the most recent year in the `seasons` table, or that year minus 1.
- * - Otherwise inactive.
- */
-export const recomputeMemberActiveFlags = mutation({
-  args: {},
-  handler: async (ctx) => {
-    await requireAdmin(ctx);
-
-    const seasons = await ctx.db.query("seasons").collect();
-
-    const currentYear =
-      seasons.length > 0 ? Math.max(...seasons.map((s) => s.year)) : null;
-    const previousYear = currentYear !== null ? currentYear - 1 : null;
-
-    const activeSeasonIds = new Set(
-      seasons
-        .filter((s) =>
-          currentYear === null
-            ? false
-            : s.year === currentYear || s.year === previousYear,
-        )
-        .map((s) => s._id),
-    );
-
-    const tourCards = await ctx.db.query("tourCards").collect();
-    const membersWithActiveYearTourCard = new Set<string>();
-    const membersWithAnyTourCard = new Set<string>();
-
-    for (const tc of tourCards) {
-      membersWithAnyTourCard.add(tc.memberId);
-      if (activeSeasonIds.has(tc.seasonId)) {
-        membersWithActiveYearTourCard.add(tc.memberId);
-      }
-    }
-
-    const members = await ctx.db.query("members").collect();
-
-    let updated = 0;
-    let activeCount = 0;
-    let inactiveCount = 0;
-    const now = Date.now();
-
-    for (const m of members) {
-      const hasClerkId =
-        typeof m.clerkId === "string" && m.clerkId.trim().length > 0;
-      const isNewMember = hasClerkId && !membersWithAnyTourCard.has(m._id);
-      const nextIsActive =
-        membersWithActiveYearTourCard.has(m._id) || isNewMember;
-
-      if (m.isActive !== nextIsActive) {
-        await ctx.db.patch(m._id, { isActive: nextIsActive, updatedAt: now });
-        updated += 1;
-      }
-
-      if (nextIsActive) activeCount += 1;
-      else inactiveCount += 1;
-    }
-
-    return {
-      ok: true,
-      currentYear,
-      previousYear,
-      activeSeasonIds: [...activeSeasonIds],
-      membersTotal: members.length,
-      updated,
-      activeCount,
-      inactiveCount,
-    } as const;
-  },
-});
-
-export const normalizeMemberNamesAndTourCardDisplayNames = mutation({
-  args: {
-    options: v.optional(
-      v.object({
-        dryRun: v.optional(v.boolean()),
-        limit: v.optional(v.number()),
-      }),
-    ),
-  },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx);
-
-    const dryRun = args.options?.dryRun ?? false;
-    const limit = args.options?.limit;
-
-    const membersAll = await ctx.db.query("members").collect();
-    const members =
-      typeof limit === "number" ? membersAll.slice(0, limit) : membersAll;
-
-    const tourCards = await ctx.db.query("tourCards").collect();
-    const tourCardsByMemberId = new Map<string, (typeof tourCards)[number][]>();
-
-    for (const tc of tourCards) {
-      const list = tourCardsByMemberId.get(tc.memberId);
-      if (list) list.push(tc);
-      else tourCardsByMemberId.set(tc.memberId, [tc]);
-    }
-
-    let membersUpdated = 0;
-    let tourCardsUpdated = 0;
-    const now = Date.now();
-
-    const examples: Array<{
-      memberId: string;
-      email: string;
-      before: { firstname: string; lastname: string };
-      after: { firstname: string; lastname: string };
-      tourCardsUpdated: number;
-    }> = [];
-
-    for (const m of members) {
-      const beforeFirst = m.firstname ?? "";
-      const beforeLast = m.lastname ?? "";
-
-      const afterFirst = normalizePersonName(beforeFirst);
-      const afterLast = normalizePersonName(beforeLast);
-
-      const memberChanged =
-        beforeFirst !== afterFirst || beforeLast !== afterLast;
-      if (memberChanged) {
-        if (!dryRun) {
-          await ctx.db.patch(m._id, {
-            firstname: afterFirst || undefined,
-            lastname: afterLast || undefined,
-            updatedAt: now,
-          });
-        }
-        membersUpdated += 1;
-      }
-
-      const fullName = generateFullName(afterFirst, afterLast);
-      if (!fullName) continue;
-
-      const memberTourCards = tourCardsByMemberId.get(m._id) ?? [];
-      let memberTourCardsUpdated = 0;
-
-      for (const tc of memberTourCards) {
-        if (tc.displayName === fullName) continue;
-        if (!dryRun) {
-          await ctx.db.patch(tc._id, { displayName: fullName, updatedAt: now });
-        }
-        tourCardsUpdated += 1;
-        memberTourCardsUpdated += 1;
-      }
-
-      if (
-        (memberChanged || memberTourCardsUpdated > 0) &&
-        examples.length < 15
-      ) {
-        examples.push({
-          memberId: m._id,
-          email: m.email,
-          before: { firstname: beforeFirst, lastname: beforeLast },
-          after: { firstname: afterFirst, lastname: afterLast },
-          tourCardsUpdated: memberTourCardsUpdated,
-        });
-      }
-    }
-
-    return {
-      ok: true,
-      dryRun,
-      membersScanned: members.length,
-      membersUpdated,
-      tourCardsScanned: tourCards.length,
-      tourCardsUpdated,
-      examples,
-    } as const;
-  },
-});
-
-/**
- * Delete members (hard delete only)
+ * Auth:
+ * - Requires an admin (via `requireAdmin`).
  *
- * This function always performs a hard delete (permanent removal from database).
- * The softDelete option is kept for backward compatibility but is ignored.
+ * Modes:
+ * - Soft delete: when `options.softDelete` is true, the member is deactivated (`isActive: false`) and retained.
+ * - Hard delete (default): deletes the member document.
+ *
+ * Data handling options (hard-delete mode only):
+ * - `transferToMember`: moves the member’s `tourCards`, `transactions`, and `pushSubscriptions` to the target.
+ * - `cascadeDelete`: deletes the member’s `tourCards` (and their `teams`), `transactions`, and `pushSubscriptions`.
+ * - `transferToMember` and `cascadeDelete` are mutually exclusive.
+ * - `removeFriendships`: removes references from other members’ `friends` arrays (guarded to <= 1000 members).
+ *
+ * @param ctx Convex mutation context.
+ * @param args.memberId Member document id to delete/deactivate.
+ * @param args.options Optional behavior flags.
+ * @returns A structured delete response with `deleted`/`deactivated` and optional `deletedData`.
  *
  * @example
- * Delete member
  * const result = await ctx.runMutation(api.functions.members.deleteMembers, {
- *   memberId: "member123"
+ *   memberId,
+ *   options: { softDelete: true, returnDeletedData: true },
  * });
  *
- * Delete with data migration and friendship cleanup
+ * @example
  * const result = await ctx.runMutation(api.functions.members.deleteMembers, {
- *   memberId: "member123",
- *   options: {
- *     cascadeDelete: true,
- *     transferToMember: "newMember456",
- *     removeFriendships: true
- *   }
+ *   memberId,
+ *   options: { transferToMember: targetMemberId, removeFriendships: true },
  * });
  */
 export const deleteMembers = mutation({
@@ -1389,366 +1233,6 @@ export const deleteMembers = mutation({
       deactivated: false,
       transferredCount: transferredCount > 0 ? transferredCount : undefined,
       deletedData: deletedMemberData,
-    };
-  },
-});
-
-/**
- * Returns counts for all documents that reference a member and would be moved during a merge.
- */
-export const adminGetMemberMergePreview = query({
-  args: {
-    sourceMemberId: v.id("members"),
-    targetMemberId: v.optional(v.id("members")),
-  },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx);
-
-    const source = await ctx.db.get(args.sourceMemberId);
-    if (!source) {
-      return {
-        ok: false,
-        error: "Source member not found",
-      } as const;
-    }
-
-    const target = args.targetMemberId
-      ? await ctx.db.get(args.targetMemberId)
-      : null;
-
-    if (args.targetMemberId && !target) {
-      return {
-        ok: false,
-        error: "Target member not found",
-      } as const;
-    }
-
-    const tourCards = await ctx.db
-      .query("tourCards")
-      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
-      .collect();
-
-    const transactions = await ctx.db
-      .query("transactions")
-      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
-      .collect();
-
-    const pushSubscriptions = await ctx.db
-      .query("pushSubscriptions")
-      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
-      .collect();
-
-    const auditLogs = await ctx.db
-      .query("auditLogs")
-      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
-      .collect();
-
-    const allMembers = await ctx.db.query("members").collect();
-    const sourceId = String(args.sourceMemberId);
-
-    let friendRefCount = 0;
-    for (const m of allMembers) {
-      if (String(m._id) === sourceId) continue;
-      if (m.friends.some((f) => String(f) === sourceId)) {
-        friendRefCount += 1;
-      }
-    }
-
-    const sourceClerkId =
-      typeof source.clerkId === "string" ? source.clerkId : null;
-    const clerkIdOwner = sourceClerkId
-      ? await ctx.db
-          .query("members")
-          .withIndex("by_clerk_id", (q) => q.eq("clerkId", sourceClerkId))
-          .first()
-      : null;
-
-    return {
-      ok: true,
-      source: {
-        _id: source._id,
-        clerkId: source.clerkId ?? null,
-        email: source.email,
-        displayName: readOptionalDisplayName(source) ?? null,
-        firstname: source.firstname ?? null,
-        lastname: source.lastname ?? null,
-        role: source.role,
-        isActive: source.isActive ?? null,
-        account: source.account,
-      },
-      target: target
-        ? {
-            _id: target._id,
-            clerkId: target.clerkId ?? null,
-            email: target.email,
-            displayName: readOptionalDisplayName(target) ?? null,
-            firstname: target.firstname ?? null,
-            lastname: target.lastname ?? null,
-            role: target.role,
-            isActive: target.isActive ?? null,
-            account: target.account,
-          }
-        : null,
-      counts: {
-        tourCards: tourCards.length,
-        transactions: transactions.length,
-        pushSubscriptions: pushSubscriptions.length,
-        auditLogs: auditLogs.length,
-        membersReferencingAsFriend: friendRefCount,
-      },
-      warnings: {
-        sourceMissingClerkId: !sourceClerkId,
-        clerkIdAlsoOnDifferentMember:
-          !!sourceClerkId &&
-          !!clerkIdOwner &&
-          String(clerkIdOwner._id) !== String(source._id),
-        targetAlreadyHasDifferentClerkId:
-          !!target &&
-          !!sourceClerkId &&
-          !!target.clerkId &&
-          target.clerkId !== sourceClerkId,
-      },
-    } as const;
-  },
-});
-
-/**
- * Merges two member records by moving all `memberId` references from the source member to the target member,
- * copying the source `clerkId` onto the target member, then deleting the source member.
- */
-export const adminMergeMembers = mutation({
-  args: {
-    sourceMemberId: v.id("members"),
-    targetMemberId: v.id("members"),
-    options: v.optional(
-      v.object({
-        overwriteTargetClerkId: v.optional(v.boolean()),
-      }),
-    ),
-  },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx);
-
-    if (String(args.sourceMemberId) === String(args.targetMemberId)) {
-      throw new Error("Source and target members must be different");
-    }
-
-    const source = await ctx.db.get(args.sourceMemberId);
-    if (!source) {
-      throw new Error("Source member not found");
-    }
-
-    const target = await ctx.db.get(args.targetMemberId);
-    if (!target) {
-      throw new Error("Target member not found");
-    }
-
-    const sourceClerkId =
-      typeof source.clerkId === "string" ? source.clerkId.trim() : "";
-    if (!sourceClerkId) {
-      throw new Error("Source member has no clerkId to merge");
-    }
-
-    const overwriteTargetClerkId = !!args.options?.overwriteTargetClerkId;
-
-    if (
-      target.clerkId &&
-      target.clerkId !== sourceClerkId &&
-      !overwriteTargetClerkId
-    ) {
-      throw new Error(
-        "Target member already has a different clerkId. Enable overwriteTargetClerkId to replace it.",
-      );
-    }
-
-    const clerkIdOwner = await ctx.db
-      .query("members")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", sourceClerkId))
-      .first();
-
-    if (clerkIdOwner && String(clerkIdOwner._id) !== String(source._id)) {
-      throw new Error("Another member already has the source clerkId");
-    }
-
-    const targetPatch: Record<string, unknown> = {
-      clerkId: sourceClerkId,
-      account: target.account + source.account,
-      isActive: (target.isActive ?? false) || (source.isActive ?? false),
-      updatedAt: Date.now(),
-    };
-
-    if (!target.firstname && source.firstname) {
-      targetPatch.firstname = source.firstname;
-    }
-    if (!target.lastname && source.lastname) {
-      targetPatch.lastname = source.lastname;
-    }
-    const targetDisplayName = readOptionalDisplayName(target);
-    const sourceDisplayName = readOptionalDisplayName(source);
-    if (!targetDisplayName && sourceDisplayName) {
-      targetPatch.displayName = sourceDisplayName;
-    }
-
-    await ctx.db.patch(args.targetMemberId, targetPatch);
-
-    const tourCards = await ctx.db
-      .query("tourCards")
-      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
-      .collect();
-
-    for (const tc of tourCards) {
-      await ctx.db.patch(tc._id, { memberId: args.targetMemberId });
-    }
-
-    const transactions = await ctx.db
-      .query("transactions")
-      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
-      .collect();
-
-    for (const tx of transactions) {
-      await ctx.db.patch(tx._id, { memberId: args.targetMemberId });
-    }
-
-    const pushSubscriptions = await ctx.db
-      .query("pushSubscriptions")
-      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
-      .collect();
-
-    for (const ps of pushSubscriptions) {
-      await ctx.db.patch(ps._id, { memberId: args.targetMemberId });
-    }
-
-    const auditLogs = await ctx.db
-      .query("auditLogs")
-      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
-      .collect();
-
-    for (const al of auditLogs) {
-      await ctx.db.patch(al._id, { memberId: args.targetMemberId });
-    }
-
-    const allMembers = await ctx.db.query("members").collect();
-    const sourceId = String(args.sourceMemberId);
-    const targetId = String(args.targetMemberId);
-
-    let membersUpdatedForFriends = 0;
-    for (const m of allMembers) {
-      if (String(m._id) === sourceId) continue;
-
-      if (!m.friends.some((f) => String(f) === sourceId)) continue;
-
-      const nextFriends = m.friends
-        .map((f) => (String(f) === sourceId ? targetId : f))
-        .filter(
-          (f, idx, arr) =>
-            arr.findIndex((x) => String(x) === String(f)) === idx,
-        );
-
-      await ctx.db.patch(m._id, {
-        friends: nextFriends,
-        updatedAt: Date.now(),
-      });
-      membersUpdatedForFriends += 1;
-    }
-
-    const remainingTourCards = await ctx.db
-      .query("tourCards")
-      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
-      .collect();
-    const remainingTransactions = await ctx.db
-      .query("transactions")
-      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
-      .collect();
-    const remainingPushSubscriptions = await ctx.db
-      .query("pushSubscriptions")
-      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
-      .collect();
-    const remainingAuditLogs = await ctx.db
-      .query("auditLogs")
-      .withIndex("by_member", (q) => q.eq("memberId", args.sourceMemberId))
-      .collect();
-
-    if (
-      remainingTourCards.length > 0 ||
-      remainingTransactions.length > 0 ||
-      remainingPushSubscriptions.length > 0 ||
-      remainingAuditLogs.length > 0
-    ) {
-      throw new Error("Merge incomplete: source member still has references");
-    }
-
-    await ctx.db.delete(args.sourceMemberId);
-
-    return {
-      ok: true,
-      sourceMemberId: args.sourceMemberId,
-      targetMemberId: args.targetMemberId,
-      moved: {
-        tourCards: tourCards.length,
-        transactions: transactions.length,
-        pushSubscriptions: pushSubscriptions.length,
-        auditLogs: auditLogs.length,
-        membersUpdatedForFriends,
-      },
-    } as const;
-  },
-});
-
-/**
- * Returns Clerk users for admin tooling.
- *
- * Email is the authoritative key for linking Clerk users to `members`.
- * Joining and "unlinked" detection happens in the frontend.
- */
-export const listClerkUsers = action({
-  args: {
-    clerkId: v.optional(v.string()),
-    options: v.optional(
-      v.object({
-        limit: v.optional(v.number()),
-        offset: v.optional(v.number()),
-      }),
-    ),
-  },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<{
-    ok: true;
-    offset: number;
-    limit: number;
-    fetched: number;
-    users: ClerkUserRow[];
-  }> => {
-    const identity = await ctx.auth.getUserIdentity();
-    const actingClerkId = args.clerkId?.trim();
-
-    if (identity && actingClerkId && identity.subject !== actingClerkId) {
-      throw new Error("Unauthorized: Clerk ID mismatch");
-    }
-
-    if (!identity) {
-      await requireAdminByClerkId(ctx as unknown as AuthCtx, actingClerkId);
-    }
-
-    const limit = Math.max(1, Math.min(args.options?.limit ?? 50, 200));
-    const offset = Math.max(0, args.options?.offset ?? 0);
-
-    const clerkUsers = await fetchClerkUsers({ limit, offset });
-    const users: ClerkUserRow[] = clerkUsers
-      .filter((u): u is ClerkUser => !!u && typeof u.id === "string")
-      .map((u) => ({
-        clerkId: u.id,
-        email: pickPrimaryEmail(u),
-        fullName: buildFullName(u),
-      }));
-
-    return {
-      ok: true,
-      offset,
-      limit,
-      fetched: clerkUsers.length,
-      users,
     };
   },
 });

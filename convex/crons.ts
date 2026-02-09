@@ -43,4 +43,14 @@ crons.cron(
   {},
 );
 
+// Weekly golfer OWGR/country refresh (DataGolf -> golfers)
+// NOTE: Convex cron schedules are interpreted in UTC.
+// 11am ET during standard time corresponds to 16:00 UTC.
+crons.cron(
+  "update_golfers_world_rank_11am",
+  "0 16 * * 1",
+  internal.functions.cronJobs.updateGolfersWorldRankFromDataGolfInput,
+  {},
+);
+
 export default crons;

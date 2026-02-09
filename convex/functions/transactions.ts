@@ -3,22 +3,44 @@
  */
 
 import { mutation, query } from "../_generated/server";
-import type { Id } from "../_generated/dataModel";
-import { requireAdmin, requireOwnResource } from "../auth";
+import { requireAdmin, requireOwnResource } from "../utils/auth";
 import { transactionsValidators } from "../validators/transactions";
 import {
   getMemberIdByClerkId,
   requireOwnMemberResource,
   toSignedAmountCents,
 } from "../utils/transactions";
-import type {
-  MemberEmailRow,
-  TransactionStatus,
-  TransactionType,
-} from "../types/transactions";
+import type { TransactionStatus, TransactionType } from "../types/transactions";
+import { v } from "convex/values";
 
 export const createTransactions = mutation({
-  args: transactionsValidators.args.createTransactions,
+  args: {
+    data: v.object({
+      memberId: v.id("members"),
+      seasonId: v.id("seasons"),
+      amount: v.number(),
+      transactionType: v.union(
+        v.literal("TourCardFee"),
+        v.literal("TournamentWinnings"),
+        v.literal("Withdrawal"),
+        v.literal("Deposit"),
+        v.literal("LeagueDonation"),
+        v.literal("CharityDonation"),
+        v.literal("Payment"),
+        v.literal("Refund"),
+        v.literal("Adjustment"),
+      ),
+      status: v.optional(
+        v.union(
+          v.literal("pending"),
+          v.literal("completed"),
+          v.literal("failed"),
+          v.literal("cancelled"),
+        ),
+      ),
+      processedAt: v.optional(v.number()),
+    }),
+  },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 
@@ -62,14 +84,49 @@ export const createTransactions = mutation({
  * This endpoint uses .collect() and may hit scale limits as transactions grow.
  */
 export const getTransactions = query({
-  args: transactionsValidators.args.getTransactions,
+  args: {
+      options: v.optional(
+        v.object({
+          id: v.optional(v.id("transactions")),
+          ids: v.optional(v.array(v.id("transactions"))),
+          filter: v.optional(
+            v.object({
+              clerkId: v.optional(v.string()),
+              memberId: v.optional(v.id("members")),
+              seasonId: v.optional(v.id("seasons")),
+              transactionType: v.optional(
+                v.union(
+                  v.literal("TourCardFee"),
+                  v.literal("TournamentWinnings"),
+                  v.literal("Withdrawal"),
+                  v.literal("Deposit"),
+                  v.literal("LeagueDonation"),
+                  v.literal("CharityDonation"),
+                  v.literal("Payment"),
+                  v.literal("Refund"),
+                  v.literal("Adjustment"),
+                ),
+              ),
+              status: v.optional(
+                v.union(
+                  v.literal("pending"),
+                  v.literal("completed"),
+                  v.literal("failed"),
+                  v.literal("cancelled"),
+                ),
+              ),
+            }),
+          ),
+          limit: v.optional(v.number()),
+        }),
+      ),
+    },
   handler: async (ctx, args) => {
     const options = args.options || {};
 
     if (options.filter?.clerkId) {
       await requireOwnResource(ctx, options.filter.clerkId);
     }
-
     if (options.filter?.memberId) {
       await requireOwnMemberResource(ctx, options.filter.memberId);
     }
@@ -304,48 +361,6 @@ export const updateTransactions = mutation({
   },
 });
 
-/**
- * Admin migration helper: backfill `memberId` on legacy transactions that only have `clerkId`.
- * Does not modify account balances.
- */
-export const adminBackfillTransactionMemberIds = mutation({
-  args: transactionsValidators.args.adminBackfillTransactionMemberIds,
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx);
-
-    const limit = args.limit ?? 500;
-    const candidates = await ctx.db.query("transactions").collect();
-
-    let scanned = 0;
-    let updated = 0;
-    for (const t of candidates) {
-      if (scanned >= limit) break;
-      scanned += 1;
-
-      const hasMemberId = (t as unknown as { memberId?: Id<"members"> })
-        .memberId;
-      if (hasMemberId) continue;
-
-      const legacyClerkId = (t as unknown as { clerkId?: string }).clerkId;
-      if (!legacyClerkId) continue;
-
-      const member = await ctx.db
-        .query("members")
-        .withIndex("by_clerk_id", (q) => q.eq("clerkId", legacyClerkId))
-        .first();
-      if (!member) continue;
-
-      await ctx.db.patch(t._id, {
-        memberId: member._id,
-        updatedAt: Date.now(),
-      });
-      updated += 1;
-    }
-
-    return { scanned, updated };
-  },
-});
-
 export const deleteTransactions = mutation({
   args: transactionsValidators.args.deleteTransactions,
   handler: async (ctx, args) => {
@@ -355,148 +370,5 @@ export const deleteTransactions = mutation({
     if (!existing) return null;
     await ctx.db.delete(args.transactionId);
     return existing;
-  },
-});
-
-export const adminGetMemberAccountAudit = query({
-  args: transactionsValidators.args.adminGetMemberAccountAudit,
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx);
-
-    const sumMode = args.options?.sumMode ?? "all";
-    const include = (status: TransactionStatus | undefined) => {
-      if (sumMode === "completed") {
-        return status === undefined || status === "completed";
-      }
-      return true;
-    };
-
-    const members = await ctx.db.query("members").collect();
-
-    const mismatches: Array<{
-      member: (typeof members)[number];
-      accountCents: number;
-      includedSumCents: number;
-      deltaCents: number;
-      transactions: Id<"transactions">[];
-    }> = [];
-
-    const outstandingBalances: Array<{
-      member: (typeof members)[number];
-      accountCents: number;
-      includedSumCents: number;
-      deltaCents: number;
-      isMismatch: boolean;
-      transactions: Id<"transactions">[];
-    }> = [];
-
-    for (const member of members) {
-      const txns = await ctx.db
-        .query("transactions")
-        .withIndex("by_member", (q) => q.eq("memberId", member._id))
-        .collect();
-
-      const included = txns.filter((t) =>
-        include(t.status as TransactionStatus | undefined),
-      );
-      const includedSumCents = included.reduce((sum, t) => sum + t.amount, 0);
-      const deltaCents = member.account - includedSumCents;
-
-      const rowBase = {
-        member,
-        accountCents: member.account,
-        includedSumCents,
-        deltaCents,
-        transactions: included.map((t) => t._id),
-      };
-
-      if (deltaCents !== 0) {
-        mismatches.push(rowBase);
-      }
-
-      if (member.account !== 0) {
-        outstandingBalances.push({
-          ...rowBase,
-          isMismatch: deltaCents !== 0,
-        });
-      }
-    }
-
-    const sortKey = (row: MemberEmailRow) => row.member.email.toLowerCase();
-    mismatches.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
-    outstandingBalances.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
-
-    return {
-      memberCount: members.length,
-      mismatchCount: mismatches.length,
-      outstandingCount: outstandingBalances.length,
-      mismatches,
-      outstandingBalances,
-    };
-  },
-});
-
-export const adminGetMemberLedgerForAudit = query({
-  args: transactionsValidators.args.adminGetMemberLedgerForAudit,
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx);
-
-    const member = await ctx.db.get(args.memberId);
-    if (!member) throw new Error("Member not found");
-
-    const sumMode = args.options?.sumMode ?? "all";
-    const include = (status: TransactionStatus | undefined) => {
-      if (sumMode === "completed") {
-        return status === undefined || status === "completed";
-      }
-      return true;
-    };
-
-    const txns = await ctx.db
-      .query("transactions")
-      .withIndex("by_member", (q) => q.eq("memberId", member._id))
-      .order("desc")
-      .collect();
-
-    const seasonsById = new Map<
-      string,
-      { year: number; number?: number | undefined }
-    >();
-    for (const t of txns) {
-      const key = String(t.seasonId);
-      if (seasonsById.has(key)) continue;
-      const season = await ctx.db.get(t.seasonId);
-      if (season) {
-        seasonsById.set(key, { year: season.year, number: season.number });
-      }
-    }
-
-    const included = txns.filter((t) =>
-      include(t.status as TransactionStatus | undefined),
-    );
-    const includedSumCents = included.reduce((sum, t) => sum + t.amount, 0);
-    const deltaCents = member.account - includedSumCents;
-
-    const transactions = txns.map((t) => {
-      const season = seasonsById.get(String(t.seasonId));
-      const seasonLabel = season
-        ? season.number && season.number > 1
-          ? `${season.year} (S${season.number})`
-          : `${season.year}`
-        : undefined;
-
-      return {
-        ...t,
-        seasonLabel,
-      };
-    });
-
-    return {
-      member,
-      accountCents: member.account,
-      includedSumCents,
-      deltaCents,
-      transactions,
-    };
   },
 });

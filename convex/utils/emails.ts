@@ -14,6 +14,7 @@ import type {
   SendBrevoTemplateEmailBatchResult,
   SendGroupsEmailImplArgs,
 } from "../types/emails";
+import { calculateScoreForSorting } from "./misc";
 
 export function formatMemberName(member: Doc<"members">): string {
   const first = (member.firstname ?? "").trim();
@@ -28,15 +29,6 @@ export function formatScoreToPar(score: number | undefined): string {
   return score > 0 ? `+${score}` : `${score}`;
 }
 
-export function calculateScoreForSorting(
-  position: string | null | undefined,
-  score: number | null | undefined,
-): number {
-  if (position === "DQ") return 999 + (score ?? 999);
-  if (position === "WD") return 888 + (score ?? 999);
-  if (position === "CUT") return 444 + (score ?? 999);
-  return score ?? 999;
-}
 
 export function escapeEmailText(value: string): string {
   return value

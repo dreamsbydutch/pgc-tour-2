@@ -1,4 +1,3 @@
-import type { CourseEnhancementOptions } from "../types/courses";
 import type {
   AnalyticsResult,
   CourseDoc,
@@ -145,10 +144,8 @@ export async function getOptimizedCourses(
   }
 
   if (filter.location) {
-    return await ctx.db
-      .query("courses")
-      .withIndex("by_location", (q) => q.eq("location", filter.location!))
-      .collect();
+    const allCourses = await ctx.db.query("courses").collect();
+    return allCourses.filter((c) => c.location === filter.location);
   }
 
   return await ctx.db.query("courses").collect();
@@ -245,7 +242,10 @@ export function getSortFunction(sort: CourseSortOptions): CourseSortFunction {
 export async function enhanceCourse(
   ctx: DatabaseContext,
   course: CourseDoc,
-  enhance: CourseEnhancementOptions,
+  enhance: {
+  includeTournaments?: boolean;
+  includeStatistics?: boolean;
+},
 ): Promise<EnhancedCourseDoc> {
   const enhanced: EnhancedCourseDoc = {
     ...course,

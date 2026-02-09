@@ -8,6 +8,7 @@ You are working in the **PGC** repo (Vite/React + Convex backend). Follow these 
 - Don’t edit generated code in `convex/_generated/*`.
 - Don’t edit generated code in `src/routeTree.gen.ts`.
 - Keep TypeScript `strict` compatibility.
+- Do not use explicit `any` anywhere (no `any`, `any[]`, `as any`, or `: any`).
 - Don’t introduce new libraries unless asked.
 
 ## Comments (Important)

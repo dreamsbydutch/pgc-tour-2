@@ -9,7 +9,7 @@ import {
 } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
-import type { GroupsEmailContext, LeaderboardTopRow } from "../types/emails";
+import type { GroupsEmailContext } from "../types/emails";
 import {
   formatMemberName,
   getChampionsStringForTournamentId,
@@ -563,7 +563,7 @@ export const sendGroupsEmailTest: ReturnType<typeof action> = action({
 
     const leaderboardRows = context.leaderboardRows;
 
-    const top10 = leaderboardRows.slice(0, 10);
+    // const top10 = leaderboardRows.slice(0, 10);
 
     const testRecipient =
       context.recipients.find(
@@ -574,15 +574,15 @@ export const sendGroupsEmailTest: ReturnType<typeof action> = action({
       ? String(testRecipient.tourCardId)
       : "";
 
-    const meIndex = recipientTourCardId
-      ? leaderboardRows.findIndex(
-          (row: LeaderboardTopRow) =>
-            String(row.tourCardId) === recipientTourCardId,
-        )
-      : -1;
+    // const meIndex = recipientTourCardId
+    //   ? leaderboardRows.findIndex(
+    //       (row: LeaderboardTopRow) =>
+    //         String(row.tourCardId) === recipientTourCardId,
+    //     )
+    //   : -1;
 
-    const meRow = meIndex >= 10 ? leaderboardRows[meIndex] : null;
-    const meRowDisplay = meRow ? "table-row" : "none";
+    // const meRow = meIndex >= 10 ? leaderboardRows[meIndex] : null;
+    // const meRowDisplay = meRow ? "table-row" : "none";
 
     const leaderboardParams = buildGroupsEmailLeaderboardTemplateParams({
       leaderboardRows,

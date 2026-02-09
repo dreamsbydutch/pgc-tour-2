@@ -36,3 +36,5 @@ export const GROUP_LIMITS = {
 } as const;
 
 export const MAX_PRETOURNAMENT_LEADTIME = 3 * 24 * 60 * 60 * 1000;
+
+export const DEFAULT_MAX_PARTICIPANTS = 75;

@@ -1,8 +1,11 @@
+import { Doc } from "../_generated/dataModel";
 import { CENTS_PER_DOLLAR, MS_PER_DAY } from "../functions/_constants";
+import type { BuildUsageRateByGolferApiIdOptions } from "../types/golfers";
 import {
-  BuildUsageRateByGolferApiIdOptions,
-  TeamsCronGolferSnap,
-} from "../types/cronJobs";
+  EnhancedTournamentDoc,
+  EnhancedTournamentGolferDoc,
+  EnhancedTournamentTeamDoc,
+} from "../types/types";
 
 export function getPath<T = unknown, R = unknown>(
   obj: T,
@@ -194,12 +197,12 @@ export function avgArray(
 }
 export const getRoundScore = (
   g: {
-    roundOne: number | null | undefined;
-    roundTwo: number | null | undefined;
-    roundThree: number | null | undefined;
-    roundFour: number | null | undefined;
+    roundOne?: number | null | undefined;
+    roundTwo?: number | null | undefined;
+    roundThree?: number | null | undefined;
+    roundFour?: number | null | undefined;
   },
-  round: 1 | 2 | 3 | 4,
+  round: 0 | 1 | 2 | 3 | 4 | 5,
 ) =>
   round === 1
     ? g.roundOne
@@ -210,12 +213,12 @@ export const getRoundScore = (
         : g.roundFour;
 export const avgArrayToPar = (
   obj: {
-    roundOne: number | null | undefined;
-    roundTwo: number | null | undefined;
-    roundThree: number | null | undefined;
-    roundFour: number | null | undefined;
+    roundOne?: number | null | undefined;
+    roundTwo?: number | null | undefined;
+    roundThree?: number | null | undefined;
+    roundFour?: number | null | undefined;
   }[],
-  round: 1 | 2 | 3 | 4,
+  round: 0 | 1 | 2 | 3 | 4 | 5,
   par: number,
 ) => {
   const vals = obj.map((g) => {
@@ -230,30 +233,279 @@ export const avgThru = (golfers: { thru: number | null | undefined }[]) =>
   avgArray(golfers.map((g) => g.thru));
 export const selectionCountByPlayoffTournamentRound = (
   eventNumber: 0 | 1 | 2 | 3,
-  round: 1 | 2 | 3 | 4,
+  round: 0 | 1 | 2 | 3 | 4 | 5,
 ) => {
   if (eventNumber <= 1) return round <= 2 ? 10 : 5;
   if (eventNumber === 2) return 5;
   return 3;
 };
-export const pickTopNGolfersForRound = (
-  golfers: TeamsCronGolferSnap[],
-  round: 1 | 2 | 3 | 4,
+export const categorizeTeamGolfersForRound = (
+  golfers: EnhancedTournamentGolferDoc[],
+  round: 0 | 1 | 2 | 3 | 4 | 5,
+  eventIndex: 0 | 1 | 2 | 3,
   liveMode: boolean,
-  n: number,
+  tournamentRound: number | undefined,
   par: number,
 ) => {
-  return [...golfers]
-    .sort((a, b) => {
-      const aRound = getRoundScore(a, round);
-      const bRound = getRoundScore(b, round);
-      const va = liveMode ? a.today : (aRound ?? par + 8) - par;
-      const vb = liveMode ? b.today : (bRound ?? par + 8) - par;
-      if (va !== vb) return (va ?? 8) - (vb ?? 8);
-      if (a.score !== b.score) return (a.score ?? 8) - (b.score ?? 8);
-      return (a.apiId ?? 0) - (b.apiId ?? 0);
-    })
-    .slice(0, n);
+  const sortedGolfers = [...golfers].sort((a, b) => {
+    const aRound = getRoundScore(a, round);
+    const bRound = getRoundScore(b, round);
+    const va = liveMode ? a.today : (aRound ?? par + 8) - par;
+    const vb = liveMode ? b.today : (bRound ?? par + 8) - par;
+    if (va !== vb) return (va ?? 8) - (vb ?? 8);
+    if (a.score !== b.score) return (a.score ?? 8) - (b.score ?? 8);
+    return (a.apiId ?? 0) - (b.apiId ?? 0);
+  });
+  let roundState: "upcoming" | "active" | "completed" | "cut" = "completed";
+  if (round === 0) {
+    roundState = "completed";
+  } else if (round === 1) {
+    if (sortedGolfers.every((g) => g.roundOne !== null)) {
+      roundState = "completed";
+    } else if (
+      tournamentRound === 1 &&
+      liveMode &&
+      sortedGolfers.every((g) => g.thru !== null && (g.thru ?? 0) === 18)
+    ) {
+      roundState = "completed";
+    } else if (
+      tournamentRound === 1 &&
+      liveMode &&
+      sortedGolfers.some((g) => g.thru !== null && (g.thru ?? 0) > 0)
+    ) {
+      roundState = "active";
+    } else if (
+      tournamentRound === 1 &&
+      liveMode &&
+      sortedGolfers.every((g) => g.thru === null || (g.thru ?? 0) === 0)
+    ) {
+      roundState = "upcoming";
+    } else {
+      roundState = "upcoming";
+    }
+  } else if (round === 2) {
+    if (sortedGolfers.every((g) => g.roundTwo !== null)) {
+      roundState = "completed";
+    } else if (
+      tournamentRound === 2 &&
+      liveMode &&
+      sortedGolfers.every((g) => g.thru !== null && (g.thru ?? 0) === 18)
+    ) {
+      roundState = "completed";
+    } else if (
+      tournamentRound === 2 &&
+      liveMode &&
+      sortedGolfers.some((g) => g.thru !== null && (g.thru ?? 0) > 0)
+    ) {
+      roundState = "active";
+    } else if (
+      tournamentRound === 2 &&
+      liveMode &&
+      sortedGolfers.every((g) => g.thru === null || (g.thru ?? 0) === 0)
+    ) {
+      roundState = "upcoming";
+    } else {
+      roundState = "upcoming";
+    }
+  } else if (round === 3) {
+    if (sortedGolfers.every((g) => g.roundThree !== null)) {
+      roundState = "completed";
+    } else if (
+      tournamentRound === 3 &&
+      liveMode &&
+      sortedGolfers.every((g) => g.thru !== null && (g.thru ?? 0) === 18)
+    ) {
+      roundState = "completed";
+    } else if (
+      tournamentRound === 3 &&
+      liveMode &&
+      sortedGolfers.some((g) => g.thru !== null && (g.thru ?? 0) > 0)
+    ) {
+      roundState = "active";
+    } else if (
+      tournamentRound === 3 &&
+      liveMode &&
+      sortedGolfers.every((g) => g.thru === null || (g.thru ?? 0) === 0)
+    ) {
+      roundState = "upcoming";
+    } else {
+      roundState = "upcoming";
+    }
+  } else if (round === 4) {
+    if (sortedGolfers.every((g) => g.roundFour !== null)) {
+      roundState = "completed";
+    } else if (
+      tournamentRound === 4 &&
+      liveMode &&
+      sortedGolfers.every((g) => g.thru !== null && (g.thru ?? 0) === 18)
+    ) {
+      roundState = "completed";
+    } else if (
+      tournamentRound === 4 &&
+      liveMode &&
+      sortedGolfers.some((g) => g.thru !== null && (g.thru ?? 0) > 0)
+    ) {
+      roundState = "active";
+    } else if (
+      tournamentRound === 4 &&
+      liveMode &&
+      sortedGolfers.every((g) => g.thru === null || (g.thru ?? 0) === 0)
+    ) {
+      roundState = "upcoming";
+    } else {
+      roundState = "upcoming";
+    }
+  } else if (round === 5) {
+    if (sortedGolfers.every((g) => g.roundFour !== null)) {
+      roundState = "completed";
+    } else if (
+      tournamentRound === 4 &&
+      sortedGolfers.every((g) => g.thru !== null && (g.thru ?? 0) === 18)
+    ) {
+      roundState = "completed";
+    } else {
+      roundState = "upcoming";
+    }
+  }
+
+  return {
+    teamRound: round,
+    roundState:
+      sortedGolfers.length <
+      selectionCountByPlayoffTournamentRound(eventIndex, round)
+        ? "cut"
+        : roundState,
+    active: sortedGolfers.slice(
+      0,
+      selectionCountByPlayoffTournamentRound(eventIndex, round),
+    ),
+    alternates: sortedGolfers
+      .slice(selectionCountByPlayoffTournamentRound(eventIndex, round))
+      .filter((g) => !["WD", "DQ", "CUT"].includes(g.position ?? "")),
+    inactive: golfers.filter((g) =>
+      ["WD", "DQ", "CUT"].includes(g.position ?? ""),
+    ),
+  };
+};
+export const updateScoreForRound = (
+  tournament: {
+    currentRound: number | undefined;
+    livePlay: boolean | undefined;
+    eventIndex: number | undefined;
+  },
+  golfers: Doc<"tournamentGolfers">[],
+  round: 1 | 2 | 3 | 4,
+) => {
+  if (
+    ((tournament.currentRound === round && tournament.livePlay === false) ||
+      (tournament.currentRound ?? 0) > round) &&
+    golfers.length >=
+      selectionCountByPlayoffTournamentRound(
+        (tournament.eventIndex ?? 0) as 0 | 1 | 2 | 3,
+        round,
+      )
+  ) {
+    return roundToDecimalPlace(
+      avgArray(
+        golfers
+          .map((c) =>
+            round === 1
+              ? c.roundOne
+              : round === 2
+                ? c.roundTwo
+                : round === 3
+                  ? c.roundThree
+                  : c.roundFour,
+          )
+          .filter((n) => typeof n === "number"),
+      ) ?? 0,
+      1,
+    );
+  } else {
+    return undefined;
+  }
+};
+export const insertReplacementGolfers = (
+  teamGolfers: EnhancedTournamentGolferDoc[],
+  tournamentGolfers: EnhancedTournamentGolferDoc[],
+) => {
+  if (teamGolfers.filter((t) => t.group === 1).length < 2) {
+    const teamGolfersForGroup = teamGolfers.filter((t) => t.group === 1);
+    const groupGolfers =
+      tournamentGolfers
+        ?.filter((g) => g.group === 1)
+        .sort((a, b) => (a.worldRank ?? 501) - (b.worldRank ?? 501)) ?? [];
+    if (teamGolfersForGroup.length === 0) {
+      teamGolfers.push(...groupGolfers.slice(0, 2));
+    } else if (teamGolfersForGroup.length === 1) {
+      if (teamGolfersForGroup[0].apiId === groupGolfers[0].apiId) {
+        teamGolfers.push(groupGolfers[1]);
+      } else {
+        teamGolfers.push(groupGolfers[0]);
+      }
+    }
+  } else if (teamGolfers.filter((t) => t.group === 2).length < 2) {
+    const teamGolfersForGroup = teamGolfers.filter((t) => t.group === 2);
+    const groupGolfers =
+      tournamentGolfers
+        ?.filter((g) => g.group === 2)
+        .sort((a, b) => (a.worldRank ?? 501) - (b.worldRank ?? 501)) ?? [];
+    if (teamGolfersForGroup.length === 0) {
+      teamGolfers.push(...groupGolfers.slice(0, 2));
+    } else if (teamGolfersForGroup.length === 1) {
+      if (teamGolfersForGroup[0].apiId === groupGolfers[0].apiId) {
+        teamGolfers.push(groupGolfers[1]);
+      } else {
+        teamGolfers.push(groupGolfers[0]);
+      }
+    }
+  } else if (teamGolfers.filter((t) => t.group === 3).length < 2) {
+    const teamGolfersForGroup = teamGolfers.filter((t) => t.group === 3);
+    const groupGolfers =
+      tournamentGolfers
+        ?.filter((g) => g.group === 3)
+        .sort((a, b) => (a.worldRank ?? 501) - (b.worldRank ?? 501)) ?? [];
+    if (teamGolfersForGroup.length === 0) {
+      teamGolfers.push(...groupGolfers.slice(0, 2));
+    } else if (teamGolfersForGroup.length === 1) {
+      if (teamGolfersForGroup[0].apiId === groupGolfers[0].apiId) {
+        teamGolfers.push(groupGolfers[1]);
+      } else {
+        teamGolfers.push(groupGolfers[0]);
+      }
+    }
+  } else if (teamGolfers.filter((t) => t.group === 4).length < 2) {
+    const teamGolfersForGroup = teamGolfers.filter((t) => t.group === 4);
+    const groupGolfers =
+      tournamentGolfers
+        ?.filter((g) => g.group === 4)
+        .sort((a, b) => (a.worldRank ?? 501) - (b.worldRank ?? 501)) ?? [];
+    if (teamGolfersForGroup.length === 0) {
+      teamGolfers.push(...groupGolfers.slice(0, 2));
+    } else if (teamGolfersForGroup.length === 1) {
+      if (teamGolfersForGroup[0].apiId === groupGolfers[0].apiId) {
+        teamGolfers.push(groupGolfers[1]);
+      } else {
+        teamGolfers.push(groupGolfers[0]);
+      }
+    }
+  } else if (teamGolfers.filter((t) => t.group === 5).length < 2) {
+    const teamGolfersForGroup = teamGolfers.filter((t) => t.group === 5);
+    const groupGolfers =
+      tournamentGolfers
+        ?.filter((g) => g.group === 5)
+        .sort((a, b) => (a.worldRank ?? 501) - (b.worldRank ?? 501)) ?? [];
+    if (teamGolfersForGroup.length === 0) {
+      teamGolfers.push(...groupGolfers.slice(0, 2));
+    } else if (teamGolfersForGroup.length === 1) {
+      if (teamGolfersForGroup[0].apiId === groupGolfers[0].apiId) {
+        teamGolfers.push(groupGolfers[1]);
+      } else {
+        teamGolfers.push(groupGolfers[0]);
+      }
+    }
+  }
+  return teamGolfers;
 };
 
 export const normalize = {
@@ -280,24 +532,62 @@ export const dateUtils = {
   },
 } as const;
 
-export const earliestTimeStr = (
-  times: Array<string | null | undefined>,
-  position = 1,
-) => {
+export const earliestTimeStr = (times: Array<string | null | undefined>) => {
   const valid = times.filter((t): t is string => Boolean(t && t.trim().length));
   if (!valid.length) return undefined;
-  const pos = Math.max(1, Math.floor(position));
   try {
     const parsed = valid
       .map((t) => ({ t, d: new Date(t).getTime() }))
       .filter(({ d }) => !Number.isNaN(d));
     if (parsed.length === valid.length && parsed.length > 0) {
       parsed.sort((a, b) => a.d - b.d);
-      return parsed[pos - 1]?.t;
+      return parsed[0]?.t;
     }
   } catch (err) {
     void err;
   }
   const sorted = [...valid].sort();
-  return sorted[pos - 1];
+  return sorted[0];
 };
+
+const avgAwards = (arr: number[], start: number, count: number) => {
+  let sum = 0;
+  for (let i = 0; i < count; i++) sum += arr[start + i] ?? 0;
+  return count > 0 ? sum / count : 0;
+};
+
+export const awardTeamPlayoffPoints = (
+  tournament: EnhancedTournamentDoc,
+  team: EnhancedTournamentTeamDoc,
+) => {
+  return avgAwards(
+    tournament.tier?.points ?? [],
+    tournament.teams?.filter((t) => (t.score ?? 500) < (team.score ?? 500))
+      .length ?? 0,
+    tournament.teams?.filter((t) => (t.score ?? 500) === (team.score ?? 500))
+      .length ?? 0,
+  );
+};
+export const awardTeamEarnings = (
+  tournament: EnhancedTournamentDoc,
+  team: EnhancedTournamentTeamDoc,
+) => {
+  return avgAwards(
+    tournament.tier?.payouts ?? [],
+    tournament.teams?.filter((t) => (t.score ?? 500) < (team.score ?? 500))
+      .length ?? 0,
+    tournament.teams?.filter((t) => (t.score ?? 500) === (team.score ?? 500))
+      .length ?? 0,
+  );
+};
+
+
+export function calculateScoreForSorting(
+  position: string | null | undefined,
+  score: number | null | undefined,
+): number {
+  if (position === "DQ") return 999 + (score ?? 999);
+  if (position === "WD") return 888 + (score ?? 999);
+  if (position === "CUT") return 444 + (score ?? 999);
+  return score ?? 999;
+}

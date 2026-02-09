@@ -25,7 +25,25 @@ export type DedupeResult = {
 };
 
 import type { Doc } from "../_generated/dataModel";
+import { DataGolfFieldPlayer, DataGolfRankedPlayer } from "./datagolf";
 
 export type ValidateGolferDataInput = Partial<
   Pick<Doc<"golfers">, "apiId" | "playerName" | "country" | "worldRank">
 >;
+
+export type EnhancedGolfer = DataGolfFieldPlayer & {
+  ranking?: DataGolfRankedPlayer;
+};
+
+export type BuildUsageRateByGolferApiIdOptions = {
+  teams: {
+    golferIds: number[];
+  }[];
+};
+
+export type GroupLimits = {
+  GROUP_1: { percentage: number; maxCount: number };
+  GROUP_2: { percentage: number; maxCount: number };
+  GROUP_3: { percentage: number; maxCount: number };
+  GROUP_4: { percentage: number; maxCount: number };
+};

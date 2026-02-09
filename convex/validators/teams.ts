@@ -35,19 +35,17 @@ export const teamsValidators = {
       options: v.optional(
         v.object({
           skipValidation: v.optional(v.boolean()),
-          setActive: v.optional(v.boolean()),
           returnEnhanced: v.optional(v.boolean()),
           includeStatistics: v.optional(v.boolean()),
           includeTournament: v.optional(v.boolean()),
           includeMember: v.optional(v.boolean()),
+          includeGolfers: v.optional(v.boolean()),
         }),
       ),
     },
     getTeams: {
       options: v.optional(
         v.object({
-          id: v.optional(v.id("teams")),
-          ids: v.optional(v.array(v.id("teams"))),
           filter: v.optional(
             v.object({
               tournamentId: v.optional(v.id("tournaments")),
@@ -102,12 +100,8 @@ export const teamsValidators = {
               includeMember: v.optional(v.boolean()),
               includeGolfers: v.optional(v.boolean()),
               includeStatistics: v.optional(v.boolean()),
-              includeRounds: v.optional(v.boolean()),
             }),
           ),
-          activeOnly: v.optional(v.boolean()),
-          tournamentOnly: v.optional(v.boolean()),
-          includeAnalytics: v.optional(v.boolean()),
         }),
       ),
     },
@@ -188,7 +182,6 @@ export const teamsValidators = {
       teamId: v.id("teams"),
       options: v.optional(
         v.object({
-          softDelete: v.optional(v.boolean()),
           returnDeletedData: v.optional(v.boolean()),
         }),
       ),

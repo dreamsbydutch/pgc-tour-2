@@ -12,78 +12,85 @@
  * Betting Tools, Historical Odds, Historical DFS).
  */
 
-import { action } from "../_generated/server";
+import { action, internalMutation } from "../_generated/server";
 import { datagolfValidators } from "../validators/datagolf";
-import { processData } from "../utils/processData";
+import { processData } from "../utils/batchProcess";
 import {
   buildQueryParams,
   fetchFromDataGolf,
   impliedProbabilityFromOdds,
   isLiveTournamentStat,
   isNonEmptyString,
+  isRoundRunningFromLiveStats,
   isSkillRatingCategoryKey,
+  normalizeDgSkillEstimateToPgcRating,
+  normalizePlayerNameFromDataGolf,
+  parseThruFromLiveModel,
 } from "../utils/datagolf";
 import type {
-  BettingMarketMatchups,
-  BettingMarketOutright,
-  BettingToolAllPairingsResponse,
-  BettingToolMatchupsResponse,
-  BettingToolOutrightsResponse,
+  DataGolfBettingMarketMatchups,
+  DataGolfBettingMarketOutright,
+  DataGolfBettingToolAllPairingsResponse,
+  DataGolfBettingToolMatchupsResponse,
+  DataGolfBettingToolOutrightsResponse,
   DataGolfEventId,
-  FantasyProjectionPlayer,
-  FantasyProjectionResponse,
-  FantasySite,
-  FantasySlate,
-  HistoricalDfsEventListResponse,
-  HistoricalDfsPointsResponse,
-  HistoricalOddsEventListResponse,
-  HistoricalOddsMatchupsResponse,
-  HistoricalOddsOutrightsResponse,
-  HistoricalOddsTour,
-  LiveStrokesGainedResponse,
-  LiveStrokesGainedView,
-  OddsFormat,
-  Player,
-  ScheduleEvent,
-  TourScheduleResponse,
-  FieldPlayer,
-  FieldUpdatesResponse,
-  RankedPlayer,
+  DataGolfFantasyProjectionPlayer,
+  DataGolfFantasyProjectionResponse,
+  DataGolfFantasySite,
+  DataGolfFantasySlate,
+  DataGolfHistoricalDfsEventListResponse,
+  DataGolfHistoricalDfsPointsResponse,
+  DataGolfHistoricalOddsEventListResponse,
+  DataGolfHistoricalOddsMatchupsResponse,
+  DataGolfHistoricalOddsOutrightsResponse,
+  DataGolfHistoricalOddsTour,
+  DataGolfLiveStrokesGainedResponse,
+  DataGolfLiveStrokesGainedView,
+  DataGolfOddsFormat,
+  DataGolfPlayer,
+  DataGolfScheduleEvent,
+  DataGolfTourScheduleResponse,
+  DataGolfFieldPlayer,
+  DataGolfFieldUpdatesResponse,
+  DataGolfRankedPlayer,
   DataGolfRankingsResponse,
-  PredictionPlayer,
-  PreTournamentArchivePlayer,
-  PreTournamentPredictionsArchiveResponse,
-  PreTournamentPredictionsResponse,
-  SkillDecompositionPlayer,
-  SkillDecompositionsResponse,
-  SkillRatingPlayer,
-  SkillRatingsResponse,
-  ApproachSkillFieldKey,
-  ApproachSkillPlayer,
-  ApproachSkillResponse,
-  LiveModelPlayer,
-  LiveModelPredictionsResponse,
-  LiveStatsPlayer,
-  LiveTournamentStatsResponse,
-  HoleStats,
-  LiveHoleStatsResponse,
-  HistoricalEvent,
-  HistoricalEventDataResponse,
-  HistoricalPlayer,
-  HistoricalRoundDataResponse,
+  DataGolfPredictionPlayer,
+  DataGolfPreTournamentArchivePlayer,
+  DataGolfPreTournamentPredictionsArchiveResponse,
+  DataGolfPreTournamentPredictionsResponse,
+  DataGolfSkillDecompositionPlayer,
+  DataGolfSkillDecompositionsResponse,
+  DataGolfSkillRatingPlayer,
+  DataGolfSkillRatingsResponse,
+  DataGolfApproachSkillFieldKey,
+  DataGolfApproachSkillPlayer,
+  DataGolfApproachSkillResponse,
+  DataGolfLiveModelPlayer,
+  DataGolfLiveModelPredictionsResponse,
+  DataGolfLiveStatsPlayer,
+  DataGolfLiveTournamentStatsResponse,
+  DataGolfHoleStats,
+  DataGolfLiveHoleStatsResponse,
+  DataGolfHistoricalEvent,
+  DataGolfHistoricalEventDataResponse,
+  DataGolfHistoricalPlayer,
+  DataGolfHistoricalRoundDataResponse,
 } from "../types/datagolf";
+import {
+  buildUsageRateByGolferApiId,
+  computePosChange,
+  earliestTimeStr,
+  roundToDecimalPlace,
+} from "../utils";
+import { v } from "convex/values";
+import { Doc } from "../_generated/dataModel";
 
 /**
- * Fetch player list with comprehensive filtering and sorting options
+ * Fetches the DataGolf player list.
  *
- * @example
- * const players = await ctx.runQuery(api.functions.datagolf.fetchPlayerList, {
- *   options: {
- *     filterByCountry: "USA",
- *     sortByName: true,
- *     limit: 50
- *   }
- * });
+ * Endpoint: `/get-player-list`
+ *
+ * Supports optional filtering/sorting/pagination via `args.options`.
  */
 export const fetchPlayerList = action({
   args: datagolfValidators.args.fetchPlayerList,
@@ -92,9 +99,9 @@ export const fetchPlayerList = action({
     const format = options.format || "json";
 
     const endpoint = `/get-player-list?file_format=${format}`;
-    const data = await fetchFromDataGolf<Player[]>(
+    const data = await fetchFromDataGolf<DataGolfPlayer[]>(
       endpoint,
-      (json): json is Player[] =>
+      (json): json is DataGolfPlayer[] =>
         Array.isArray(json) &&
         (json.length === 0 ||
           json.every(
@@ -106,7 +113,7 @@ export const fetchPlayerList = action({
     if (!Array.isArray(data)) return data;
 
     return processData(data, {
-      filter: (player: Player) => {
+      filter: (player: DataGolfPlayer) => {
         if (
           options.filterByCountry &&
           player.country !== options.filterByCountry
@@ -120,7 +127,8 @@ export const fetchPlayerList = action({
         return true;
       },
       sort: options.sortByName
-        ? (a: Player, b: Player) => a.player_name.localeCompare(b.player_name)
+        ? (a: DataGolfPlayer, b: DataGolfPlayer) =>
+            a.player_name.localeCompare(b.player_name)
         : undefined,
       limit: options.limit,
       skip: options.skip,
@@ -129,16 +137,11 @@ export const fetchPlayerList = action({
 });
 
 /**
- * Fetch tour schedule with location filtering and date sorting
+ * Fetches the DataGolf tour schedule.
  *
- * @example
- * const schedule = await ctx.runQuery(api.functions.datagolf.fetchTourSchedule, {
- *   options: {
- *     tour: "pga",
- *     upcomingOnly: true,
- *     sortByDate: true
- *   }
- * });
+ * Endpoint: `/get-schedule`
+ *
+ * Supports optional filtering (location, upcoming-only), sorting (date), and pagination.
  */
 export const fetchTourSchedule = action({
   args: datagolfValidators.args.fetchTourSchedule,
@@ -155,19 +158,19 @@ export const fetchTourSchedule = action({
     });
 
     const endpoint = `/get-schedule?${params}`;
-    const data = await fetchFromDataGolf<TourScheduleResponse>(
+    const data = await fetchFromDataGolf<DataGolfTourScheduleResponse>(
       endpoint,
-      (json): json is TourScheduleResponse =>
+      (json): json is DataGolfTourScheduleResponse =>
         typeof json === "object" &&
         json !== null &&
         "schedule" in json &&
-        Array.isArray((json as TourScheduleResponse).schedule),
+        Array.isArray((json as DataGolfTourScheduleResponse).schedule),
     );
 
     if (!data.schedule || !Array.isArray(data.schedule)) return data;
 
     const processedSchedule = processData(data.schedule, {
-      filter: (event: ScheduleEvent) => {
+      filter: (event: DataGolfScheduleEvent) => {
         if (
           options.filterByLocation &&
           !event.location
@@ -178,7 +181,7 @@ export const fetchTourSchedule = action({
         return true;
       },
       sort: options.sortByDate
-        ? (a: ScheduleEvent, b: ScheduleEvent) =>
+        ? (a: DataGolfScheduleEvent, b: DataGolfScheduleEvent) =>
             new Date(a.start_date).getTime() - new Date(b.start_date).getTime()
         : undefined,
       limit: options.limit,
@@ -190,17 +193,11 @@ export const fetchTourSchedule = action({
 });
 
 /**
- * Fetch field updates with salary and player filtering
+ * Fetches DataGolf field updates.
  *
- * @example
- * const fieldUpdates = await ctx.runQuery(api.functions.datagolf.fetchFieldUpdates, {
- *   options: {
- *     tour: "pga",
- *     sortBySalary: true,
- *     minSalary: 8000,
- *     filterWithdrawn: false
- *   }
- * });
+ * Endpoint: `/field-updates`
+ *
+ * Supports optional filtering (country, withdrawn, salary range), sorting, and pagination.
  */
 export const fetchFieldUpdates = action({
   args: datagolfValidators.args.fetchFieldUpdates,
@@ -210,12 +207,13 @@ export const fetchFieldUpdates = action({
     const format = options.format || "json";
 
     const endpoint = `/field-updates?tour=${tour}&file_format=${format}`;
-    const data = await fetchFromDataGolf<FieldUpdatesResponse>(endpoint);
+    const data =
+      await fetchFromDataGolf<DataGolfFieldUpdatesResponse>(endpoint);
 
     if (!data.field || !Array.isArray(data.field)) return data;
 
     const processedField = processData(data.field, {
-      filter: (player: FieldPlayer) => {
+      filter: (player: DataGolfFieldPlayer) => {
         if (
           options.filterByCountry &&
           player.country !== options.filterByCountry
@@ -240,10 +238,10 @@ export const fetchFieldUpdates = action({
         return true;
       },
       sort: options.sortBySalary
-        ? (a: FieldPlayer, b: FieldPlayer) =>
+        ? (a: DataGolfFieldPlayer, b: DataGolfFieldPlayer) =>
             (b.dk_salary || 0) - (a.dk_salary || 0)
         : options.sortByName
-          ? (a: FieldPlayer, b: FieldPlayer) =>
+          ? (a: DataGolfFieldPlayer, b: DataGolfFieldPlayer) =>
               a.player_name.localeCompare(b.player_name)
           : undefined,
       limit: options.limit,
@@ -255,16 +253,11 @@ export const fetchFieldUpdates = action({
 });
 
 /**
- * Fetch DataGolf rankings with country and skill filtering
+ * Fetches DataGolf rankings.
  *
- * @example
- * const rankings = await ctx.runQuery(api.functions.datagolf.fetchDataGolfRankings, {
- *   options: {
- *     topN: 50,
- *     filterByCountry: "USA",
- *     sortBySkill: true
- *   }
- * });
+ * Endpoint: `/preds/get-dg-rankings`
+ *
+ * Supports optional filtering (country, tour, top-N, min skill) and pagination.
  */
 export const fetchDataGolfRankings = action({
   args: datagolfValidators.args.fetchDataGolfRankings,
@@ -278,7 +271,7 @@ export const fetchDataGolfRankings = action({
     if (!data.rankings || !Array.isArray(data.rankings)) return data;
 
     const processedRankings = processData(data.rankings, {
-      filter: (player: RankedPlayer) => {
+      filter: (player: DataGolfRankedPlayer) => {
         if (
           options.filterByCountry &&
           player.country !== options.filterByCountry
@@ -298,7 +291,7 @@ export const fetchDataGolfRankings = action({
         return true;
       },
       sort: options.sortBySkill
-        ? (a: RankedPlayer, b: RankedPlayer) =>
+        ? (a: DataGolfRankedPlayer, b: DataGolfRankedPlayer) =>
             b.dg_skill_estimate - a.dg_skill_estimate
         : undefined,
       limit: options.limit,
@@ -310,17 +303,11 @@ export const fetchDataGolfRankings = action({
 });
 
 /**
- * Fetch pre-tournament predictions with comprehensive filtering
+ * Fetches DataGolf pre-tournament predictions.
  *
- * @example
- * const predictions = await ctx.runQuery(api.functions.datagolf.fetchPreTournamentPredictions, {
- *   options: {
- *     tour: "pga",
- *     model: "baseline",
- *     sortByWinProbability: true,
- *     minWinProbability: 0.05
- *   }
- * });
+ * Endpoint: `/preds/pre-tournament`
+ *
+ * Uses `options.model` as the response key to extract and post-process a single model output.
  */
 export const fetchPreTournamentPredictions = action({
   args: datagolfValidators.args.fetchPreTournamentPredictions,
@@ -328,7 +315,7 @@ export const fetchPreTournamentPredictions = action({
     const options = args.options || {};
     const tour = options.tour || "pga";
     const format = options.format || "json";
-    const oddsFormat = (options.oddsFormat || "percent") as OddsFormat;
+    const oddsFormat = (options.oddsFormat || "percent") as DataGolfOddsFormat;
     const deadHeat = options.deadHeat !== false ? "yes" : "no";
 
     const params = buildQueryParams({
@@ -341,7 +328,9 @@ export const fetchPreTournamentPredictions = action({
 
     const endpoint = `/preds/pre-tournament?${params}`;
     const data =
-      await fetchFromDataGolf<PreTournamentPredictionsResponse>(endpoint);
+      await fetchFromDataGolf<DataGolfPreTournamentPredictionsResponse>(
+        endpoint,
+      );
 
     const modelKey = options.model || "baseline";
     const modelData = data[modelKey];
@@ -349,15 +338,15 @@ export const fetchPreTournamentPredictions = action({
     if (!modelData || !Array.isArray(modelData)) return data;
     if (modelData.length > 0 && typeof modelData[0] === "string") return data;
 
-    const predictionPlayers: PredictionPlayer[] = modelData.filter(
-      (item): item is PredictionPlayer => typeof item !== "string",
+    const predictionPlayers: DataGolfPredictionPlayer[] = modelData.filter(
+      (item): item is DataGolfPredictionPlayer => typeof item !== "string",
     );
 
     const getWinProb = (win: number | string): number | null =>
       impliedProbabilityFromOdds(win, oddsFormat);
 
     const processedPredictions = processData(predictionPlayers, {
-      filter: (player: PredictionPlayer) => {
+      filter: (player: DataGolfPredictionPlayer) => {
         if (
           options.filterByCountry &&
           player.country !== options.filterByCountry
@@ -381,7 +370,7 @@ export const fetchPreTournamentPredictions = action({
         return true;
       },
       sort: options.sortByWinProbability
-        ? (a: PredictionPlayer, b: PredictionPlayer) => {
+        ? (a: DataGolfPredictionPlayer, b: DataGolfPredictionPlayer) => {
             const aWinProb = getWinProb(a.win as number | string) ?? -1;
             const bWinProb = getWinProb(b.win as number | string) ?? -1;
             return bWinProb - aWinProb;
@@ -396,7 +385,9 @@ export const fetchPreTournamentPredictions = action({
 });
 
 /**
- * Fetch player skill decompositions with detailed prediction breakdowns
+ * Fetches player skill decompositions.
+ *
+ * Endpoint: `/preds/player-decompositions`
  */
 export const fetchPlayerSkillDecompositions = action({
   args: datagolfValidators.args.fetchPlayerSkillDecompositions,
@@ -406,12 +397,13 @@ export const fetchPlayerSkillDecompositions = action({
     const format = options.format || "json";
 
     const endpoint = `/preds/player-decompositions?tour=${tour}&file_format=${format}`;
-    const data = await fetchFromDataGolf<SkillDecompositionsResponse>(endpoint);
+    const data =
+      await fetchFromDataGolf<DataGolfSkillDecompositionsResponse>(endpoint);
 
     if (!data.players || !Array.isArray(data.players)) return data;
 
     const processedPlayers = processData(data.players, {
-      filter: (player: SkillDecompositionPlayer) => {
+      filter: (player: DataGolfSkillDecompositionPlayer) => {
         if (
           options.filterByCountry &&
           player.country !== options.filterByCountry
@@ -422,8 +414,10 @@ export const fetchPlayerSkillDecompositions = action({
         return true;
       },
       sort: options.sortByPrediction
-        ? (a: SkillDecompositionPlayer, b: SkillDecompositionPlayer) =>
-            b.final_pred - a.final_pred
+        ? (
+            a: DataGolfSkillDecompositionPlayer,
+            b: DataGolfSkillDecompositionPlayer,
+          ) => b.final_pred - a.final_pred
         : undefined,
       limit: options.limit,
       skip: options.skip,
@@ -449,7 +443,9 @@ export const fetchPlayerSkillDecompositions = action({
 });
 
 /**
- * Fetch skill ratings with category-specific sorting
+ * Fetches skill ratings.
+ *
+ * Endpoint: `/preds/skill-ratings`
  */
 export const fetchSkillRatings = action({
   args: datagolfValidators.args.fetchSkillRatings,
@@ -459,18 +455,19 @@ export const fetchSkillRatings = action({
     const format = options.format || "json";
 
     const endpoint = `/preds/skill-ratings?display=${display}&file_format=${format}`;
-    const data = await fetchFromDataGolf<SkillRatingsResponse>(endpoint);
+    const data =
+      await fetchFromDataGolf<DataGolfSkillRatingsResponse>(endpoint);
 
     if (!data.players || !Array.isArray(data.players)) return data;
 
     const processedPlayers = processData(data.players, {
-      filter: (player: SkillRatingPlayer) => {
+      filter: (player: DataGolfSkillRatingPlayer) => {
         if (options.minTotalSG && player.sg_total < options.minTotalSG)
           return false;
         return true;
       },
       sort: options.sortByCategory
-        ? (a: SkillRatingPlayer, b: SkillRatingPlayer) => {
+        ? (a: DataGolfSkillRatingPlayer, b: DataGolfSkillRatingPlayer) => {
             if (!options.sortByCategory) return 0;
             if (!isSkillRatingCategoryKey(options.sortByCategory)) return 0;
             return b[options.sortByCategory] - a[options.sortByCategory];
@@ -485,7 +482,9 @@ export const fetchSkillRatings = action({
 });
 
 /**
- * Fetch approach skill data with distance-based filtering
+ * Fetches approach skill data.
+ *
+ * Endpoint: `/preds/approach-skill`
  */
 export const fetchApproachSkill = action({
   args: datagolfValidators.args.fetchApproachSkill,
@@ -495,26 +494,29 @@ export const fetchApproachSkill = action({
     const format = options.format || "json";
 
     const endpoint = `/preds/approach-skill?period=${period}&file_format=${format}`;
-    const data = await fetchFromDataGolf<ApproachSkillResponse>(endpoint);
+    const data =
+      await fetchFromDataGolf<DataGolfApproachSkillResponse>(endpoint);
 
     if (!data.data || !Array.isArray(data.data)) return data;
 
     const processedData = processData(data.data, {
-      filter: (player: ApproachSkillPlayer) => {
+      filter: (player: DataGolfApproachSkillPlayer) => {
         if (options.minShotCount) {
-          const shotCountField: ApproachSkillFieldKey = options.distanceRange
-            ? (`${options.distanceRange}_shot_count` as ApproachSkillFieldKey)
-            : "50_100_fw_shot_count";
+          const shotCountField: DataGolfApproachSkillFieldKey =
+            options.distanceRange
+              ? (`${options.distanceRange}_shot_count` as DataGolfApproachSkillFieldKey)
+              : "50_100_fw_shot_count";
           if ((player[shotCountField] ?? 0) < options.minShotCount)
             return false;
         }
         return true;
       },
       sort: options.sortByProximity
-        ? (a: ApproachSkillPlayer, b: ApproachSkillPlayer) => {
-            const proximityField: ApproachSkillFieldKey = options.distanceRange
-              ? (`${options.distanceRange}_proximity_per_shot` as ApproachSkillFieldKey)
-              : "50_100_fw_proximity_per_shot";
+        ? (a: DataGolfApproachSkillPlayer, b: DataGolfApproachSkillPlayer) => {
+            const proximityField: DataGolfApproachSkillFieldKey =
+              options.distanceRange
+                ? (`${options.distanceRange}_proximity_per_shot` as DataGolfApproachSkillFieldKey)
+                : "50_100_fw_proximity_per_shot";
             return (a[proximityField] ?? 999) - (b[proximityField] ?? 999);
           }
         : undefined,
@@ -527,7 +529,9 @@ export const fetchApproachSkill = action({
 });
 
 /**
- * Fetch live model predictions with position and probability filtering
+ * Fetches live model predictions.
+ *
+ * Endpoint: `/preds/in-play`
  */
 export const fetchLiveModelPredictions = action({
   args: datagolfValidators.args.fetchLiveModelPredictions,
@@ -540,12 +544,12 @@ export const fetchLiveModelPredictions = action({
 
     const endpoint = `/preds/in-play?tour=${tour}&dead_heat=${deadHeat}&odds_format=${oddsFormat}&file_format=${format}`;
     const data =
-      await fetchFromDataGolf<LiveModelPredictionsResponse>(endpoint);
+      await fetchFromDataGolf<DataGolfLiveModelPredictionsResponse>(endpoint);
 
     if (!data.data || !Array.isArray(data.data)) return data;
 
     const processedData = processData(data.data, {
-      filter: (player: LiveModelPlayer) => {
+      filter: (player: DataGolfLiveModelPlayer) => {
         if (options.onlyActivePlayers && player.thru === "WD") return false;
         if (
           options.filterByPosition?.current &&
@@ -562,7 +566,7 @@ export const fetchLiveModelPredictions = action({
         return true;
       },
       sort: options.sortByPosition
-        ? (a: LiveModelPlayer, b: LiveModelPlayer) => {
+        ? (a: DataGolfLiveModelPlayer, b: DataGolfLiveModelPlayer) => {
             const posA = parseInt(a.current_pos.replace(/[^\d]/g, "")) || 999;
             const posB = parseInt(b.current_pos.replace(/[^\d]/g, "")) || 999;
             return posA - posB;
@@ -577,7 +581,9 @@ export const fetchLiveModelPredictions = action({
 });
 
 /**
- * Fetch live tournament stats with comprehensive stat filtering
+ * Fetches live tournament stats.
+ *
+ * Endpoint: `/preds/live-tournament-stats`
  */
 export const fetchLiveTournamentStats = action({
   args: datagolfValidators.args.fetchLiveTournamentStats,
@@ -596,12 +602,13 @@ export const fetchLiveTournamentStats = action({
     });
 
     const endpoint = `/preds/live-tournament-stats?${params}`;
-    const data = await fetchFromDataGolf<LiveTournamentStatsResponse>(endpoint);
+    const data =
+      await fetchFromDataGolf<DataGolfLiveTournamentStatsResponse>(endpoint);
 
     if (!data.live_stats || !Array.isArray(data.live_stats)) return data;
 
     const processedStats = processData(data.live_stats, {
-      filter: (player: LiveStatsPlayer) => {
+      filter: (player: DataGolfLiveStatsPlayer) => {
         if (options.onlyCompleteRounds && player.thru !== 18) return false;
         if (options.filterByPosition) {
           const position = parseInt(player.position) || 999;
@@ -618,7 +625,7 @@ export const fetchLiveTournamentStats = action({
         return true;
       },
       sort: options.sortByStat
-        ? (a: LiveStatsPlayer, b: LiveStatsPlayer) => {
+        ? (a: DataGolfLiveStatsPlayer, b: DataGolfLiveStatsPlayer) => {
             const stat = options.sortByStat;
             if (!stat) return 0;
             if (typeof stat !== "string" || !isLiveTournamentStat(stat))
@@ -635,7 +642,9 @@ export const fetchLiveTournamentStats = action({
 });
 
 /**
- * Fetch live hole statistics with hole and difficulty filtering
+ * Fetches live hole statistics.
+ *
+ * Endpoint: `/preds/live-hole-stats`
  */
 export const fetchLiveHoleStats = action({
   args: datagolfValidators.args.fetchLiveHoleStats,
@@ -645,7 +654,8 @@ export const fetchLiveHoleStats = action({
     const format = options.format || "json";
 
     const endpoint = `/preds/live-hole-stats?tour=${tour}&file_format=${format}`;
-    const data = await fetchFromDataGolf<LiveHoleStatsResponse>(endpoint);
+    const data =
+      await fetchFromDataGolf<DataGolfLiveHoleStatsResponse>(endpoint);
 
     if (!data.courses || !Array.isArray(data.courses)) return data;
 
@@ -654,7 +664,7 @@ export const fetchLiveHoleStats = action({
       rounds: course.rounds?.map((round) => ({
         ...round,
         holes: round.holes
-          ?.filter((hole: HoleStats) => {
+          ?.filter((hole: DataGolfHoleStats) => {
             if (options.filterByHole && hole.hole !== options.filterByHole)
               return false;
             if (options.filterByPar && hole.par !== options.filterByPar)
@@ -663,7 +673,7 @@ export const fetchLiveHoleStats = action({
           })
           .sort(
             options.sortByDifficulty
-              ? (a: HoleStats, b: HoleStats) => {
+              ? (a: DataGolfHoleStats, b: DataGolfHoleStats) => {
                   const waveA =
                     options.wave === "morning"
                       ? a.morning_wave
@@ -688,7 +698,9 @@ export const fetchLiveHoleStats = action({
 });
 
 /**
- * Fetch historical raw data event list
+ * Fetches the historical raw-data event list.
+ *
+ * Endpoint: `/historical-raw-data/event-list`
  */
 export const fetchHistoricalEventList = action({
   args: datagolfValidators.args.fetchHistoricalEventList,
@@ -697,12 +709,12 @@ export const fetchHistoricalEventList = action({
     const format = options.format || "json";
 
     const endpoint = `/historical-raw-data/event-list?file_format=${format}`;
-    const data = await fetchFromDataGolf<HistoricalEvent[]>(endpoint);
+    const data = await fetchFromDataGolf<DataGolfHistoricalEvent[]>(endpoint);
 
     if (!Array.isArray(data)) return data;
 
     return processData(data, {
-      filter: (event: HistoricalEvent) => {
+      filter: (event: DataGolfHistoricalEvent) => {
         if (options.filterByTour && event.tour !== options.filterByTour)
           return false;
         if (
@@ -714,7 +726,7 @@ export const fetchHistoricalEventList = action({
         return true;
       },
       sort: options.sortByDate
-        ? (a: HistoricalEvent, b: HistoricalEvent) =>
+        ? (a: DataGolfHistoricalEvent, b: DataGolfHistoricalEvent) =>
             new Date(b.date).getTime() - new Date(a.date).getTime()
         : undefined,
       limit: options.limit,
@@ -724,7 +736,9 @@ export const fetchHistoricalEventList = action({
 });
 
 /**
- * Fetch historical round data with comprehensive filtering
+ * Fetches historical round scoring data.
+ *
+ * Endpoint: `/historical-raw-data/rounds`
  */
 export const fetchHistoricalRoundData = action({
   args: datagolfValidators.args.fetchHistoricalRoundData,
@@ -733,12 +747,13 @@ export const fetchHistoricalRoundData = action({
     const format = options.format || "json";
 
     const endpoint = `/historical-raw-data/rounds?tour=${options.tour}&event_id=${options.eventId}&year=${options.year}&file_format=${format}`;
-    const data = await fetchFromDataGolf<HistoricalRoundDataResponse>(endpoint);
+    const data =
+      await fetchFromDataGolf<DataGolfHistoricalRoundDataResponse>(endpoint);
 
     if (!data.scores || !Array.isArray(data.scores)) return data;
 
     const processedScores = processData(data.scores, {
-      filter: (player: HistoricalPlayer) => {
+      filter: (player: DataGolfHistoricalPlayer) => {
         if (
           options.filterByPlayer &&
           !player.player_name
@@ -749,14 +764,14 @@ export const fetchHistoricalRoundData = action({
 
         if (options.filterByRound) {
           const roundKey =
-            `round_${options.filterByRound}` as keyof HistoricalPlayer;
+            `round_${options.filterByRound}` as keyof DataGolfHistoricalPlayer;
           if (!player[roundKey]) return false;
         }
 
         return true;
       },
       sort: options.sortByScore
-        ? (a: HistoricalPlayer, b: HistoricalPlayer) => {
+        ? (a: DataGolfHistoricalPlayer, b: DataGolfHistoricalPlayer) => {
             const finA = parseInt(a.fin_text) || 999;
             const finB = parseInt(b.fin_text) || 999;
             return finA - finB;
@@ -791,17 +806,23 @@ export const fetchHistoricalRoundData = action({
 
 export const fetchHistoricalEventDataEvents = action({
   args: datagolfValidators.args.fetchHistoricalEventDataEvents,
-  handler: async (ctx, { options }): Promise<HistoricalEventDataResponse> => {
+  handler: async (
+    ctx,
+    { options },
+  ): Promise<DataGolfHistoricalEventDataResponse> => {
     void ctx;
 
     const format = (options.format || "json") as "json" | "csv";
     const endpoint = `/historical-event-data/events?tour=${options.tour}&event_id=${options.eventId}&year=${options.year}&file_format=${format}`;
 
-    return fetchFromDataGolf<HistoricalEventDataResponse>(endpoint, (json) => {
-      if (!json || typeof json !== "object") return false;
-      const maybe = json as { event_stats?: unknown };
-      return Array.isArray(maybe.event_stats);
-    });
+    return fetchFromDataGolf<DataGolfHistoricalEventDataResponse>(
+      endpoint,
+      (json) => {
+        if (!json || typeof json !== "object") return false;
+        const maybe = json as { event_stats?: unknown };
+        return Array.isArray(maybe.event_stats);
+      },
+    );
   },
 });
 
@@ -810,7 +831,7 @@ export const fetchPreTournamentPredictionsArchive = action({
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const format = options.format || "json";
-    const oddsFormat = (options.oddsFormat || "percent") as OddsFormat;
+    const oddsFormat = (options.oddsFormat || "percent") as DataGolfOddsFormat;
 
     const params = buildQueryParams({
       event_id: options.eventId as DataGolfEventId | undefined,
@@ -821,7 +842,7 @@ export const fetchPreTournamentPredictionsArchive = action({
 
     const endpoint = `/preds/pre-tournament-archive?${params}`;
     const data =
-      await fetchFromDataGolf<PreTournamentPredictionsArchiveResponse>(
+      await fetchFromDataGolf<DataGolfPreTournamentPredictionsArchiveResponse>(
         endpoint,
       );
 
@@ -829,10 +850,13 @@ export const fetchPreTournamentPredictionsArchive = action({
     const modelData = (data as Record<string, unknown>)[modelKey];
     if (!Array.isArray(modelData)) return data;
 
-    const processed = processData(modelData as PreTournamentArchivePlayer[], {
-      limit: options.limit,
-      skip: options.skip,
-    });
+    const processed = processData(
+      modelData as DataGolfPreTournamentArchivePlayer[],
+      {
+        limit: options.limit,
+        skip: options.skip,
+      },
+    );
 
     return { ...data, [modelKey]: processed };
   },
@@ -843,8 +867,8 @@ export const fetchFantasyProjectionDefaults = action({
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const tour = options.tour || "pga";
-    const site = (options.site || "draftkings") as FantasySite;
-    const slate = (options.slate || "main") as FantasySlate;
+    const site = (options.site || "draftkings") as DataGolfFantasySite;
+    const slate = (options.slate || "main") as DataGolfFantasySlate;
     const format = options.format || "json";
 
     const params = buildQueryParams({
@@ -855,12 +879,13 @@ export const fetchFantasyProjectionDefaults = action({
     });
 
     const endpoint = `/preds/fantasy-projection-defaults?${params}`;
-    const data = await fetchFromDataGolf<FantasyProjectionResponse>(endpoint);
+    const data =
+      await fetchFromDataGolf<DataGolfFantasyProjectionResponse>(endpoint);
 
     if (!Array.isArray(data.projections)) return data;
 
     const processed = processData(data.projections, {
-      filter: (p: FantasyProjectionPlayer) => {
+      filter: (p: DataGolfFantasyProjectionPlayer) => {
         if (options.minSalary !== undefined && p.salary < options.minSalary)
           return false;
         if (options.maxSalary !== undefined && p.salary > options.maxSalary)
@@ -874,11 +899,15 @@ export const fetchFantasyProjectionDefaults = action({
         return true;
       },
       sort: options.sortBySalary
-        ? (a: FantasyProjectionPlayer, b: FantasyProjectionPlayer) =>
-            b.salary - a.salary
+        ? (
+            a: DataGolfFantasyProjectionPlayer,
+            b: DataGolfFantasyProjectionPlayer,
+          ) => b.salary - a.salary
         : options.sortByProjection
-          ? (a: FantasyProjectionPlayer, b: FantasyProjectionPlayer) =>
-              b.proj_points - a.proj_points
+          ? (
+              a: DataGolfFantasyProjectionPlayer,
+              b: DataGolfFantasyProjectionPlayer,
+            ) => b.proj_points - a.proj_points
           : undefined,
       limit: options.limit,
       skip: options.skip,
@@ -889,13 +918,17 @@ export const fetchFantasyProjectionDefaults = action({
 });
 
 /**
- * DEPRECATED by DataGolf (prefer fetchLiveTournamentStats).
+ * Fetches live strokes-gained data.
+ *
+ * Endpoint: `/preds/live-strokes-gained`
+ *
+ * This endpoint is deprecated by DataGolf; prefer `fetchLiveTournamentStats`.
  */
 export const fetchLiveStrokesGained = action({
   args: datagolfValidators.args.fetchLiveStrokesGained,
   handler: async (_ctx, args) => {
     const options = args.options || {};
-    const sg = (options.sg || "raw") as LiveStrokesGainedView;
+    const sg = (options.sg || "raw") as DataGolfLiveStrokesGainedView;
     const format = options.format || "json";
 
     const params = buildQueryParams({
@@ -904,7 +937,7 @@ export const fetchLiveStrokesGained = action({
     });
     const endpoint = `/preds/live-strokes-gained?${params}`;
 
-    return fetchFromDataGolf<LiveStrokesGainedResponse>(endpoint);
+    return fetchFromDataGolf<DataGolfLiveStrokesGainedResponse>(endpoint);
   },
 });
 
@@ -913,8 +946,8 @@ export const fetchBettingToolsOutrights = action({
   handler: async (_ctx, args) => {
     const options = args.options;
     const tour = options.tour || "pga";
-    const market = options.market as BettingMarketOutright;
-    const oddsFormat = (options.oddsFormat || "decimal") as OddsFormat;
+    const market = options.market as DataGolfBettingMarketOutright;
+    const oddsFormat = (options.oddsFormat || "decimal") as DataGolfOddsFormat;
     const format = options.format || "json";
 
     const params = buildQueryParams({
@@ -925,7 +958,7 @@ export const fetchBettingToolsOutrights = action({
     });
 
     const endpoint = `/betting-tools/outrights?${params}`;
-    return fetchFromDataGolf<BettingToolOutrightsResponse>(endpoint);
+    return fetchFromDataGolf<DataGolfBettingToolOutrightsResponse>(endpoint);
   },
 });
 
@@ -934,8 +967,8 @@ export const fetchBettingToolsMatchups = action({
   handler: async (_ctx, args) => {
     const options = args.options;
     const tour = options.tour || "pga";
-    const market = options.market as BettingMarketMatchups;
-    const oddsFormat = (options.oddsFormat || "decimal") as OddsFormat;
+    const market = options.market as DataGolfBettingMarketMatchups;
+    const oddsFormat = (options.oddsFormat || "decimal") as DataGolfOddsFormat;
     const format = options.format || "json";
 
     const params = buildQueryParams({
@@ -946,7 +979,7 @@ export const fetchBettingToolsMatchups = action({
     });
 
     const endpoint = `/betting-tools/matchups?${params}`;
-    return fetchFromDataGolf<BettingToolMatchupsResponse>(endpoint);
+    return fetchFromDataGolf<DataGolfBettingToolMatchupsResponse>(endpoint);
   },
 });
 
@@ -955,7 +988,7 @@ export const fetchBettingToolsMatchupsAllPairings = action({
   handler: async (_ctx, args) => {
     const options = args.options || {};
     const tour = options.tour || "pga";
-    const oddsFormat = (options.oddsFormat || "decimal") as OddsFormat;
+    const oddsFormat = (options.oddsFormat || "decimal") as DataGolfOddsFormat;
     const format = options.format || "json";
 
     const params = buildQueryParams({
@@ -965,7 +998,7 @@ export const fetchBettingToolsMatchupsAllPairings = action({
     });
 
     const endpoint = `/betting-tools/matchups-all-pairings?${params}`;
-    return fetchFromDataGolf<BettingToolAllPairingsResponse>(endpoint);
+    return fetchFromDataGolf<DataGolfBettingToolAllPairingsResponse>(endpoint);
   },
 });
 
@@ -973,7 +1006,7 @@ export const fetchHistoricalOddsEventList = action({
   args: datagolfValidators.args.fetchHistoricalOddsEventList,
   handler: async (_ctx, args) => {
     const options = args.options || {};
-    const tour = options.tour as HistoricalOddsTour | undefined;
+    const tour = options.tour as DataGolfHistoricalOddsTour | undefined;
     const format = options.format || "json";
 
     const params = buildQueryParams({
@@ -982,7 +1015,7 @@ export const fetchHistoricalOddsEventList = action({
     });
 
     const endpoint = `/historical-odds/event-list?${params}`;
-    return fetchFromDataGolf<HistoricalOddsEventListResponse>(endpoint);
+    return fetchFromDataGolf<DataGolfHistoricalOddsEventListResponse>(endpoint);
   },
 });
 
@@ -990,9 +1023,9 @@ export const fetchHistoricalOddsOutrights = action({
   args: datagolfValidators.args.fetchHistoricalOddsOutrights,
   handler: async (_ctx, args) => {
     const options = args.options;
-    const tour = (options.tour || "pga") as HistoricalOddsTour;
+    const tour = (options.tour || "pga") as DataGolfHistoricalOddsTour;
     const format = options.format || "json";
-    const oddsFormat = (options.oddsFormat || "decimal") as OddsFormat;
+    const oddsFormat = (options.oddsFormat || "decimal") as DataGolfOddsFormat;
 
     if (!isNonEmptyString(options.book)) {
       throw new Error("book is required");
@@ -1009,7 +1042,7 @@ export const fetchHistoricalOddsOutrights = action({
     });
 
     const endpoint = `/historical-odds/outrights?${params}`;
-    return fetchFromDataGolf<HistoricalOddsOutrightsResponse>(endpoint);
+    return fetchFromDataGolf<DataGolfHistoricalOddsOutrightsResponse>(endpoint);
   },
 });
 
@@ -1017,9 +1050,9 @@ export const fetchHistoricalOddsMatchups = action({
   args: datagolfValidators.args.fetchHistoricalOddsMatchups,
   handler: async (_ctx, args) => {
     const options = args.options;
-    const tour = (options.tour || "pga") as HistoricalOddsTour;
+    const tour = (options.tour || "pga") as DataGolfHistoricalOddsTour;
     const format = options.format || "json";
-    const oddsFormat = (options.oddsFormat || "decimal") as OddsFormat;
+    const oddsFormat = (options.oddsFormat || "decimal") as DataGolfOddsFormat;
 
     if (!isNonEmptyString(options.book)) {
       throw new Error("book is required");
@@ -1035,7 +1068,7 @@ export const fetchHistoricalOddsMatchups = action({
     });
 
     const endpoint = `/historical-odds/matchups?${params}`;
-    return fetchFromDataGolf<HistoricalOddsMatchupsResponse>(endpoint);
+    return fetchFromDataGolf<DataGolfHistoricalOddsMatchupsResponse>(endpoint);
   },
 });
 
@@ -1044,7 +1077,7 @@ export const fetchHistoricalDfsEventList = action({
   handler: async (_ctx, args) => {
     const format = args.options?.format || "json";
     const endpoint = `/historical-dfs-data/event-list?file_format=${format}`;
-    return fetchFromDataGolf<HistoricalDfsEventListResponse>(endpoint);
+    return fetchFromDataGolf<DataGolfHistoricalDfsEventListResponse>(endpoint);
   },
 });
 
@@ -1065,6 +1098,338 @@ export const fetchHistoricalDfsPoints = action({
     });
 
     const endpoint = `/historical-dfs-data/points?${params}`;
-    return fetchFromDataGolf<HistoricalDfsPointsResponse>(endpoint);
+    return fetchFromDataGolf<DataGolfHistoricalDfsPointsResponse>(endpoint);
+  },
+});
+
+/**
+ * Applies DataGolf live-sync payloads to the database.
+ *
+ * This is an internal mutation that:
+ * - normalizes/patches `golfers`
+ * - inserts/patches `tournamentGolfers`
+ * - updates the tournament's live/completion flags based on the in-play feed
+ */
+export const applyDataGolfLiveSync = internalMutation({
+  args: {
+    tournamentId: v.id("tournaments"),
+    currentRound: v.optional(v.number()),
+    eventName: v.optional(v.string()),
+    dataGolfInPlayLastUpdate: v.optional(v.string()),
+    roundIsRunning: v.optional(v.boolean()),
+    field: v.array(
+      v.object({
+        am: v.number(),
+        country: v.string(),
+        course: v.optional(v.string()),
+        dg_id: v.number(),
+        dk_id: v.optional(v.string()),
+        dk_salary: v.optional(v.number()),
+        early_late: v.optional(v.number()),
+        fd_id: v.optional(v.string()),
+        fd_salary: v.optional(v.number()),
+        flag: v.optional(v.string()),
+        pga_number: v.optional(v.number()),
+        player_name: v.string(),
+        r1_teetime: v.optional(v.union(v.string(), v.null())),
+        r2_teetime: v.optional(v.union(v.string(), v.null())),
+        r3_teetime: v.optional(v.union(v.string(), v.null())),
+        r4_teetime: v.optional(v.union(v.string(), v.null())),
+        start_hole: v.optional(v.number()),
+        unofficial: v.optional(v.number()),
+        yh_id: v.optional(v.string()),
+        yh_salary: v.optional(v.number()),
+      }),
+    ),
+    rankings: v.array(
+      v.object({
+        am: v.number(),
+        country: v.string(),
+        datagolf_rank: v.number(),
+        dg_id: v.number(),
+        dg_skill_estimate: v.number(),
+        owgr_rank: v.number(),
+        player_name: v.string(),
+        primary_tour: v.string(),
+      }),
+    ),
+    liveStats: v.array(
+      v.object({
+        player_name: v.string(),
+        country: v.optional(v.string()),
+        course: v.optional(v.string()),
+        dg_id: v.number(),
+        current_pos: v.string(),
+        current_score: v.number(),
+        end_hole: v.number(),
+        make_cut: v.number(),
+        round: v.number(),
+        thru: v.union(v.string(), v.number()),
+        today: v.number(),
+        top_10: v.optional(v.union(v.number(), v.null())),
+        top_20: v.number(),
+        top_5: v.number(),
+        win: v.number(),
+        R1: v.optional(v.union(v.number(), v.null())),
+        R2: v.optional(v.union(v.number(), v.null())),
+        R3: v.optional(v.union(v.number(), v.null())),
+        R4: v.optional(v.union(v.number(), v.null())),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    let _tournamentGolfersDeletedNotInField = 0;
+    const tournament = await ctx.db.get(args.tournamentId);
+    if (!tournament) {
+      throw new Error("Tournament not found for live sync");
+    }
+    const hasTournamentStarted =
+      tournament.status === "active" ||
+      tournament.status === "completed" ||
+      tournament.livePlay === true ||
+      (tournament.status !== "upcoming" &&
+        Number.isFinite(tournament.startDate) &&
+        tournament.startDate > 0 &&
+        Date.now() >= tournament.startDate);
+
+    if (!hasTournamentStarted) {
+      const liveFieldApiIds = new Set(args.liveStats.map((p) => p.dg_id));
+      const fieldApiIds = new Set(args.field.map((f) => f.dg_id));
+      const activeApiIds =
+        liveFieldApiIds.size > 0 ? liveFieldApiIds : fieldApiIds;
+
+      const earliestTeeTime = earliestTimeStr(
+        args.field.map((f) => f.r1_teetime),
+      );
+      if (
+        typeof earliestTeeTime === "number" &&
+        Number.isFinite(earliestTeeTime) &&
+        tournament.startDate !== earliestTeeTime
+      ) {
+        await ctx.db.patch(args.tournamentId, {
+          startDate: earliestTeeTime,
+          updatedAt: Date.now(),
+        });
+      }
+
+      const existingTournamentGolfers = await ctx.db
+        .query("tournamentGolfers")
+        .withIndex("by_tournament", (q) =>
+          q.eq("tournamentId", args.tournamentId),
+        )
+        .collect();
+
+      for (const tg of existingTournamentGolfers) {
+        const golfer = await ctx.db.get(tg.golferId);
+        const apiId = golfer?.apiId;
+        if (typeof apiId !== "number" || !activeApiIds.has(apiId)) {
+          await ctx.db.delete(tg._id);
+          _tournamentGolfersDeletedNotInField += 1;
+        }
+      }
+    }
+
+    const fieldById = new Map<number, DataGolfFieldPlayer>();
+    for (const f of args.field) {
+      fieldById.set(f.dg_id, f);
+    }
+
+    const rankingById = new Map<number, DataGolfRankedPlayer>();
+    for (const r of args.rankings) {
+      rankingById.set(r.dg_id, r);
+    }
+
+    const teams = await ctx.db
+      .query("teams")
+      .withIndex("by_tournament", (q) =>
+        q.eq("tournamentId", args.tournamentId),
+      )
+      .collect();
+
+    const usageByGolferApiId = buildUsageRateByGolferApiId({ teams });
+
+    let golfersInserted = 0;
+    let tournamentGolfersInserted = 0;
+    let tournamentGolfersPatchedFromField = 0;
+    let tournamentGolfersUpdated = 0;
+
+    if (!hasTournamentStarted) {
+      for (const golfer of args.field) {
+        const golferApiId = golfer.dg_id;
+        const ranking = rankingById.get(golfer.dg_id);
+
+        const existingGolfer = await ctx.db
+          .query("golfers")
+          .withIndex("by_api_id", (q) => q.eq("apiId", golfer.dg_id))
+          .first();
+
+        const golferId = existingGolfer
+          ? existingGolfer._id
+          : await ctx.db.insert("golfers", {
+              apiId: golfer.dg_id,
+              playerName: normalizePlayerNameFromDataGolf(golfer.player_name),
+              country: golfer.country || ranking?.country,
+              worldRank: ranking?.owgr_rank,
+              updatedAt: Date.now(),
+            });
+        if (!existingGolfer) golfersInserted += 1;
+
+        const existingTournamentGolfer = await ctx.db
+          .query("tournamentGolfers")
+          .withIndex("by_golfer_tournament", (q) =>
+            q.eq("golferId", golferId).eq("tournamentId", args.tournamentId),
+          )
+          .first();
+
+        if (!existingTournamentGolfer) {
+          await ctx.db.insert("tournamentGolfers", {
+            tournamentId: args.tournamentId,
+            golferId,
+            group: 0,
+            roundOneTeeTime: golfer.r1_teetime ?? undefined,
+            worldRank: ranking?.owgr_rank,
+            rating: normalizeDgSkillEstimateToPgcRating(
+              ranking?.dg_skill_estimate ?? -1.875,
+            ),
+            usage: usageByGolferApiId.get(golferApiId),
+            updatedAt: Date.now(),
+          });
+          tournamentGolfersInserted += 1;
+        } else {
+          const patch: Partial<Doc<"tournamentGolfers">> = {
+            roundOneTeeTime: golfer.r1_teetime ?? undefined,
+            worldRank: ranking?.owgr_rank,
+            rating: normalizeDgSkillEstimateToPgcRating(
+              ranking?.dg_skill_estimate ?? -1.875,
+            ),
+            usage: usageByGolferApiId.get(golferApiId),
+            updatedAt: Date.now(),
+          };
+
+          await ctx.db.patch(existingTournamentGolfer._id, patch);
+          tournamentGolfersPatchedFromField += 1;
+        }
+      }
+    }
+
+    const liveStats: Omit<Doc<"tournamentGolfers">, "_id" | "_creationTime">[] =
+      [];
+    for (const live of args.liveStats) {
+      const golferApiId = live.dg_id;
+      const field = fieldById.get(golferApiId);
+      const ranking = rankingById.get(golferApiId);
+
+      const golfer = await ctx.db
+        .query("golfers")
+        .withIndex("by_api_id", (q) => q.eq("apiId", golferApiId))
+        .first();
+      if (!golfer) return undefined;
+
+      const existingTournamentGolfer = await ctx.db
+        .query("tournamentGolfers")
+        .withIndex("by_golfer_tournament", (q) =>
+          q.eq("golferId", golfer._id).eq("tournamentId", args.tournamentId),
+        )
+        .first();
+      if (!existingTournamentGolfer) return undefined;
+
+      const nextPosition = live.current_pos;
+      const nextPosChange = computePosChange(
+        existingTournamentGolfer.position,
+        nextPosition,
+      );
+      const nextUsage = usageByGolferApiId.get(golferApiId);
+      const thruNum = parseThruFromLiveModel(live.thru);
+
+      const updated = {
+        tournamentId: args.tournamentId,
+        golferId: golfer._id,
+        dg_id: golferApiId,
+        position: nextPosition,
+        posChange: nextPosChange,
+        score: roundToDecimalPlace(live.current_score, 0),
+        today: roundToDecimalPlace(live.today, 0),
+        thru: thruNum,
+        round: live.round,
+        endHole: live.end_hole,
+        makeCut: live.make_cut,
+        topTen: live.top_10 ?? undefined,
+        win: live.win ?? undefined,
+        roundOne: live.R1 ? roundToDecimalPlace(live.R1, 0) : undefined,
+        roundTwo: live.R2 ? roundToDecimalPlace(live.R2, 0) : undefined,
+        roundThree: live.R3 ? roundToDecimalPlace(live.R3, 0) : undefined,
+        roundFour: live.R4 ? roundToDecimalPlace(live.R4, 0) : undefined,
+        roundOneTeeTime: field?.r1_teetime ?? undefined,
+        roundTwoTeeTime: field?.r2_teetime ?? undefined,
+        roundThreeTeeTime: field?.r3_teetime ?? undefined,
+        roundFourTeeTime: field?.r4_teetime ?? undefined,
+        worldRank: ranking?.owgr_rank ?? undefined,
+        rating: normalizeDgSkillEstimateToPgcRating(
+          ranking?.dg_skill_estimate ?? -1.875,
+        ),
+        usage: nextUsage ?? undefined,
+        updatedAt: Date.now(),
+      };
+      tournamentGolfersUpdated += 1;
+
+      await ctx.db.patch(existingTournamentGolfer._id, updated);
+      liveStats.push(updated);
+    }
+
+    console.log("applyDataGolfLiveSync: summary", {
+      tournamentId: args.tournamentId,
+      currentRound: args.currentRound,
+      field: args.field.length,
+      rankings: args.rankings.length,
+      liveStats: args.liveStats.length,
+      golfersInserted,
+      tournamentGolfersInserted,
+      tournamentGolfersPatchedFromField,
+      tournamentGolfersUpdated,
+    });
+
+    const tournamentCompleted =
+      !args.roundIsRunning &&
+      tournament.currentRound === 4 &&
+      !isRoundRunningFromLiveStats(liveStats);
+
+    const nextCurrentRound = tournamentCompleted ? 5 : args.currentRound;
+    const nextStatus: Doc<"tournaments">["status"] =
+      tournament.status === "cancelled"
+        ? "cancelled"
+        : tournamentCompleted
+          ? "completed"
+          : tournament.status === "completed"
+            ? "completed"
+            : isRoundRunningFromLiveStats(liveStats)
+              ? "active"
+              : tournament.status;
+
+    await ctx.db.patch(args.tournamentId, {
+      currentRound: nextCurrentRound,
+      ...(isRoundRunningFromLiveStats(liveStats)
+        ? { livePlay: true }
+        : { livePlay: false }),
+      dataGolfInPlayLastUpdate: args.dataGolfInPlayLastUpdate,
+      ...(nextStatus !== tournament.status ? { status: nextStatus } : {}),
+      leaderboardLastUpdatedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    return {
+      ok: true,
+      skipped: false,
+      tournamentId: args.tournamentId,
+      eventName: args.eventName,
+      currentRound: tournamentCompleted ? 5 : nextCurrentRound,
+      tournamentStatus: nextStatus,
+      tournamentCompleted,
+      golfersInserted,
+      golfersUpdated: 0,
+      tournamentGolfersInserted,
+      tournamentGolfersPatchedFromField,
+      tournamentGolfersUpdated,
+      livePlayers: args.liveStats.length,
+    } as const;
   },
 });

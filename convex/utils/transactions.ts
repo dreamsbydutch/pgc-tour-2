@@ -1,5 +1,5 @@
 import type { Id } from "../_generated/dataModel";
-import { requireAdmin, requireOwnResource } from "../auth";
+import { requireAdmin, requireOwnResource } from "./auth";
 import type { ToSignedAmountCentsArgs } from "../types/transactions";
 import { isCreditType, isDebitType } from "./validation";
 

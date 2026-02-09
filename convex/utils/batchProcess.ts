@@ -1,3 +1,5 @@
+import { ProcessDataOptions } from "../types/types";
+
 export async function batchProcess<T>(
   items: T[],
   batchSize: number,
@@ -59,4 +61,28 @@ export async function batchProcessWithResults<T, R>(
   }
 
   return results;
+}
+
+export function processData<T>(
+  data: T[],
+  options: ProcessDataOptions<T> = {},
+): T[] {
+  let result = [...data];
+
+  if (options.filter) {
+    result = result.filter(options.filter);
+  }
+
+  if (options.sort) {
+    result.sort(options.sort);
+  }
+
+  if (options.skip) {
+    result = result.slice(options.skip);
+  }
+  if (options.limit) {
+    result = result.slice(0, options.limit);
+  }
+
+  return result;
 }

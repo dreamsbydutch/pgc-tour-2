@@ -8,7 +8,6 @@ import type {
   TournamentEnhancementOptions,
   TournamentFilterOptions,
   TournamentGolferDoc,
-  TournamentSortFunction,
   TournamentSortOptions,
 } from "../types/types";
 import { Doc, Id } from "../_generated/dataModel";
@@ -216,7 +215,7 @@ export function applyTournamentFilters(
  */
 export function getTournamentSortFunction(
   sort: TournamentSortOptions,
-): TournamentSortFunction {
+) {
   if (!sort.sortBy) return undefined;
 
   const sortOrder = sort.sortOrder === "asc" ? 1 : -1;
@@ -287,7 +286,27 @@ export async function enhanceTournament(
       .query("teams")
       .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
       .collect();
-    enhanced.teams = teams;
+    const tourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
+      .collect();
+    enhanced.teams = teams.map((t) => {
+      const tourCard = tourCards.find((tc) => tc._id === t.tourCardId);
+      if (!tourCard) {
+        return t;
+      }
+      return {
+        ...t,
+        tourId: tourCard.tourId,
+        displayName: tourCard.displayName,
+        memberId: tourCard.memberId,
+        appearances: tourCard.appearances,
+        playoff: tourCard.playoff,
+        standingsPosition: tourCard.currentPosition,
+        totalEarnings: tourCard.earnings,
+        totalPoints: tourCard.points,
+      };
+    });
     enhanced.teamCount = teams.length;
   }
 
@@ -324,37 +343,12 @@ export async function enhanceTournament(
     >;
   }
 
-  if (enhance.includeStatistics) {
-    const teams = await ctx.db
-      .query("teams")
-      .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
-      .collect();
-
-    enhanced.statistics = {
-      totalTeams: teams.length,
-      activeTeams: teams.length,
-      averageScore:
-        teams.length > 0
-          ? teams.reduce((sum, team) => sum + (team.points || 0), 0) /
-            teams.length
-          : 0,
-      lowestScore:
-        teams.length > 0
-          ? Math.min(...teams.map((team) => team.points || Infinity))
-          : 0,
-      highestScore:
-        teams.length > 0
-          ? Math.max(...teams.map((team) => team.points || 0))
-          : 0,
-    };
-  }
-
   if (enhance.includePlayoffs) {
     const tier = await ctx.db.get(tournament.tierId);
     const isPlayoff = isPlayoffTier((tier?.name as string | undefined) ?? null);
 
     let eventIndex: 1 | 2 | 3 = 1;
-    let firstPlayoffTournamentId: Id<"tournaments"> | null = null;
+    let playoffEvents: Id<"tournaments">[] | null = null;
 
     if (isPlayoff) {
       const tournaments: Doc<"tournaments">[] = await ctx.db
@@ -372,17 +366,17 @@ export async function enhanceTournament(
         }),
       );
 
-      const playoffEvents = withTier
+      const playoffTournaments = withTier
         .filter(({ tierName }) => isPlayoffTier(tierName))
         .map(({ tournament }) => tournament)
         .sort((a, b) => a.startDate - b.startDate);
-      const idx = playoffEvents.findIndex((t) => t._id === tournament._id);
+      const idx = playoffTournaments.findIndex((t) => t._id === tournament._id);
       eventIndex = idx === -1 ? 1 : (Math.min(3, idx + 1) as 1 | 2 | 3);
-      firstPlayoffTournamentId = playoffEvents[0]?._id ?? null;
+      playoffEvents = playoffTournaments.map((t) => t._id);
     }
     enhanced.isPlayoff = isPlayoff;
     enhanced.eventIndex = eventIndex;
-    enhanced.firstPlayoffTournamentId = firstPlayoffTournamentId;
+    enhanced.playoffEvents = playoffEvents ?? null;
   }
 
   return enhanced;

@@ -1,4 +1,3 @@
-import { formatCents } from "./formatCents";
 import { sumArray } from "./sumArray";
 import type {
   AnalyticsResult,
@@ -14,6 +13,7 @@ import type {
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { TeamGolferWithTournamentFields } from "../types/teams";
+import { formatCents } from "./misc";
 
 export function calculateTeamScore(rounds: (number | undefined)[]): number {
   const validRounds = rounds.filter(

@@ -1,13 +1,13 @@
 import { fetchWithRetry } from "./externalFetch";
 import type {
-  LiveModelPlayer,
-  LiveTournamentStat,
-  OddsFormat,
-  SkillRatingCategoryKey,
+  DataGolfLiveTournamentStat,
+  DataGolfOddsFormat,
+  DataGolfSkillRatingCategoryKey,
 } from "../types/datagolf";
 
 const BASE_URL = "https://feeds.datagolf.com";
 
+// Normalize an incoming name from {Last}, {First} to {First} {Last}
 export function normalizePlayerNameFromDataGolf(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed.includes(",")) return trimmed.replace(/\s+/g, " ").trim();
@@ -77,7 +77,7 @@ function parseNumberLike(value: unknown): number | null {
 
 export function impliedProbabilityFromOdds(
   odds: number | string,
-  oddsFormat: OddsFormat,
+  oddsFormat: DataGolfOddsFormat,
 ): number | null {
   if (oddsFormat === "percent") {
     const percent = parseNumberLike(odds);
@@ -121,7 +121,7 @@ const SKILL_RATING_CATEGORY_KEYS = [
 
 export function isSkillRatingCategoryKey(
   value: string,
-): value is SkillRatingCategoryKey {
+): value is DataGolfSkillRatingCategoryKey {
   return (SKILL_RATING_CATEGORY_KEYS as readonly string[]).includes(value);
 }
 
@@ -141,11 +141,11 @@ const LIVE_TOURNAMENT_STATS = [
   "scrambling",
   "great_shots",
   "poor_shots",
-] as const satisfies readonly LiveTournamentStat[];
+] as const satisfies readonly DataGolfLiveTournamentStat[];
 
 export function isLiveTournamentStat(
   value: string,
-): value is LiveTournamentStat {
+): value is DataGolfLiveTournamentStat {
   return (LIVE_TOURNAMENT_STATS as readonly string[]).includes(value);
 }
 
@@ -279,7 +279,7 @@ export function normalizeEventTokens(name: string): string[] {
     .filter((w) => !STOP.has(w));
 }
 
-export function eventNameLooksCompatible(
+export function checkCompatabilityOfEventNames(
   expectedTournamentName: string,
   dataGolfEventName: string,
 ): {
@@ -289,6 +289,9 @@ export function eventNameLooksCompatible(
   expectedTokens: string[];
   actualTokens: string[];
 } {
+  if (dataGolfEventName.startsWith("WM")) {
+    dataGolfEventName = "Waste Management " + dataGolfEventName;
+  }
   const expectedTokens = normalizeEventTokens(expectedTournamentName);
   const actualTokens = normalizeEventTokens(dataGolfEventName);
 

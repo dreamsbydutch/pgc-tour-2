@@ -7,24 +7,14 @@
  */
 
 import { query, mutation } from "../_generated/server";
-import { requireAdmin } from "../auth";
-import { processData } from "../utils/processData";
-import { formatCents } from "../utils/formatCents";
+import { requireAdmin } from "../utils/auth";
+import { processData } from "../utils/batchProcess";
 import { sumArray } from "../utils/sumArray";
-import {
-  applyFilters,
-  enhanceTour,
-  generateAnalytics,
-  getOptimizedTours,
-  getSortFunction,
-} from "../utils/tours";
-import {
-  logAudit,
-  computeChanges,
-  extractDeleteMetadata,
-} from "../utils/auditLog";
-import { toursValidators } from "../validators/tours";
-import type { DeleteResponse, TourDoc } from "../types/types";
+import { applyFilters, getSortFunction } from "../utils/tours";
+import { logAudit, computeChanges } from "../utils/auditLog";
+import type { TourDoc } from "../types/types";
+import { v } from "convex/values";
+import { formatCents } from "../utils";
 
 /**
  * Create tours with comprehensive options
@@ -54,44 +44,27 @@ import type { DeleteResponse, TourDoc } from "../types/types";
  * });
  */
 export const createTours = mutation({
-  args: toursValidators.args.createTours,
+  args: {
+    data: v.object({
+      name: v.string(),
+      shortForm: v.string(),
+      logoUrl: v.string(),
+      seasonId: v.id("seasons"),
+      buyIn: v.number(),
+      playoffSpots: v.array(v.number()),
+      maxParticipants: v.optional(v.number()),
+    }),
+  },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
-    const options = args.options || {};
-    const data = args.data;
-
-    if (!options.skipValidation) {
-      const validation = toursValidators.validateTourData(data);
-
-      if (!validation.isValid) {
-        throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
-      }
-
-      const existing = await ctx.db
-        .query("tours")
-        .withIndex("by_name_season", (q) =>
-          q.eq("name", data.name).eq("seasonId", data.seasonId),
-        )
-        .first();
-
-      if (existing) {
-        throw new Error("Tour with this name already exists in the season");
-      }
-
-      const season = await ctx.db.get(data.seasonId);
-      if (!season) {
-        throw new Error("Season not found");
-      }
-    }
-
     const tourId = await ctx.db.insert("tours", {
-      name: data.name,
-      shortForm: data.shortForm,
-      logoUrl: data.logoUrl,
-      seasonId: data.seasonId,
-      buyIn: data.buyIn,
-      playoffSpots: data.playoffSpots,
-      maxParticipants: data.maxParticipants,
+      name: args.data.name,
+      shortForm: args.data.shortForm,
+      logoUrl: args.data.logoUrl,
+      seasonId: args.data.seasonId,
+      buyIn: args.data.buyIn,
+      playoffSpots: args.data.playoffSpots,
+      maxParticipants: args.data.maxParticipants,
       updatedAt: Date.now(),
     });
 
@@ -100,40 +73,13 @@ export const createTours = mutation({
       entityId: tourId,
       action: "created",
       metadata: {
-        seasonId: data.seasonId,
-        name: data.name,
+        seasonId: args.data.seasonId,
+        name: args.data.name,
       },
     });
 
-    if (options.autoCreateTourCards) {
-      const members = await ctx.db.query("members").collect();
-      for (const member of members) {
-        await ctx.db.insert("tourCards", {
-          memberId: member._id,
-          displayName:
-            `${member.firstname || ""} ${member.lastname || ""}`.trim() ||
-            member.email.split("@")[0],
-          tourId,
-          seasonId: data.seasonId,
-          earnings: 0,
-          points: 0,
-          topTen: 0,
-          madeCut: 0,
-          appearances: 0,
-          updatedAt: Date.now(),
-        });
-      }
-    }
-
     const tour = await ctx.db.get(tourId);
     if (!tour) throw new Error("Failed to retrieve created tour");
-
-    if (options.returnEnhanced) {
-      return await enhanceTour(ctx, tour, {
-        includeSeason: options.includeSeason,
-        includeStatistics: options.includeStatistics,
-      });
-    }
 
     return tour;
   },
@@ -178,7 +124,47 @@ export const createTours = mutation({
  * });
  */
 export const getTours = query({
-  args: toursValidators.args.getTours,
+  args: {
+    options: v.optional(
+      v.object({
+        id: v.optional(v.id("tours")),
+        ids: v.optional(v.array(v.id("tours"))),
+        filter: v.optional(
+          v.object({
+            seasonId: v.optional(v.id("seasons")),
+            shortForm: v.optional(v.string()),
+            minBuyIn: v.optional(v.number()),
+            maxBuyIn: v.optional(v.number()),
+            minParticipants: v.optional(v.number()),
+            maxParticipants: v.optional(v.number()),
+            searchTerm: v.optional(v.string()),
+            playoffSpotsMin: v.optional(v.number()),
+            playoffSpotsMax: v.optional(v.number()),
+            createdAfter: v.optional(v.number()),
+            createdBefore: v.optional(v.number()),
+            updatedAfter: v.optional(v.number()),
+            updatedBefore: v.optional(v.number()),
+          }),
+        ),
+        sort: v.optional(
+          v.object({
+            sortBy: v.optional(
+              v.union(
+                v.literal("name"),
+                v.literal("shortForm"),
+                v.literal("buyIn"),
+                v.literal("maxParticipants"),
+                v.literal("createdAt"),
+                v.literal("updatedAt"),
+                v.literal("playoffSpots"),
+              ),
+            ),
+            sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+          }),
+        ),
+      }),
+    ),
+  },
   handler: async (ctx, args) => {
     const options = args.options || {};
 
@@ -186,74 +172,37 @@ export const getTours = query({
       const tour = await ctx.db.get(options.id);
       if (!tour) return null;
 
-      return await enhanceTour(ctx, tour, options.enhance || {});
+      return {
+        ...tour,
+        buyIn: formatCents(tour.buyIn),
+        playoffSpots: sumArray(tour.playoffSpots),
+      };
     }
 
     if (options.ids) {
       const tours = await Promise.all(
         options.ids.map(async (id) => {
           const tour = await ctx.db.get(id);
-          return tour
-            ? await enhanceTour(ctx, tour, options.enhance || {})
-            : null;
+          return tour;
         }),
       );
-      return tours.filter(Boolean);
+      return tours.filter(Boolean).map((tour) => ({
+        ...tour,
+        buyIn: formatCents(tour?.buyIn ?? 0),
+        playoffSpots: sumArray(tour?.playoffSpots ?? []),
+      }));
     }
 
-    let tours = await getOptimizedTours(ctx, options);
-
+    let tours = await ctx.db.query("tours").collect();
     tours = applyFilters(tours, options.filter || {});
-
     const processedTours = processData(tours, {
       sort: getSortFunction(options.sort || {}),
-      limit: options.pagination?.limit,
-      skip: options.pagination?.offset,
     });
-
-    if (options.enhance && Object.values(options.enhance).some(Boolean)) {
-      const enhancedTours = await Promise.all(
-        processedTours.map((tour) =>
-          enhanceTour(ctx, tour, options.enhance || {}),
-        ),
-      );
-
-      if (options.includeAnalytics) {
-        return {
-          tours: enhancedTours,
-          analytics: await generateAnalytics(ctx, tours),
-          meta: {
-            total: tours.length,
-            filtered: processedTours.length,
-            offset: options.pagination?.offset || 0,
-            limit: options.pagination?.limit,
-          },
-        };
-      }
-
-      return enhancedTours;
-    }
-
-    const basicTours = processedTours.map((tour) => ({
+    return processedTours.map((tour) => ({
       ...tour,
-      buyInFormatted: formatCents(tour.buyIn),
-      totalPlayoffSpots: sumArray(tour.playoffSpots),
+      buyIn: formatCents(tour.buyIn),
+      playoffSpots: sumArray(tour.playoffSpots),
     }));
-
-    if (options.includeAnalytics) {
-      return {
-        tours: basicTours,
-        analytics: await generateAnalytics(ctx, tours),
-        meta: {
-          total: tours.length,
-          filtered: basicTours.length,
-          offset: options.pagination?.offset || 0,
-          limit: options.pagination?.limit,
-        },
-      };
-    }
-
-    return basicTours;
   },
 });
 
@@ -281,39 +230,26 @@ export const getTours = query({
  * });
  */
 export const updateTours = mutation({
-  args: toursValidators.args.updateTours,
+  args: {
+    tourId: v.id("tours"),
+    data: v.object({
+      name: v.optional(v.string()),
+      shortForm: v.optional(v.string()),
+      logoUrl: v.optional(v.string()),
+      buyIn: v.optional(v.number()),
+      playoffSpots: v.optional(v.array(v.number())),
+      maxParticipants: v.optional(v.number()),
+    }),
+  },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
-    const options = args.options || {};
     const tour = await ctx.db.get(args.tourId);
     if (!tour) {
       throw new Error("Tour not found");
     }
 
-    if (!options.skipValidation) {
-      const validation = toursValidators.validateTourData(args.data);
-      if (!validation.isValid) {
-        throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
-      }
-
-      if (args.data.name && args.data.name !== tour.name) {
-        const existingTour = await ctx.db
-          .query("tours")
-          .withIndex("by_name_season", (q) =>
-            q.eq("name", args.data.name!).eq("seasonId", tour.seasonId),
-          )
-          .first();
-
-        if (existingTour && existingTour._id !== args.tourId) {
-          throw new Error("Tour with this name already exists in the season");
-        }
-      }
-    }
-
     const updateData: Partial<TourDoc> = { ...args.data };
-    if (options.updateTimestamp !== false) {
-      updateData.updatedAt = Date.now();
-    }
+    updateData.updatedAt = Date.now();
 
     await ctx.db.patch(args.tourId, updateData);
 
@@ -330,128 +266,6 @@ export const updateTours = mutation({
     const updatedTour = await ctx.db.get(args.tourId);
     if (!updatedTour) throw new Error("Failed to retrieve updated tour");
 
-    if (options.returnEnhanced) {
-      return await enhanceTour(ctx, updatedTour, {
-        includeSeason: options.includeSeason,
-        includeStatistics: options.includeStatistics,
-        includeParticipants: options.includeParticipants,
-      });
-    }
-
     return updatedTour;
-  },
-});
-
-/**
- * Delete tours (hard delete only)
- *
- * This function always performs a hard delete (permanent removal from database).
- * The softDelete option is kept for backward compatibility but is ignored.
- *
- * @example
- * Delete tour
- * const result = await ctx.runMutation(api.functions.tours.deleteTours, {
- *   tourId: "tour123"
- * });
- *
- * Delete with participant transfer
- * const result = await ctx.runMutation(api.functions.tours.deleteTours, {
- *   tourId: "tour123",
- *   options: {
- *     cascadeDelete: true,
- *     transferParticipants: "targetTour456"
- *   }
- * });
- */
-export const deleteTours = mutation({
-  args: toursValidators.args.deleteTours,
-  handler: async (ctx, args): Promise<DeleteResponse<TourDoc>> => {
-    await requireAdmin(ctx);
-    const options = args.options || {};
-    const tour = await ctx.db.get(args.tourId);
-    if (!tour) {
-      throw new Error("Tour not found");
-    }
-
-    let transferredCount = 0;
-    let deletedTourData: TourDoc | undefined = undefined;
-
-    if (options.returnDeletedData) {
-      deletedTourData = tour;
-    }
-
-    if (options.transferParticipants) {
-      const targetTour = await ctx.db.get(options.transferParticipants);
-      if (!targetTour) {
-        throw new Error("Target tour for participant transfer not found");
-      }
-
-      const tourCards = await ctx.db
-        .query("tourCards")
-        .withIndex("by_tour", (q) => q.eq("tourId", args.tourId))
-        .collect();
-
-      for (const tourCard of tourCards) {
-        const existingCard = await ctx.db
-          .query("tourCards")
-          .withIndex("by_member", (q) => q.eq("memberId", tourCard.memberId))
-          .filter((q) => q.eq(q.field("tourId"), options.transferParticipants!))
-          .first();
-
-        if (!existingCard) {
-          await ctx.db.insert("tourCards", {
-            memberId: tourCard.memberId,
-            displayName: tourCard.displayName,
-            tourId: options.transferParticipants,
-            seasonId: targetTour.seasonId,
-            earnings: 0,
-            points: 0,
-            topTen: 0,
-            madeCut: 0,
-            appearances: 0,
-            updatedAt: Date.now(),
-          });
-          transferredCount++;
-        }
-      }
-    }
-
-    if (options.cascadeDelete !== false) {
-      const tourCards = await ctx.db
-        .query("tourCards")
-        .withIndex("by_tour", (q) => q.eq("tourId", args.tourId))
-        .collect();
-
-      if (tourCards.length > 500) {
-        throw new Error(
-          `Tour has ${tourCards.length} tour cards. Cannot delete >500 cards in single operation. ` +
-            "Please use admin batch-delete tool or contact support.",
-        );
-      }
-
-      for (const tourCard of tourCards) {
-        await ctx.db.delete(tourCard._id);
-      }
-    }
-
-    await ctx.db.delete(args.tourId);
-
-    await logAudit(ctx, {
-      entityType: "tours",
-      entityId: args.tourId,
-      action: "deleted",
-      metadata: extractDeleteMetadata(
-        { deleted: true, transferredCount },
-        options,
-      ),
-    });
-
-    return {
-      success: true,
-      deleted: true,
-      deactivated: false,
-      transferredCount: transferredCount > 0 ? transferredCount : undefined,
-      deletedData: deletedTourData,
-    };
   },
 });

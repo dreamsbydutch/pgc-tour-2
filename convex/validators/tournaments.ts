@@ -6,7 +6,6 @@ import { ValidationResult } from "../types/types";
 export const tournamentsValidators = {
   args: {
     createTournaments: {
-      clerkId: v.optional(v.string()),
       data: v.object({
         name: v.string(),
         seasonId: v.id("seasons"),
@@ -48,7 +47,6 @@ export const tournamentsValidators = {
               seasonId: v.optional(v.id("seasons")),
               tierId: v.optional(v.id("tiers")),
               courseId: v.optional(v.id("courses")),
-              tourIds: v.optional(v.array(v.id("tours"))),
               status: v.optional(
                 v.union(
                   v.literal("upcoming"),
@@ -61,7 +59,6 @@ export const tournamentsValidators = {
               startBefore: v.optional(v.number()),
               endAfter: v.optional(v.number()),
               endBefore: v.optional(v.number()),
-              hasRegistration: v.optional(v.boolean()),
               livePlay: v.optional(v.boolean()),
               currentRound: v.optional(v.number()),
               searchTerm: v.optional(v.string()),
@@ -106,18 +103,12 @@ export const tournamentsValidators = {
               includeStatistics: v.optional(v.boolean()),
             }),
           ),
-          activeOnly: v.optional(v.boolean()),
-          upcomingOnly: v.optional(v.boolean()),
-          liveOnly: v.optional(v.boolean()),
           includeAnalytics: v.optional(v.boolean()),
         }),
       ),
     },
     tournamentId: {
       tournamentId: v.id("tournaments"),
-    },
-    optionalTournamentId: {
-      tournamentId: v.optional(v.id("tournaments")),
     },
     fetchTournamentOptions: {
       seasonId: v.optional(v.id("seasons")),
@@ -165,7 +156,6 @@ export const tournamentsValidators = {
       seasonId: v.optional(v.id("seasons")),
     },
     updateTournaments: {
-      clerkId: v.optional(v.string()),
       tournamentId: v.id("tournaments"),
       data: v.object({
         name: v.optional(v.string()),

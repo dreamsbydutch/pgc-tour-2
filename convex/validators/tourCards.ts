@@ -25,7 +25,6 @@ export const tourCardsValidators = {
       options: v.optional(
         v.object({
           skipValidation: v.optional(v.boolean()),
-          setActive: v.optional(v.boolean()),
         }),
       ),
     },
@@ -37,7 +36,6 @@ export const tourCardsValidators = {
           clerkId: v.optional(v.string()),
           seasonId: v.optional(v.id("seasons")),
           tourId: v.optional(v.id("tours")),
-          activeOnly: v.optional(v.boolean()),
         }),
       ),
     },
@@ -82,11 +80,6 @@ export const tourCardsValidators = {
     },
     deleteTourCards: {
       id: v.id("tourCards"),
-      options: v.optional(
-        v.object({
-          softDelete: v.optional(v.boolean()),
-        }),
-      ),
     },
     recomputeTourCardsForSeasonAsAdmin: {
       seasonId: v.id("seasons"),

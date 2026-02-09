@@ -1,1121 +1,1320 @@
 /**
- * Golfer Management - Simplified CRUD Functions
+ * Golfers
  *
- * Clean CRUD operations with comprehensive options objects.
- * Each function (create, get, update, delete) handles all use cases
- * through flexible configuration rather than multiple specialized functions.
+ * Simple CRUD operations for the `golfers` and `tournamentGolfers` tables.
+ *
+ * Read operations use an `options` object to keep the call surface small:
+ * - `options.filter` narrows results (supports common fields).
+ * - `options.sort` controls ordering.
+ * - `options.pagination` supports `limit` + `offset`.
+ *
+ * Note: some filters/sorts are applied in-memory (after `collect()`), which is fine for admin tools
+ * and small datasets but not ideal for large tables or hot paths.
+ *
+ * The three internal tournament/world-rank functions at the bottom of this file are kept as-is.
  */
 
-import { action, mutation, query } from "../_generated/server";
-import { api } from "../_generated/api";
-import { processData } from "../utils/processData";
+import { internalMutation, mutation, query } from "../_generated/server";
+import type { Doc } from "../_generated/dataModel";
+import { v } from "convex/values";
+import { requireModerator } from "../utils/auth";
 import {
-  applyFilters,
-  chunkArray,
-  countCommas,
-  enhanceGolfer,
-  fetchDataGolfPlayerList,
-  generateDisplayName,
-  generateRankDisplay,
-  generateAnalytics,
-  getOptimizedGolfers,
-  getRankingCategory,
-  getSortFunction,
-  normalizeCommaName,
-  normalizeCountry,
-  normalizeGolferName,
-  normalizePlayerName,
-  normalizeStoredCountry,
-} from "../utils/golfers";
-import { golfersValidators } from "../validators/golfers";
-import { requireModeratorOrAdminByClerkId } from "../utils/authByClerkId";
-import { requireModerator } from "../auth";
-import type { Id } from "../_generated/dataModel";
-import type {
-  DedupeResult,
-  NormalizeNamesResult,
-  SyncResult,
-  UpsertResult,
-} from "../types/golfers";
-import type { DeleteResponse, GolferDoc } from "../types/types";
+  normalizeDgSkillEstimateToPgcRating,
+  normalizePlayerNameFromDataGolf,
+} from "../utils/datagolf";
 
-export const listGolfersForSync = query({
-  args: golfersValidators.args.listGolfersForSync,
-  handler: async (ctx, args) => {
-    await requireModeratorOrAdminByClerkId(ctx, args.clerkId);
-
-    const golfers = await ctx.db.query("golfers").collect();
-    return golfers.map((g) => ({
-      _id: g._id,
-      apiId: g.apiId,
-      playerName: g.playerName,
-      country: g.country ?? null,
-      worldRank: g.worldRank ?? null,
-    }));
+/**
+ * Creates a golfer.
+ *
+ * Access:
+ * - Requires moderator/admin.
+ *
+ * Behavior:
+ * - Enforces `apiId` uniqueness (via the `by_api_id` index).
+ * - Trims `playerName` and optional `country`.
+ * - Sets `updatedAt`.
+ */
+export const createGolfers = mutation({
+  args: {
+    data: v.object({
+      apiId: v.number(),
+      playerName: v.string(),
+      country: v.optional(v.string()),
+      worldRank: v.optional(v.number()),
+    }),
   },
-});
+  handler: async (ctx, args) => {
+    await requireModerator(ctx);
 
-export const syncGolfersFromDataGolf = action({
-  args: golfersValidators.args.syncGolfersFromDataGolf,
-  handler: async (ctx, args): Promise<SyncResult> => {
-    const clerkId = args.clerkId.trim();
-    if (!clerkId) {
-      throw new Error(
-        "Unauthorized: Missing clerkId argument (hard refresh the app)",
-      );
+    const apiId = args.data.apiId;
+    const playerName = args.data.playerName.trim();
+    const country = args.data.country?.trim();
+    const worldRank = args.data.worldRank;
+
+    if (!Number.isFinite(apiId) || apiId <= 0) {
+      throw new Error("API ID must be a positive number");
+    }
+    if (!playerName) {
+      throw new Error("Player name is required");
     }
 
-    const identity = await ctx.auth.getUserIdentity();
-    if (identity && identity.subject !== clerkId) {
-      throw new Error("Unauthorized: Clerk ID mismatch");
+    const existing = await ctx.db
+      .query("golfers")
+      .withIndex("by_api_id", (q) => q.eq("apiId", apiId))
+      .first();
+    if (existing) {
+      throw new Error(`Golfer with apiId ${apiId} already exists`);
     }
 
-    const member = await ctx.runQuery(api.functions.members.getMembers, {
-      options: { clerkId },
+    const golferId = await ctx.db.insert("golfers", {
+      apiId,
+      playerName,
+      ...(country ? { country } : {}),
+      ...(typeof worldRank === "number" ? { worldRank } : {}),
+      updatedAt: Date.now(),
     });
 
-    if (!member || typeof member !== "object" || Array.isArray(member)) {
-      throw new Error(
-        "Member profile not found. Please contact an administrator.",
-      );
-    }
-
-    const role = (member as { role?: unknown }).role;
-    const normalizedRole =
-      typeof role === "string" ? role.trim().toLowerCase() : "";
-    if (normalizedRole !== "admin" && normalizedRole !== "moderator") {
-      throw new Error("Forbidden: Moderator or admin access required");
-    }
-
-    const options = args.options || {};
-    const players = await fetchDataGolfPlayerList();
-    const limited = options.limit ? players.slice(0, options.limit) : players;
-    const weirdNameSamples: Array<{
-      dgId: number;
-      raw: string;
-      normalized: string;
-      commaCount: number;
-    }> = [];
-
-    const payload = limited
-      .filter((p) => Number.isFinite(p.dg_id) && p.player_name)
-      .map((p) => {
-        const raw = p.player_name.trim();
-        const normalized = normalizePlayerName(raw);
-        const commaCount = countCommas(raw);
-
-        if (
-          (commaCount >= 2 || normalized.includes(",")) &&
-          weirdNameSamples.length < 200
-        ) {
-          weirdNameSamples.push({
-            dgId: p.dg_id,
-            raw,
-            normalized,
-            commaCount,
-          });
-        }
-
-        return {
-          apiId: p.dg_id,
-          playerName: normalized,
-          country: normalizeCountry(p.country),
-        };
-      });
-    const nameKey = (s: string) => normalize.name(s);
-
-    const dgByNameKey = new Map<string, Array<(typeof payload)[number]>>();
-    for (const g of payload) {
-      const key = nameKey(g.playerName);
-      const arr = dgByNameKey.get(key);
-      if (arr) arr.push(g);
-      else dgByNameKey.set(key, [g]);
-    }
-
-    const dgCanonicalByNameKey = new Map<
-      string,
-      { canonical: (typeof payload)[number]; ambiguousCountries: boolean }
-    >();
-
-    for (const [key, records] of dgByNameKey) {
-      const knownCountries = new Set(
-        records.map((r) => r.country).filter((c): c is string => Boolean(c)),
-      );
-      const ambiguousCountries = knownCountries.size > 1;
-      const sorted = [...records].sort((a, b) => {
-        const aKnown = a.country ? 1 : 0;
-        const bKnown = b.country ? 1 : 0;
-        if (aKnown !== bKnown) return bKnown - aKnown;
-        return a.apiId - b.apiId;
-      });
-
-      dgCanonicalByNameKey.set(key, {
-        canonical: sorted[0]!,
-        ambiguousCountries,
-      });
-    }
-
-    const canonicalPayload = [...dgCanonicalByNameKey.values()].map(
-      (v) => v.canonical,
-    );
-
-    const existing = await ctx.runQuery(
-      api.functions.golfers.listGolfersForSync,
-      {
-        clerkId,
-      },
-    );
-
-    const byApiId = new Map<number, (typeof existing)[number]>();
-    for (const g of existing) byApiId.set(g.apiId, g);
-
-    const byNameKey = new Map<string, Array<(typeof existing)[number]>>();
-    for (const g of existing) {
-      const key = nameKey(g.playerName);
-      const arr = byNameKey.get(key);
-      if (arr) arr.push(g);
-      else byNameKey.set(key, [g]);
-    }
-
-    const inserts: typeof payload = [];
-    const patchesByGolferId = new Map<
-      string,
-      {
-        golferId: Id<"golfers">;
-        data: { apiId?: number; playerName?: string; country?: string };
-      }
-    >();
-
-    const patchDebug: Array<{
-      apiId: number;
-      golferId: string;
-      reason: "byApiId" | "byName";
-      before: { apiId: number; playerName: string; country: string | null };
-      after: { apiId: number; playerName: string; country: string | null };
-    }> = [];
-
-    for (const g of canonicalPayload) {
-      const found = byApiId.get(g.apiId);
-      if (!found) {
-        const candidates = byNameKey.get(nameKey(g.playerName)) ?? [];
-        if (candidates.length === 1) {
-          const candidate = candidates[0]!;
-
-          const dgMeta = dgCanonicalByNameKey.get(nameKey(g.playerName));
-          const ambiguousCountries = Boolean(dgMeta?.ambiguousCountries);
-          const apiIdOwner = byApiId.get(g.apiId);
-          if (!apiIdOwner || apiIdOwner._id === candidate._id) {
-            const patch: {
-              apiId?: number;
-              playerName?: string;
-              country?: string;
-            } = {
-              apiId: g.apiId,
-            };
-            if (g.playerName && g.playerName !== candidate.playerName) {
-              patch.playerName = g.playerName;
-            }
-            const nextCountry = normalizeStoredCountry(g.country);
-            const prevCountry = normalizeStoredCountry(candidate.country);
-            if (
-              !ambiguousCountries &&
-              nextCountry &&
-              nextCountry !== prevCountry
-            ) {
-              patch.country = nextCountry;
-            }
-
-            const existingPatch = patchesByGolferId.get(String(candidate._id));
-            const merged = {
-              ...(existingPatch?.data ?? {}),
-              ...patch,
-            };
-            patchesByGolferId.set(String(candidate._id), {
-              golferId: candidate._id,
-              data: merged,
-            });
-
-            if (patchDebug.length < 50) {
-              patchDebug.push({
-                apiId: g.apiId,
-                golferId: String(candidate._id),
-                reason: "byName",
-                before: {
-                  apiId: candidate.apiId,
-                  playerName: candidate.playerName,
-                  country: candidate.country,
-                },
-                after: {
-                  apiId: patch.apiId ?? candidate.apiId,
-                  playerName: patch.playerName ?? candidate.playerName,
-                  country: patch.country ?? candidate.country,
-                },
-              });
-            }
-            byApiId.set(g.apiId, candidate);
-            continue;
-          }
-        }
-
-        inserts.push(g);
-        continue;
-      }
-
-      const nextName = g.playerName;
-      const nextCountry = normalizeStoredCountry(g.country);
-
-      const patch: { apiId?: number; playerName?: string; country?: string } =
-        {};
-      if (nextName && nextName !== found.playerName)
-        patch.playerName = nextName;
-      const prevCountry = normalizeStoredCountry(found.country);
-      if (nextCountry && nextCountry !== prevCountry) {
-        patch.country = nextCountry;
-      }
-
-      if (Object.keys(patch).length > 0) {
-        const existingPatch = patchesByGolferId.get(String(found._id));
-        const merged = {
-          ...(existingPatch?.data ?? {}),
-          ...patch,
-        };
-        patchesByGolferId.set(String(found._id), {
-          golferId: found._id,
-          data: merged,
-        });
-
-        if (patchDebug.length < 50) {
-          patchDebug.push({
-            apiId: g.apiId,
-            golferId: String(found._id),
-            reason: "byApiId",
-            before: {
-              apiId: found.apiId,
-              playerName: found.playerName,
-              country: found.country,
-            },
-            after: {
-              apiId: patch.apiId ?? found.apiId,
-              playerName: patch.playerName ?? found.playerName,
-              country: patch.country ?? found.country,
-            },
-          });
-        }
-      }
-    }
-
-    const patches = [...patchesByGolferId.values()];
-
-    const dryRun = Boolean(options.dryRun);
-    const chunkSize = 300;
-
-    if (!dryRun) {
-      for (const chunk of chunkArray(inserts, chunkSize)) {
-        if (chunk.length === 0) continue;
-        await ctx.runMutation(api.functions.golfers.bulkInsertGolfers, {
-          clerkId,
-          data: chunk,
-        });
-      }
-
-      for (const chunk of chunkArray(patches, chunkSize)) {
-        if (chunk.length === 0) continue;
-        await ctx.runMutation(api.functions.golfers.bulkPatchGolfers, {
-          clerkId,
-          patches: chunk,
-        });
-      }
-    }
-
-    const upserted: UpsertResult = {
-      total: canonicalPayload.length,
-      inserted: inserts.length,
-      updated: patches.length,
-      dryRun,
-    };
-
-    return {
-      fetched: limited.length,
-      upserted,
-    };
+    return await ctx.db.get(golferId);
   },
 });
 
 /**
- * Get golfers with cursor-based pagination (for large datasets)
+ * Reads golfers.
  *
- * Returns cursor-paginated results to handle large golfer tables efficiently.
- * Recommended for all list/search operations on golfers.
+ * Inputs:
+ * - `options.id`: fetch a single golfer by `_id`.
+ * - `options.ids`: fetch many golfers by `_id` (returned in the same order as `ids`).
+ * - `options.apiId`: fetch a single golfer by DataGolf id (`apiId`).
+ * - `options.filter`: in-memory filtering when no direct lookup is provided.
+ * - `options.sort`: in-memory sort of the resulting list.
+ * - `options.pagination`: `offset` + `limit` slicing.
  *
- * @example
- * Get first 100 golfers
- * const page = await ctx.runQuery(api.functions.golfers.getGolfersPage, {
- *   paginationOpts: { numItems: 100 }
- * });
- *
- * Get next page
- * if (!page.isDone) {
- *   const nextPage = await ctx.runQuery(api.functions.golfers.getGolfersPage, {
- *     paginationOpts: { numItems: 100, cursor: page.continueCursor }
- *   });
- * }
+ * Filter support (via `options.filter`):
+ * - `apiId`, `playerName`, `country`, `worldRank`
+ * - `minWorldRank`, `maxWorldRank`
+ * - `searchTerm` (matches name/country/apiId)
+ * - `createdAfter`, `createdBefore` (uses `_creationTime`)
+ * - `updatedAfter`, `updatedBefore` (uses `updatedAt`)
  */
-export const getGolfersPage = query({
-  args: golfersValidators.args.getGolfersPage,
+export const getGolfers = query({
+  args: {
+    options: v.optional(
+      v.object({
+        id: v.optional(v.id("golfers")),
+        ids: v.optional(v.array(v.id("golfers"))),
+        apiId: v.optional(v.number()),
+        filter: v.optional(
+          v.object({
+            apiId: v.optional(v.number()),
+            playerName: v.optional(v.string()),
+            country: v.optional(v.string()),
+            worldRank: v.optional(v.number()),
+            minWorldRank: v.optional(v.number()),
+            maxWorldRank: v.optional(v.number()),
+            searchTerm: v.optional(v.string()),
+            createdAfter: v.optional(v.number()),
+            createdBefore: v.optional(v.number()),
+            updatedAfter: v.optional(v.number()),
+            updatedBefore: v.optional(v.number()),
+          }),
+        ),
+        sort: v.optional(
+          v.object({
+            sortBy: v.optional(
+              v.union(
+                v.literal("playerName"),
+                v.literal("country"),
+                v.literal("worldRank"),
+                v.literal("apiId"),
+                v.literal("createdAt"),
+                v.literal("updatedAt"),
+              ),
+            ),
+            sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+          }),
+        ),
+        pagination: v.optional(
+          v.object({
+            limit: v.optional(v.number()),
+            offset: v.optional(v.number()),
+          }),
+        ),
+      }),
+    ),
+  },
   handler: async (ctx, args) => {
     const options = args.options || {};
+
+    if (options.id) {
+      return await ctx.db.get(options.id);
+    }
+
+    if (options.ids) {
+      if (options.ids.length === 0) return [];
+      const docs = await Promise.all(options.ids.map((id) => ctx.db.get(id)));
+      return docs.filter((d): d is NonNullable<typeof d> => Boolean(d));
+    }
+
+    if (typeof options.apiId === "number") {
+      return await ctx.db
+        .query("golfers")
+        .withIndex("by_api_id", (q) => q.eq("apiId", options.apiId!))
+        .first();
+    }
+
     const filter = options.filter || {};
+    const sort = options.sort || {};
+    const pagination = options.pagination || {};
+
+    let golfers = await ctx.db.query("golfers").collect();
+
     if (filter.apiId !== undefined) {
+      golfers = golfers.filter((g) => g.apiId === filter.apiId);
+    }
+    if (typeof filter.playerName === "string" && filter.playerName.trim()) {
+      const target = filter.playerName.trim().toLowerCase();
+      golfers = golfers.filter((g) => g.playerName.toLowerCase() === target);
+    }
+    if (typeof filter.country === "string" && filter.country.trim()) {
+      const target = filter.country.trim();
+      golfers = golfers.filter((g) => (g.country ?? "") === target);
+    }
+    if (typeof filter.worldRank === "number") {
+      golfers = golfers.filter((g) => g.worldRank === filter.worldRank);
+    }
+    if (typeof filter.minWorldRank === "number") {
+      golfers = golfers.filter(
+        (g) =>
+          typeof g.worldRank === "number" &&
+          g.worldRank >= filter.minWorldRank!,
+      );
+    }
+    if (typeof filter.maxWorldRank === "number") {
+      golfers = golfers.filter(
+        (g) =>
+          typeof g.worldRank === "number" &&
+          g.worldRank <= filter.maxWorldRank!,
+      );
+    }
+    if (typeof filter.searchTerm === "string" && filter.searchTerm.trim()) {
+      const term = filter.searchTerm.trim().toLowerCase();
+      golfers = golfers.filter((g) => {
+        const haystack =
+          `${g.playerName} ${g.country ?? ""} ${g.apiId}`.toLowerCase();
+        return haystack.includes(term);
+      });
+    }
+    if (typeof filter.createdAfter === "number") {
+      golfers = golfers.filter((g) => g._creationTime >= filter.createdAfter!);
+    }
+    if (typeof filter.createdBefore === "number") {
+      golfers = golfers.filter((g) => g._creationTime <= filter.createdBefore!);
+    }
+    if (typeof filter.updatedAfter === "number") {
+      golfers = golfers.filter(
+        (g) =>
+          typeof g.updatedAt === "number" &&
+          g.updatedAt >= filter.updatedAfter!,
+      );
+    }
+    if (typeof filter.updatedBefore === "number") {
+      golfers = golfers.filter(
+        (g) =>
+          typeof g.updatedAt === "number" &&
+          g.updatedAt <= filter.updatedBefore!,
+      );
+    }
+
+    const sortBy = sort.sortBy;
+    const sortOrder = sort.sortOrder === "desc" ? "desc" : "asc";
+    if (sortBy) {
+      golfers = [...golfers].sort((a, b) => {
+        const dir = sortOrder === "desc" ? -1 : 1;
+        if (sortBy === "playerName") {
+          return dir * a.playerName.localeCompare(b.playerName);
+        }
+        if (sortBy === "country") {
+          return dir * (a.country ?? "").localeCompare(b.country ?? "");
+        }
+        if (sortBy === "worldRank") {
+          return (
+            dir *
+            ((a.worldRank ?? Number.POSITIVE_INFINITY) -
+              (b.worldRank ?? Number.POSITIVE_INFINITY))
+          );
+        }
+        if (sortBy === "apiId") {
+          return dir * (a.apiId - b.apiId);
+        }
+        if (sortBy === "createdAt") {
+          return dir * (a._creationTime - b._creationTime);
+        }
+        if (sortBy === "updatedAt") {
+          return dir * ((a.updatedAt ?? 0) - (b.updatedAt ?? 0));
+        }
+        return 0;
+      });
+    }
+
+    const offset =
+      typeof pagination.offset === "number" ? pagination.offset : 0;
+    const limit =
+      typeof pagination.limit === "number" ? pagination.limit : undefined;
+    if (offset > 0 || limit !== undefined) {
+      const start = Math.max(0, offset);
+      const end = limit !== undefined ? start + Math.max(0, limit) : undefined;
+      golfers = golfers.slice(start, end);
+    }
+
+    return golfers;
+  },
+});
+
+/**
+ * Gets golfers using cursor-based pagination.
+ *
+ * Purpose:
+ * - This is the query used by the Admin golfers screen.
+ *
+ * Inputs:
+ * - `paginationOpts`: Convex cursor pagination.
+ * - `options.filter.apiId`: indexed lookup path (`by_api_id`).
+ * - `options.filter.country` and `options.filter.searchTerm`: applied in-memory to the returned page.
+ */
+export const getGolfersPage = query({
+  args: {
+    paginationOpts: v.object({
+      numItems: v.number(),
+      cursor: v.union(v.string(), v.null()),
+    }),
+    options: v.optional(
+      v.object({
+        filter: v.optional(
+          v.object({
+            apiId: v.optional(v.number()),
+            country: v.optional(v.string()),
+            searchTerm: v.optional(v.string()),
+          }),
+        ),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const filter = args.options?.filter;
+
+    if (typeof filter?.apiId === "number") {
       return await ctx.db
         .query("golfers")
         .withIndex("by_api_id", (q) => q.eq("apiId", filter.apiId!))
         .paginate(args.paginationOpts);
     }
+
     const result = await ctx.db.query("golfers").paginate(args.paginationOpts);
-    if (filter.country || filter.searchTerm) {
-      const filtered = result.page.filter((golfer) => {
-        if (filter.country && golfer.country !== filter.country) return false;
-        if (filter.searchTerm) {
-          const searchLower = filter.searchTerm.toLowerCase();
-          const searchableText = [golfer.playerName, golfer.country || ""]
-            .join(" ")
-            .toLowerCase();
-          if (!searchableText.includes(searchLower)) return false;
-        }
-        return true;
-      });
 
-      return {
-        ...result,
-        page: filtered,
-      };
-    }
+    const country = filter?.country?.trim();
+    const searchTerm = filter?.searchTerm?.trim().toLowerCase();
+    if (!country && !searchTerm) return result;
 
-    return result;
-  },
-});
+    const filtered = result.page.filter((g) => {
+      if (country && g.country !== country) return false;
+      if (searchTerm) {
+        const haystack = `${g.playerName} ${g.country ?? ""}`.toLowerCase();
+        if (!haystack.includes(searchTerm)) return false;
+      }
+      return true;
+    });
 
-export const bulkInsertGolfers = mutation({
-  args: golfersValidators.args.bulkInsertGolfers,
-  handler: async (ctx, args) => {
-    await requireModeratorOrAdminByClerkId(ctx, args.clerkId);
-
-    const dryRun = Boolean(args.options?.dryRun);
-    let inserted = 0;
-    for (const g of args.data) {
-      inserted += 1;
-      if (dryRun) continue;
-      await ctx.db.insert("golfers", {
-        apiId: g.apiId,
-        playerName: g.playerName,
-        ...(g.country ? { country: g.country } : {}),
-        ...(g.worldRank !== undefined ? { worldRank: g.worldRank } : {}),
-        updatedAt: Date.now(),
-      });
-    }
-    return { inserted, dryRun };
-  },
-});
-
-export const bulkPatchGolfers = mutation({
-  args: golfersValidators.args.bulkPatchGolfers,
-  handler: async (ctx, args) => {
-    await requireModeratorOrAdminByClerkId(ctx, args.clerkId);
-
-    const dryRun = Boolean(args.options?.dryRun);
-    let updated = 0;
-    for (const p of args.patches) {
-      updated += 1;
-      if (dryRun) continue;
-      await ctx.db.patch(p.golferId, { ...p.data, updatedAt: Date.now() });
-    }
-    return { updated, dryRun };
+    return { ...result, page: filtered };
   },
 });
 
 /**
- * Admin tool: convert golfer names from "Last, First" to "First Last".
+ * Updates a golfer.
  *
- * Run this once after an incorrect sync, then run `adminDedupeGolfersByName`
- * to remove any duplicates that collapse to the same name.
+ * Access:
+ * - Requires moderator/admin.
+ *
+ * Behavior:
+ * - Applies only provided fields.
+ * - Trims `playerName` / `country` when present.
+ * - Always updates `updatedAt` when a change is applied.
  */
-export const adminNormalizeGolferNames = mutation({
-  args: golfersValidators.args.adminNormalizeGolferNames,
-  handler: async (ctx, args): Promise<NormalizeNamesResult> => {
-    await requireModeratorOrAdminByClerkId(ctx, args.clerkId);
-
-    const dryRun = Boolean(args.options?.dryRun);
-    const limit = args.options?.limit;
-
-    const golfers = await ctx.db.query("golfers").collect();
-    const slice = typeof limit === "number" ? golfers.slice(0, limit) : golfers;
-
-    let changed = 0;
-    for (const g of slice) {
-      if (!g.playerName.includes(",")) continue;
-      const normalized = normalizeCommaName(g.playerName);
-      if (normalized === g.playerName) continue;
-      changed += 1;
-      if (dryRun) continue;
-      await ctx.db.patch(g._id, {
-        playerName: normalized,
-        updatedAt: Date.now(),
-      });
-    }
-
-    return { scanned: slice.length, changed };
+export const updateGolfers = mutation({
+  args: {
+    golferId: v.id("golfers"),
+    data: v.object({
+      playerName: v.optional(v.string()),
+      country: v.optional(v.string()),
+      worldRank: v.optional(v.number()),
+    }),
   },
-});
-
-export const upsertGolfers = mutation({
-  args: golfersValidators.args.upsertGolfers,
-  handler: async (ctx, args) => {
-    const clerkId = args.clerkId?.trim();
-    if (clerkId) {
-      const identity = await ctx.auth.getUserIdentity();
-      if (identity && identity.subject !== clerkId) {
-        throw new Error("Unauthorized: Clerk ID mismatch");
-      }
-
-      const member = await ctx.db
-        .query("members")
-        .withIndex("by_clerk_id", (q) => q.eq("clerkId", clerkId))
-        .first();
-      const role = member?.role?.trim().toLowerCase() ?? "";
-      if (role !== "admin" && role !== "moderator") {
-        throw new Error("Forbidden: Moderator or admin access required");
-      }
-    } else {
-      await requireModerator(ctx);
-    }
-
-    const dryRun = Boolean(args.options?.dryRun);
-    let inserted = 0;
-    let updated = 0;
-
-    for (const g of args.data) {
-      const existing = await ctx.db
-        .query("golfers")
-        .withIndex("by_api_id", (q) => q.eq("apiId", g.apiId))
-        .first();
-
-      if (!existing) {
-        inserted += 1;
-        if (!dryRun) {
-          await ctx.db.insert("golfers", {
-            apiId: g.apiId,
-            playerName: g.playerName,
-            ...(g.country ? { country: g.country } : {}),
-            ...(g.worldRank !== undefined ? { worldRank: g.worldRank } : {}),
-            updatedAt: Date.now(),
-          });
-        }
-        continue;
-      }
-
-      updated += 1;
-      if (!dryRun) {
-        await ctx.db.patch(existing._id, {
-          playerName: g.playerName,
-          ...(g.country ? { country: g.country } : {}),
-          ...(g.worldRank !== undefined ? { worldRank: g.worldRank } : {}),
-          updatedAt: Date.now(),
-        });
-      }
-    }
-
-    return {
-      total: args.data.length,
-      inserted,
-      updated,
-      dryRun,
-    };
-  },
-});
-
-/**
- * Create golfers with comprehensive options
- *
- * @example
- * Basic golfer creation
- * const golfer = await ctx.runMutation(api.functions.golfers.createGolfers, {
- *   data: {
- *     apiId: 12345,
- *     playerName: "Tiger Woods",
- *     country: "USA",
- *     worldRank: 15
- *   }
- * });
- *
- * With advanced options
- * const golfer = await ctx.runMutation(api.functions.golfers.createGolfers, {
- *   data: { ... },
- *   options: {
- *     skipValidation: false,
- *     setActive: true,
- *     returnEnhanced: true,
- *     includeStatistics: true
- *   }
- * });
- */
-export const createGolfers = mutation({
-  args: golfersValidators.args.createGolfers,
   handler: async (ctx, args) => {
     await requireModerator(ctx);
 
-    const options = args.options || {};
-    const data = args.data;
-    if (!options.skipValidation) {
-      const validation = golfersValidators.validateGolferData(data);
-
-      if (!validation.isValid) {
-        throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
-      }
-      const existing = await ctx.db
-        .query("golfers")
-        .withIndex("by_api_id", (q) => q.eq("apiId", data.apiId))
-        .first();
-
-      if (existing) {
-        throw new Error("Golfer with this API ID already exists");
-      }
+    const existing = await ctx.db.get(args.golferId);
+    if (!existing) {
+      throw new Error("Golfer not found");
     }
-    const golferId = await ctx.db.insert("golfers", {
-      apiId: data.apiId,
-      playerName: data.playerName,
-      country: data.country,
-      worldRank: data.worldRank,
+
+    const patch: Partial<Doc<"golfers">> & { updatedAt: number } = {
+      updatedAt: Date.now(),
+    };
+
+    if (typeof args.data.playerName === "string") {
+      const playerName = args.data.playerName.trim();
+      if (!playerName) throw new Error("Player name cannot be empty");
+      patch.playerName = playerName;
+    }
+    if (typeof args.data.country === "string") {
+      const country = args.data.country.trim();
+      patch.country = country || undefined;
+    }
+    if (typeof args.data.worldRank === "number") {
+      patch.worldRank = args.data.worldRank;
+    }
+
+    const keys = Object.keys(patch);
+    if (keys.length === 1) {
+      return existing;
+    }
+
+    await ctx.db.patch(args.golferId, patch);
+    return await ctx.db.get(args.golferId);
+  },
+});
+
+/**
+ * Deletes a golfer.
+ *
+ * Access:
+ * - Requires moderator/admin.
+ *
+ * Behavior:
+ * - If the golfer does not exist, returns `{ success: true, deleted: false }`.
+ * - Does not currently cascade into `tournamentGolfers`.
+ */
+export const deleteGolfers = mutation({
+  args: {
+    golferId: v.id("golfers"),
+  },
+  handler: async (ctx, args) => {
+    await requireModerator(ctx);
+
+    const existing = await ctx.db.get(args.golferId);
+    if (!existing) {
+      return { success: true, deleted: false } as const;
+    }
+
+    await ctx.db.delete(args.golferId);
+    return { success: true, deleted: true } as const;
+  },
+});
+
+/**
+ * Creates a tournament golfer.
+ *
+ * Access:
+ * - Requires moderator/admin.
+ *
+ * Behavior:
+ * - Enforces uniqueness per (`golferId`, `tournamentId`) using the `by_golfer_tournament` index.
+ * - Sets `updatedAt`.
+ */
+export const createTournamentGolfers = mutation({
+  args: {
+    data: v.object({
+      golferId: v.id("golfers"),
+      tournamentId: v.id("tournaments"),
+      group: v.optional(v.number()),
+      rating: v.optional(v.number()),
+      worldRank: v.optional(v.number()),
+      roundOneTeeTime: v.optional(v.string()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    await requireModerator(ctx);
+
+    const existing = await ctx.db
+      .query("tournamentGolfers")
+      .withIndex("by_golfer_tournament", (q) =>
+        q
+          .eq("golferId", args.data.golferId)
+          .eq("tournamentId", args.data.tournamentId),
+      )
+      .first();
+    if (existing) {
+      throw new Error("Tournament golfer already exists for this golfer");
+    }
+
+    const id = await ctx.db.insert("tournamentGolfers", {
+      ...args.data,
       updatedAt: Date.now(),
     });
+    return await ctx.db.get(id);
+  },
+});
 
-    const golfer = await ctx.db.get(golferId);
-    if (!golfer) throw new Error("Failed to retrieve created golfer");
-    if (options.returnEnhanced) {
-      return await enhanceGolfer(ctx, golfer, {
-        includeTournaments: options.includeTournaments,
-        includeStatistics: options.includeStatistics,
+/**
+ * Reads tournament golfers.
+ *
+ * This is the main “get” query for the `tournamentGolfers` table.
+ *
+ * @param args.options.id Fetch a single tournament golfer by `_id`.
+ * @param args.options.ids Fetch many tournament golfers by `_id` (returned in the same order as `ids`).
+ * @param args.options.filter In-memory filtering when no direct lookup is provided.
+ * @param args.options.sort In-memory sort of the resulting list.
+ * @param args.options.pagination Offset/limit slicing.
+ * @returns A single doc, an array of docs, or an empty array depending on input.
+ */
+export const getTournamentGolfers = query({
+  args: {
+    options: v.optional(
+      v.object({
+        id: v.optional(v.id("tournamentGolfers")),
+        ids: v.optional(v.array(v.id("tournamentGolfers"))),
+        filter: v.optional(
+          v.object({
+            tournamentId: v.optional(v.id("tournaments")),
+            golferId: v.optional(v.id("golfers")),
+            position: v.optional(v.string()),
+            group: v.optional(v.number()),
+            round: v.optional(v.number()),
+            thru: v.optional(v.number()),
+            endHole: v.optional(v.number()),
+            worldRank: v.optional(v.number()),
+            rating: v.optional(v.number()),
+            usage: v.optional(v.number()),
+            minScore: v.optional(v.number()),
+            maxScore: v.optional(v.number()),
+            updatedAfter: v.optional(v.number()),
+            updatedBefore: v.optional(v.number()),
+          }),
+        ),
+        sort: v.optional(
+          v.object({
+            sortBy: v.optional(
+              v.union(
+                v.literal("position"),
+                v.literal("score"),
+                v.literal("today"),
+                v.literal("worldRank"),
+                v.literal("rating"),
+                v.literal("group"),
+                v.literal("round"),
+                v.literal("updatedAt"),
+              ),
+            ),
+            sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+          }),
+        ),
+        pagination: v.optional(
+          v.object({
+            limit: v.optional(v.number()),
+            offset: v.optional(v.number()),
+          }),
+        ),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const options = args.options || {};
+
+    if (options.id) {
+      return await ctx.db.get(options.id);
+    }
+
+    if (options.ids) {
+      if (options.ids.length === 0) return [];
+      const docs = await Promise.all(options.ids.map((id) => ctx.db.get(id)));
+      return docs.filter((d): d is NonNullable<typeof d> => Boolean(d));
+    }
+
+    const filter = options.filter || {};
+    const sort = options.sort || {};
+    const pagination = options.pagination || {};
+
+    let rows = await ctx.db.query("tournamentGolfers").collect();
+
+    if (filter.tournamentId) {
+      rows = rows.filter((r) => r.tournamentId === filter.tournamentId);
+    }
+    if (filter.golferId) {
+      rows = rows.filter((r) => r.golferId === filter.golferId);
+    }
+    if (typeof filter.position === "string" && filter.position.trim()) {
+      const target = filter.position.trim();
+      rows = rows.filter((r) => r.position === target);
+    }
+    if (typeof filter.group === "number") {
+      rows = rows.filter((r) => r.group === filter.group);
+    }
+    if (typeof filter.round === "number") {
+      rows = rows.filter((r) => r.round === filter.round);
+    }
+    if (typeof filter.thru === "number") {
+      rows = rows.filter((r) => r.thru === filter.thru);
+    }
+    if (typeof filter.endHole === "number") {
+      rows = rows.filter((r) => r.endHole === filter.endHole);
+    }
+    if (typeof filter.worldRank === "number") {
+      rows = rows.filter((r) => r.worldRank === filter.worldRank);
+    }
+    if (typeof filter.rating === "number") {
+      rows = rows.filter((r) => r.rating === filter.rating);
+    }
+    if (typeof filter.usage === "number") {
+      rows = rows.filter((r) => r.usage === filter.usage);
+    }
+    if (typeof filter.minScore === "number") {
+      rows = rows.filter(
+        (r) => typeof r.score === "number" && r.score >= filter.minScore!,
+      );
+    }
+    if (typeof filter.maxScore === "number") {
+      rows = rows.filter(
+        (r) => typeof r.score === "number" && r.score <= filter.maxScore!,
+      );
+    }
+    if (typeof filter.updatedAfter === "number") {
+      rows = rows.filter(
+        (r) =>
+          typeof r.updatedAt === "number" &&
+          r.updatedAt >= filter.updatedAfter!,
+      );
+    }
+    if (typeof filter.updatedBefore === "number") {
+      rows = rows.filter(
+        (r) =>
+          typeof r.updatedAt === "number" &&
+          r.updatedAt <= filter.updatedBefore!,
+      );
+    }
+
+    const sortBy = sort.sortBy;
+    const sortOrder = sort.sortOrder === "desc" ? "desc" : "asc";
+    if (sortBy) {
+      rows = [...rows].sort((a, b) => {
+        const dir = sortOrder === "desc" ? -1 : 1;
+        if (sortBy === "position") {
+          return dir * (a.position ?? "").localeCompare(b.position ?? "");
+        }
+        if (sortBy === "score") {
+          return (
+            dir *
+            ((a.score ?? Number.POSITIVE_INFINITY) -
+              (b.score ?? Number.POSITIVE_INFINITY))
+          );
+        }
+        if (sortBy === "today") {
+          return (
+            dir *
+            ((a.today ?? Number.POSITIVE_INFINITY) -
+              (b.today ?? Number.POSITIVE_INFINITY))
+          );
+        }
+        if (sortBy === "worldRank") {
+          return (
+            dir *
+            ((a.worldRank ?? Number.POSITIVE_INFINITY) -
+              (b.worldRank ?? Number.POSITIVE_INFINITY))
+          );
+        }
+        if (sortBy === "rating") {
+          return (
+            dir *
+            ((a.rating ?? Number.NEGATIVE_INFINITY) -
+              (b.rating ?? Number.NEGATIVE_INFINITY))
+          );
+        }
+        if (sortBy === "group") {
+          return dir * ((a.group ?? 0) - (b.group ?? 0));
+        }
+        if (sortBy === "round") {
+          return dir * ((a.round ?? 0) - (b.round ?? 0));
+        }
+        if (sortBy === "updatedAt") {
+          return dir * ((a.updatedAt ?? 0) - (b.updatedAt ?? 0));
+        }
+        return 0;
       });
     }
 
-    return golfer;
+    const offset =
+      typeof pagination.offset === "number" ? pagination.offset : 0;
+    const limit =
+      typeof pagination.limit === "number" ? pagination.limit : undefined;
+    if (offset > 0 || limit !== undefined) {
+      const start = Math.max(0, offset);
+      const end = limit !== undefined ? start + Math.max(0, limit) : undefined;
+      rows = rows.slice(start, end);
+    }
+
+    return rows;
   },
 });
 
 /**
- * Get golfers with comprehensive query options
+ * Reads “enhanced golfers” for a given tournament.
  *
- * @example
- * Get single golfer by ID
- * const golfer = await ctx.runQuery(api.functions.golfers.getGolfers, {
- *   options: { id: "golfer123" }
- * });
+ * An enhanced golfer is a single object that merges:
+ * - the base `golfers` fields (identity, name, country, OWGR), and
+ * - the per-tournament `tournamentGolfers` fields (position/score/live stats/group/etc).
  *
- * Get golfer by API ID
- * const golfer = await ctx.runQuery(api.functions.golfers.getGolfers, {
- *   options: {
- *     filter: { apiId: 12345 }
- *   }
- * });
+ * This query is tournament-scoped: it starts from `tournamentGolfers` rows for `tournamentId`
+ * and joins the referenced `golfers` docs.
  *
- * Get golfers with filtering, sorting, and pagination
- * const result = await ctx.runQuery(api.functions.golfers.getGolfers, {
- *   options: {
- *     filter: {
- *       country: "USA",
- *       maxWorldRank: 50,
- *       searchTerm: "Tiger"
- *     },
- *     sort: {
- *       sortBy: "worldRank",
- *       sortOrder: "asc"
- *     },
- *     pagination: {
- *       limit: 50,
- *       offset: 0
- *     },
- *     enhance: {
- *       includeTournaments: true,
- *       includeStatistics: true,
- *       includeRecentPerformance: true
- *     }
- *   }
- * });
+ * Options:
+ * - `options.filter`: same fields as `getGolfers` filtering.
+ * - `options.tournamentFilter`: common `tournamentGolfers` filters.
+ * - `options.sort`: sort by golfer fields or tournament fields.
+ * - `options.pagination`: `offset` + `limit`.
+ *
+ * Notes:
+ * - `tournamentWorldRank` and `tournamentUpdatedAt` are provided to avoid name collisions with
+ *   `golfers.worldRank` and `golfers.updatedAt`.
  */
-export const getGolfers = query({
-  args: golfersValidators.args.getGolfers,
-  handler: async (ctx, args) => {
-    const options = args.options || {};
-    if (options.id) {
-      const golfer = await ctx.db.get(options.id);
-      if (!golfer) return null;
-
-      return await enhanceGolfer(ctx, golfer, options.enhance || {});
-    }
-    if (options.apiId) {
-      const golfer = await ctx.db
-        .query("golfers")
-        .withIndex("by_api_id", (q) => q.eq("apiId", options.apiId!))
-        .first();
-      if (!golfer) return null;
-
-      return await enhanceGolfer(ctx, golfer, options.enhance || {});
-    }
-    if (options.ids) {
-      const golfers = await Promise.all(
-        options.ids.map(async (id) => {
-          const golfer = await ctx.db.get(id);
-          return golfer
-            ? await enhanceGolfer(ctx, golfer, options.enhance || {})
-            : null;
+export const getEnhancedGolfers = query({
+  args: {
+    options: v.object({
+      tournamentId: v.id("tournaments"),
+      filter: v.optional(
+        v.object({
+          apiId: v.optional(v.number()),
+          playerName: v.optional(v.string()),
+          country: v.optional(v.string()),
+          worldRank: v.optional(v.number()),
+          minWorldRank: v.optional(v.number()),
+          maxWorldRank: v.optional(v.number()),
+          searchTerm: v.optional(v.string()),
+          createdAfter: v.optional(v.number()),
+          createdBefore: v.optional(v.number()),
+          updatedAfter: v.optional(v.number()),
+          updatedBefore: v.optional(v.number()),
         }),
-      );
-      return golfers.filter(Boolean);
-    }
-    let golfers = await getOptimizedGolfers(ctx, options);
-    golfers = applyFilters(golfers, options.filter || {});
-    if (options.rankedOnly) {
-      golfers = golfers.filter((g) => g.worldRank && g.worldRank > 0);
-    }
-    if (options.topRankedOnly) {
-      golfers = golfers.filter((g) => g.worldRank && g.worldRank <= 100);
-    }
-    const processedGolfers = processData(golfers, {
-      sort: getSortFunction(options.sort || {}),
-      limit: options.pagination?.limit,
-      skip: options.pagination?.offset,
-    });
-    if (options.enhance && Object.values(options.enhance).some(Boolean)) {
-      const enhancedGolfers = await Promise.all(
-        processedGolfers.map((golfer) =>
-          enhanceGolfer(ctx, golfer, options.enhance || {}),
-        ),
-      );
+      ),
+      tournamentFilter: v.optional(
+        v.object({
+          position: v.optional(v.string()),
+          group: v.optional(v.number()),
+          round: v.optional(v.number()),
+          thru: v.optional(v.number()),
+          endHole: v.optional(v.number()),
+          rating: v.optional(v.number()),
+          usage: v.optional(v.number()),
+          minScore: v.optional(v.number()),
+          maxScore: v.optional(v.number()),
+          updatedAfter: v.optional(v.number()),
+          updatedBefore: v.optional(v.number()),
+        }),
+      ),
+      sort: v.optional(
+        v.object({
+          sortBy: v.optional(
+            v.union(
+              v.literal("playerName"),
+              v.literal("country"),
+              v.literal("worldRank"),
+              v.literal("apiId"),
+              v.literal("createdAt"),
+              v.literal("updatedAt"),
+              v.literal("position"),
+              v.literal("score"),
+              v.literal("today"),
+              v.literal("rating"),
+              v.literal("group"),
+              v.literal("round"),
+              v.literal("tournamentUpdatedAt"),
+            ),
+          ),
+          sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+        }),
+      ),
+      pagination: v.optional(
+        v.object({
+          limit: v.optional(v.number()),
+          offset: v.optional(v.number()),
+        }),
+      ),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const options = args.options;
+    const tournamentId = options.tournamentId;
 
-      if (options.includeAnalytics) {
+    const tournamentGolfers = await ctx.db
+      .query("tournamentGolfers")
+      .withIndex("by_tournament", (q) => q.eq("tournamentId", tournamentId))
+      .collect();
+
+    const uniqueGolferIds = Array.from(
+      new Set(tournamentGolfers.map((tg) => tg.golferId)),
+    );
+    const golferDocs = await Promise.all(
+      uniqueGolferIds.map((id) => ctx.db.get(id)),
+    );
+
+    const golfersById = new Map(
+      golferDocs
+        .filter((g): g is NonNullable<typeof g> => Boolean(g))
+        .map((g) => [g._id, g] as const),
+    );
+
+    const enhanced = tournamentGolfers
+      .map((tg) => {
+        const golfer = golfersById.get(tg.golferId);
+        if (!golfer) return null;
+
+        const {
+          _id: tournamentGolferId,
+          worldRank: tournamentWorldRank,
+          updatedAt: tournamentUpdatedAt,
+          ...tgRest
+        } = tg;
+
         return {
-          golfers: enhancedGolfers,
-          analytics: await generateAnalytics(ctx, golfers),
-          meta: {
-            total: golfers.length,
-            filtered: processedGolfers.length,
-            offset: options.pagination?.offset || 0,
-            limit: options.pagination?.limit,
-          },
+          ...golfer,
+          ...tgRest,
+          tournamentGolferId,
+          ...(typeof tournamentWorldRank === "number"
+            ? { tournamentWorldRank }
+            : {}),
+          ...(typeof tournamentUpdatedAt === "number"
+            ? { tournamentUpdatedAt }
+            : {}),
         };
+      })
+      .filter((r): r is NonNullable<typeof r> => Boolean(r));
+
+    const golferFilter = options.filter;
+    const tgFilter = options.tournamentFilter;
+    let rows = enhanced;
+
+    if (golferFilter) {
+      if (typeof golferFilter.apiId === "number") {
+        rows = rows.filter((r) => r.apiId === golferFilter.apiId);
       }
-
-      return enhancedGolfers;
+      if (
+        typeof golferFilter.playerName === "string" &&
+        golferFilter.playerName.trim()
+      ) {
+        const target = golferFilter.playerName.trim().toLowerCase();
+        rows = rows.filter((r) => r.playerName.toLowerCase() === target);
+      }
+      if (
+        typeof golferFilter.country === "string" &&
+        golferFilter.country.trim()
+      ) {
+        const target = golferFilter.country.trim();
+        rows = rows.filter((r) => (r.country ?? "") === target);
+      }
+      if (typeof golferFilter.worldRank === "number") {
+        rows = rows.filter((r) => r.worldRank === golferFilter.worldRank);
+      }
+      if (typeof golferFilter.minWorldRank === "number") {
+        rows = rows.filter(
+          (r) =>
+            typeof r.worldRank === "number" &&
+            r.worldRank >= golferFilter.minWorldRank!,
+        );
+      }
+      if (typeof golferFilter.maxWorldRank === "number") {
+        rows = rows.filter(
+          (r) =>
+            typeof r.worldRank === "number" &&
+            r.worldRank <= golferFilter.maxWorldRank!,
+        );
+      }
+      if (
+        typeof golferFilter.searchTerm === "string" &&
+        golferFilter.searchTerm.trim()
+      ) {
+        const term = golferFilter.searchTerm.trim().toLowerCase();
+        rows = rows.filter((r) => {
+          const haystack =
+            `${r.playerName} ${r.country ?? ""} ${r.apiId}`.toLowerCase();
+          return haystack.includes(term);
+        });
+      }
+      if (typeof golferFilter.createdAfter === "number") {
+        rows = rows.filter(
+          (r) => r._creationTime >= golferFilter.createdAfter!,
+        );
+      }
+      if (typeof golferFilter.createdBefore === "number") {
+        rows = rows.filter(
+          (r) => r._creationTime <= golferFilter.createdBefore!,
+        );
+      }
+      if (typeof golferFilter.updatedAfter === "number") {
+        rows = rows.filter(
+          (r) =>
+            typeof r.updatedAt === "number" &&
+            r.updatedAt >= golferFilter.updatedAfter!,
+        );
+      }
+      if (typeof golferFilter.updatedBefore === "number") {
+        rows = rows.filter(
+          (r) =>
+            typeof r.updatedAt === "number" &&
+            r.updatedAt <= golferFilter.updatedBefore!,
+        );
+      }
     }
-    const basicGolfers = processedGolfers.map((golfer) => ({
-      ...golfer,
-      displayName: generateDisplayName(golfer.playerName),
-      rankDisplay: generateRankDisplay(golfer.worldRank),
-      hasRanking: Boolean(golfer.worldRank && golfer.worldRank > 0),
-      isRanked: Boolean(golfer.worldRank && golfer.worldRank > 0),
-      rankingCategory: getRankingCategory(golfer.worldRank),
-    }));
 
-    if (options.includeAnalytics) {
-      return {
-        golfers: basicGolfers,
-        analytics: await generateAnalytics(ctx, golfers),
-        meta: {
-          total: golfers.length,
-          filtered: basicGolfers.length,
-          offset: options.pagination?.offset || 0,
-          limit: options.pagination?.limit,
-        },
-      };
+    if (tgFilter) {
+      if (typeof tgFilter.position === "string" && tgFilter.position.trim()) {
+        const target = tgFilter.position.trim();
+        rows = rows.filter((r) => r.position === target);
+      }
+      if (typeof tgFilter.group === "number") {
+        rows = rows.filter((r) => r.group === tgFilter.group);
+      }
+      if (typeof tgFilter.round === "number") {
+        rows = rows.filter((r) => r.round === tgFilter.round);
+      }
+      if (typeof tgFilter.thru === "number") {
+        rows = rows.filter((r) => r.thru === tgFilter.thru);
+      }
+      if (typeof tgFilter.endHole === "number") {
+        rows = rows.filter((r) => r.endHole === tgFilter.endHole);
+      }
+      if (typeof tgFilter.rating === "number") {
+        rows = rows.filter((r) => r.rating === tgFilter.rating);
+      }
+      if (typeof tgFilter.usage === "number") {
+        rows = rows.filter((r) => r.usage === tgFilter.usage);
+      }
+      if (typeof tgFilter.minScore === "number") {
+        rows = rows.filter(
+          (r) => typeof r.score === "number" && r.score >= tgFilter.minScore!,
+        );
+      }
+      if (typeof tgFilter.maxScore === "number") {
+        rows = rows.filter(
+          (r) => typeof r.score === "number" && r.score <= tgFilter.maxScore!,
+        );
+      }
+      if (typeof tgFilter.updatedAfter === "number") {
+        rows = rows.filter(
+          (r) =>
+            typeof r.tournamentUpdatedAt === "number" &&
+            r.tournamentUpdatedAt >= tgFilter.updatedAfter!,
+        );
+      }
+      if (typeof tgFilter.updatedBefore === "number") {
+        rows = rows.filter(
+          (r) =>
+            typeof r.tournamentUpdatedAt === "number" &&
+            r.tournamentUpdatedAt <= tgFilter.updatedBefore!,
+        );
+      }
     }
 
-    return basicGolfers;
+    const sortBy = options.sort?.sortBy;
+    const sortOrder = options.sort?.sortOrder === "desc" ? "desc" : "asc";
+    if (sortBy) {
+      rows = [...rows].sort((a, b) => {
+        const dir = sortOrder === "desc" ? -1 : 1;
+        if (sortBy === "playerName")
+          return dir * a.playerName.localeCompare(b.playerName);
+        if (sortBy === "country")
+          return dir * (a.country ?? "").localeCompare(b.country ?? "");
+        if (sortBy === "worldRank") {
+          return (
+            dir *
+            ((a.worldRank ?? Number.POSITIVE_INFINITY) -
+              (b.worldRank ?? Number.POSITIVE_INFINITY))
+          );
+        }
+        if (sortBy === "apiId") return dir * (a.apiId - b.apiId);
+        if (sortBy === "createdAt")
+          return dir * (a._creationTime - b._creationTime);
+        if (sortBy === "updatedAt")
+          return dir * ((a.updatedAt ?? 0) - (b.updatedAt ?? 0));
+        if (sortBy === "position")
+          return dir * (a.position ?? "").localeCompare(b.position ?? "");
+        if (sortBy === "score") {
+          return (
+            dir *
+            ((a.score ?? Number.POSITIVE_INFINITY) -
+              (b.score ?? Number.POSITIVE_INFINITY))
+          );
+        }
+        if (sortBy === "today") {
+          return (
+            dir *
+            ((a.today ?? Number.POSITIVE_INFINITY) -
+              (b.today ?? Number.POSITIVE_INFINITY))
+          );
+        }
+        if (sortBy === "rating") {
+          return (
+            dir *
+            ((a.rating ?? Number.NEGATIVE_INFINITY) -
+              (b.rating ?? Number.NEGATIVE_INFINITY))
+          );
+        }
+        if (sortBy === "group") return dir * ((a.group ?? 0) - (b.group ?? 0));
+        if (sortBy === "round") return dir * ((a.round ?? 0) - (b.round ?? 0));
+        if (sortBy === "tournamentUpdatedAt") {
+          return (
+            dir * ((a.tournamentUpdatedAt ?? 0) - (b.tournamentUpdatedAt ?? 0))
+          );
+        }
+        return 0;
+      });
+    }
+
+    const offset =
+      typeof options.pagination?.offset === "number"
+        ? options.pagination.offset
+        : 0;
+    const limit =
+      typeof options.pagination?.limit === "number"
+        ? options.pagination.limit
+        : undefined;
+    if (offset > 0 || limit !== undefined) {
+      const start = Math.max(0, offset);
+      const end = limit !== undefined ? start + Math.max(0, limit) : undefined;
+      rows = rows.slice(start, end);
+    }
+
+    return rows;
   },
 });
 
 /**
- * Frontend convenience: golfers + tournament-specific leaderboard fields.
+ * Updates a tournament golfer.
+ *
+ * Access:
+ * - Requires moderator/admin.
+ *
+ * Behavior:
+ * - Applies only provided fields.
+ * - Always sets `updatedAt`.
  */
-export const getTournamentLeaderboardGolfers = query({
-  args: golfersValidators.args.getTournamentLeaderboardGolfers,
+export const updateTournamentGolfers = mutation({
+  args: {
+    tournamentGolferId: v.id("tournamentGolfers"),
+    data: v.object({
+      position: v.optional(v.string()),
+      score: v.optional(v.number()),
+      today: v.optional(v.number()),
+      thru: v.optional(v.number()),
+      round: v.optional(v.number()),
+      endHole: v.optional(v.number()),
+      group: v.optional(v.number()),
+      rating: v.optional(v.number()),
+      worldRank: v.optional(v.number()),
+      usage: v.optional(v.number()),
+      roundOneTeeTime: v.optional(v.string()),
+      roundOne: v.optional(v.number()),
+      roundTwoTeeTime: v.optional(v.string()),
+      roundTwo: v.optional(v.number()),
+      roundThreeTeeTime: v.optional(v.string()),
+      roundThree: v.optional(v.number()),
+      roundFourTeeTime: v.optional(v.string()),
+      roundFour: v.optional(v.number()),
+    }),
+  },
   handler: async (ctx, args) => {
-    const tournamentGolferDocs = await ctx.db
+    await requireModerator(ctx);
+
+    const existing = await ctx.db.get(args.tournamentGolferId);
+    if (!existing) throw new Error("Tournament golfer not found");
+
+    await ctx.db.patch(args.tournamentGolferId, {
+      ...args.data,
+      updatedAt: Date.now(),
+    });
+
+    return await ctx.db.get(args.tournamentGolferId);
+  },
+});
+
+/**
+ * Deletes a tournament golfer.
+ *
+ * Access:
+ * - Requires moderator/admin.
+ *
+ * Behavior:
+ * - If the doc does not exist, returns `{ success: true, deleted: false }`.
+ */
+export const deleteTournamentGolfers = mutation({
+  args: {
+    tournamentGolferId: v.id("tournamentGolfers"),
+  },
+  handler: async (ctx, args) => {
+    await requireModerator(ctx);
+
+    const existing = await ctx.db.get(args.tournamentGolferId);
+    if (!existing) {
+      return { success: true, deleted: false } as const;
+    }
+    await ctx.db.delete(args.tournamentGolferId);
+    return { success: true, deleted: true } as const;
+  },
+});
+
+/**
+ * Creates the full set of `tournamentGolfers` for a tournament from grouped DataGolf inputs.
+ *
+ * Notes:
+ * - Skips if the tournament already has at least one tournament golfer.
+ * - Ensures `golfers` records exist (creates missing), and inserts `tournamentGolfers` for each.
+ *
+ * @param args.tournamentId Tournament id.
+ * @param args.groups Group list with a `groupNumber` and golfer entries.
+ * @returns A small status object indicating whether inserts were skipped or performed.
+ */
+export const createTournamentGolfersForTournament = internalMutation({
+  args: {
+    tournamentId: v.id("tournaments"),
+    groups: v.array(
+      v.object({
+        groupNumber: v.number(),
+        golfers: v.array(
+          v.object({
+            dgId: v.number(),
+            playerName: v.string(),
+            country: v.optional(v.string()),
+            r1TeeTime: v.optional(v.string()),
+            worldRank: v.optional(v.number()),
+            skillEstimate: v.optional(v.number()),
+          }),
+        ),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
       .query("tournamentGolfers")
       .withIndex("by_tournament", (q) =>
         q.eq("tournamentId", args.tournamentId),
       )
-      .collect();
-
-    const result = await Promise.all(
-      tournamentGolferDocs.map(async (tg) => {
-        const golfer = await ctx.db.get(tg.golferId);
-        if (!golfer) return null;
-
-        return {
-          ...golfer,
-          tournamentId: tg.tournamentId,
-          tournamentGolferId: tg._id,
-          position: tg.position,
-          posChange: tg.posChange,
-          thru: tg.thru,
-          today: tg.today,
-          score: tg.score,
-          round: tg.round,
-          endHole: tg.endHole,
-          group: tg.group,
-          roundOneTeeTime: tg.roundOneTeeTime,
-          roundOne: tg.roundOne,
-          roundTwoTeeTime: tg.roundTwoTeeTime,
-          roundTwo: tg.roundTwo,
-          roundThreeTeeTime: tg.roundThreeTeeTime,
-          roundThree: tg.roundThree,
-          roundFourTeeTime: tg.roundFourTeeTime,
-          roundFour: tg.roundFour,
-          updatedAt: tg.updatedAt,
-        };
-      }),
-    );
-
-    return result.filter((x): x is NonNullable<typeof x> => x !== null);
-  },
-});
-
-/**
- * Update golfers with comprehensive options
- *
- * @example
- * Basic update
- * const updatedGolfer = await ctx.runMutation(api.functions.golfers.updateGolfers, {
- *   golferId: "golfer123",
- *   data: { worldRank: 12, country: "USA" }
- * });
- *
- * Advanced update with options
- * const result = await ctx.runMutation(api.functions.golfers.updateGolfers, {
- *   golferId: "golfer123",
- *   data: { worldRank: 10 },
- *   options: {
- *     skipValidation: false,
- *     updateTimestamp: true,
- *     returnEnhanced: true,
- *     includeStatistics: true
- *   }
- * });
- */
-export const updateGolfers = mutation({
-  args: golfersValidators.args.updateGolfers,
-  handler: async (ctx, args) => {
-    await requireModerator(ctx);
-
-    const options = args.options || {};
-    const golfer = await ctx.db.get(args.golferId);
-    if (!golfer) {
-      throw new Error("Golfer not found");
-    }
-    if (!options.skipValidation) {
-      const validation = golfersValidators.validateGolferData(args.data);
-      if (!validation.isValid) {
-        throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
-      }
-    }
-
-    const updateData: Partial<GolferDoc> = { ...args.data };
-    if (options.updateTimestamp !== false) {
-      updateData.updatedAt = Date.now();
-    }
-
-    await ctx.db.patch(args.golferId, updateData);
-
-    const updatedGolfer = await ctx.db.get(args.golferId);
-    if (!updatedGolfer) throw new Error("Failed to retrieve updated golfer");
-    if (options.returnEnhanced) {
-      return await enhanceGolfer(ctx, updatedGolfer, {
-        includeStatistics: options.includeStatistics,
-        includeTournaments: options.includeTournaments,
-        includeRecentPerformance: options.includeRecentPerformance,
-      });
-    }
-
-    return updatedGolfer;
-  },
-});
-
-/**
- * Delete golfers (hard delete only)
- *
- * This function always performs a hard delete (permanent removal from database).
- * The softDelete option is kept for backward compatibility but is ignored.
- *
- * @example
- * Delete golfer
- * const result = await ctx.runMutation(api.functions.golfers.deleteGolfers, {
- *   golferId: "golfer123"
- * });
- *
- * Delete with cascade cleanup and replacement
- * const result = await ctx.runMutation(api.functions.golfers.deleteGolfers, {
- *   golferId: "golfer123",
- *   options: {
- *     cascadeDelete: true,
- *     replacementGolferId: "newGolfer456"
- *   }
- * });
- */
-export const deleteGolfers = mutation({
-  args: golfersValidators.args.deleteGolfers,
-  handler: async (ctx, args): Promise<DeleteResponse<GolferDoc>> => {
-    await requireModerator(ctx);
-
-    const options = args.options || {};
-    const golfer = await ctx.db.get(args.golferId);
-    if (!golfer) {
-      throw new Error("Golfer not found");
-    }
-
-    let replacedCount = 0;
-    let deletedGolferData: GolferDoc | undefined = undefined;
-
-    if (options.returnDeletedData) {
-      deletedGolferData = golfer;
-    }
-    if (options.replacementGolferId) {
-      const replacementGolfer = await ctx.db.get(options.replacementGolferId);
-      if (!replacementGolfer) {
-        throw new Error("Replacement golfer not found");
-      }
-      const tournamentGolfers = await ctx.db
-        .query("tournamentGolfers")
-        .filter((q) => q.eq(q.field("golferId"), args.golferId))
-        .collect();
-
-      for (const tg of tournamentGolfers) {
-        await ctx.db.patch(tg._id, {
-          golferId: options.replacementGolferId,
-        });
-        replacedCount++;
-      }
-      const teamsPage = await ctx.db
-        .query("teams")
-        .paginate({ cursor: null, numItems: 5000 });
-
-      if (!teamsPage.isDone) {
-        console.warn(
-          `[deleteGolfers] Database has >5000 teams. Only scanning first 5000 for golfer replacement. ` +
-            `Some teams may still reference golfer ${golfer.apiId}. Consider using batch cleanup tool.`,
-        );
-      }
-
-      for (const team of teamsPage.page) {
-        if (team.golferIds.includes(golfer.apiId)) {
-          const updatedGolferIds = team.golferIds.map((id) =>
-            id === golfer.apiId ? replacementGolfer.apiId : id,
-          );
-          await ctx.db.patch(team._id, {
-            golferIds: updatedGolferIds,
-          });
-          replacedCount++;
-        }
-      }
-    }
-    if (options.cascadeDelete && !options.replacementGolferId) {
-      const tournamentGolfers = await ctx.db
-        .query("tournamentGolfers")
-        .withIndex("by_golfer", (q) => q.eq("golferId", args.golferId))
-        .collect();
-
-      for (const tg of tournamentGolfers) {
-        await ctx.db.delete(tg._id);
-      }
-      const teamsPage = await ctx.db
-        .query("teams")
-        .paginate({ cursor: null, numItems: 5000 });
-
-      if (!teamsPage.isDone) {
-        console.warn(
-          `[deleteGolfers] Database has >5000 teams. Only scanning first 5000 for golfer removal. ` +
-            `Some teams may still reference golfer ${golfer.apiId}. Consider using batch cleanup tool.`,
-        );
-      }
-
-      for (const team of teamsPage.page) {
-        if (team.golferIds.includes(golfer.apiId)) {
-          const updatedGolferIds = team.golferIds.filter(
-            (id) => id !== golfer.apiId,
-          );
-          await ctx.db.patch(team._id, {
-            golferIds: updatedGolferIds,
-          });
-        }
-      }
-    }
-    await ctx.db.delete(args.golferId);
-    return {
-      success: true,
-      deleted: true,
-      deactivated: false,
-      transferredCount: replacedCount > 0 ? replacedCount : undefined,
-      deletedData: deletedGolferData,
-    };
-  },
-});
-
-/**
- * Admin tool: ensure golfer names are unique by merging duplicates.
- *
- * - Groups golfers by normalized `playerName` (case/whitespace insensitive)
- * - Picks one golfer per group to keep (prefers most references / completeness)
- * - Rewrites references in `tournamentGolfers.golferId`
- * - Rewrites references in `teams.golferIds` (apiId array)
- * - Deletes the duplicate golfer docs
- */
-export const adminDedupeGolfersByName = mutation({
-  args: golfersValidators.args.adminDedupeGolfersByName,
-  handler: async (ctx, args): Promise<DedupeResult> => {
-    const clerkId = args.clerkId.trim();
-    if (!clerkId) throw new Error("Unauthorized: You must be signed in");
-
-    const identity = await ctx.auth.getUserIdentity();
-    if (identity && identity.subject !== clerkId) {
-      throw new Error("Unauthorized: Clerk ID mismatch");
-    }
-
-    const member = await ctx.db
-      .query("members")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", clerkId))
       .first();
-    const role = member?.role?.trim().toLowerCase() ?? "";
-    if (role !== "admin" && role !== "moderator") {
-      throw new Error("Forbidden: Moderator or admin access required");
+    if (existing) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: "already_has_golfers",
+        tournamentId: args.tournamentId,
+      } as const;
     }
 
-    const golfers = await ctx.db.query("golfers").collect();
+    let inserted = 0;
+    for (const group of args.groups) {
+      for (const g of group.golfers) {
+        const existingGolfer = await ctx.db
+          .query("golfers")
+          .withIndex("by_api_id", (q) => q.eq("apiId", g.dgId))
+          .first();
 
-    const groups = new Map<string, typeof golfers>();
-    for (const g of golfers) {
-      const key = normalizeGolferName(g.playerName);
-      const existing = groups.get(key);
-      if (existing) existing.push(g);
-      else groups.set(key, [g]);
-    }
-    const teamsPage = await ctx.db
-      .query("teams")
-      .paginate({ cursor: null, numItems: 5000 });
-
-    if (!teamsPage.isDone) {
-      console.warn(
-        "[golfer analytics] Database has >5000 teams. Usage statistics based on first 5000 only.",
-      );
-    }
-
-    const teamUsageByApiId = new Map<number, number>();
-    for (const team of teamsPage.page) {
-      for (const apiId of team.golferIds) {
-        teamUsageByApiId.set(apiId, (teamUsageByApiId.get(apiId) ?? 0) + 1);
-      }
-    }
-
-    let duplicateGroups = 0;
-    let kept = 0;
-    let removed = 0;
-    let updatedTournamentGolfers = 0;
-    let updatedTeams = 0;
-
-    for (const [, group] of groups) {
-      if (group.length <= 1) continue;
-      duplicateGroups++;
-
-      const tgCounts = new Map<Id<"golfers">, number>();
-      for (const g of group) {
-        const tgs = await ctx.db
-          .query("tournamentGolfers")
-          .withIndex("by_golfer", (q) => q.eq("golferId", g._id))
-          .collect();
-        tgCounts.set(g._id, tgs.length);
-      }
-
-      const scored = group
-        .map((g) => {
-          const tgCount = tgCounts.get(g._id) ?? 0;
-          const teamCount = teamUsageByApiId.get(g.apiId) ?? 0;
-          const completeness =
-            (g.country ? 1 : 0) + (g.worldRank !== undefined ? 1 : 0);
-          const score = tgCount * 1000 + teamCount * 10 + completeness;
-          return { g, score };
-        })
-        .sort((a, b) => {
-          if (b.score !== a.score) return b.score - a.score;
-          if (a.g._creationTime !== b.g._creationTime)
-            return a.g._creationTime - b.g._creationTime;
-          return a.g.apiId - b.g.apiId;
-        });
-
-      const keep = scored[0]?.g;
-      if (!keep) continue;
-      kept++;
-
-      for (const { g: dup } of scored.slice(1)) {
-        const tgs = await ctx.db
-          .query("tournamentGolfers")
-          .withIndex("by_golfer", (q) => q.eq("golferId", dup._id))
-          .collect();
-        for (const tg of tgs) {
-          await ctx.db.patch(tg._id, {
-            golferId: keep._id,
-            updatedAt: Date.now(),
-          });
-          updatedTournamentGolfers++;
-        }
-        if (dup.apiId !== keep.apiId) {
-          const allTeams = await ctx.db.query("teams").collect();
-          for (const team of allTeams) {
-            if (!team.golferIds.includes(dup.apiId)) continue;
-            const next = team.golferIds
-              .map((id: number) => (id === dup.apiId ? keep.apiId : id))
-              .filter(
-                (id: number, idx: number, arr: number[]) =>
-                  arr.indexOf(id) === idx,
-              );
-            await ctx.db.patch(team._id, {
-              golferIds: next,
+        if (existingGolfer) {
+          const normalized = normalizePlayerNameFromDataGolf(
+            existingGolfer.playerName,
+          );
+          if (normalized !== existingGolfer.playerName) {
+            await ctx.db.patch(existingGolfer._id, {
+              playerName: normalized,
               updatedAt: Date.now(),
             });
-            updatedTeams++;
           }
         }
 
-        await ctx.db.delete(dup._id);
-        removed++;
+        const golferId = existingGolfer
+          ? existingGolfer._id
+          : await ctx.db.insert("golfers", {
+              apiId: g.dgId,
+              playerName: normalizePlayerNameFromDataGolf(g.playerName),
+              ...(g.country ? { country: g.country } : {}),
+              ...(g.worldRank !== undefined ? { worldRank: g.worldRank } : {}),
+              updatedAt: Date.now(),
+            });
+        const existingTG = await ctx.db
+          .query("tournamentGolfers")
+          .withIndex("by_golfer_tournament", (q) =>
+            q.eq("golferId", golferId).eq("tournamentId", args.tournamentId),
+          )
+          .first();
+        const rating = normalizeDgSkillEstimateToPgcRating(
+          g.skillEstimate ?? -1.875,
+        );
+
+        if (!existingTG) {
+          await ctx.db.insert("tournamentGolfers", {
+            golferId,
+            tournamentId: args.tournamentId,
+            group: group.groupNumber,
+            worldRank: g.worldRank ?? 501,
+            rating,
+            ...(typeof g.r1TeeTime === "string"
+              ? { roundOneTeeTime: g.r1TeeTime }
+              : {}),
+            updatedAt: Date.now(),
+          });
+          inserted += 1;
+        }
       }
     }
 
     return {
-      scanned: golfers.length,
-      duplicateGroups,
-      kept,
-      removed,
-      updatedTournamentGolfers,
-      updatedTeams,
-    };
+      ok: true,
+      skipped: false,
+      tournamentId: args.tournamentId,
+      golfersProcessed: inserted,
+      groupsCreated: args.groups.filter((g) => g.golfers.length > 0).length,
+    } as const;
   },
 });
 
-export const getGolferIdsByApiIds = internalQuery({
-  args: cronJobsValidators.args.getGolferIdsByApiIds,
-  handler: async (ctx, args) => {
-    const unique = Array.from(new Set(args.apiIds));
+/**
+ * Finalizes `tournamentGolfers` for a completed tournament by applying the provided scorecard updates.
+ *
+ * Behavior:
+ * - Requires the tournament to exist and have `status === "completed"`.
+ * - Looks up each golfer by `golferApiId` (matches `golfers.apiId`), then patches the matching
+ *   (`golferId`, `tournamentId`) row in `tournamentGolfers`.
+ * - Marks the row as finished (`thru: 18`, `endHole: 18`, `round: 5`).
+ *
+ * @param args.tournamentId Tournament id.
+ * @param args.updates Update list keyed by golfer API id.
+ * @returns `{ updated }` count.
+ */
+export const finalizeTournamentGolfersForCompletedTournament = internalMutation(
+  {
+    args: v.object({
+      tournamentId: v.id("tournaments"),
+      updates: v.array(
+        v.object({
+          golferApiId: v.number(),
+          position: v.union(v.null(), v.string()),
+          roundOne: v.union(v.null(), v.number()),
+          roundTwo: v.union(v.null(), v.number()),
+          roundThree: v.union(v.null(), v.number()),
+          roundFour: v.union(v.null(), v.number()),
+          score: v.union(v.null(), v.number()),
+          today: v.union(v.null(), v.number()),
+        }),
+      ),
+    }),
+    handler: async (ctx, args) => {
+      const tournament = await ctx.db.get(args.tournamentId);
+      if (!tournament) {
+        throw new Error("Tournament not found for updating tournament golfers");
+      }
+      if (tournament.status !== "completed") {
+        throw new Error(
+          "Tournament must be completed to finalize tournament golfers",
+        );
+      }
+      let updated = 0;
 
-    const rows = await Promise.all(
-      unique.map(async (apiId) => {
+      for (const u of args.updates) {
         const golfer = await ctx.db
           .query("golfers")
-          .withIndex("by_api_id", (q) => q.eq("apiId", apiId))
+          .withIndex("by_api_id", (q) => q.eq("apiId", u.golferApiId))
           .first();
-        return {
-          apiId,
-          golferId: golfer?._id ?? null,
-        };
-      }),
-    );
+        if (!golfer) continue;
 
-    return rows;
+        const tg = await ctx.db
+          .query("tournamentGolfers")
+          .withIndex("by_golfer_tournament", (q) =>
+            q.eq("golferId", golfer._id).eq("tournamentId", args.tournamentId),
+          )
+          .first();
+        if (!tg) continue;
+
+        await ctx.db.patch(tg._id, {
+          ...(u.position ? { position: u.position } : {}),
+          ...(typeof u.roundOne === "number" ? { roundOne: u.roundOne } : {}),
+          ...(typeof u.roundTwo === "number" ? { roundTwo: u.roundTwo } : {}),
+          ...(typeof u.roundThree === "number"
+            ? { roundThree: u.roundThree }
+            : {}),
+          ...(typeof u.roundFour === "number"
+            ? { roundFour: u.roundFour }
+            : {}),
+          ...(typeof u.score === "number" ? { score: u.score } : {}),
+          ...(typeof u.today === "number" ? { today: u.today } : {}),
+          thru: 18,
+          endHole: 18,
+          round: 5,
+          updatedAt: Date.now(),
+        });
+
+        updated += 1;
+      }
+
+      return { updated };
+    },
+  },
+);
+
+/**
+ * Applies country + OWGR (and normalized player name) updates to `golfers` from an input ranking array.
+ *
+ * This is intentionally a mutation-only write path (no DataGolf calls), so it can be used by other
+ * server-side jobs that already fetched rankings.
+ *
+ * @param args.rankings Ranking rows from DataGolf (dg_id/owgr_rank/player_name/country).
+ * @returns Summary counts of matched/updated golfers.
+ */
+export const applyGolfersWorldRankFromDataGolfInput = internalMutation({
+  args: {
+    rankings: v.array(
+      v.object({
+        dg_id: v.number(),
+        owgr_rank: v.number(),
+        player_name: v.string(),
+        country: v.string(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    let golfersMatched = 0;
+    let golfersUpdated = 0;
+
+    for (const r of args.rankings) {
+      if (!Number.isFinite(r.dg_id) || !Number.isFinite(r.owgr_rank)) continue;
+      const golfer = await ctx.db
+        .query("golfers")
+        .withIndex("by_api_id", (q) => q.eq("apiId", r.dg_id))
+        .first();
+      if (!golfer) continue;
+      golfersMatched += 1;
+
+      const normalizedName = normalizePlayerNameFromDataGolf(r.player_name);
+      const patch: Partial<Doc<"golfers">> & { updatedAt: number } = {
+        updatedAt: Date.now(),
+      };
+      if (normalizedName && normalizedName !== golfer.playerName) {
+        patch.playerName = normalizedName;
+      }
+      if (r.owgr_rank && r.owgr_rank !== golfer.worldRank) {
+        patch.worldRank = r.owgr_rank;
+      }
+
+      const nextCountry = r.country.trim();
+      if (nextCountry.length > 0 && nextCountry !== golfer.country) {
+        patch.country = nextCountry;
+      }
+
+      const keys = Object.keys(patch);
+      if (keys.length > 1) {
+        await ctx.db.patch(golfer._id, patch);
+        golfersUpdated += 1;
+      }
+    }
+
+    return {
+      ok: true,
+      skipped: false,
+      golfersMatched,
+      golfersUpdated,
+      rankingsProcessed: args.rankings.length,
+    } as const;
   },
 });

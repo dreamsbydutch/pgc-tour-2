@@ -1,21 +1,16 @@
-import { TIME } from "../functions/_constants";
-import { normalize } from "./normalize";
 import { fetchWithRetry } from "./externalFetch";
-import type { Player } from "../types/datagolf";
+import type { DataGolfPlayer } from "../types/datagolf";
 import type {
-  AnalyticsResult,
   DatabaseContext,
-  EnhancedGolferDoc,
   GolferDoc,
-  GolferEnhancementOptions,
   GolferFilterOptions,
   GolferOptimizedQueryOptions,
   GolferSortFunction,
   GolferSortOptions,
-  TournamentDoc,
   TournamentGolferDoc,
 } from "../types/types";
-import { GroupLimits } from "../types/cronJobs";
+import type { GroupLimits } from "../types/golfers";
+import { normalize } from "./misc";
 
 export function normalizeCountry(country?: string): string | undefined {
   const trimmed = country?.trim();
@@ -98,7 +93,7 @@ export function countCommas(s: string): number {
   return count;
 }
 
-export async function fetchDataGolfPlayerList(): Promise<Player[]> {
+export async function fetchDataGolfPlayerList(): Promise<DataGolfPlayer[]> {
   const apiKey = process.env.DATAGOLF_API_KEY;
   if (!apiKey) {
     throw new Error(
@@ -108,13 +103,13 @@ export async function fetchDataGolfPlayerList(): Promise<Player[]> {
 
   const url = `https://feeds.datagolf.com/get-player-list?file_format=json&key=${apiKey}`;
 
-  const result = await fetchWithRetry<Player[]>(
+  const result = await fetchWithRetry<DataGolfPlayer[]>(
     url,
     {},
     {
       timeout: 30000,
       retries: 3,
-      validateResponse: (json): json is Player[] =>
+      validateResponse: (json): json is DataGolfPlayer[] =>
         Array.isArray(json) &&
         (json.length === 0 ||
           json.every(
@@ -338,172 +333,7 @@ export function getSortFunction(sort: GolferSortOptions): GolferSortFunction {
   }
 }
 
-export async function enhanceGolfer(
-  ctx: DatabaseContext,
-  golfer: GolferDoc,
-  enhance: GolferEnhancementOptions,
-): Promise<EnhancedGolferDoc> {
-  const enhanced: EnhancedGolferDoc = {
-    ...golfer,
-    displayName: generateDisplayName(golfer.playerName),
-    rankDisplay: generateRankDisplay(golfer.worldRank),
-    hasRanking: Boolean(golfer.worldRank && golfer.worldRank > 0),
-    isRanked: Boolean(golfer.worldRank && golfer.worldRank > 0),
-    rankingCategory: getRankingCategory(golfer.worldRank),
-  };
 
-  if (
-    enhance.includeTournaments ||
-    enhance.includeStatistics ||
-    enhance.includeRecentPerformance
-  ) {
-    const tournamentGolfers = await ctx.db
-      .query("tournamentGolfers")
-      .filter((q) => q.eq(q.field("golferId"), golfer._id))
-      .collect();
-
-    enhanced.tournamentGolfers = tournamentGolfers;
-
-    if (enhance.includeTournaments) {
-      const tournaments = await Promise.all(
-        tournamentGolfers.map(async (tg) => {
-          return await ctx.db.get(tg.tournamentId);
-        }),
-      );
-      enhanced.tournaments = tournaments.filter(
-        (t): t is TournamentDoc => t !== null,
-      );
-    }
-
-    if (enhance.includeRecentPerformance) {
-      const recentResults = tournamentGolfers
-        .sort((a, b) => b._creationTime - a._creationTime)
-        .slice(0, 5);
-      enhanced.recentPerformance = recentResults;
-    }
-
-    if (enhance.includeStatistics) {
-      const cuts = tournamentGolfers.filter((tg) => tg.makeCut).length;
-      const cutsMissed = tournamentGolfers.filter((tg) => !tg.makeCut).length;
-
-      const finishPositions = tournamentGolfers
-        .filter(
-          (tg) =>
-            tg.position &&
-            typeof tg.position === "string" &&
-            tg.position !== "CUT",
-        )
-        .map((tg) => parseInt(tg.position as string))
-        .filter((pos) => !isNaN(pos));
-
-      const topTens = finishPositions.filter((pos) => pos <= 10).length;
-      const topFives = finishPositions.filter((pos) => pos <= 5).length;
-      const wins = finishPositions.filter((pos) => pos === 1).length;
-
-      const recentForm = calculateRecentForm(
-        tournamentGolfers
-          .sort((a, b) => b._creationTime - a._creationTime)
-          .slice(0, 5),
-      );
-
-      enhanced.statistics = {
-        totalTournaments: tournamentGolfers.length,
-        activeTournaments: tournamentGolfers.filter(
-          (tg) =>
-            !tg._creationTime ||
-            tg._creationTime > Date.now() - 365 * TIME.MS_PER_DAY,
-        ).length,
-        totalTeams: 0,
-        averageScore:
-          tournamentGolfers.length > 0
-            ? tournamentGolfers
-                .filter((tg) => tg.score !== undefined)
-                .reduce(
-                  (sum, tg, _, arr) => sum + (tg.score || 0) / arr.length,
-                  0,
-                )
-            : undefined,
-        bestFinish:
-          finishPositions.length > 0 ? Math.min(...finishPositions) : undefined,
-        cuts,
-        cutsMissed,
-        topTens,
-        topFives,
-        wins,
-        totalEarnings: tournamentGolfers.reduce(
-          (sum, tg) => sum + (tg.earnings || 0),
-          0,
-        ),
-        totalPoints: 0,
-        recentForm,
-      };
-    }
-  }
-
-  if (enhance.includeTeams || enhanced.statistics) {
-    const teamsPage = await ctx.db
-      .query("teams")
-      .paginate({ cursor: null, numItems: 5000 });
-
-    if (!teamsPage.isDone) {
-      console.warn(
-        `[enhanceGolfer] Database has >5000 teams. Teams list for golfer ${golfer.apiId} may be incomplete.`,
-      );
-    }
-
-    const golferTeams = teamsPage.page.filter((team) =>
-      team.golferIds.includes(golfer.apiId),
-    );
-
-    if (enhance.includeTeams) {
-      enhanced.teams = golferTeams;
-    }
-
-    if (enhanced.statistics) {
-      enhanced.statistics.totalTeams = golferTeams.length;
-    }
-  }
-
-  return enhanced;
-}
-
-export async function generateAnalytics(
-  _ctx: DatabaseContext,
-  golfers: GolferDoc[],
-): Promise<AnalyticsResult> {
-  const activeGolfers = golfers;
-  const rankedGolfers = golfers.filter((g) => g.worldRank && g.worldRank > 0);
-  const topRankedGolfers = golfers.filter(
-    (g) => g.worldRank && g.worldRank <= 100,
-  );
-
-  const countryBreakdown = golfers.reduce(
-    (acc, golfer) => {
-      const country = golfer.country || "Unknown";
-      acc[country] = (acc[country] || 0) + 1;
-      return acc;
-    },
-    {} as Record<string, number>,
-  );
-
-  return {
-    total: golfers.length,
-    active: activeGolfers.length,
-    inactive: 0,
-    statistics: {
-      rankedGolfers: rankedGolfers.length,
-      topRankedGolfers: topRankedGolfers.length,
-      averageRank:
-        rankedGolfers.length > 0
-          ? rankedGolfers.reduce((sum, g) => sum + (g.worldRank || 0), 0) /
-            rankedGolfers.length
-          : 0,
-      uniqueCountries: Object.keys(countryBreakdown).length,
-      golfersWithImages: 0,
-    },
-    breakdown: countryBreakdown,
-  };
-}
 
 export function determineGroupIndex<T>(
   currentIndex: number,

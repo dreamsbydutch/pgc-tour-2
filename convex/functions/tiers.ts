@@ -7,23 +7,16 @@
  */
 
 import { query, mutation } from "../_generated/server";
-import { requireAdmin } from "../auth";
-import { processData } from "../utils/processData";
-import { sumArray } from "../utils/sumArray";
-import {
-  applyFilters,
-  enhanceTier,
-  generateAnalytics,
-  getOptimizedTiers,
-  getSortFunction,
-} from "../utils/tiers";
+import { requireAdmin } from "../utils/auth";
+import { processData } from "../utils/batchProcess";
+import { applyFilters, getSortFunction } from "../utils/tiers";
 import {
   logAudit,
   computeChanges,
   extractDeleteMetadata,
 } from "../utils/auditLog";
-import { tiersValidators } from "../validators/tiers";
 import type { DeleteResponse, TierDoc } from "../types/types";
+import { v } from "convex/values";
 
 /**
  * Create tiers with comprehensive options
@@ -50,35 +43,17 @@ import type { DeleteResponse, TierDoc } from "../types/types";
  * });
  */
 export const createTiers = mutation({
-  args: tiersValidators.args.createTiers,
+  args: {
+    data: v.object({
+      name: v.string(),
+      seasonId: v.id("seasons"),
+      payouts: v.array(v.number()),
+      points: v.array(v.number()),
+    }),
+  },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
-    const options = args.options || {};
     const data = args.data;
-
-    if (!options.skipValidation) {
-      const validation = tiersValidators.validateTierData(data);
-
-      if (!validation.isValid) {
-        throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
-      }
-
-      const existing = await ctx.db
-        .query("tiers")
-        .withIndex("by_name_season", (q) =>
-          q.eq("name", data.name).eq("seasonId", data.seasonId),
-        )
-        .first();
-
-      if (existing) {
-        throw new Error("Tier with this name already exists in the season");
-      }
-
-      const season = await ctx.db.get(data.seasonId);
-      if (!season) {
-        throw new Error("Season not found");
-      }
-    }
 
     const tierId = await ctx.db.insert("tiers", {
       name: data.name,
@@ -100,13 +75,6 @@ export const createTiers = mutation({
 
     const tier = await ctx.db.get(tierId);
     if (!tier) throw new Error("Failed to retrieve created tier");
-
-    if (options.returnEnhanced) {
-      return await enhanceTier(ctx, tier, {
-        includeSeason: options.includeSeason,
-        includeStatistics: options.includeStatistics,
-      });
-    }
 
     return tier;
   },
@@ -151,7 +119,47 @@ export const createTiers = mutation({
  * });
  */
 export const getTiers = query({
-  args: tiersValidators.args.getTiers,
+  args: {
+    options: v.optional(
+      v.object({
+        id: v.optional(v.id("tiers")),
+        ids: v.optional(v.array(v.id("tiers"))),
+        filter: v.optional(
+          v.object({
+            seasonId: v.optional(v.id("seasons")),
+            name: v.optional(v.string()),
+            minPayouts: v.optional(v.number()),
+            maxPayouts: v.optional(v.number()),
+            minPoints: v.optional(v.number()),
+            maxPoints: v.optional(v.number()),
+            searchTerm: v.optional(v.string()),
+            payoutLevelsMin: v.optional(v.number()),
+            payoutLevelsMax: v.optional(v.number()),
+            pointLevelsMin: v.optional(v.number()),
+            pointLevelsMax: v.optional(v.number()),
+            createdAfter: v.optional(v.number()),
+            createdBefore: v.optional(v.number()),
+            updatedAfter: v.optional(v.number()),
+            updatedBefore: v.optional(v.number()),
+          }),
+        ),
+        sort: v.optional(
+          v.object({
+            sortBy: v.optional(
+              v.union(
+                v.literal("name"),
+                v.literal("totalPayouts"),
+                v.literal("totalPoints"),
+                v.literal("createdAt"),
+                v.literal("updatedAt"),
+              ),
+            ),
+            sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+          }),
+        ),
+      }),
+    ),
+  },
   handler: async (ctx, args) => {
     const options = args.options || {};
 
@@ -159,82 +167,26 @@ export const getTiers = query({
       const tier = await ctx.db.get(options.id);
       if (!tier) return null;
 
-      return await enhanceTier(ctx, tier, options.enhance || {});
+      return tier;
     }
 
     if (options.ids) {
       const tiers = await Promise.all(
         options.ids.map(async (id) => {
           const tier = await ctx.db.get(id);
-          return tier
-            ? await enhanceTier(ctx, tier, options.enhance || {})
-            : null;
+          return tier;
         }),
       );
       return tiers.filter(Boolean);
     }
 
-    let tiers = await getOptimizedTiers(ctx, options);
-
+    let tiers = await ctx.db.query("tiers").collect();
     tiers = applyFilters(tiers, options.filter || {});
-
     const processedTiers = processData(tiers, {
       sort: getSortFunction(options.sort || {}),
-      limit: options.pagination?.limit,
-      skip: options.pagination?.offset,
     });
 
-    if (options.enhance && Object.values(options.enhance).some(Boolean)) {
-      const enhancedTiers = await Promise.all(
-        processedTiers.map((tier) =>
-          enhanceTier(ctx, tier, options.enhance || {}),
-        ),
-      );
-
-      if (options.includeAnalytics) {
-        return {
-          tiers: enhancedTiers,
-          analytics: await generateAnalytics(ctx, tiers),
-          meta: {
-            total: tiers.length,
-            filtered: processedTiers.length,
-            offset: options.pagination?.offset || 0,
-            limit: options.pagination?.limit,
-          },
-        };
-      }
-
-      return enhancedTiers;
-    }
-
-    const basicTiers = processedTiers.map((tier) => ({
-      ...tier,
-      totalPayouts: sumArray(tier.payouts),
-      totalPoints: sumArray(tier.points),
-      averagePayout:
-        tier.payouts.length > 0
-          ? sumArray(tier.payouts) / tier.payouts.length
-          : 0,
-      averagePoints:
-        tier.points.length > 0 ? sumArray(tier.points) / tier.points.length : 0,
-      payoutLevels: tier.payouts.length,
-      pointLevels: tier.points.length,
-    }));
-
-    if (options.includeAnalytics) {
-      return {
-        tiers: basicTiers,
-        analytics: await generateAnalytics(ctx, tiers),
-        meta: {
-          total: tiers.length,
-          filtered: basicTiers.length,
-          offset: options.pagination?.offset || 0,
-          limit: options.pagination?.limit,
-        },
-      };
-    }
-
-    return basicTiers;
+    return processedTiers;
   },
 });
 
@@ -261,39 +213,23 @@ export const getTiers = query({
  * });
  */
 export const updateTiers = mutation({
-  args: tiersValidators.args.updateTiers,
+  args: {
+    tierId: v.id("tiers"),
+    data: v.object({
+      name: v.optional(v.string()),
+      payouts: v.optional(v.array(v.number())),
+      points: v.optional(v.array(v.number())),
+    }),
+  },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
-    const options = args.options || {};
     const tier = await ctx.db.get(args.tierId);
     if (!tier) {
       throw new Error("Tier not found");
     }
 
-    if (!options.skipValidation) {
-      const validation = tiersValidators.validateTierData(args.data);
-      if (!validation.isValid) {
-        throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
-      }
-
-      if (args.data.name && args.data.name !== tier.name) {
-        const existingTier = await ctx.db
-          .query("tiers")
-          .withIndex("by_name_season", (q) =>
-            q.eq("name", args.data.name!).eq("seasonId", tier.seasonId),
-          )
-          .first();
-
-        if (existingTier && existingTier._id !== args.tierId) {
-          throw new Error("Tier with this name already exists in the season");
-        }
-      }
-    }
-
     const updateData: Partial<TierDoc> = { ...args.data };
-    if (options.updateTimestamp !== false) {
-      updateData.updatedAt = Date.now();
-    }
+    updateData.updatedAt = Date.now();
 
     await ctx.db.patch(args.tierId, updateData);
 
@@ -309,14 +245,6 @@ export const updateTiers = mutation({
 
     const updatedTier = await ctx.db.get(args.tierId);
     if (!updatedTier) throw new Error("Failed to retrieve updated tier");
-
-    if (options.returnEnhanced) {
-      return await enhanceTier(ctx, updatedTier, {
-        includeSeason: options.includeSeason,
-        includeStatistics: options.includeStatistics,
-        includeTournaments: options.includeTournaments,
-      });
-    }
 
     return updatedTier;
   },
@@ -343,7 +271,16 @@ export const updateTiers = mutation({
  * });
  */
 export const deleteTiers = mutation({
-  args: tiersValidators.args.deleteTiers,
+  args: {
+    tierId: v.id("tiers"),
+    options: v.optional(
+      v.object({
+        softDelete: v.optional(v.boolean()),
+        reassignTournaments: v.optional(v.id("tiers")),
+        returnDeletedData: v.optional(v.boolean()),
+      }),
+    ),
+  },
   handler: async (ctx, args): Promise<DeleteResponse<TierDoc>> => {
     await requireAdmin(ctx);
     const options = args.options || {};

@@ -49,7 +49,6 @@ export interface EnhancedTourDoc extends TourDoc {
   tournaments?: TournamentDoc[];
   tournamentCount?: number;
   participants?: (TourCardDoc & { member: MemberDoc | null })[];
-  statistics?: TourStatistics;
   tourCards?: TourCardDoc[];
 }
 
@@ -61,61 +60,31 @@ export interface EnhancedTournamentDoc extends TournamentDoc {
   tier?: TierDoc;
   course?: CourseDoc;
   tours?: TourDoc[];
-  teams?: TeamDoc[];
+  teams?: EnhancedTournamentTeamDoc[];
   tourCards?: TourCardDoc[];
   teamCount?: number;
-  golfers?: (TournamentGolferDoc & GolferDoc)[];
-  statistics?: TournamentStatistics;
+  golfers?: EnhancedTournamentGolferDoc[];
   isPlayoff?: boolean;
   eventIndex?: number;
-  firstPlayoffTournamentId?: Id<"tournaments"> | null;
+  playoffEvents?: Id<"tournaments">[] | null;
+  
 }
 
-export interface TourStatistics {
-  totalParticipants: number;
-  activeParticipants: number;
-  totalEarnings: number;
-  totalPoints: number;
-  averageEarnings: number;
-  averagePoints: number;
+export interface EnhancedTournamentGolferDoc extends TournamentGolferDoc {
+  apiId?: number;
+  playerName?: string;
+  country?: string;
 }
-
-export interface TournamentStatistics {
-  totalTeams: number;
-  activeTeams: number;
-  averageScore: number;
-  lowestScore: number;
-  highestScore: number;
-}
-
-export interface EnhancedTierDoc extends TierDoc {
-  totalPayouts?: number;
+export interface EnhancedTournamentTeamDoc extends TeamDoc {
+  tourId?: Id<"tours">;
+  displayName?: string;
+  memberId?: Id<"members">;
+  appearances?: number;
+  playoff?: number;
+  standingsPosition?: string;
+  totalEarnings?: number;
   totalPoints?: number;
-  averagePayout?: number;
-  averagePoints?: number;
-  payoutLevels?: number;
-  pointLevels?: number;
-  season?: SeasonDoc;
-  tournaments?: TournamentDoc[];
-  tournamentCount?: number;
-  statistics?: TierStatistics;
 }
-
-export interface TierStatistics {
-  totalTournaments: number;
-  activeTournaments: number;
-  totalDistributedPayouts: number;
-  totalDistributedPoints: number;
-  participantCount: number;
-  averageParticipants: number;
-}
-
-// Utility function types
-export type TourSortFunction = ((a: TourDoc, b: TourDoc) => number) | undefined;
-export type TournamentSortFunction =
-  | ((a: TournamentDoc, b: TournamentDoc) => number)
-  | undefined;
-export type TierSortFunction = ((a: TierDoc, b: TierDoc) => number) | undefined;
 
 // =============================================================================
 // BASE CRUD TYPES
@@ -616,22 +585,13 @@ export interface GolferOptimizedQueryOptions {
 }
 
 // Enhanced golfer document with computed fields and relationships
-export interface EnhancedGolferDoc extends GolferDoc {
-  // Computed display fields
-  displayName: string;
-  rankDisplay: string;
-  hasRanking: boolean;
-
-  // Status fields
-  isRanked: boolean;
-  rankingCategory: "top10" | "top50" | "top100" | "ranked" | "unranked";
-
-  // Related data (optional)
-  tournaments?: TournamentDoc[];
-  tournamentGolfers?: TournamentGolferDoc[];
-  teams?: TeamDoc[];
-  recentPerformance?: TournamentGolferDoc[];
-  statistics?: GolferStatistics;
+export interface EnhancedGolferDoc extends TournamentGolferDoc {
+  golferId: Id<"golfers">;
+  country?: string | undefined;
+  worldRank?: number | undefined;
+  updatedAt?: number | undefined;
+  apiId: number;
+  playerName: string;
 }
 
 // Golfer statistics for analytics

@@ -1,20 +1,30 @@
 /**
- * DataGolf API Type Definitions
+ * DataGolf API Schema Types
  *
- * Comprehensive TypeScript interfaces for all DataGolf API endpoints,
- * options objects, and response types.
+ * These types model the JSON payloads (requests/options + responses) for the
+ * public DataGolf HTTP API.
+ *
+ * They are intentionally named with a `DataGolf*` prefix to avoid confusion
+ * with Convex table document types.
  */
 
 // ========================================
 // BASE TYPES
 // ========================================
 
-export type Tour = "pga" | "euro" | "kft" | "opp" | "alt" | "liv" | "all";
-export type FileFormat = "json" | "csv";
-export type OddsFormat = "percent" | "american" | "decimal" | "fraction";
-export type Display = "value" | "rank";
+export type DataGolfTour =
+  | "pga"
+  | "euro"
+  | "kft"
+  | "opp"
+  | "alt"
+  | "liv"
+  | "all";
+export type DataGolfFileFormat = "json" | "csv";
+export type DataGolfOddsFormat = "percent" | "american" | "decimal" | "fraction";
+export type DataGolfDisplay = "value" | "rank";
 
-export type SkillRatingCategoryKey =
+export type DataGolfSkillRatingCategoryKey =
   | "sg_putt"
   | "sg_arg"
   | "sg_app"
@@ -23,7 +33,7 @@ export type SkillRatingCategoryKey =
   | "driving_acc"
   | "driving_dist";
 
-export type YesNo = "yes" | "no";
+export type DataGolfYesNo = "yes" | "no";
 
 /**
  * DataGolf commonly returns event IDs as strings in JSON.
@@ -35,8 +45,8 @@ export type DataGolfEventId = string | number;
 // GENERAL USE TYPES
 // ========================================
 
-export interface PlayerListOptions {
-  format?: FileFormat;
+export interface DataGolfPlayerListOptions {
+  format?: DataGolfFileFormat;
   filterByCountry?: string;
   filterByAmateur?: boolean;
   sortByName?: boolean;
@@ -44,7 +54,7 @@ export interface PlayerListOptions {
   skip?: number;
 }
 
-export interface Player {
+export interface DataGolfPlayer {
   amateur: number;
   country: string;
   country_code: string;
@@ -52,10 +62,10 @@ export interface Player {
   player_name: string;
 }
 
-export interface TourScheduleOptions {
-  tour?: Tour;
+export interface DataGolfTourScheduleOptions {
+  tour?: DataGolfTour;
   season?: number;
-  format?: FileFormat;
+  format?: DataGolfFileFormat;
   filterByLocation?: string;
   sortByDate?: boolean;
   upcomingOnly?: boolean;
@@ -63,7 +73,7 @@ export interface TourScheduleOptions {
   skip?: number;
 }
 
-export interface ScheduleEvent {
+export interface DataGolfScheduleEvent {
   country: string;
   course: string;
   course_key: string;
@@ -78,16 +88,16 @@ export interface ScheduleEvent {
   winner: string;
 }
 
-export interface TourScheduleResponse {
+export interface DataGolfTourScheduleResponse {
   tour: string;
   season: number;
-  upcoming_only: YesNo;
-  schedule: ScheduleEvent[];
+  upcoming_only: DataGolfYesNo;
+  schedule: DataGolfScheduleEvent[];
 }
 
-export interface FieldUpdatesOptions {
-  tour?: Tour;
-  format?: FileFormat;
+export interface DataGolfFieldUpdatesOptions {
+  tour?: DataGolfTour;
+  format?: DataGolfFileFormat;
   filterByCountry?: string;
   filterWithdrawn?: boolean;
   sortBySalary?: boolean;
@@ -98,7 +108,7 @@ export interface FieldUpdatesOptions {
   skip?: number;
 }
 
-export interface FieldPlayer {
+export interface DataGolfFieldPlayer {
   am: number;
   country: string;
   dg_id: number;
@@ -120,11 +130,11 @@ export interface FieldPlayer {
   yh_salary?: number;
 }
 
-export interface FieldUpdatesResponse {
+export interface DataGolfFieldUpdatesResponse {
   course_name: string;
   current_round: number;
   event_name: string;
-  field: FieldPlayer[];
+  field: DataGolfFieldPlayer[];
 }
 
 // ========================================
@@ -132,7 +142,7 @@ export interface FieldUpdatesResponse {
 // ========================================
 
 export interface DataGolfRankingsOptions {
-  format?: FileFormat;
+  format?: DataGolfFileFormat;
   filterByCountry?: string;
   filterByTour?: string;
   topN?: number;
@@ -142,7 +152,7 @@ export interface DataGolfRankingsOptions {
   skip?: number;
 }
 
-export interface RankedPlayer {
+export interface DataGolfRankedPlayer {
   am: number;
   country: string;
   datagolf_rank: number;
@@ -156,15 +166,15 @@ export interface RankedPlayer {
 export interface DataGolfRankingsResponse {
   last_updated: string;
   notes: string;
-  rankings: RankedPlayer[];
+  rankings: DataGolfRankedPlayer[];
 }
 
-export interface PreTournamentPredictionsOptions {
-  tour?: Tour;
+export interface DataGolfPreTournamentPredictionsOptions {
+  tour?: DataGolfTour;
   addPosition?: number[];
   deadHeat?: boolean;
-  oddsFormat?: OddsFormat;
-  format?: FileFormat;
+  oddsFormat?: DataGolfOddsFormat;
+  format?: DataGolfFileFormat;
   filterByCountry?: string;
   minWinProbability?: number;
   maxWinOdds?: number;
@@ -174,70 +184,78 @@ export interface PreTournamentPredictionsOptions {
   skip?: number;
 }
 
-export type FinishPositionKey = `top_${number}`;
+export type DataGolfFinishPositionKey = `top_${number}`;
 
-export type OddsValueForFormat<F extends OddsFormat> = F extends "percent"
+export type DataGolfOddsValueForFormat<F extends DataGolfOddsFormat> =
+  F extends "percent"
   ? number
   : F extends "decimal"
     ? number
     : string;
 
-export type OddsValue = number | string;
+export type DataGolfOddsValue = number | string;
 
-export type PredictionPlayer<F extends OddsFormat = "percent"> = {
+export type DataGolfPredictionPlayer<F extends DataGolfOddsFormat = "percent"> = {
   am: number;
   country: string;
   dg_id: number;
-  make_cut: OddsValueForFormat<F>;
+  make_cut: DataGolfOddsValueForFormat<F>;
   player_name: string;
   sample_size: number;
-  top_10: OddsValueForFormat<F>;
-  top_20: OddsValueForFormat<F>;
-  top_5: OddsValueForFormat<F>;
-  win: OddsValueForFormat<F>;
-} & Partial<Record<FinishPositionKey, OddsValueForFormat<F>>>;
+  top_10: DataGolfOddsValueForFormat<F>;
+  top_20: DataGolfOddsValueForFormat<F>;
+  top_5: DataGolfOddsValueForFormat<F>;
+  win: DataGolfOddsValueForFormat<F>;
+} & Partial<Record<DataGolfFinishPositionKey, DataGolfOddsValueForFormat<F>>>;
 
-export interface PreTournamentPredictionsResponse {
+export interface DataGolfPreTournamentPredictionsResponse {
   event_name: string;
   last_updated: string;
   dead_heats: string;
   models_available: string[];
-  baseline: PredictionPlayer[];
-  baseline_history_fit?: PredictionPlayer[];
-  [key: string]: string | number | string[] | PredictionPlayer[] | undefined;
-}
-
-export type PreTournamentArchivePlayer<F extends OddsFormat = "percent"> = {
-  dg_id: number;
-  player_name: string;
-  fin_text: string;
-  win: OddsValueForFormat<F>;
-  top_5?: OddsValueForFormat<F>;
-  top_10?: OddsValueForFormat<F>;
-  top_20?: OddsValueForFormat<F>;
-  make_cut?: OddsValueForFormat<F>;
-  mc?: OddsValueForFormat<F>;
-  first_round_leader?: OddsValueForFormat<F>;
-} & Partial<Record<FinishPositionKey, OddsValueForFormat<F>>>;
-
-export interface PreTournamentPredictionsArchiveResponse {
-  event_completed: string;
-  event_id: DataGolfEventId;
-  event_name: string;
-  models_available: string[];
-  baseline: PreTournamentArchivePlayer[];
-  baseline_history_fit?: PreTournamentArchivePlayer[];
+  baseline: DataGolfPredictionPlayer[];
+  baseline_history_fit?: DataGolfPredictionPlayer[];
   [key: string]:
     | string
     | number
     | string[]
-    | PreTournamentArchivePlayer[]
+    | DataGolfPredictionPlayer[]
     | undefined;
 }
 
-export interface SkillDecompositionsOptions {
-  tour?: Tour;
-  format?: FileFormat;
+export type DataGolfPreTournamentArchivePlayer<
+  F extends DataGolfOddsFormat = "percent",
+> = {
+  dg_id: number;
+  player_name: string;
+  fin_text: string;
+  win: DataGolfOddsValueForFormat<F>;
+  top_5?: DataGolfOddsValueForFormat<F>;
+  top_10?: DataGolfOddsValueForFormat<F>;
+  top_20?: DataGolfOddsValueForFormat<F>;
+  make_cut?: DataGolfOddsValueForFormat<F>;
+  mc?: DataGolfOddsValueForFormat<F>;
+  first_round_leader?: DataGolfOddsValueForFormat<F>;
+} & Partial<Record<DataGolfFinishPositionKey, DataGolfOddsValueForFormat<F>>>;
+
+export interface DataGolfPreTournamentPredictionsArchiveResponse {
+  event_completed: string;
+  event_id: DataGolfEventId;
+  event_name: string;
+  models_available: string[];
+  baseline: DataGolfPreTournamentArchivePlayer[];
+  baseline_history_fit?: DataGolfPreTournamentArchivePlayer[];
+  [key: string]:
+    | string
+    | number
+    | string[]
+    | DataGolfPreTournamentArchivePlayer[]
+    | undefined;
+}
+
+export interface DataGolfSkillDecompositionsOptions {
+  tour?: DataGolfTour;
+  format?: DataGolfFileFormat;
   filterByCountry?: string;
   minPrediction?: number;
   sortByPrediction?: boolean;
@@ -246,7 +264,7 @@ export interface SkillDecompositionsOptions {
   skip?: number;
 }
 
-export interface SkillDecompositionPlayer {
+export interface DataGolfSkillDecompositionPlayer {
   age: number;
   age_adjustment: number;
   am: number;
@@ -268,17 +286,17 @@ export interface SkillDecompositionPlayer {
   true_sg_adjustments: number;
 }
 
-export interface SkillDecompositionsResponse {
+export interface DataGolfSkillDecompositionsResponse {
   course_name: string;
   event_name: string;
   last_updated: string;
   notes: string;
-  players: SkillDecompositionPlayer[];
+  players: DataGolfSkillDecompositionPlayer[];
 }
 
-export interface SkillRatingsOptions {
-  display?: Display;
-  format?: FileFormat;
+export interface DataGolfSkillRatingsOptions {
+  display?: DataGolfDisplay;
+  format?: DataGolfFileFormat;
   filterByCountry?: string;
   minTotalSG?: number;
   sortByCategory?: string;
@@ -287,7 +305,7 @@ export interface SkillRatingsOptions {
   skip?: number;
 }
 
-export interface SkillRatingPlayer {
+export interface DataGolfSkillRatingPlayer {
   player_name: string;
   dg_id: number;
   sg_putt: number;
@@ -299,14 +317,14 @@ export interface SkillRatingPlayer {
   driving_dist: number;
 }
 
-export interface SkillRatingsResponse {
+export interface DataGolfSkillRatingsResponse {
   last_updated: string;
-  players: SkillRatingPlayer[];
+  players: DataGolfSkillRatingPlayer[];
 }
 
-export interface ApproachSkillOptions {
+export interface DataGolfApproachSkillOptions {
   period?: string;
-  format?: FileFormat;
+  format?: DataGolfFileFormat;
   filterByCountry?: string;
   minShotCount?: number;
   sortByProximity?: boolean;
@@ -315,7 +333,7 @@ export interface ApproachSkillOptions {
   skip?: number;
 }
 
-export type ApproachSkillMetric =
+export type DataGolfApproachSkillMetric =
   | "shot_count"
   | "low_data_indicator"
   | "sg_per_shot"
@@ -324,32 +342,33 @@ export type ApproachSkillMetric =
   | "good_shot_rate"
   | "poor_shot_avoid_rate";
 
-export type ApproachSkillFieldKey = `${string}_${ApproachSkillMetric}`;
+export type DataGolfApproachSkillFieldKey =
+  `${string}_${DataGolfApproachSkillMetric}`;
 
-export type ApproachSkillPlayer = {
+export type DataGolfApproachSkillPlayer = {
   player_name: string;
   dg_id: number;
-} & Partial<Record<ApproachSkillFieldKey, number>>;
+} & Partial<Record<DataGolfApproachSkillFieldKey, number>>;
 
-export interface ApproachSkillResponse {
+export interface DataGolfApproachSkillResponse {
   time_period: string;
   last_updated: string;
-  data: ApproachSkillPlayer[];
+  data: DataGolfApproachSkillPlayer[];
 }
 
-export type FantasySite = "draftkings" | "fanduel" | "yahoo";
-export type FantasySlate =
+export type DataGolfFantasySite = "draftkings" | "fanduel" | "yahoo";
+export type DataGolfFantasySlate =
   | "main"
   | "showdown"
   | "showdown_late"
   | "weekend"
   | "captain";
 
-export interface FantasyProjectionOptions {
-  tour?: Tour;
-  site?: FantasySite;
-  slate?: FantasySlate;
-  format?: FileFormat;
+export interface DataGolfFantasyProjectionOptions {
+  tour?: DataGolfTour;
+  site?: DataGolfFantasySite;
+  slate?: DataGolfFantasySlate;
+  format?: DataGolfFileFormat;
   filterByOwnership?: {
     min?: number;
     max?: number;
@@ -362,7 +381,7 @@ export interface FantasyProjectionOptions {
   skip?: number;
 }
 
-export interface FantasyProjectionPlayer {
+export interface DataGolfFantasyProjectionPlayer {
   player_name: string;
   dg_id: number;
   site_name_id: string;
@@ -373,21 +392,21 @@ export interface FantasyProjectionPlayer {
   proj_ownership: number;
 }
 
-export interface FantasyProjectionResponse {
+export interface DataGolfFantasyProjectionResponse {
   tour: string;
   site: string;
   slate: string;
   event_name: string;
   last_updated: string;
   note: string;
-  projections: FantasyProjectionPlayer[];
+  projections: DataGolfFantasyProjectionPlayer[];
 }
 
-export type LiveStrokesGainedView = "raw" | "relative";
+export type DataGolfLiveStrokesGainedView = "raw" | "relative";
 
-export type LiveStrokesGainedRoundKey = `R${1 | 2 | 3 | 4}`;
+export type DataGolfLiveStrokesGainedRoundKey = `R${1 | 2 | 3 | 4}`;
 
-export type LiveStrokesGainedBreakdown = {
+export type DataGolfLiveStrokesGainedBreakdown = {
   app: number;
   arg: number;
   ott: number;
@@ -396,24 +415,27 @@ export type LiveStrokesGainedBreakdown = {
   total: number;
 };
 
-export type LiveStrokesGainedPlayer = {
+export type DataGolfLiveStrokesGainedPlayer = {
   dg_id: number;
   player_name: string;
   pos: string;
   score: number;
   thru: number;
   today: number;
-} & Partial<Record<LiveStrokesGainedRoundKey, LiveStrokesGainedBreakdown>>;
+} &
+  Partial<
+    Record<DataGolfLiveStrokesGainedRoundKey, DataGolfLiveStrokesGainedBreakdown>
+  >;
 
-export interface LiveStrokesGainedResponse {
+export interface DataGolfLiveStrokesGainedResponse {
   current_round: number;
   event_name: string;
   last_update: string;
   strokes_gained_values: string;
-  data: LiveStrokesGainedPlayer[];
+  data: DataGolfLiveStrokesGainedPlayer[];
 }
 
-export type BettingMarketOutright =
+export type DataGolfBettingMarketOutright =
   | "win"
   | "top_5"
   | "top_10"
@@ -422,12 +444,12 @@ export type BettingMarketOutright =
   | "make_cut"
   | "frl";
 
-export type BettingMarketMatchups =
+export type DataGolfBettingMarketMatchups =
   | "tournament_matchups"
   | "round_matchups"
   | "3_balls";
 
-export type SportsbookName =
+export type DataGolfSportsbookName =
   | "5dimes"
   | "bet365"
   | "betcris"
@@ -448,38 +470,38 @@ export type SportsbookName =
   | "williamhill"
   | "datagolf";
 
-export type BettingOddsValue = number | string;
+export type DataGolfBettingOddsValue = number | string;
 
-export type BettingToolOutrightOddsEntry = {
+export type DataGolfBettingToolOutrightOddsEntry = {
   dg_id: number;
   player_name: string;
-  datagolf?: Record<string, BettingOddsValue>;
-} & Partial<Record<SportsbookName, BettingOddsValue>>;
+  datagolf?: Record<string, DataGolfBettingOddsValue>;
+} & Partial<Record<DataGolfSportsbookName, DataGolfBettingOddsValue>>;
 
-export interface BettingToolOutrightsResponse {
+export interface DataGolfBettingToolOutrightsResponse {
   event_name: string;
   last_updated: string;
-  market: BettingMarketOutright;
-  odds: BettingToolOutrightOddsEntry[];
+  market: DataGolfBettingMarketOutright;
+  odds: DataGolfBettingToolOutrightOddsEntry[];
 }
 
-export type ThreeWayOdds = {
-  p1: BettingOddsValue;
-  p2: BettingOddsValue;
-  p3: BettingOddsValue;
+export type DataGolfThreeWayOdds = {
+  p1: DataGolfBettingOddsValue;
+  p2: DataGolfBettingOddsValue;
+  p3: DataGolfBettingOddsValue;
 };
 
-export type TwoWayOdds = {
-  p1: BettingOddsValue;
-  p2: BettingOddsValue;
+export type DataGolfTwoWayOdds = {
+  p1: DataGolfBettingOddsValue;
+  p2: DataGolfBettingOddsValue;
 };
 
-export type BettingToolMatchupsOdds = Partial<
-  Record<SportsbookName, TwoWayOdds | ThreeWayOdds>
+export type DataGolfBettingToolMatchupsOdds = Partial<
+  Record<DataGolfSportsbookName, DataGolfTwoWayOdds | DataGolfThreeWayOdds>
 >;
 
-export interface BettingToolMatchupEntry {
-  odds: BettingToolMatchupsOdds;
+export interface DataGolfBettingToolMatchupEntry {
+  odds: DataGolfBettingToolMatchupsOdds;
   p1_dg_id: number;
   p1_player_name: string;
   p2_dg_id: number;
@@ -489,24 +511,24 @@ export interface BettingToolMatchupEntry {
   ties: string;
 }
 
-export interface BettingToolMatchupsResponse {
+export interface DataGolfBettingToolMatchupsResponse {
   event_name: string;
   last_updated: string;
-  market: BettingMarketMatchups;
+  market: DataGolfBettingMarketMatchups;
   round_num?: number;
-  match_list: BettingToolMatchupEntry[];
+  match_list: DataGolfBettingToolMatchupEntry[];
 }
 
-export interface BettingToolAllPairingsResponse {
+export interface DataGolfBettingToolAllPairingsResponse {
   event_name: string;
   last_update: string;
   round: number;
   pairings: {
     course: string;
     group: number;
-    p1: { dg_id: number; name: string; odds: BettingOddsValue };
-    p2: { dg_id: number; name: string; odds: BettingOddsValue };
-    p3: { dg_id: number; name: string; odds: BettingOddsValue };
+    p1: { dg_id: number; name: string; odds: DataGolfBettingOddsValue };
+    p2: { dg_id: number; name: string; odds: DataGolfBettingOddsValue };
+    p3: { dg_id: number; name: string; odds: DataGolfBettingOddsValue };
     start_hole: number;
     teetime: string;
   }[];
@@ -516,11 +538,11 @@ export interface BettingToolAllPairingsResponse {
 // LIVE MODEL TYPES
 // ========================================
 
-export interface LiveModelPredictionsOptions {
-  tour?: Tour;
+export interface DataGolfLiveModelPredictionsOptions {
+  tour?: DataGolfTour;
   deadHeat?: boolean;
-  oddsFormat?: OddsFormat;
-  format?: FileFormat;
+  oddsFormat?: DataGolfOddsFormat;
+  format?: DataGolfFileFormat;
   filterByPosition?: {
     current?: string;
     maxPosition?: number;
@@ -532,7 +554,7 @@ export interface LiveModelPredictionsOptions {
   skip?: number;
 }
 
-export interface LiveModelPlayer {
+export interface DataGolfLiveModelPlayer {
   country?: string | undefined;
   current_pos: string;
   current_score: number;
@@ -555,25 +577,25 @@ export interface LiveModelPlayer {
   win: number;
 }
 
-export interface LiveModelPredictionsResponse {
+export interface DataGolfLiveModelPredictionsResponse {
   info: {
     current_round: number;
     dead_heat_rules: string;
     event_name: string;
     last_update: string;
   };
-  data: LiveModelPlayer[];
+  data: DataGolfLiveModelPlayer[];
 }
 
-export interface LiveTournamentStatsOptions {
-  stats?: LiveTournamentStat[];
+export interface DataGolfLiveTournamentStatsOptions {
+  stats?: DataGolfLiveTournamentStat[];
   round?: string;
-  display?: Display;
-  format?: FileFormat;
+  display?: DataGolfDisplay;
+  format?: DataGolfFileFormat;
   filterByPosition?: number;
-  sortByStat?: LiveTournamentStat;
+  sortByStat?: DataGolfLiveTournamentStat;
   minValue?: {
-    stat: LiveTournamentStat;
+    stat: DataGolfLiveTournamentStat;
     value: number;
   };
   onlyCompleteRounds?: boolean;
@@ -581,7 +603,7 @@ export interface LiveTournamentStatsOptions {
   skip?: number;
 }
 
-export type LiveTournamentStat =
+export type DataGolfLiveTournamentStat =
   | "sg_putt"
   | "sg_arg"
   | "sg_app"
@@ -598,34 +620,34 @@ export type LiveTournamentStat =
   | "great_shots"
   | "poor_shots";
 
-export type LiveStatsPlayer = {
+export type DataGolfLiveStatsPlayer = {
   player_name: string;
   dg_id: number;
   position: string;
   thru: number;
   today: number;
   total: number;
-} & Partial<Record<LiveTournamentStat, number>>;
+} & Partial<Record<DataGolfLiveTournamentStat, number>>;
 
-export interface LiveTournamentStatsResponse {
+export interface DataGolfLiveTournamentStatsResponse {
   course_name: string;
   event_name: string;
   last_updated: string;
   stat_display: string;
   stat_round: string;
-  live_stats: LiveStatsPlayer[];
+  live_stats: DataGolfLiveStatsPlayer[];
 }
 
-export interface LiveHoleStatsOptions {
-  tour?: Tour;
-  format?: FileFormat;
+export interface DataGolfLiveHoleStatsOptions {
+  tour?: DataGolfTour;
+  format?: DataGolfFileFormat;
   filterByHole?: number;
   filterByPar?: number;
   sortByDifficulty?: boolean;
   wave?: string;
 }
 
-export interface HoleStats {
+export interface DataGolfHoleStats {
   hole: number;
   par: number;
   yardage: number;
@@ -658,7 +680,7 @@ export interface HoleStats {
   };
 }
 
-export interface LiveHoleStatsResponse {
+export interface DataGolfLiveHoleStatsResponse {
   event_name: string;
   last_update: string;
   current_round: number;
@@ -666,7 +688,7 @@ export interface LiveHoleStatsResponse {
     course_code: string;
     rounds: {
       round_num: number;
-      holes: HoleStats[];
+      holes: DataGolfHoleStats[];
     }[];
   }[];
 }
@@ -675,8 +697,8 @@ export interface LiveHoleStatsResponse {
 // HISTORICAL DATA TYPES
 // ========================================
 
-export interface HistoricalEventListOptions {
-  format?: FileFormat;
+export interface DataGolfHistoricalEventListOptions {
+  format?: DataGolfFileFormat;
   filterByTour?: string;
   filterByYear?: number;
   onlyWithSG?: boolean;
@@ -685,7 +707,7 @@ export interface HistoricalEventListOptions {
   skip?: number;
 }
 
-export interface HistoricalEvent {
+export interface DataGolfHistoricalEvent {
   calendar_year: number;
   date: string;
   event_id: number;
@@ -695,11 +717,11 @@ export interface HistoricalEvent {
   tour: string;
 }
 
-export interface HistoricalRoundDataOptions {
+export interface DataGolfHistoricalRoundDataOptions {
   tour: string;
   eventId: string | number;
   year: number;
-  format?: FileFormat;
+  format?: DataGolfFileFormat;
   filterByPlayer?: string;
   filterByRound?: number;
   minScore?: number;
@@ -710,7 +732,7 @@ export interface HistoricalRoundDataOptions {
   skip?: number;
 }
 
-export interface RoundData {
+export interface DataGolfRoundData {
   birdies: number;
   bogies: number;
   course_name: string;
@@ -738,7 +760,7 @@ export interface RoundData {
   teetime: string;
 }
 
-export interface SlimRoundData {
+export interface DataGolfSlimRoundData {
   score: number;
   birdies: number;
   bogies: number;
@@ -746,19 +768,19 @@ export interface SlimRoundData {
   doubles_or_worse: number;
 }
 
-export type HistoricalRound = RoundData | SlimRoundData;
+export type DataGolfHistoricalRound = DataGolfRoundData | DataGolfSlimRoundData;
 
-export interface HistoricalPlayer {
+export interface DataGolfHistoricalPlayer {
   dg_id: number;
   fin_text: string;
   player_name: string;
-  round_1?: HistoricalRound;
-  round_2?: HistoricalRound;
-  round_3?: HistoricalRound;
-  round_4?: HistoricalRound;
+  round_1?: DataGolfHistoricalRound;
+  round_2?: DataGolfHistoricalRound;
+  round_3?: DataGolfHistoricalRound;
+  round_4?: DataGolfHistoricalRound;
 }
 
-export interface HistoricalRoundDataResponse {
+export interface DataGolfHistoricalRoundDataResponse {
   event_name: string;
   event_id: string;
   tour: string;
@@ -766,10 +788,10 @@ export interface HistoricalRoundDataResponse {
   year: number;
   season: number;
   sg_categories: string;
-  scores: HistoricalPlayer[];
+  scores: DataGolfHistoricalPlayer[];
 }
 
-export interface HistoricalEventDataStat {
+export interface DataGolfHistoricalEventDataStat {
   dg_id: number;
   dg_points: number;
   earnings: number;
@@ -778,30 +800,31 @@ export interface HistoricalEventDataStat {
   player_name: string;
 }
 
-export interface HistoricalEventDataResponse {
+export interface DataGolfHistoricalEventDataResponse {
   event_completed: string;
   tour: string;
   season: number;
   year: number;
   event_id: string;
   event_name: string;
-  event_stats: HistoricalEventDataStat[];
+  event_stats: DataGolfHistoricalEventDataStat[];
 }
 
-export type HistoricalOddsTour = "pga" | "euro" | "alt";
+export type DataGolfHistoricalOddsTour = "pga" | "euro" | "alt";
 
-export interface HistoricalOddsEventListEntry {
-  archived_preds: YesNo;
+export interface DataGolfHistoricalOddsEventListEntry {
+  archived_preds: DataGolfYesNo;
   calendar_year: number;
   event_id: DataGolfEventId;
   event_name: string;
-  matchups: YesNo;
-  outrights: YesNo;
+  matchups: DataGolfYesNo;
+  outrights: DataGolfYesNo;
 }
 
-export type HistoricalOddsEventListResponse = HistoricalOddsEventListEntry[];
+export type DataGolfHistoricalOddsEventListResponse =
+  DataGolfHistoricalOddsEventListEntry[];
 
-export type HistoricalOddsMarket =
+export type DataGolfHistoricalOddsMarket =
   | "win"
   | "top_5"
   | "top_10"
@@ -809,81 +832,82 @@ export type HistoricalOddsMarket =
   | "make_cut"
   | "mc";
 
-export interface HistoricalOddsOutrightEntry {
+export interface DataGolfHistoricalOddsOutrightEntry {
   bet_outcome_numeric: number;
   bet_outcome_text: string;
-  close_odds: BettingOddsValue;
+  close_odds: DataGolfBettingOddsValue;
   close_time: string;
   dg_id: number;
-  open_odds: BettingOddsValue;
+  open_odds: DataGolfBettingOddsValue;
   open_time: string;
   outcome: string;
   player_name: string;
 }
 
-export interface HistoricalOddsOutrightsResponse {
-  book: SportsbookName;
+export interface DataGolfHistoricalOddsOutrightsResponse {
+  book: DataGolfSportsbookName;
   event_completed: string;
   event_id: DataGolfEventId;
   event_name: string;
-  market: HistoricalOddsMarket;
+  market: DataGolfHistoricalOddsMarket;
   season: number;
   year: number;
-  odds: HistoricalOddsOutrightEntry[];
+  odds: DataGolfHistoricalOddsOutrightEntry[];
 }
 
-export interface HistoricalOddsMatchupEntry {
+export interface DataGolfHistoricalOddsMatchupEntry {
   bet_type: string;
   close_time: string;
   open_time: string;
-  p1_close: BettingOddsValue;
+  p1_close: DataGolfBettingOddsValue;
   p1_dg_id: number;
-  p1_open: BettingOddsValue;
+  p1_open: DataGolfBettingOddsValue;
   p1_outcome: number;
   p1_outcome_text: string;
   p1_player_name: string;
-  p2_close: BettingOddsValue;
+  p2_close: DataGolfBettingOddsValue;
   p2_dg_id: number;
-  p2_open: BettingOddsValue;
+  p2_open: DataGolfBettingOddsValue;
   p2_outcome: number;
   p2_outcome_text: string;
   p2_player_name: string;
-  p3_close?: BettingOddsValue;
+  p3_close?: DataGolfBettingOddsValue;
   p3_dg_id?: number;
-  p3_open?: BettingOddsValue;
+  p3_open?: DataGolfBettingOddsValue;
   p3_outcome?: number;
   p3_outcome_text?: string;
   p3_player_name?: string;
   tie_rule: string;
 }
 
-export interface HistoricalOddsMatchupsResponse {
-  book: SportsbookName;
+export interface DataGolfHistoricalOddsMatchupsResponse {
+  book: DataGolfSportsbookName;
   event_completed: string;
   event_id: DataGolfEventId;
   event_name: string;
   season: number;
   year: number;
-  odds: HistoricalOddsMatchupEntry[];
+  odds: DataGolfHistoricalOddsMatchupEntry[];
 }
 
-export interface HistoricalDfsEventListEntry {
+export interface DataGolfHistoricalDfsEventListEntry {
   calendar_year: number;
   date: string;
   event_id: DataGolfEventId;
   event_name: string;
   tour: "pga" | "euro";
-  dk_ownerships: YesNo;
-  dk_salaries: YesNo;
-  fd_ownerships: YesNo;
-  fd_salaries: YesNo;
+  dk_ownerships: DataGolfYesNo;
+  dk_salaries: DataGolfYesNo;
+  fd_ownerships: DataGolfYesNo;
+  fd_salaries: DataGolfYesNo;
 }
 
-export type HistoricalDfsEventListResponse = HistoricalDfsEventListEntry[];
+export type DataGolfHistoricalDfsEventListResponse =
+  DataGolfHistoricalDfsEventListEntry[];
 
-export type HistoricalDfsSite = "draftkings" | "fanduel";
+export type DataGolfHistoricalDfsSite = "draftkings" | "fanduel";
 
-export interface HistoricalDfsPointsEntry {
+export interface DataGolfHistoricalDfsPointsEntry {
   bogey_free_pts: number;
   dg_id: number;
   fin_text: string;
@@ -898,7 +922,7 @@ export interface HistoricalDfsPointsEntry {
   total_pts: number;
 }
 
-export interface HistoricalDfsPointsResponse {
+export interface DataGolfHistoricalDfsPointsResponse {
   tour: string;
   year: number;
   season: number;
@@ -907,56 +931,8 @@ export interface HistoricalDfsPointsResponse {
   event_completed: string;
   ownerships_from: string;
   site: string;
-  dfs_points: HistoricalDfsPointsEntry[];
+  dfs_points: DataGolfHistoricalDfsPointsEntry[];
 }
 
 // ========================================
-// UTILITY TYPES
-// ========================================
-
-export interface DataProcessingOptions<T> {
-  filter?: (item: T) => boolean;
-  sort?: (a: T, b: T) => number;
-  limit?: number;
-  skip?: number;
-}
-
-export interface DataGolfErrorResponse {
-  error: string;
-  message: string;
-  status: number;
-}
-
-// ========================================
-// FUNCTION RESPONSE TYPES
-// ========================================
-
-export type DataGolfResponse<T> = T | DataGolfErrorResponse;
-
-// Union types for all possible API responses
-export type DataGolfAPIResponse =
-  | Player[]
-  | TourScheduleResponse
-  | FieldUpdatesResponse
-  | DataGolfRankingsResponse
-  | PreTournamentPredictionsResponse
-  | PreTournamentPredictionsArchiveResponse
-  | SkillDecompositionsResponse
-  | SkillRatingsResponse
-  | ApproachSkillResponse
-  | FantasyProjectionResponse
-  | LiveModelPredictionsResponse
-  | LiveStrokesGainedResponse
-  | LiveTournamentStatsResponse
-  | LiveHoleStatsResponse
-  | HistoricalEvent[]
-  | HistoricalRoundDataResponse
-  | HistoricalEventDataResponse
-  | BettingToolOutrightsResponse
-  | BettingToolMatchupsResponse
-  | BettingToolAllPairingsResponse
-  | HistoricalOddsEventListResponse
-  | HistoricalOddsOutrightsResponse
-  | HistoricalOddsMatchupsResponse
-  | HistoricalDfsEventListResponse
-  | HistoricalDfsPointsResponse;
+// END

@@ -5,7 +5,7 @@
  */
 
 import { query, mutation } from "../_generated/server";
-import { requireAdmin, getCurrentMember } from "../auth";
+import { requireAdmin, getCurrentMember } from "../utils/auth";
 import type { Id } from "../_generated/dataModel";
 import { tourCardsValidators } from "../validators/tourCards";
 import {
@@ -13,8 +13,7 @@ import {
   isCompletedTourCardFee,
   requireTourCardOwner,
 } from "../utils/tourCards";
-
-const DEFAULT_MAX_PARTICIPANTS = 75;
+import { DEFAULT_MAX_PARTICIPANTS } from "./_constants";
 
 export const createTourCards = mutation({
   args: tourCardsValidators.args.createTourCards,
@@ -300,135 +299,6 @@ export const getCurrentYearTourCard = query({
   },
 });
 
-/**
- * getReservedTourSpotsForSeason
- *
- * Returns a per-tour count of reserved spots for a given season.
- *
- * A reserved spot is counted for each member who has paid the Tour Card Fee for the given season
- * but does not yet have a tour card in that season; that reservation is assigned to the member's
- * tour from the previous calendar year.
- */
-export const getReservedTourSpotsForSeason = query({
-  args: tourCardsValidators.args.getReservedTourSpotsForSeason,
-  handler: async (ctx, args) => {
-    const season = await ctx.db.get(args.options.seasonId);
-    if (!season) {
-      throw new Error("Season not found");
-    }
-
-    const previousYear = season.year - 1;
-
-    const previousSeasons = (await ctx.db.query("seasons").collect()).filter(
-      (s) => s.year === previousYear,
-    );
-
-    const reservedByTourId: Record<string, number> = {};
-
-    if (previousSeasons.length === 0) {
-      return { reservedByTourId };
-    }
-
-    const previousSeason = previousSeasons.reduce((best, candidate) => {
-      const bestNumber = best.number ?? 0;
-      const candidateNumber = candidate.number ?? 0;
-      if (candidateNumber !== bestNumber) {
-        return candidateNumber > bestNumber ? candidate : best;
-      }
-
-      const bestStart = best.startDate ?? 0;
-      const candidateStart = candidate.startDate ?? 0;
-      if (candidateStart !== bestStart) {
-        return candidateStart > bestStart ? candidate : best;
-      }
-
-      return candidate._creationTime > best._creationTime ? candidate : best;
-    }, previousSeasons[0]);
-
-    const currentSeasonTours = await ctx.db
-      .query("tours")
-      .withIndex("by_season", (q) => q.eq("seasonId", season._id))
-      .collect();
-
-    const currentTourIdByShortForm = new Map<string, Id<"tours">>();
-    const currentTourIdByName = new Map<string, Id<"tours">>();
-    for (const tour of currentSeasonTours) {
-      currentTourIdByShortForm.set(tour.shortForm, tour._id);
-      currentTourIdByName.set(tour.name, tour._id);
-    }
-
-    const previousSeasonTours = await ctx.db
-      .query("tours")
-      .withIndex("by_season", (q) => q.eq("seasonId", previousSeason._id))
-      .collect();
-
-    const previousTourMetaById = new Map<
-      Id<"tours">,
-      { shortForm: string; name: string }
-    >();
-    for (const tour of previousSeasonTours) {
-      previousTourMetaById.set(tour._id, {
-        shortForm: tour.shortForm,
-        name: tour.name,
-      });
-    }
-
-    const currentSeasonTourCards = await ctx.db
-      .query("tourCards")
-      .withIndex("by_season", (q) => q.eq("seasonId", season._id))
-      .collect();
-
-    const membersWithCurrentTourCard = new Set(
-      currentSeasonTourCards.map((card) => card.memberId),
-    );
-
-    const previousSeasonTourCards = await ctx.db
-      .query("tourCards")
-      .withIndex("by_season", (q) => q.eq("seasonId", previousSeason._id))
-      .collect();
-
-    const previousTourByMemberId = new Map<Id<"members">, Id<"tours">>();
-    for (const card of previousSeasonTourCards) {
-      if (!previousTourByMemberId.has(card.memberId)) {
-        previousTourByMemberId.set(card.memberId, card.tourId);
-      }
-    }
-
-    const seasonTransactions = await ctx.db
-      .query("transactions")
-      .withIndex("by_season", (q) => q.eq("seasonId", season._id))
-      .collect();
-
-    const prepaidMemberIds = new Set<Id<"members">>();
-    for (const tx of seasonTransactions) {
-      if (tx.transactionType !== "TourCardFee") continue;
-      if (!isCompletedTourCardFee(tx)) continue;
-      if (!tx.memberId) continue;
-      prepaidMemberIds.add(tx.memberId);
-    }
-
-    for (const memberId of prepaidMemberIds) {
-      if (membersWithCurrentTourCard.has(memberId)) continue;
-
-      const previousTourId = previousTourByMemberId.get(memberId);
-      if (!previousTourId) continue;
-
-      const previousTourMeta = previousTourMetaById.get(previousTourId);
-      if (!previousTourMeta) continue;
-
-      const mappedCurrentTourId =
-        currentTourIdByShortForm.get(previousTourMeta.shortForm) ??
-        currentTourIdByName.get(previousTourMeta.name);
-      if (!mappedCurrentTourId) continue;
-
-      reservedByTourId[mappedCurrentTourId] =
-        (reservedByTourId[mappedCurrentTourId] ?? 0) + 1;
-    }
-
-    return { reservedByTourId };
-  },
-});
-
 export const updateTourCards = mutation({
   args: tourCardsValidators.args.updateTourCards,
   handler: async (ctx, args) => {
@@ -457,6 +327,7 @@ export const updateTourCards = mutation({
   },
 });
 
+// Used in TourCardForm to switch a tour card to a different tour within the same season, with validation and capacity checks.
 export const switchTourCards = mutation({
   args: tourCardsValidators.args.switchTourCards,
   handler: async (ctx, args) => {
@@ -610,6 +481,7 @@ export const recomputeTourCardsForSeasonAsAdmin = mutation({
   },
 });
 
+// Used in TourCardChangeButton to delete old tour card and associated fee transactions when switching tours, if the user has no other tour cards in the season.
 export const deleteTourCardAndFee = mutation({
   args: tourCardsValidators.args.deleteTourCardAndFee,
   handler: async (ctx, args) => {

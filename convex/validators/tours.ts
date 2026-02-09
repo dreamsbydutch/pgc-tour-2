@@ -75,7 +75,6 @@ export const toursValidators = {
               maxBuyIn: v.optional(v.number()),
               minParticipants: v.optional(v.number()),
               maxParticipants: v.optional(v.number()),
-              hasDescription: v.optional(v.boolean()),
               searchTerm: v.optional(v.string()),
               playoffSpotsMin: v.optional(v.number()),
               playoffSpotsMax: v.optional(v.number()),
@@ -118,47 +117,10 @@ export const toursValidators = {
               includeTourCards: v.optional(v.boolean()),
             }),
           ),
-          activeOnly: v.optional(v.boolean()),
           includeAnalytics: v.optional(v.boolean()),
         }),
       ),
     },
-
-    updateTours: {
-      tourId: v.id("tours"),
-      data: v.object({
-        name: v.optional(v.string()),
-        shortForm: v.optional(v.string()),
-        logoUrl: v.optional(v.string()),
-        buyIn: v.optional(v.number()),
-        playoffSpots: v.optional(v.array(v.number())),
-        maxParticipants: v.optional(v.number()),
-      }),
-      options: v.optional(
-        v.object({
-          skipValidation: v.optional(v.boolean()),
-          updateTimestamp: v.optional(v.boolean()),
-          cascadeToTourCards: v.optional(v.boolean()),
-          returnEnhanced: v.optional(v.boolean()),
-          includeStatistics: v.optional(v.boolean()),
-          includeSeason: v.optional(v.boolean()),
-          includeParticipants: v.optional(v.boolean()),
-        }),
-      ),
-    },
-
-    deleteTours: {
-      tourId: v.id("tours"),
-      options: v.optional(
-        v.object({
-          softDelete: v.optional(v.boolean()),
-          cascadeDelete: v.optional(v.boolean()),
-          transferParticipants: v.optional(v.id("tours")),
-          returnDeletedData: v.optional(v.boolean()),
-        }),
-      ),
-    },
   },
-
   validateTourData,
 } as const;

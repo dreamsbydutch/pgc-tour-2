@@ -6,9 +6,15 @@
  * through flexible configuration rather than multiple specialized functions.
  */
 
-import { query, internalQuery, mutation, internalMutation } from "../_generated/server";
-import { requireAdmin } from "../auth";
-import { processData } from "../utils/processData";
+import {
+  query,
+  internalQuery,
+  mutation,
+  internalMutation,
+  internalAction,
+} from "../_generated/server";
+import { requireAdmin } from "../utils/auth";
+import { processData } from "../utils/batchProcess";
 import {
   logAudit,
   computeChanges,
@@ -23,24 +29,17 @@ import {
   generateTournamentAnalytics,
   getCalculatedStatus,
   getOptimizedTournaments,
-  getPlayoffTournamentsBySeason,
   getTournamentSortFunction,
 } from "../utils/tournaments";
-import type { Doc, Id } from "../_generated/dataModel";
 import type {
   DeleteResponse,
   TournamentDoc,
-  GolferDoc,
-  TournamentGolferDoc,
-  TournamentEnhancementOptions,
   EnhancedTournamentDoc,
 } from "../types/types";
-import { isPlayoffTier } from "../utils";
-import {
-  TeamsCronGolferSnap,
-  TeamsCronTournamentSnap,
-} from "../types/cronJobs";
-import { internal } from "../_generated/api";
+import { api, internal } from "../_generated/api";
+import { v } from "convex/values";
+import { MAX_PRETOURNAMENT_LEADTIME } from "./_constants";
+import { checkCompatabilityOfEventNames } from "../utils/datagolf";
 
 /**
  * Create tournaments with comprehensive options
@@ -339,7 +338,7 @@ export const getTournaments_Internal = internalQuery({
       return await enhanceTournament(ctx, tournament, args || {});
     }
     if (args.tournamentType === "next") {
-      let upcomingTournaments = await ctx.db
+      const upcomingTournaments = await ctx.db
         .query("tournaments")
         .withIndex("by_status", (q) => q.eq("status", "upcoming"))
         .collect();
@@ -354,7 +353,7 @@ export const getTournaments_Internal = internalQuery({
       return await enhanceTournament(ctx, nextTournament, args || {});
     }
     if (args.tournamentType === "recent") {
-      let upcomingTournaments = await ctx.db
+      const upcomingTournaments = await ctx.db
         .query("tournaments")
         .withIndex("by_status", (q) => q.eq("status", "completed"))
         .collect();
@@ -455,146 +454,57 @@ export const getTournaments_Internal = internalQuery({
  * member + their tour card for this season.
  */
 export const getTournamentLeaderboardView = query({
-  args: tournamentsValidators.args.getTournamentLeaderboardView,
+  args: {
+    tournamentId: v.optional(v.id("tournaments")),
+    memberId: v.optional(v.id("members")),
+  },
   handler: async (ctx, args) => {
-    const options = args.options ?? {};
-
-    const tournament = await ctx.db.get(args.tournamentId);
-    if (!tournament) return null;
-
-    const tournamentEnhanceOptions: TournamentEnhancementOptions = {
-      includeSeason:
-        options.includeTournamentEnhancements?.includeSeason ?? true,
-      includeTier: options.includeTournamentEnhancements?.includeTier ?? true,
-      includeCourse:
-        options.includeTournamentEnhancements?.includeCourse ?? true,
-    };
-    const enhancedTournament = await enhanceTournament(
-      ctx,
-      tournament,
-      tournamentEnhanceOptions,
-    );
-
-    const teams = await ctx.db
-      .query("teams")
-      .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
-      .collect();
-
-    const seasonTournaments = await ctx.db
-      .query("tournaments")
+    const tournaments = await ctx.db.query("tournaments").collect();
+    const tournament = args.tournamentId
+      ? tournaments.find((t) => t._id === args.tournamentId)
+      : tournaments
+          .sort((a, b) => a.startDate - b.startDate)
+          .filter((t) => t.startDate >= Date.now())[0];
+    if (!tournament)
+      return {
+        tournament: null,
+        teams: [],
+        golfers: [],
+        tours: [],
+        leaderboardLastUpdatedAt: null,
+      };
+    const enhancedTournament = await enhanceTournament(ctx, tournament, {
+      includeCourse: true,
+      includeSeason: true,
+      includeTier: true,
+      includeTeams: true,
+      includeGolfers: true,
+      includePlayoffs: true,
+    });
+    const tours = await ctx.db
+      .query("tours")
       .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
       .collect();
+    const tourCard = await ctx.db
+      .query("tourCards")
+      .withIndex("by_member_season", (q) =>
+        q.eq("memberId", args.memberId!).eq("seasonId", tournament.seasonId),
+      )
+      .first();
 
-    const tournamentStartById = new Map(
-      seasonTournaments.map((t) => [t._id, t.startDate ?? 0]),
-    );
-    const currentTournamentStart = tournament.startDate ?? 0;
-    const isPriorTournament = (tournamentId: Id<"tournaments">): boolean => {
-      return (
-        (tournamentStartById.get(tournamentId) ?? 0) < currentTournamentStart
-      );
-    };
-
-    const tourCardIds = Array.from(new Set(teams.map((t) => t.tourCardId)));
-
-    const pointsBeforeTournamentByTourCardId = new Map<
-      Id<"tourCards">,
-      number
-    >();
-    for (const tourCardId of tourCardIds) {
-      const priorTeams = await ctx.db
-        .query("teams")
-        .withIndex("by_tour_card", (q) => q.eq("tourCardId", tourCardId))
-        .collect();
-      const pointsBeforeTournament = priorTeams
-        .filter((t) => isPriorTournament(t.tournamentId))
-        .reduce((sum, t) => sum + (t.points ?? 0), 0);
-      pointsBeforeTournamentByTourCardId.set(
-        tourCardId,
-        pointsBeforeTournament,
-      );
-    }
-
-    const tourCards = await Promise.all(
-      tourCardIds.map((id) => ctx.db.get(id)),
-    );
-    const tourCardById = new Map(
-      tourCards.filter(Boolean).map((tc) => [tc!._id, tc!]),
-    );
-
-    const teamsWithTourCard = teams.map((team) => ({
-      ...team,
-      pointsBeforeTournament:
-        pointsBeforeTournamentByTourCardId.get(team.tourCardId) ?? 0,
-      tourCard: tourCardById.get(team.tourCardId) ?? null,
-    }));
-
-    const tournamentGolfers = await ctx.db
-      .query("tournamentGolfers")
-      .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
-      .collect();
-
-    const golferIds = Array.from(
-      new Set(tournamentGolfers.map((tg) => tg.golferId)),
-    );
-    const golfers = await Promise.all(golferIds.map((id) => ctx.db.get(id)));
-    const golferById = new Map(
-      golfers.filter(Boolean).map((g) => [g!._id, g!]),
-    );
-
-    const golfersWithStats = tournamentGolfers
-      .map((tg) => {
-        const golfer = golferById.get(tg.golferId);
-        if (!golfer) return null;
-        return { ...tg, golfer };
-      })
-      .filter(Boolean) as Array<TournamentGolferDoc & { golfer: GolferDoc }>;
-
-    const tours =
-      options.includeTours === false
-        ? []
-        : await ctx.db
-            .query("tours")
-            .withIndex("by_season", (q) =>
-              q.eq("seasonId", tournament.seasonId),
-            )
-            .collect();
-
-    let viewer: { member: unknown | null; tourCard: unknown | null } | null =
-      null;
-    if (options.includeViewer && options.viewerClerkId) {
-      const member = await ctx.db
-        .query("members")
-        .withIndex("by_clerk_id", (q) =>
-          q.eq("clerkId", options.viewerClerkId!),
-        )
-        .first();
-
-      const viewerTourCard = member
-        ? await ctx.db
-            .query("tourCards")
-            .withIndex("by_member_season", (q) =>
-              q.eq("memberId", member._id).eq("seasonId", tournament.seasonId),
-            )
-            .first()
+    const leaderboardLastUpdatedAt = tournament?.leaderboardLastUpdatedAt
+      ? tournament.leaderboardLastUpdatedAt
+      : tournament?.updatedAt
+        ? tournament.updatedAt
         : null;
-
-      viewer = { member: member ?? null, tourCard: viewerTourCard ?? null };
-    }
-
-    const leaderboardLastUpdatedAt =
-      typeof tournament.leaderboardLastUpdatedAt === "number"
-        ? tournament.leaderboardLastUpdatedAt
-        : typeof tournament.updatedAt === "number"
-          ? tournament.updatedAt
-          : null;
 
     return {
       tournament: enhancedTournament,
-      teams: teamsWithTourCard,
-      golfers: golfersWithStats,
       tours,
-      viewer,
+      teams: enhancedTournament.teams || [],
+      golfers: enhancedTournament.golfers || [],
+      allTournaments: tournaments,
+      userTourCard: tourCard || null,
       leaderboardLastUpdatedAt,
     };
   },
@@ -665,7 +575,6 @@ export const getAllTournaments = query({
     return await ctx.db.query("tournaments").collect();
   },
 });
-
 
 /**
  * Update tournaments with comprehensive options
@@ -941,5 +850,205 @@ export const markTournamentCompleted = internalMutation({
     });
 
     return { ok: true };
+  },
+});
+
+/**
+ * Makes sure the given tournament is within the Pre Tournament window set in the constants and that the data golf input matches the given tournament before running applyDataGolfLiveSync on the tournament to update the field information.
+ * args: { tournamentId }
+ * calls: tournaments.getTournaments_Internal, cronJobs.applyDataGolfLiveSync
+ */
+export const runPreTournamentGolfersSync: ReturnType<typeof internalAction> =
+  internalAction({
+    args: {
+      tournamentId: v.id("tournaments"),
+    },
+    handler: async (ctx, args): Promise<unknown> => {
+      const now = Date.now();
+
+      const target = (await ctx.runQuery(
+        internal.functions.tournaments.getTournaments_Internal,
+        { tournamentId: args.tournamentId },
+      )) as EnhancedTournamentDoc | null;
+
+      if (!target || target?._id === undefined || target?._id === null) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: "missing_tournament",
+        };
+      }
+      const tournamentStartDate = Number(target?.startDate ?? 0);
+      const msUntilStart = tournamentStartDate - now;
+
+      if (
+        Number.isFinite(tournamentStartDate) &&
+        tournamentStartDate > 0 &&
+        msUntilStart > MAX_PRETOURNAMENT_LEADTIME
+      ) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: "too_early",
+          ...target,
+          msUntilStart,
+        };
+      }
+
+      const [fieldUpdates, rankings] = await Promise.all([
+        ctx.runAction(api.functions.datagolf.fetchFieldUpdates, {
+          options: { tour: "pga" },
+        }),
+        ctx.runAction(api.functions.datagolf.fetchDataGolfRankings, {}),
+      ]);
+
+      const compatible = checkCompatabilityOfEventNames(
+        target?.name,
+        fieldUpdates.event_name,
+      );
+      if (!fieldUpdates.event_name.trim()) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: "missing_datagolf_event_name",
+          tournamentId: target?._id,
+          tournamentName: target?.name,
+        };
+      }
+      if (!compatible.ok) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: "event_name_mismatch",
+          tournamentId: target?._id,
+          tournamentName: target?.name,
+          dataGolfEventName: fieldUpdates.event_name,
+          score: compatible.score,
+          intersection: compatible.intersection,
+          expectedTokens: compatible.expectedTokens,
+          actualTokens: compatible.actualTokens,
+        };
+      }
+      if (!fieldUpdates.field.length) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: "empty_field",
+          tournamentId: target?._id,
+          tournamentName: target?.name,
+          dataGolfEventName: fieldUpdates.event_name,
+        };
+      }
+
+      const sync = await ctx.runMutation(
+        internal.functions.datagolf.applyDataGolfLiveSync,
+        {
+          tournamentId: target?._id,
+          field: fieldUpdates.field,
+          rankings: rankings.rankings,
+          liveStats: [],
+          eventName: fieldUpdates.event_name,
+        },
+      );
+
+      return {
+        ok: true,
+        skipped: false,
+        tournamentId: target?._id,
+        tournamentName: target?.name,
+        dataGolfEventName: fieldUpdates.event_name,
+        sync,
+      };
+    },
+  });
+
+/**
+ * HELPER
+ * Gets all teams and golfers from the first playoff tournament and duplicates them into the current playoff tournament
+ * args : {
+ *    currentTournamentId,
+ *    previousPlayoffTournamentId
+ * }
+ */
+export const duplicateFromPreviousPlayoff = internalMutation({
+  args: {
+    currentTournamentId: v.id("tournaments"),
+    previousPlayoffTournamentId: v.id("tournaments"),
+  },
+  handler: async (ctx, args) => {
+    const tournamentGolfersFrompreviousPlayoffTournament = await ctx.db
+      .query("tournamentGolfers")
+      .withIndex("by_tournament", (q) =>
+        q.eq("tournamentId", args.previousPlayoffTournamentId),
+      )
+      .collect();
+
+    const teamsFrompreviousPlayoffTournament = await ctx.db
+      .query("teams")
+      .withIndex("by_tournament", (q) =>
+        q.eq("tournamentId", args.previousPlayoffTournamentId),
+      )
+      .collect();
+
+    let golfersCopied = 0;
+    let teamsCopied = 0;
+    const groupSet = new Set<number>();
+
+    for (const tg of tournamentGolfersFrompreviousPlayoffTournament) {
+      if (tg.group) groupSet.add(tg.group);
+
+      const tournamentGolfersFromCurrentTournament = await ctx.db
+        .query("tournamentGolfers")
+        .withIndex("by_golfer_tournament", (q) =>
+          q
+            .eq("golferId", tg.golferId)
+            .eq("tournamentId", args.currentTournamentId),
+        )
+        .first();
+      if (tournamentGolfersFromCurrentTournament) continue;
+
+      await ctx.db.insert("tournamentGolfers", {
+        golferId: tg.golferId,
+        tournamentId: args.currentTournamentId,
+        group: tg.group,
+        rating: tg.rating,
+        worldRank: tg.worldRank,
+        updatedAt: Date.now(),
+      });
+      golfersCopied += 1;
+    }
+
+    for (const team of teamsFrompreviousPlayoffTournament) {
+      const teamFromCurrentTournament = await ctx.db
+        .query("teams")
+        .withIndex("by_tournament_tour_card", (q) =>
+          q
+            .eq("tournamentId", args.currentTournamentId)
+            .eq("tourCardId", team.tourCardId),
+        )
+        .first();
+      if (teamFromCurrentTournament) continue;
+
+      await ctx.db.insert("teams", {
+        tournamentId: args.currentTournamentId,
+        tourCardId: team.tourCardId,
+        golferIds: team.golferIds,
+        score: team.score,
+        position: team.position,
+        pastPosition: team.pastPosition,
+        updatedAt: Date.now(),
+      });
+      teamsCopied += 1;
+    }
+
+    return {
+      ok: true,
+      skipped: false,
+      tournamentId: args.currentTournamentId,
+      copiedFromTournamentId: args.previousPlayoffTournamentId,
+      golfersCopied,
+      teamsCopied,
+      groupsCreated: groupSet.size,
+    } as const;
   },
 });

@@ -1,35 +1,9 @@
 import { sumArray } from "./sumArray";
 import type {
-  AnalyticsResult,
-  DatabaseContext,
-  EnhancedTierDoc,
   TierDoc,
-  TierEnhancementOptions,
   TierFilterOptions,
-  TierOptimizedQueryOptions,
-  TierSortFunction,
   TierSortOptions,
-  TournamentDoc,
 } from "../types/types";
-
-/**
- * Get optimized tiers based on query options using indexes
- */
-export async function getOptimizedTiers(
-  ctx: DatabaseContext,
-  options: TierOptimizedQueryOptions,
-): Promise<TierDoc[]> {
-  const filter = options.filter || {};
-
-  if (filter.seasonId) {
-    return await ctx.db
-      .query("tiers")
-      .withIndex("by_season", (q) => q.eq("seasonId", filter.seasonId!))
-      .collect();
-  }
-
-  return await ctx.db.query("tiers").collect();
-}
 
 /**
  * Apply comprehensive filters to tiers
@@ -133,7 +107,7 @@ export function applyFilters(
 /**
  * Get sorting function based on sort options
  */
-export function getSortFunction(sort: TierSortOptions): TierSortFunction {
+export function getSortFunction(sort: TierSortOptions) {
   if (!sort.sortBy) return undefined;
 
   const sortOrder = sort.sortOrder === "asc" ? 1 : -1;
@@ -157,106 +131,4 @@ export function getSortFunction(sort: TierSortOptions): TierSortFunction {
     default:
       return undefined;
   }
-}
-
-/**
- * Enhance a single tier with related data
- */
-export async function enhanceTier(
-  ctx: DatabaseContext,
-  tier: TierDoc,
-  enhance: TierEnhancementOptions,
-): Promise<EnhancedTierDoc> {
-  const enhanced: EnhancedTierDoc = {
-    ...tier,
-    totalPayouts: sumArray(tier.payouts),
-    totalPoints: sumArray(tier.points),
-    averagePayout:
-      tier.payouts.length > 0
-        ? sumArray(tier.payouts) / tier.payouts.length
-        : 0,
-    averagePoints:
-      tier.points.length > 0 ? sumArray(tier.points) / tier.points.length : 0,
-    payoutLevels: tier.payouts.length,
-    pointLevels: tier.points.length,
-  };
-
-  if (enhance.includeSeason) {
-    const season = await ctx.db.get(tier.seasonId);
-    enhanced.season = season || undefined;
-  }
-
-  if (enhance.includeTournaments || enhance.includeStatistics) {
-    const tournaments = await ctx.db
-      .query("tournaments")
-      .withIndex("by_tier", (q) => q.eq("tierId", tier._id))
-      .collect();
-
-    if (enhance.includeTournaments) {
-      enhanced.tournaments = tournaments;
-      enhanced.tournamentCount = tournaments.length;
-    }
-
-    if (enhance.includeStatistics) {
-      enhanced.statistics = {
-        totalTournaments: tournaments.length,
-        activeTournaments: tournaments.filter(
-          (t: TournamentDoc) => t.status !== "cancelled",
-        ).length,
-        totalDistributedPayouts: 0,
-        totalDistributedPoints: 0,
-        participantCount: 0,
-        averageParticipants: 0,
-      };
-    }
-  }
-
-  return enhanced;
-}
-
-/**
- * Generate analytics for tiers
- */
-export async function generateAnalytics(
-  _ctx: DatabaseContext,
-  tiers: TierDoc[],
-): Promise<AnalyticsResult> {
-  return {
-    total: tiers.length,
-    active: tiers.length,
-    inactive: 0,
-    statistics: {
-      averageTotalPayouts:
-        tiers.length > 0
-          ? tiers.reduce((sum, tier) => sum + sumArray(tier.payouts), 0) /
-            tiers.length
-          : 0,
-      totalPayoutValue: tiers.reduce(
-        (sum, tier) => sum + sumArray(tier.payouts),
-        0,
-      ),
-      averageTotalPoints:
-        tiers.length > 0
-          ? tiers.reduce((sum, tier) => sum + sumArray(tier.points), 0) /
-            tiers.length
-          : 0,
-      totalPointsValue: tiers.reduce(
-        (sum, tier) => sum + sumArray(tier.points),
-        0,
-      ),
-      averagePayoutLevels:
-        tiers.length > 0
-          ? tiers.reduce((sum, tier) => sum + tier.payouts.length, 0) /
-            tiers.length
-          : 0,
-    },
-    breakdown: tiers.reduce(
-      (acc, tier) => {
-        const key = `${tier.payouts.length} levels`;
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      },
-      {} as Record<string, number>,
-    ),
-  };
 }

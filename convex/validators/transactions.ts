@@ -1,26 +1,5 @@
 import { v } from "convex/values";
 
-const transactionTypeValidator = v.union(
-  v.literal("TourCardFee"),
-  v.literal("TournamentWinnings"),
-  v.literal("Withdrawal"),
-  v.literal("Deposit"),
-  v.literal("LeagueDonation"),
-  v.literal("CharityDonation"),
-  v.literal("Payment"),
-  v.literal("Refund"),
-  v.literal("Adjustment"),
-);
-
-const transactionStatusValidator = v.union(
-  v.literal("pending"),
-  v.literal("completed"),
-  v.literal("failed"),
-  v.literal("cancelled"),
-);
-
-const vSumMode = v.union(v.literal("completed"), v.literal("all"));
-
 export const transactionsValidators = {
   args: {
     createTransactions: {
@@ -28,8 +7,25 @@ export const transactionsValidators = {
         memberId: v.id("members"),
         seasonId: v.id("seasons"),
         amount: v.number(),
-        transactionType: transactionTypeValidator,
-        status: v.optional(transactionStatusValidator),
+        transactionType: v.union(
+          v.literal("TourCardFee"),
+          v.literal("TournamentWinnings"),
+          v.literal("Withdrawal"),
+          v.literal("Deposit"),
+          v.literal("LeagueDonation"),
+          v.literal("CharityDonation"),
+          v.literal("Payment"),
+          v.literal("Refund"),
+          v.literal("Adjustment"),
+        ),
+        status: v.optional(
+          v.union(
+            v.literal("pending"),
+            v.literal("completed"),
+            v.literal("failed"),
+            v.literal("cancelled"),
+          ),
+        ),
         processedAt: v.optional(v.number()),
       }),
     },
@@ -44,8 +40,27 @@ export const transactionsValidators = {
               clerkId: v.optional(v.string()),
               memberId: v.optional(v.id("members")),
               seasonId: v.optional(v.id("seasons")),
-              transactionType: v.optional(transactionTypeValidator),
-              status: v.optional(transactionStatusValidator),
+              transactionType: v.optional(
+                v.union(
+                  v.literal("TourCardFee"),
+                  v.literal("TournamentWinnings"),
+                  v.literal("Withdrawal"),
+                  v.literal("Deposit"),
+                  v.literal("LeagueDonation"),
+                  v.literal("CharityDonation"),
+                  v.literal("Payment"),
+                  v.literal("Refund"),
+                  v.literal("Adjustment"),
+                ),
+              ),
+              status: v.optional(
+                v.union(
+                  v.literal("pending"),
+                  v.literal("completed"),
+                  v.literal("failed"),
+                  v.literal("cancelled"),
+                ),
+              ),
             }),
           ),
           limit: v.optional(v.number()),
@@ -57,15 +72,33 @@ export const transactionsValidators = {
       paginationOpts: v.object({
         numItems: v.number(),
         cursor: v.union(v.string(), v.null()),
-        id: v.optional(v.number()),
       }),
       filter: v.optional(
         v.object({
           clerkId: v.optional(v.string()),
           memberId: v.optional(v.id("members")),
           seasonId: v.optional(v.id("seasons")),
-          transactionType: v.optional(transactionTypeValidator),
-          status: v.optional(transactionStatusValidator),
+          transactionType: v.optional(
+            v.union(
+              v.literal("TourCardFee"),
+              v.literal("TournamentWinnings"),
+              v.literal("Withdrawal"),
+              v.literal("Deposit"),
+              v.literal("LeagueDonation"),
+              v.literal("CharityDonation"),
+              v.literal("Payment"),
+              v.literal("Refund"),
+              v.literal("Adjustment"),
+            ),
+          ),
+          status: v.optional(
+            v.union(
+              v.literal("pending"),
+              v.literal("completed"),
+              v.literal("failed"),
+              v.literal("cancelled"),
+            ),
+          ),
         }),
       ),
     },
@@ -76,35 +109,33 @@ export const transactionsValidators = {
         memberId: v.optional(v.id("members")),
         seasonId: v.optional(v.id("seasons")),
         amount: v.optional(v.number()),
-        transactionType: v.optional(transactionTypeValidator),
-        status: v.optional(transactionStatusValidator),
+        transactionType: v.optional(
+          v.union(
+            v.literal("TourCardFee"),
+            v.literal("TournamentWinnings"),
+            v.literal("Withdrawal"),
+            v.literal("Deposit"),
+            v.literal("LeagueDonation"),
+            v.literal("CharityDonation"),
+            v.literal("Payment"),
+            v.literal("Refund"),
+            v.literal("Adjustment"),
+          ),
+        ),
+        status: v.optional(
+          v.union(
+            v.literal("pending"),
+            v.literal("completed"),
+            v.literal("failed"),
+            v.literal("cancelled"),
+          ),
+        ),
         processedAt: v.optional(v.number()),
       }),
     },
 
-    adminBackfillTransactionMemberIds: {
-      limit: v.optional(v.number()),
-    },
-
     deleteTransactions: {
       transactionId: v.id("transactions"),
-    },
-
-    adminGetMemberAccountAudit: {
-      options: v.optional(
-        v.object({
-          sumMode: v.optional(vSumMode),
-        }),
-      ),
-    },
-
-    adminGetMemberLedgerForAudit: {
-      memberId: v.id("members"),
-      options: v.optional(
-        v.object({
-          sumMode: v.optional(vSumMode),
-        }),
-      ),
     },
   },
 } as const;

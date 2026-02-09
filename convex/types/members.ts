@@ -1,5 +1,4 @@
 import type { Id } from "../_generated/dataModel";
-import type { MemberRole } from "./authByClerkId";
 
 export type ClerkEmail = {
   email_address?: string;
@@ -31,7 +30,39 @@ export type ValidateMemberDataInput = {
   lastname?: string;
   displayName?: string;
   isActive?: boolean;
-  role?: MemberRole;
+  role?: "admin" | "moderator" | "regular";
   account?: number;
   friends?: (string | Id<"members">)[];
+};
+
+
+export type MembersWhereOp =
+  | "eq"
+  | "neq"
+  | "in"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "contains"
+  | "startsWith"
+  | "endsWith"
+  | "includes"
+  | "exists";
+
+export type MembersWhereValue = string | number | boolean | null;
+
+export type MembersWhereCondition = {
+  field: string;
+  op?: MembersWhereOp;
+  value?: MembersWhereValue;
+  values?: MembersWhereValue[];
+  caseInsensitive?: boolean;
+};
+
+export type MembersOrderBy = {
+  field: string;
+  direction?: "asc" | "desc";
+  nulls?: "first" | "last";
+  caseInsensitive?: boolean;
 };

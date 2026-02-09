@@ -1,14 +1,15 @@
 /**
- * Course Management - Simplified CRUD Functions
+ * Course Management
  *
- * Clean CRUD operations with comprehensive options objects.
- * Each function (create, get, update, delete) handles all use cases
- * through flexible configuration rather than multiple specialized functions.
+ * Simple CRUD operations for the `courses` table.
+ * These functions support common options (validation, enhancement, pagination) while keeping
+ * a single entry point per operation.
  */
 
+import { v } from "convex/values";
 import { query, mutation } from "../_generated/server";
-import { processData } from "../utils/processData";
-import { requireAdmin } from "../auth";
+import { processData } from "../utils/batchProcess";
+import { requireAdmin } from "../utils/auth";
 import {
   applyFilters,
   enhanceCourse,
@@ -22,60 +23,81 @@ import {
   getSortFunction,
   isInternational,
 } from "../utils/courses";
-import { coursesValidators } from "../validators/courses";
-import type { DeleteResponse, CourseDoc } from "../types/types";
+import type {
+  DeleteResponse,
+  CourseDoc,
+  ValidationResult,
+} from "../types/types";
+import { Doc } from "../_generated/dataModel";
+import { validators } from "../validators/common";
 
 /**
- * Create courses with comprehensive options
+ * Creates a new course.
  *
- * @example
- * Basic course creation
- * const course = await ctx.runMutation(api.functions.courses.createCourses, {
- *   data: {
- *     apiId: "course123",
- *     name: "Augusta National Golf Club",
- *     location: "Augusta, GA",
- *     par: 72,
- *     front: 36,
- *     back: 36,
- *     timeZoneOffset: -5
- *   }
- * });
+ * Access:
+ * - Requires admin.
  *
- * With advanced options
- * const course = await ctx.runMutation(api.functions.courses.createCourses, {
- *   data: { ... },
- *   options: {
- *     skipValidation: false,
- *     returnEnhanced: true,
- *     includeStatistics: true
- *   }
- * });
+ * Behavior:
+ * - Enforces `apiId` uniqueness.
+ * - Runs schema-level validation unless `options.skipValidation` is true.
+ * - Optionally returns an enhanced course view when `options.returnEnhanced` is true.
  */
 export const createCourses = mutation({
-  args: coursesValidators.args.createCourses,
+  args: {
+    data: v.object({
+      apiId: v.string(),
+      name: v.string(),
+      location: v.string(),
+      par: v.number(),
+      front: v.number(),
+      back: v.number(),
+      timeZoneOffset: v.number(),
+    }),
+    options: v.optional(
+      v.object({
+        skipValidation: v.optional(v.boolean()),
+        returnEnhanced: v.optional(v.boolean()),
+        includeStatistics: v.optional(v.boolean()),
+        includeTournaments: v.optional(v.boolean()),
+      }),
+    ),
+  },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 
     const options = args.options || {};
+
+    const apiId = args.data.apiId.trim();
+    const name = args.data.name.trim();
+    const location = args.data.location.trim();
+
+    if (!apiId || !name || !location) {
+      throw new Error("Course apiId, name, and location are required");
+    }
+
     if (!options.skipValidation) {
-      const validation = coursesValidators.validateCourseData(args.data);
+      const validation = validateCourseData({
+        ...args.data,
+        apiId,
+        name,
+        location,
+      });
       if (!validation.isValid) {
         throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
       }
     }
     const existingByApiId = await ctx.db
       .query("courses")
-      .withIndex("by_api_id", (q) => q.eq("apiId", args.data.apiId))
+      .withIndex("by_api_id", (q) => q.eq("apiId", apiId))
       .first();
 
     if (existingByApiId) {
-      throw new Error(`Course with API ID "${args.data.apiId}" already exists`);
+      throw new Error(`Course with API ID "${apiId}" already exists`);
     }
     const courseId = await ctx.db.insert("courses", {
-      apiId: args.data.apiId,
-      name: args.data.name,
-      location: args.data.location,
+      apiId,
+      name,
+      location,
       par: args.data.par,
       front: args.data.front,
       back: args.data.back,
@@ -99,42 +121,66 @@ export const createCourses = mutation({
 });
 
 /**
- * Get courses with comprehensive filtering, sorting, and enhancement options
+ * Reads courses.
  *
- * @example
- * Get all courses
- * const courses = await ctx.runQuery(api.functions.courses.getCourses, {});
- *
- * Get by ID
- * const course = await ctx.runQuery(api.functions.courses.getCourses, {
- *   options: { id: "course123" }
- * });
- *
- * Advanced query with filters and enhancements
- * const courses = await ctx.runQuery(api.functions.courses.getCourses, {
- *   options: {
- *     filter: {
- *       location: "Augusta, GA",
- *       minPar: 70,
- *       maxPar: 74
- *     },
- *     sort: {
- *       sortBy: "name",
- *       sortOrder: "asc"
- *     },
- *     pagination: {
- *       limit: 10,
- *       offset: 0
- *     },
- *     enhance: {
- *       includeTournaments: true,
- *       includeStatistics: true
- *     }
- *   }
- * });
+ * Behavior:
+ * - If `options.id` is provided, returns a single course (or null).
+ * - If `options.ids` is provided, returns all found courses in the provided order.
+ * - Otherwise returns a list with optional filter/sort/pagination.
+ * - Enhancement and analytics are optional and driven by `options.enhance` / `options.includeAnalytics`.
  */
 export const getCourses = query({
-  args: coursesValidators.args.getCourses,
+  args: {
+    options: v.optional(
+      v.object({
+        id: v.optional(v.id("courses")),
+        ids: v.optional(v.array(v.id("courses"))),
+        filter: v.optional(
+          v.object({
+            apiId: v.optional(v.string()),
+            name: v.optional(v.string()),
+            location: v.optional(v.string()),
+            minPar: v.optional(v.number()),
+            maxPar: v.optional(v.number()),
+            searchTerm: v.optional(v.string()),
+            createdAfter: v.optional(v.number()),
+            createdBefore: v.optional(v.number()),
+            updatedAfter: v.optional(v.number()),
+            updatedBefore: v.optional(v.number()),
+          }),
+        ),
+        sort: v.optional(
+          v.object({
+            sortBy: v.optional(
+              v.union(
+                v.literal("name"),
+                v.literal("location"),
+                v.literal("par"),
+                v.literal("createdAt"),
+                v.literal("updatedAt"),
+              ),
+            ),
+            sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+          }),
+        ),
+        pagination: v.optional(
+          v.object({
+            limit: v.optional(v.number()),
+            offset: v.optional(v.number()),
+          }),
+        ),
+        enhance: v.optional(
+          v.object({
+            includeTournaments: v.optional(v.boolean()),
+            includeStatistics: v.optional(v.boolean()),
+          }),
+        ),
+        championshipOnly: v.optional(v.boolean()),
+        internationalOnly: v.optional(v.boolean()),
+        includeAnalytics: v.optional(v.boolean()),
+      }),
+    ),
+  },
   handler: async (ctx, args) => {
     const options = args.options || {};
     if (options.id) {
@@ -144,6 +190,7 @@ export const getCourses = query({
       return await enhanceCourse(ctx, course, options.enhance || {});
     }
     if (options.ids) {
+      if (options.ids.length === 0) return [];
       const courses = await Promise.all(
         options.ids.map(async (id) => {
           const course = await ctx.db.get(id);
@@ -152,7 +199,7 @@ export const getCourses = query({
             : null;
         }),
       );
-      return courses.filter(Boolean);
+      return courses.filter((c): c is NonNullable<typeof c> => Boolean(c));
     }
     let courses = await getOptimizedCourses(ctx, options);
     courses = applyFilters(courses, options.filter || {});
@@ -218,42 +265,39 @@ export const getCourses = query({
 });
 
 /**
- * Get a course by API ID
- */
-export const getCourseByApiId = query({
-  args: coursesValidators.args.getCourseByApiId,
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("courses")
-      .withIndex("by_api_id", (q) => q.eq("apiId", args.apiId))
-      .first();
-  },
-});
-
-/**
- * Update courses with comprehensive options
+ * Updates a course by id.
  *
- * @example
- * Basic update
- * const updatedCourse = await ctx.runMutation(api.functions.courses.updateCourses, {
- *   courseId: "course123",
- *   data: { par: 71, front: 35, back: 36 }
- * });
+ * Access:
+ * - Requires admin.
  *
- * Advanced update with options
- * const result = await ctx.runMutation(api.functions.courses.updateCourses, {
- *   courseId: "course123",
- *   data: { name: "New Name" },
- *   options: {
- *     skipValidation: false,
- *     updateTimestamp: true,
- *     returnEnhanced: true,
- *     includeStatistics: true
- *   }
- * });
+ * Behavior:
+ * - Runs validation unless `options.skipValidation` is true.
+ * - Enforces `apiId` uniqueness when `data.apiId` is changing.
+ * - Updates `updatedAt` by default (disable via `options.updateTimestamp: false`).
+ * - Optionally returns an enhanced course view when `options.returnEnhanced` is true.
  */
 export const updateCourses = mutation({
-  args: coursesValidators.args.updateCourses,
+  args: {
+    courseId: v.id("courses"),
+    data: v.object({
+      apiId: v.optional(v.string()),
+      name: v.optional(v.string()),
+      location: v.optional(v.string()),
+      par: v.optional(v.number()),
+      front: v.optional(v.number()),
+      back: v.optional(v.number()),
+      timeZoneOffset: v.optional(v.number()),
+    }),
+    options: v.optional(
+      v.object({
+        skipValidation: v.optional(v.boolean()),
+        updateTimestamp: v.optional(v.boolean()),
+        returnEnhanced: v.optional(v.boolean()),
+        includeStatistics: v.optional(v.boolean()),
+        includeTournaments: v.optional(v.boolean()),
+      }),
+    ),
+  },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
 
@@ -262,25 +306,37 @@ export const updateCourses = mutation({
     if (!course) {
       throw new Error("Course not found");
     }
+    const data = {
+      ...args.data,
+      ...(typeof args.data.apiId === "string"
+        ? { apiId: args.data.apiId.trim() }
+        : {}),
+      ...(typeof args.data.name === "string"
+        ? { name: args.data.name.trim() }
+        : {}),
+      ...(typeof args.data.location === "string"
+        ? { location: args.data.location.trim() }
+        : {}),
+    };
+
     if (!options.skipValidation) {
-      const validation = coursesValidators.validateCourseData(args.data);
+      const validation = validateCourseData(data);
       if (!validation.isValid) {
         throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
       }
     }
-    if (args.data.apiId && args.data.apiId !== course.apiId) {
+    if (typeof data.apiId === "string" && data.apiId !== course.apiId) {
+      const nextApiId = data.apiId;
       const existingByApiId = await ctx.db
         .query("courses")
-        .withIndex("by_api_id", (q) => q.eq("apiId", args.data.apiId!))
+        .withIndex("by_api_id", (q) => q.eq("apiId", nextApiId))
         .first();
 
       if (existingByApiId && existingByApiId._id !== args.courseId) {
-        throw new Error(
-          `Course with API ID "${args.data.apiId}" already exists`,
-        );
+        throw new Error(`Course with API ID "${nextApiId}" already exists`);
       }
     }
-    const updateData: Partial<CourseDoc> = { ...args.data };
+    const updateData: Partial<CourseDoc> = { ...data };
 
     if (options.updateTimestamp !== false) {
       updateData.updatedAt = Date.now();
@@ -303,32 +359,29 @@ export const updateCourses = mutation({
 });
 
 /**
- * Delete courses (hard delete only)
+ * Deletes a course.
  *
- * This function always performs a hard delete (permanent removal from database).
- * The softDelete option is kept for backward compatibility but is ignored.
+ * Access:
+ * - Requires admin.
  *
- * Requires either cascadeDelete or replacementCourseId if tournaments reference this course.
- *
- * @example
- * Delete course with cascade
- * const result = await ctx.runMutation(api.functions.courses.deleteCourses, {
- *   courseId: "course123",
- *   options: {
- *     cascadeDelete: true
- *   }
- * });
- *
- * Delete with data migration to another course
- * const result = await ctx.runMutation(api.functions.courses.deleteCourses, {
- *   courseId: "course123",
- *   options: {
- *     replacementCourseId: "newCourse456"
- *   }
- * });
+ * Behavior:
+ * - This is a hard delete (permanent removal).
+ * - If tournaments reference this course, you must either:
+ *   - provide `options.replacementCourseId` (migrate references), or
+ *   - set `options.cascadeDelete` to delete tournaments that reference it.
+ * - `options.returnDeletedData` optionally returns the deleted course payload.
  */
 export const deleteCourses = mutation({
-  args: coursesValidators.args.deleteCourses,
+  args: {
+    courseId: v.id("courses"),
+    options: v.optional(
+      v.object({
+        cascadeDelete: v.optional(v.boolean()),
+        replacementCourseId: v.optional(v.id("courses")),
+        returnDeletedData: v.optional(v.boolean()),
+      }),
+    ),
+  },
   handler: async (ctx, args): Promise<DeleteResponse<CourseDoc>> => {
     await requireAdmin(ctx);
 
@@ -344,16 +397,16 @@ export const deleteCourses = mutation({
     if (options.returnDeletedData) {
       deletedCourseData = course;
     }
+    const tournaments = await ctx.db
+      .query("tournaments")
+      .withIndex("by_course", (q) => q.eq("courseId", args.courseId))
+      .collect();
+
     if (options.replacementCourseId) {
       const replacementCourse = await ctx.db.get(options.replacementCourseId);
       if (!replacementCourse) {
         throw new Error("Replacement course not found");
       }
-      const tournaments = await ctx.db
-        .query("tournaments")
-        .withIndex("by_course", (q) => q.eq("courseId", args.courseId))
-        .collect();
-
       for (const tournament of tournaments) {
         await ctx.db.patch(tournament._id, {
           courseId: options.replacementCourseId,
@@ -363,21 +416,11 @@ export const deleteCourses = mutation({
       }
     }
     if (options.cascadeDelete && !options.replacementCourseId) {
-      const tournaments = await ctx.db
-        .query("tournaments")
-        .withIndex("by_course", (q) => q.eq("courseId", args.courseId))
-        .collect();
-
       for (const tournament of tournaments) {
         await ctx.db.delete(tournament._id);
       }
     }
     if (!options.cascadeDelete && !options.replacementCourseId) {
-      const tournaments = await ctx.db
-        .query("tournaments")
-        .withIndex("by_course", (q) => q.eq("courseId", args.courseId))
-        .collect();
-
       if (tournaments.length > 0) {
         throw new Error(
           `Cannot delete course: ${tournaments.length} tournament(s) still reference this course. Use cascadeDelete or replacementCourseId.`,
@@ -395,3 +438,64 @@ export const deleteCourses = mutation({
     };
   },
 });
+
+const validateCourseData = (
+  data: Partial<
+    Pick<
+      Doc<"courses">,
+      | "apiId"
+      | "name"
+      | "location"
+      | "par"
+      | "front"
+      | "back"
+      | "timeZoneOffset"
+    >
+  >,
+): ValidationResult => {
+  const errors: string[] = [];
+
+  if (data.apiId && data.apiId.trim().length === 0) {
+    errors.push("API ID cannot be empty");
+  }
+
+  const nameErr = validators.stringLength(data.name, 2, 200, "Course name");
+  if (nameErr) errors.push(nameErr);
+
+  const locationErr = validators.stringLength(
+    data.location,
+    2,
+    200,
+    "Location",
+  );
+  if (locationErr) errors.push(locationErr);
+
+  const parErr = validators.numberRange(data.par, 54, 90, "Par");
+  if (parErr) errors.push(parErr);
+
+  const frontErr = validators.numberRange(data.front, 27, 45, "Front 9 par");
+  if (frontErr) errors.push(frontErr);
+
+  const backErr = validators.numberRange(data.back, 27, 45, "Back 9 par");
+  if (backErr) errors.push(backErr);
+
+  if (
+    data.front !== undefined &&
+    data.back !== undefined &&
+    data.par !== undefined
+  ) {
+    if (data.front + data.back !== data.par) {
+      errors.push("Front 9 par + Back 9 par must equal total par");
+    }
+  }
+
+  const timeZoneErr = validators.numberRange(
+    data.timeZoneOffset,
+    -12,
+    14,
+    "Time zone offset",
+  );
+  if (timeZoneErr) errors.push(timeZoneErr);
+
+  return { isValid: errors.length === 0, errors };
+};

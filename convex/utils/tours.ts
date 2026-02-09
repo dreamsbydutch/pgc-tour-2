@@ -1,37 +1,9 @@
 import { sumArray } from "./sumArray";
 import type {
-  AnalyticsResult,
-  DatabaseContext,
-  EnhanceOptions,
-  EnhancedTourDoc,
-  OptimizedQueryOptions,
-  ParticipantWithMember,
-  TourCardDoc,
   TourDoc,
   TourFilterOptions,
-  TourSortFunction,
   TourSortOptions,
 } from "../types/types";
-import { formatCents } from "./misc";
-
-/**
- * Get optimized tours based on query options using indexes
- */
-export async function getOptimizedTours(
-  ctx: DatabaseContext,
-  options: OptimizedQueryOptions,
-): Promise<TourDoc[]> {
-  const filter = options.filter || {};
-
-  if (filter.seasonId) {
-    return await ctx.db
-      .query("tours")
-      .withIndex("by_season", (q) => q.eq("seasonId", filter.seasonId!))
-      .collect();
-  }
-
-  return await ctx.db.query("tours").collect();
-}
 
 /**
  * Apply comprehensive filters to tours
@@ -122,7 +94,7 @@ export function applyFilters(
 /**
  * Get sorting function based on sort options
  */
-export function getSortFunction(sort: TourSortOptions): TourSortFunction {
+export function getSortFunction(sort: TourSortOptions) {
   if (!sort.sortBy) return undefined;
 
   const sortOrder = sort.sortOrder === "asc" ? 1 : -1;
@@ -151,116 +123,4 @@ export function getSortFunction(sort: TourSortOptions): TourSortFunction {
     default:
       return undefined;
   }
-}
-
-/**
- * Enhance a single tour with related data
- */
-export async function enhanceTour(
-  ctx: DatabaseContext,
-  tour: TourDoc,
-  enhance: EnhanceOptions,
-): Promise<EnhancedTourDoc> {
-  const enhanced: EnhancedTourDoc = {
-    ...tour,
-    buyInFormatted: formatCents(tour.buyIn),
-    totalPlayoffSpots: sumArray(tour.playoffSpots),
-  };
-
-  if (enhance.includeSeason) {
-    const season = await ctx.db.get(tour.seasonId);
-    enhanced.season = season || undefined;
-  }
-
-  if (enhance.includeTournaments) {
-    const tournaments = await ctx.db.query("tournaments").collect();
-    enhanced.tournaments = tournaments;
-    enhanced.tournamentCount = tournaments.length;
-  }
-
-  if (enhance.includeParticipants || enhance.includeStatistics) {
-    const tourCards = await ctx.db
-      .query("tourCards")
-      .withIndex("by_tour", (q) => q.eq("tourId", tour._id))
-      .collect();
-
-    if (enhance.includeParticipants) {
-      enhanced.participants = await Promise.all(
-        tourCards.map(
-          async (tc: TourCardDoc): Promise<ParticipantWithMember> => {
-            const member = await ctx.db.get(tc.memberId);
-            return { ...tc, member: member ?? null };
-          },
-        ),
-      );
-    }
-
-    if (enhance.includeStatistics) {
-      enhanced.statistics = {
-        totalParticipants: tourCards.length,
-        activeParticipants: tourCards.length,
-        totalEarnings: tourCards.reduce(
-          (sum: number, tc: TourCardDoc) => sum + tc.earnings,
-          0,
-        ),
-        totalPoints: tourCards.reduce(
-          (sum: number, tc: TourCardDoc) => sum + tc.points,
-          0,
-        ),
-        averageEarnings:
-          tourCards.length > 0
-            ? tourCards.reduce(
-                (sum: number, tc: TourCardDoc) => sum + tc.earnings,
-                0,
-              ) / tourCards.length
-            : 0,
-        averagePoints:
-          tourCards.length > 0
-            ? tourCards.reduce(
-                (sum: number, tc: TourCardDoc) => sum + tc.points,
-                0,
-              ) / tourCards.length
-            : 0,
-      };
-    }
-
-    if (enhance.includeTourCards) {
-      enhanced.tourCards = tourCards;
-    }
-  }
-
-  return enhanced;
-}
-
-/**
- * Generate analytics for tours
- */
-export async function generateAnalytics(
-  _ctx: DatabaseContext,
-  tours: TourDoc[],
-): Promise<AnalyticsResult> {
-  return {
-    total: tours.length,
-    active: tours.length,
-    inactive: 0,
-    statistics: {
-      averageBuyIn:
-        tours.length > 0
-          ? tours.reduce((sum, tour) => sum + tour.buyIn, 0) / tours.length
-          : 0,
-      totalBuyInValue: tours.reduce((sum, tour) => sum + tour.buyIn, 0),
-      averagePlayoffSpots:
-        tours.length > 0
-          ? tours.reduce((sum, tour) => sum + sumArray(tour.playoffSpots), 0) /
-            tours.length
-          : 0,
-    },
-    breakdown: tours.reduce(
-      (acc, tour) => {
-        acc[tour.shortForm] = (acc[tour.shortForm] || 0) + 1;
-        return acc;
-      },
-      {} as Record<string, number>,
-    ),
-  };
 }

@@ -1,21 +1,27 @@
 /**
- * Team Management - Simplified CRUD Functions
+ * Teams CRUD
  *
- * Clean CRUD operations with comprehensive options objects.
- * Each function (create, get, update, delete) handles all use cases
- * through flexible configuration rather than multiple specialized functions.
+ * Public functions in this module follow a consistent CRUD shape:
+ * - `createTeams`: inserts one team document.
+ * - `getTeams`: returns a list of teams (optionally enhanced) based on filters/sort/pagination.
+ * - `updateTeams`: patches a team document.
+ * - `deleteTeams`: hard-deletes a team document.
+ *
+ * Cron/job wiring relies on the `*_Internal` exports and `runTeamsUpdateForTournament`.
  */
 
-import { query, mutation } from "../_generated/server";
-import { requireAdmin } from "../auth";
-import { processData } from "../utils/processData";
-import { formatCents } from "../utils/formatCents";
+import {
+  query,
+  mutation,
+  internalMutation,
+  internalQuery,
+  internalAction,
+} from "../_generated/server";
+import { requireAdmin } from "../utils/auth";
+import { processData } from "../utils/batchProcess";
 import {
   applyFilters,
-  calculatePosition,
-  calculateTeamScore,
   enhanceTeam,
-  generateAnalytics,
   getOptimizedTeams,
   getSortFunction,
   hashStringToUint32,
@@ -26,31 +32,36 @@ import {
 import { requireTourCardOwner } from "../utils/tourCards";
 import { teamsValidators } from "../validators/teams";
 import type { Id } from "../_generated/dataModel";
-import type { DeleteResponse, TeamDoc, GolferDoc } from "../types/types";
+import type {
+  DeleteResponse,
+  TeamDoc,
+  GolferDoc,
+  EnhancedTournamentDoc,
+  EnhancedTournamentTeamDoc,
+} from "../types/types";
+import { v } from "convex/values";
+import {
+  avgArray,
+  awardTeamEarnings,
+  awardTeamPlayoffPoints,
+  categorizeTeamGolfersForRound,
+  earliestTimeStr,
+  insertReplacementGolfers,
+  updateScoreForRound,
+} from "../utils/misc";
+import { api, internal } from "../_generated/api";
 
 /**
- * Create teams with comprehensive options
+ * Create a team.
  *
- * @example
- * Basic team creation
- * const team = await ctx.runMutation(api.functions.teams.createTeams, {
- *   data: {
- *     tournamentId: "tournament123",
- *     tourCardId: "tourcard456",
- *     golferIds: [1234, 5678, 9012, 3456, 7890, 1357],
- *     teamName: "My Dream Team"
- *   }
- * });
+ * Behavior:
+ * - Validates input by default (can be skipped via `options.skipValidation`).
+ * - Enforces that the calling user owns the provided `tourCardId`.
+ * - Prevents creating a duplicate team for the same `{ tournamentId, tourCardId }`.
  *
- * With advanced options
- * const team = await ctx.runMutation(api.functions.teams.createTeams, {
- *   data: { ... },
- *   options: {
- *     skipValidation: false,
- *     setActive: true,
- *     returnEnhanced: true
- *   }
- * });
+ * Return shape:
+ * - Returns the inserted `teams` document.
+ * - When `options.returnEnhanced` is true, returns an enhanced team (see `enhanceTeam`).
  */
 export const createTeams = mutation({
   args: teamsValidators.args.createTeams,
@@ -106,6 +117,7 @@ export const createTeams = mutation({
         includeTournament: options.includeTournament,
         includeStatistics: options.includeStatistics,
         includeMember: options.includeMember,
+        includeGolfers: options.includeGolfers,
       });
     }
 
@@ -114,67 +126,20 @@ export const createTeams = mutation({
 });
 
 /**
- * Get teams with comprehensive query options
+ * List teams.
  *
- * @example
- * Get single team by ID
- * const team = await ctx.runQuery(api.functions.teams.getTeams, {
- *   options: { id: "team123" }
- * });
+ * Supports index-friendly filtering (tournamentId / tourCardId), in-memory filtering
+ * (min/max points/earnings/score, flags, etc.), sorting, and offset pagination.
  *
- * Get multiple teams by IDs
- * const teams = await ctx.runQuery(api.functions.teams.getTeams, {
- *   options: { ids: ["team1", "team2", "team3"] }
- * });
- *
- * Get teams with filtering, sorting, and pagination
- * const result = await ctx.runQuery(api.functions.teams.getTeams, {
- *   options: {
- *     filter: {
- *       tournamentId: "tournament123",
- *       minPoints: 100,
- *       hasTopTen: true
- *     },
- *     sort: {
- *       sortBy: "points",
- *       sortOrder: "desc"
- *     },
- *     pagination: {
- *       limit: 20,
- *       offset: 0
- *     },
- *     enhance: {
- *       includeTournament: true,
- *       includeMember: true,
- *       includeGolfers: true,
- *       includeStatistics: true
- *     }
- *   }
- * });
+ * Return shape:
+ * - Always returns an array.
+ * - When any `options.enhance.*` flag is true, returns enhanced team docs.
+ * - Otherwise returns raw `teams` documents.
  */
 export const getTeams = query({
   args: teamsValidators.args.getTeams,
   handler: async (ctx, args) => {
     const options = args.options || {};
-
-    if (options.id) {
-      const team = await ctx.db.get(options.id);
-      if (!team) return null;
-
-      return await enhanceTeam(ctx, team, options.enhance || {});
-    }
-
-    if (options.ids) {
-      const teams = await Promise.all(
-        options.ids.map(async (id) => {
-          const team = await ctx.db.get(id);
-          return team
-            ? await enhanceTeam(ctx, team, options.enhance || {})
-            : null;
-        }),
-      );
-      return teams.filter(Boolean);
-    }
 
     let teams = await getOptimizedTeams(ctx, options);
 
@@ -186,55 +151,36 @@ export const getTeams = query({
       skip: options.pagination?.offset,
     });
 
-    if (options.enhance && Object.values(options.enhance).some(Boolean)) {
-      const enhancedTeams = await Promise.all(
-        processedTeams.map((team) =>
-          enhanceTeam(ctx, team, options.enhance || {}),
-        ),
-      );
+    const enhance = options.enhance || {};
+    const shouldEnhance = Object.values(enhance).some(Boolean);
+    if (!shouldEnhance) return processedTeams;
 
-      if (options.includeAnalytics) {
-        return {
-          teams: enhancedTeams,
-          analytics: await generateAnalytics(ctx, teams),
-          meta: {
-            total: teams.length,
-            filtered: processedTeams.length,
-            offset: options.pagination?.offset || 0,
-            limit: options.pagination?.limit,
-          },
-        };
-      }
-
-      return enhancedTeams;
-    }
-
-    const basicTeams = processedTeams.map((team) => ({
-      ...team,
-      totalScore: calculateTeamScore([
-        team.roundOne,
-        team.roundTwo,
-        team.roundThree,
-        team.roundFour,
-      ]),
-      finalPosition: calculatePosition(team.score || 0, team.position),
-      earningsFormatted: formatCents(team.earnings || 0),
-    }));
-
-    if (options.includeAnalytics) {
-      return {
-        teams: basicTeams,
-        analytics: await generateAnalytics(ctx, teams),
-        meta: {
-          total: teams.length,
-          filtered: basicTeams.length,
-          offset: options.pagination?.offset || 0,
-          limit: options.pagination?.limit,
-        },
-      };
-    }
-
-    return basicTeams;
+    return await Promise.all(
+      processedTeams.map((team) => enhanceTeam(ctx, team, enhance)),
+    );
+  },
+});
+export const getTeam_Internal = internalQuery({
+  args: { teamId: v.id("teams") },
+  handler: async (ctx, args) => {
+    const team = await ctx.db.get(args.teamId);
+    if (!team) return null;
+    return team;
+  },
+});
+export const getTeamByTournamentAndTourCard_Internal = internalQuery({
+  args: { tournamentId: v.id("tournaments"), tourCardId: v.id("tourCards") },
+  handler: async (ctx, args) => {
+    const team = await ctx.db
+      .query("teams")
+      .withIndex("by_tournament_tour_card", (q) =>
+        q
+          .eq("tournamentId", args.tournamentId)
+          .eq("tourCardId", args.tourCardId),
+      )
+      .first();
+    if (!team) return null;
+    return team;
   },
 });
 
@@ -600,26 +546,16 @@ export const getChampionshipWinsForMember = query({
 });
 
 /**
- * Update teams with comprehensive options
+ * Update a team.
  *
- * @example
- * Basic update
- * const updatedTeam = await ctx.runMutation(api.functions.teams.updateTeams, {
- *   teamId: "team123",
- *   data: { points: 150, earnings: 25000, position: "T5" }
- * });
+ * Behavior:
+ * - Enforces that the calling user owns the team’s tour card.
+ * - Validates input by default (can be skipped via `options.skipValidation`).
+ * - Updates `updatedAt` by default (can be disabled via `options.updateTimestamp`).
  *
- * Advanced update with options
- * const result = await ctx.runMutation(api.functions.teams.updateTeams, {
- *   teamId: "team123",
- *   data: { points: 175 },
- *   options: {
- *     skipValidation: false,
- *     updateTimestamp: true,
- *     returnEnhanced: true,
- *     includeStatistics: true
- *   }
- * });
+ * Return shape:
+ * - Returns the patched `teams` document.
+ * - When `options.returnEnhanced` is true, returns an enhanced team.
  */
 export const updateTeams = mutation({
   args: teamsValidators.args.updateTeams,
@@ -665,16 +601,88 @@ export const updateTeams = mutation({
 });
 
 /**
- * Delete teams (hard delete only)
+ * Internal helper used by cron-driven tournament scoring updates.
  *
- * This function always performs a hard delete (permanent removal from database).
- * The softDelete option is kept for backward compatibility but is ignored.
+ * Applies a batch of partial patches for teams that belong to `tournamentId`.
+ * Returns a simple `{ updated }` count.
+ */
+export const updateTeams_Internal = internalMutation({
+  args: {
+    tournamentId: v.id("tournaments"),
+    updates: v.array(
+      v.object({
+        teamId: v.id("teams"),
+        round: v.optional(v.number()),
+        roundOne: v.optional(v.number()),
+        roundTwo: v.optional(v.number()),
+        roundThree: v.optional(v.number()),
+        roundFour: v.optional(v.number()),
+        today: v.optional(v.number()),
+        thru: v.optional(v.number()),
+        score: v.optional(v.number()),
+        position: v.optional(v.string()),
+        pastPosition: v.optional(v.string()),
+        points: v.optional(v.number()),
+        earnings: v.optional(v.number()),
+        makeCut: v.optional(v.number()),
+        topTen: v.optional(v.number()),
+        win: v.optional(v.number()),
+        roundOneTeeTime: v.optional(v.string()),
+        roundTwoTeeTime: v.optional(v.string()),
+        roundThreeTeeTime: v.optional(v.string()),
+        roundFourTeeTime: v.optional(v.string()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    let updated = 0;
+
+    for (const u of args.updates) {
+      const existing = await ctx.db.get(u.teamId);
+      if (!existing) continue;
+
+      if (existing.tournamentId !== args.tournamentId) continue;
+
+      await ctx.db.patch(u.teamId, {
+        round: u.round,
+        roundOne: u.roundOne,
+        roundTwo: u.roundTwo,
+        roundThree: u.roundThree,
+        roundFour: u.roundFour,
+        today: u.today,
+        thru: u.thru,
+        score: u.score,
+        position: u.position,
+        pastPosition: u.pastPosition,
+        points: u.points,
+        earnings: u.earnings,
+        makeCut: u.makeCut,
+        topTen: u.topTen,
+        win: u.win,
+        roundOneTeeTime: u.roundOneTeeTime,
+        roundTwoTeeTime: u.roundTwoTeeTime,
+        roundThreeTeeTime: u.roundThreeTeeTime,
+        roundFourTeeTime: u.roundFourTeeTime,
+        updatedAt: Date.now(),
+      });
+
+      updated += 1;
+    }
+
+    return { updated };
+  },
+});
+
+/**
+ * Delete a team (hard delete).
  *
- * @example
- * Delete team
- * const result = await ctx.runMutation(api.functions.teams.deleteTeams, {
- *   teamId: "team123"
- * });
+ * Behavior:
+ * - Enforces that the calling user owns the team’s tour card.
+ * - Always performs a hard delete; `options.softDelete` is ignored (kept for compatibility).
+ *
+ * Return shape:
+ * - Returns a standard `DeleteResponse<TeamDoc>`.
+ * - When `options.returnDeletedData` is true, includes the pre-delete team document.
  */
 export const deleteTeams = mutation({
   args: teamsValidators.args.deleteTeams,
@@ -704,3 +712,423 @@ export const deleteTeams = mutation({
     };
   },
 });
+
+/**
+ * Recomputes all team scores/positions for a tournament based on its current round state.
+ *
+ * Inputs:
+ * - Optional `tournamentId` (defaults to the active tournament).
+ *
+ * What it updates:
+ * - Round component scores (`roundOne`..`roundFour`) only once the round is completed.
+ * - Live round metrics (`today`, `thru`) while a round is active.
+ * - Total team score (including playoff carry-in / starting strokes logic).
+ * - Team position strings (`1`, `T1`, `T2`, ...), points, earnings, and win/top-ten flags.
+ *
+ * Tie handling:
+ * - If the tournament is finished and there is a T1 tie, attempts to break the tie by highest
+ *   total team earnings from DataGolf event stats; if the fetch fails, the tie is left as-is.
+ */
+export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
+  internalAction({
+    args: {
+      tournamentId: v.optional(v.id("tournaments")),
+    },
+    handler: async (ctx, args) => {
+      const tournament = args.tournamentId
+        ? ((await ctx.runQuery(
+            internal.functions.tournaments.getTournaments_Internal,
+            {
+              tournamentId: args.tournamentId,
+              includeTeams: true,
+              includeTourCards: true,
+              includePlayoffs: true,
+              includeGolfers: true,
+              includeCourse: true,
+            },
+          )) as EnhancedTournamentDoc | undefined)
+        : ((await ctx.runQuery(
+            internal.functions.tournaments.getTournaments_Internal,
+            {
+              tournamentType: "active",
+              includeTeams: true,
+              includeTourCards: true,
+              includePlayoffs: true,
+              includeGolfers: true,
+              includeCourse: true,
+            },
+          )) as EnhancedTournamentDoc | undefined);
+
+      if (!tournament) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: "no_active_tournament",
+        } as const;
+      }
+      if (!tournament.teams || tournament.teams.length === 0) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: "no_teams",
+          tournamentId: tournament._id,
+        } as const;
+      }
+
+      const updates: (EnhancedTournamentTeamDoc & { teamId: Id<"teams"> })[] = [];
+      for (const team of tournament.teams) {
+        const updatedTeam: EnhancedTournamentTeamDoc & { teamId: Id<"teams"> } =
+          {
+            teamId: team._id,
+            ...team,
+          };
+        let teamGolfers =
+          tournament.golfers?.filter((g) =>
+            team.golferIds.includes(g.apiId ?? -1),
+          ) ?? [];
+
+        while (teamGolfers.length < 10) {
+          teamGolfers = insertReplacementGolfers(
+            teamGolfers,
+            tournament.golfers ?? [],
+          );
+        }
+
+        const r0Golfers = categorizeTeamGolfersForRound(
+          teamGolfers,
+          0,
+          (tournament.eventIndex ?? 0) as 0 | 1 | 2 | 3,
+          false,
+          tournament.currentRound ?? 0,
+          tournament.course?.par ?? 72,
+        );
+        const r1Golfers = categorizeTeamGolfersForRound(
+          teamGolfers,
+          1,
+          (tournament.eventIndex ?? 0) as 0 | 1 | 2 | 3,
+          tournament.livePlay ?? false,
+          tournament.currentRound ?? 0,
+          tournament.course?.par ?? 72,
+        );
+        const r2Golfers = categorizeTeamGolfersForRound(
+          teamGolfers,
+          2,
+          (tournament.eventIndex ?? 0) as 0 | 1 | 2 | 3,
+          tournament.livePlay ?? false,
+          tournament.currentRound ?? 0,
+          tournament.course?.par ?? 72,
+        );
+        const r3Golfers = categorizeTeamGolfersForRound(
+          teamGolfers,
+          3,
+          (tournament.eventIndex ?? 0) as 0 | 1 | 2 | 3,
+          tournament.livePlay ?? false,
+          tournament.currentRound ?? 0,
+          tournament.course?.par ?? 72,
+        );
+        const r4Golfers = categorizeTeamGolfersForRound(
+          teamGolfers,
+          4,
+          (tournament.eventIndex ?? 0) as 0 | 1 | 2 | 3,
+          tournament.livePlay ?? false,
+          tournament.currentRound ?? 0,
+          tournament.course?.par ?? 72,
+        );
+        const r1Times = r1Golfers.active
+          .map((g) => g.roundOneTeeTime)
+          .filter((t) => (t?.trim().length ?? 0) > 0);
+        updatedTeam.roundOneTeeTime =
+          r1Times.length > 0 ? earliestTimeStr(r1Times) : undefined;
+        const r2Times = r2Golfers.active
+          .map((g) => g.roundTwoTeeTime)
+          .filter((t) => (t?.trim().length ?? 0) > 0);
+        updatedTeam.roundTwoTeeTime =
+          r2Times.length > 0 ? earliestTimeStr(r2Times) : undefined;
+        const r3Times = r3Golfers.active
+          .map((g) => g.roundThreeTeeTime)
+          .filter((t) => (t?.trim().length ?? 0) > 0);
+        updatedTeam.roundThreeTeeTime =
+          r3Times.length > 0 ? earliestTimeStr(r3Times) : undefined;
+        const r4Times = r4Golfers.active
+          .map((g) => g.roundFourTeeTime)
+          .filter((t) => (t?.trim().length ?? 0) > 0);
+        updatedTeam.roundFourTeeTime =
+          r4Times.length > 0 ? earliestTimeStr(r4Times) : undefined;
+
+        const activeGolferSet = [
+          r0Golfers,
+          r1Golfers,
+          r2Golfers,
+          r3Golfers,
+          r4Golfers,
+        ].filter((s) => s.roundState === "active");
+        const completedGolferSet = [
+          r0Golfers,
+          r1Golfers,
+          r2Golfers,
+          r3Golfers,
+          r4Golfers,
+        ].filter((s) => s.roundState === "completed");
+
+        const activeGolfers =
+          activeGolferSet.length > 0
+            ? activeGolferSet[0]
+            : completedGolferSet[0];
+
+        updatedTeam.round = activeGolfers.teamRound;
+        if (activeGolfers.roundState === "active") {
+          updatedTeam.today =
+            avgArray(activeGolfers.active.map((g) => g.today)) ?? 0;
+          updatedTeam.thru =
+            avgArray(activeGolfers.active.map((g) => g.thru)) ?? 0;
+        } else if (
+          activeGolfers.roundState === "cut" ||
+          activeGolfers.roundState === "upcoming"
+        ) {
+          updatedTeam.today = undefined;
+          updatedTeam.thru = undefined;
+        } else {
+          updatedTeam.today =
+            activeGolfers.teamRound === 0
+              ? undefined
+              : activeGolfers.teamRound === 1
+                ? (avgArray(r1Golfers.active.map((g) => g.roundOne)) ?? 0) -
+                  (tournament.course?.par ?? 72)
+                : activeGolfers.teamRound === 2
+                  ? (avgArray(r2Golfers.active.map((g) => g.roundTwo)) ?? 0) -
+                    (tournament.course?.par ?? 72)
+                  : activeGolfers.teamRound === 3
+                    ? (avgArray(r3Golfers.active.map((g) => g.roundThree)) ??
+                        0) - (tournament.course?.par ?? 72)
+                    : (avgArray(r4Golfers.active.map((g) => g.roundFour)) ??
+                        0) - (tournament.course?.par ?? 72);
+          updatedTeam.thru = 18;
+        }
+
+        updatedTeam.roundOne =
+          activeGolfers.teamRound > 1 ||
+          (activeGolfers.roundState === "completed" &&
+            activeGolfers.teamRound === 1)
+            ? updateScoreForRound(
+                {
+                  currentRound: 1,
+                  livePlay: activeGolfers.roundState === "active",
+                  eventIndex: tournament.eventIndex,
+                },
+                r1Golfers.active,
+                1,
+              )
+            : undefined;
+        updatedTeam.roundTwo =
+          activeGolfers.teamRound > 2 ||
+          (activeGolfers.roundState === "completed" &&
+            activeGolfers.teamRound === 2)
+            ? updateScoreForRound(
+                {
+                  currentRound: 2,
+                  livePlay: activeGolfers.roundState === "active",
+                  eventIndex: tournament.eventIndex,
+                },
+                r2Golfers.active,
+                2,
+              )
+            : undefined;
+        updatedTeam.roundThree =
+          activeGolfers.roundState === "cut"
+            ? undefined
+            : activeGolfers.teamRound > 3 ||
+                (activeGolfers.roundState === "completed" &&
+                  activeGolfers.teamRound === 3)
+              ? updateScoreForRound(
+                  {
+                    currentRound: 3,
+                    livePlay: activeGolfers.roundState === "active",
+                    eventIndex: tournament.eventIndex,
+                  },
+                  r3Golfers.active,
+                  3,
+                )
+              : undefined;
+        updatedTeam.roundFour =
+          activeGolfers.roundState === "cut"
+            ? undefined
+            : activeGolfers.teamRound > 4 ||
+                (activeGolfers.roundState === "completed" &&
+                  activeGolfers.teamRound === 4)
+              ? updateScoreForRound(
+                  {
+                    currentRound: 4,
+                    livePlay: activeGolfers.roundState === "active",
+                    eventIndex: tournament.eventIndex,
+                  },
+                  r4Golfers.active,
+                  4,
+                )
+              : undefined;
+
+        let bonusStrokes = 0;
+        if (tournament.isPlayoff && (updatedTeam.playoff ?? 0) > 0) {
+          if (tournament.eventIndex === 1) {
+            const playoffTeams =
+              tournament.teams
+                ?.filter((t) => t.playoff === updatedTeam.playoff)
+                .sort((a, b) => (b.totalPoints ?? 0) - (a.totalPoints ?? 0)) ||
+              [];
+            const teamPoints = updatedTeam.totalPoints ?? 0;
+            const lastPoints =
+              playoffTeams[Math.min(34, playoffTeams.length - 1)]
+                ?.totalPoints ?? 0;
+            const firstPoints = playoffTeams[0]?.totalPoints ?? 0;
+            bonusStrokes =
+              firstPoints !== lastPoints
+                ? ((teamPoints - lastPoints) / (firstPoints - lastPoints)) * -10
+                : 0;
+          } else if (tournament.eventIndex && tournament.eventIndex > 1) {
+            const priorPlayoffTeam = await ctx.runQuery(
+              internal.functions.teams.getTeamByTournamentAndTourCard_Internal,
+              {
+                tournamentId: tournament.playoffEvents?.[
+                  tournament.eventIndex - 2
+                ] as Id<"tournaments">,
+                tourCardId: team.tourCardId,
+              },
+            );
+            bonusStrokes = priorPlayoffTeam?.score ?? 0;
+          }
+        }
+        const scoreParts = [
+          updatedTeam.roundOne,
+          updatedTeam.roundTwo,
+          updatedTeam.roundThree,
+          updatedTeam.roundFour,
+          updatedTeam.today,
+          bonusStrokes,
+        ].map((score) => score ?? 0);
+        updatedTeam.score = scoreParts.reduce((sum, score) => sum + score, 0);
+
+        updates.push(updatedTeam);
+      }
+
+      for (const team of updates) {
+        const sameScoreCount = tournament.isPlayoff
+          ? updates.filter(
+              (t) =>
+                (t.score ?? 500) === (team.score ?? 500) &&
+                t.playoff === team.playoff,
+            ).length
+          : updates.filter(
+              (t) =>
+                (t.score ?? 500) === (team.score ?? 500) &&
+                t.tourId === team.tourId,
+            ).length;
+        const betterScoreCount = tournament.isPlayoff
+          ? updates.filter(
+              (t) =>
+                (t.score ?? 500) < (team.score ?? 500) &&
+                t.playoff === team.playoff,
+            ).length
+          : updates.filter(
+              (t) =>
+                (t.score ?? 500) < (team.score ?? 500) &&
+                t.tourId === team.tourId,
+            ).length;
+
+        team.position = `${sameScoreCount > 1 ? "T" : ""}${betterScoreCount + 1}`;
+        team.points = awardTeamPlayoffPoints(tournament, team);
+        team.earnings = awardTeamEarnings(tournament, team);
+        team.win = tournament.isPlayoff
+          ? updates.filter(
+              (t) =>
+                (t.score ?? 500) < (team.score ?? 500) &&
+                t.playoff === team.playoff,
+            ).length === 0
+            ? 1
+            : 0
+          : updates.filter(
+                (t) =>
+                  (t.score ?? 500) < (team.score ?? 500) &&
+                  t.tourId === team.tourId,
+              ).length === 0
+            ? 1
+            : 0;
+        team.topTen = tournament.isPlayoff
+          ? updates.filter(
+              (t) =>
+                (t.score ?? 500) < (team.score ?? 500) &&
+                t.playoff === team.playoff,
+            ).length < 10
+            ? 1
+            : 0
+          : updates.filter(
+                (t) =>
+                  (t.score ?? 500) < (team.score ?? 500) &&
+                  t.tourId === team.tourId,
+              ).length < 10
+            ? 1
+            : 0;
+      }
+
+      if (
+        updates.filter((u) => u.position === "T1").length > 1 &&
+        tournament.currentRound &&
+        tournament.currentRound >= 4 &&
+        !tournament.livePlay
+      ) {
+        const tiedTeams = updates.filter((u) => u.position === "T1");
+        const eventId = Number.parseInt(
+          String(tournament.apiId ?? "").trim(),
+          10,
+        );
+        if (Number.isFinite(eventId)) {
+          let dataGolfEventData: unknown;
+          try {
+            dataGolfEventData = await ctx.runAction(
+              api.functions.datagolf.fetchHistoricalEventDataEvents,
+              {
+                options: {
+                  tour: "pga",
+                  eventId,
+                  year: new Date(tournament.startDate).getFullYear(),
+                },
+              },
+            );
+          } catch {
+            dataGolfEventData = null;
+          }
+
+          const tiedEarnings = tiedTeams.map((team) => {
+            return {
+              id: team._id,
+              earnings: team.golferIds.reduce((sum, golferId) => {
+                const golfer = (
+                  dataGolfEventData as { event_stats?: unknown[] } | null
+                )?.event_stats?.find(
+                  (g) => (g as { dg_id?: unknown }).dg_id === golferId,
+                ) as { earnings?: number } | undefined;
+                return sum + (golfer?.earnings ?? 0);
+              }, 0),
+            };
+          });
+
+          for (const outputTeam of updates) {
+            if (outputTeam.position === "T1") {
+              const tiedTeamEarnings = tiedEarnings.find(
+                (t) => t.id === outputTeam._id,
+              );
+              outputTeam.position =
+                tiedEarnings.filter(
+                  (t) => (t.earnings ?? 0) > (tiedTeamEarnings?.earnings ?? 0),
+                ).length === 0
+                  ? "1"
+                  : "T2";
+            }
+          }
+        }
+      }
+
+      await ctx.runMutation(internal.functions.teams.updateTeams_Internal, {
+        tournamentId: tournament._id,
+        updates,
+      });
+    },
+  });
