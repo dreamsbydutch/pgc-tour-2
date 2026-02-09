@@ -26,10 +26,11 @@ function TournamentRoute() {
   const { tournamentId, tourId, variant } = Route.useSearch();
   const navigate = Route.useNavigate();
   const { member } = useRoleAccess();
+  const resolvedTournamentId = tournamentId || undefined;
   const data = useQuery(
     api.functions.tournaments.getTournamentLeaderboardView,
     {
-      tournamentId: tournamentId as Id<"tournaments">,
+      tournamentId: resolvedTournamentId as Id<"tournaments"> | undefined,
       memberId: member?._id,
     },
   );
@@ -51,10 +52,20 @@ function TournamentRoute() {
         member={member === null ? undefined : member}
         tourCard={data.userTourCard}
         existingTeam={existingTeam}
+        allTournaments={data.allTournaments}
         teamGolfers={data.golfers.filter((g) =>
           existingTeam?.golferIds.includes(g.apiId ?? 0),
         )}
         playoffEventIndex={data.tournament.eventIndex}
+        onTournamentChange={(nextTournamentId) => {
+          navigate({
+            search: (prev) => ({
+              ...prev,
+              tournamentId: nextTournamentId,
+              tourId: "",
+            }),
+          });
+        }}
       />
     );
   }

@@ -56,7 +56,7 @@ export function TierDistributionsTable(props: TierDistributionsTableProps) {
         <div className="mt-4 text-center font-varela font-bold">
           Points Distributions
         </div>
-        <Table className="mx-auto w-3/4 text-center font-varela">
+        <Table className="mx-auto w-10/12 max-w-lg text-center font-varela">
           <TableHeader>
             <TableRow>
               <TableHead className="h-8 px-2 py-1 text-center text-xs font-bold">
@@ -111,7 +111,7 @@ export function TierDistributionsTable(props: TierDistributionsTableProps) {
       <div className="mt-4 text-center font-varela font-bold">
         Payouts Distributions
       </div>
-      <Table className="mx-auto w-3/4 text-center font-varela">
+      <Table className="mx-auto w-10/12 max-w-xl text-center font-varela">
         <TableHeader>
           <TableRow>
             <TableHead className="h-8 px-2 py-1 text-center text-xs font-bold">
@@ -152,7 +152,7 @@ export function TierDistributionsTable(props: TierDistributionsTableProps) {
                   >
                     {!tier.payouts[i] || tier.payouts[i] === 0
                       ? "-"
-                      : formatMoney(tier.payouts[i] ?? 0,true)}
+                      : formatMoney(tier.payouts[i] ?? 0, true)}
                   </TableCell>
                 ))}
               </TableRow>

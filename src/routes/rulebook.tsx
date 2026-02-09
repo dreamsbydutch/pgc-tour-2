@@ -137,6 +137,7 @@ function useRulebookPage():
           options: {
             filter: { seasonId: season._id },
             sort: { sortBy: "startDate", sortOrder: "asc" },
+            enhance: { includeCourse: true, includeTier: true },
           },
         }
       : "skip",

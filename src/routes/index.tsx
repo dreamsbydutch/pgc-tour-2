@@ -42,7 +42,7 @@ function App() {
           {model.roleBadge}
         </div>
 
-        <TourCardForm {...model} />
+        {model.member && <TourCardForm {...model} member={model.member} />}
         <TournamentCountdown {...model.nextTournament} />
         {model.accountAlert}
         <LeagueSchedule tournaments={model.seasonTournaments} />
@@ -74,7 +74,7 @@ function useHomePage():
       firstTournament: TournamentDoc;
       nextTournament: TournamentDoc;
       seasonTournaments: EnhancedTournamentDoc[];
-      member: MemberDoc;
+      member: MemberDoc | null;
       tours: TourDoc[];
       seasonTourCards: TourCardDoc[];
       roleBadge: React.ReactNode;
@@ -101,6 +101,7 @@ function useHomePage():
           options: {
             filter: { seasonId: currentSeason._id },
             sort: { sortBy: "startDate", sortOrder: "asc" },
+            enhance: { includeCourse: true, includeTier: true },
           },
         }
       : "skip",
@@ -159,7 +160,7 @@ function useHomePage():
     ) : typeof member?.account === "number" && member?.account < 0 ? (
       <div className="block rounded-lg border bg-red-100 p-4 text-sm">
         <div className="font-medium text-amber-900">
-          You owe {formatMoney(member?.account, true)} for this season.
+          You owe {formatMoney(member.account, true)} for this season.
         </div>
         <div className="mt-1 text-amber-900/80">
           Send e-transfer to puregolfcollectivetour@gmail.com to unlock your
@@ -187,7 +188,7 @@ function useHomePage():
     firstTournament: firstTournament as TournamentDoc,
     nextTournament: nextTournament as TournamentDoc,
     seasonTournaments: seasonTournaments as EnhancedTournamentDoc[],
-    member: member as MemberDoc,
+    member: member as MemberDoc | null,
     tours: tours as unknown as TourDoc[],
     seasonTourCards: seasonTourCards as TourCardDoc[],
     roleBadge,

@@ -460,11 +460,28 @@ export const getTournamentLeaderboardView = query({
   },
   handler: async (ctx, args) => {
     const tournaments = await ctx.db.query("tournaments").collect();
+    const now = Date.now();
+    const twelveHoursMs = 12 * 60 * 60 * 1000;
+
     const tournament = args.tournamentId
       ? tournaments.find((t) => t._id === args.tournamentId)
-      : tournaments
-          .sort((a, b) => a.startDate - b.startDate)
-          .filter((t) => t.startDate >= Date.now())[0];
+      : (() => {
+          const nearEnd = tournaments
+            .filter((t) => Math.abs(t.endDate - now) <= twelveHoursMs)
+            .sort(
+              (a, b) => Math.abs(a.endDate - now) - Math.abs(b.endDate - now),
+            );
+
+          if (nearEnd.length > 0) {
+            return nearEnd[0];
+          }
+
+          const upcoming = tournaments
+            .filter((t) => t.startDate >= now)
+            .sort((a, b) => a.startDate - b.startDate);
+
+          return upcoming[0];
+        })();
     if (!tournament)
       return {
         tournament: null,
@@ -485,12 +502,16 @@ export const getTournamentLeaderboardView = query({
       .query("tours")
       .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
       .collect();
-    const tourCard = await ctx.db
-      .query("tourCards")
-      .withIndex("by_member_season", (q) =>
-        q.eq("memberId", args.memberId!).eq("seasonId", tournament.seasonId),
-      )
-      .first();
+    const tourCard = args.memberId
+      ? await ctx.db
+          .query("tourCards")
+          .withIndex("by_member_season", (q) =>
+            q
+              .eq("memberId", args.memberId!)
+              .eq("seasonId", tournament.seasonId),
+          )
+          .first()
+      : null;
 
     const leaderboardLastUpdatedAt = tournament?.leaderboardLastUpdatedAt
       ? tournament.leaderboardLastUpdatedAt

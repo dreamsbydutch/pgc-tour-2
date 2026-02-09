@@ -18,9 +18,10 @@ export function TournamentCountdown(tourney: {
 }) {
   const { timeLeft } = useTournamentCountdown(tourney);
 
-  if (!tourney || timeLeft === null) {
+  if (!tourney) {
     return <TournamentCountdownSkeleton />;
   }
+  if (timeLeft === null) return null;
   const formatTime = (num: number) => String(num).padStart(2, "0");
 
   return (
@@ -136,4 +137,3 @@ function TournamentCountdownSkeleton() {
     </div>
   );
 }
-

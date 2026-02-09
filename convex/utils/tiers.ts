@@ -16,6 +16,9 @@ export function applyFilters(
     if (filter.name && tier.name !== filter.name) {
       return false;
     }
+    if (filter.seasonId && tier.seasonId !== filter.seasonId) {
+      return false;
+    }
 
     const totalPayouts = sumArray(tier.payouts);
     if (filter.minPayouts !== undefined && totalPayouts < filter.minPayouts) {

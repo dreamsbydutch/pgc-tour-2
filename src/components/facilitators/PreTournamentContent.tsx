@@ -11,12 +11,16 @@ import {
   DialogTitle,
 } from "@/ui";
 import { PRE_TOURNAMENT_PICK_WINDOW_MS } from "@/lib/constants";
-import { TournamentCountdown } from "@/displays";
+import { LeaderboardHeader, TournamentCountdown } from "@/displays";
 import { cn, formatMoney } from "@/lib";
 import { useMutation, useQuery } from "convex/react";
 import { api, Id } from "@/convex";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { EnhancedTournamentTeamDoc } from "convex/types/types";
+import {
+  EnhancedTournamentDoc,
+  EnhancedTournamentTeamDoc,
+} from "convex/types/types";
+import { SignedOut } from "@clerk/tanstack-react-start";
 
 /**
  * Renders the pre-tournament pick experience.
@@ -43,13 +47,7 @@ import { EnhancedTournamentTeamDoc } from "convex/types/types";
  * @returns The pre-tournament content UI.
  */
 export function PreTournamentContent(props: {
-  tournament: {
-    _id: string;
-    name: string;
-    startDate: number;
-    logoUrl?: string | undefined;
-    tier?: { name: string } | undefined;
-  };
+  tournament: EnhancedTournamentDoc;
   member?: {
     firstname?: string | undefined;
     lastname?: string | undefined;
@@ -64,6 +62,7 @@ export function PreTournamentContent(props: {
     points: number;
     earnings: number;
   } | null;
+  allTournaments: EnhancedTournamentDoc[];
   existingTeam?: EnhancedTournamentTeamDoc;
   teamGolfers: {
     apiId?: number | undefined;
@@ -74,38 +73,35 @@ export function PreTournamentContent(props: {
     group?: number | undefined;
   }[];
   playoffEventIndex?: number;
+  onTournamentChange: (tournamentId: string) => void;
 }) {
   const model = usePreTournamentContentModel(props);
 
-  if (model.kind === "picksClosed") {
-    return (
-      <TournamentCountdown
-        name={props.tournament.name}
-        startDate={props.tournament.startDate}
-        logoUrl={props.tournament.logoUrl}
-      />
-    );
-  }
-  if (model.kind === "mustSignIn") {
+  if (model.kind === "picksClosed" || model.kind === "mustSignIn") {
     return (
       <>
-        <TournamentCountdown
-          name={props.tournament.name}
-          startDate={props.tournament.startDate}
-          logoUrl={props.tournament.logoUrl}
+        <LeaderboardHeader
+          tournament={props.tournament}
+          allTournaments={props.allTournaments}
+          onTournamentChange={props.onTournamentChange}
         />
-        <SignInPrompt />
+        <TournamentCountdown {...props.tournament} />
+        <SignedOut>
+          <SignInPrompt />
+        </SignedOut>
       </>
     );
   }
   if (model.kind === "ineligiblePlayoffs") {
     return (
       <>
-        <TournamentCountdown
-          name={props.tournament.name}
-          startDate={props.tournament.startDate}
-          logoUrl={props.tournament.logoUrl}
+        <LeaderboardHeader
+          tournament={props.tournament}
+          allTournaments={props.allTournaments}
+          onTournamentChange={props.onTournamentChange}
         />
+        as
+        <TournamentCountdown {...props.tournament} />
         <IneligiblePlayoffsMessage />
       </>
     );
@@ -113,31 +109,41 @@ export function PreTournamentContent(props: {
   if (model.kind === "carryOverLocked") {
     // TODO: Show active playoff leaderboard, instead of just the countdown.
     return (
-      <TournamentCountdown
-        name={props.tournament.name}
-        startDate={props.tournament.startDate}
-        logoUrl={props.tournament.logoUrl}
-      />
+      <>
+        <LeaderboardHeader
+          tournament={props.tournament}
+          allTournaments={props.allTournaments}
+          onTournamentChange={props.onTournamentChange}
+        />
+        <TournamentCountdown {...props.tournament} />
+      </>
     );
   }
 
   return (
-    <TeamPickCard
-      tournamentId={model.tournamentId}
-      tourCardId={model.tourCardId}
-      existingTeam={model.existingTeam}
-      teamGolfers={model.teamGolfers}
-      memberName={model.memberName}
-      hasBalance={model.hasBalance}
-      balanceNotice={model.balanceNotice}
-      formattedRank={model.formattedRank}
-      pointsDisplay={model.pointsDisplay}
-      earningsDisplay={model.earningsDisplay}
-      hasExistingTeam={model.hasExistingTeam}
-      isPickerOpen={model.isPickerOpen}
-      onOpenChange={model.onPickerOpenChange}
-      onOpenPicker={model.onOpenPicker}
-    />
+    <>
+      <LeaderboardHeader
+        tournament={props.tournament}
+        allTournaments={props.allTournaments}
+        onTournamentChange={props.onTournamentChange}
+      />
+      <TeamPickCard
+        tournamentId={model.tournamentId}
+        tourCardId={model.tourCardId}
+        existingTeam={model.existingTeam}
+        teamGolfers={model.teamGolfers}
+        memberName={model.memberName}
+        hasBalance={model.hasBalance}
+        balanceNotice={model.balanceNotice}
+        formattedRank={model.formattedRank}
+        pointsDisplay={model.pointsDisplay}
+        earningsDisplay={model.earningsDisplay}
+        hasExistingTeam={model.hasExistingTeam}
+        isPickerOpen={model.isPickerOpen}
+        onOpenChange={model.onPickerOpenChange}
+        onOpenPicker={model.onOpenPicker}
+      />
+    </>
   );
 }
 
@@ -420,14 +426,21 @@ function TournamentTeamPickerDialog(props: {
     group?: number | null;
   }[];
 }) {
-  const { existingTeam, onOpenChange, open, teamGolfers, tournamentId, tourCardId } =
-    props;
+  const {
+    existingTeam,
+    onOpenChange,
+    open,
+    teamGolfers,
+    tournamentId,
+    tourCardId,
+  } = props;
   const createTeam = useMutation(api.functions.teams.createTeams);
   const updateTeam = useMutation(api.functions.teams.updateTeams);
 
   const pickPool = useQuery(
     api.functions.tournaments.getTournamentPickPool,
-    open ? { tournamentId: tournamentId as unknown as Id<"tournaments"> }
+    open
+      ? { tournamentId: tournamentId as unknown as Id<"tournaments"> }
       : "skip",
   ) as
     | Array<{

@@ -56,7 +56,7 @@ export function TourCardForm({
 }: {
   currentSeason: SeasonDoc;
   tours: Doc<"tours">[];
-  member: Doc<"members">;
+  member: Doc<"members"> | null;
   seasonTourCards: TourCardDoc[];
 }) {
   const { state, toursWithMeta, isCreatingTourCard, setIsCreatingTourCard } =
@@ -66,7 +66,7 @@ export function TourCardForm({
       seasonTourCards,
     });
 
-  if (state === "signed_out") return null;
+  if (state === "signed_out" || member === null) return null;
 
   if (state === "registered") {
     const tours = toursWithMeta as unknown as {
@@ -134,12 +134,13 @@ function useTourCardForm({
   seasonTourCards,
 }: {
   tours: Doc<"tours">[];
-  member: Doc<"members">;
+  member: Doc<"members"> | null;
   seasonTourCards: TourCardDoc[];
 }) {
   const [isCreatingTourCard, setIsCreatingTourCard] = useState(false);
 
   const currentTourCard = useMemo(() => {
+    if (!member) return null;
     return seasonTourCards.find((card) => card.memberId === member._id) ?? null;
   }, [member, seasonTourCards]);
   const toursWithMeta = useMemo(() => {
@@ -192,14 +193,15 @@ function useTourCardForm({
  * <TourCardOutput />
  */
 function TourCardOutput(props: {
-  tours: { tour: Doc<"tours">; tourCards: TourCardDoc[] }[];
+  tours?: { tour: Doc<"tours">; tourCards: TourCardDoc[] }[];
   season: SeasonDoc;
   member: Doc<"members">;
   currentTourCard: TourCardDoc;
 }) {
-  const currentTour = props.tours.find(
+  const currentTour = props.tours?.find(
     (t) => t.tour._id === props.currentTourCard.tourId,
-  ) as { tour: Doc<"tours">; tourCards: TourCardDoc[] };
+  ) as { tour: Doc<"tours">; tourCards: TourCardDoc[] } | undefined;
+  if (!currentTour) return null;
   const spotsRemaining =
     +(currentTour?.tour.maxParticipants ?? DEFAULT_MAX_PARTICIPANTS) -
     (currentTour?.tourCards.length ?? 0);
@@ -229,11 +231,13 @@ function TourCardOutput(props: {
           ? `${currentTour.tour.name} is full!`
           : `${spotsRemaining} spots remaining`}
       </div>
-      <TourCardChangeButton
-        currentSeason={props.season}
-        tours={props.tours}
-        currentTourCard={props.currentTourCard}
-      />
+      {props.tours && (
+        <TourCardChangeButton
+          currentSeason={props.season}
+          tours={props.tours}
+          currentTourCard={props.currentTourCard}
+        />
+      )}
       {props.member && props.member.account < 0 && (
         <div className="mb-2 max-w-2xl rounded-md border border-red-200 bg-red-50 px-3 py-2 text-center text-sm text-red-800">
           {`You currently owe ${formatMoney(Math.abs(props.member.account), true)}. Please send payment to puregolfcollectivetour@gmail.com before the start of the next tournament to make picks.`}
