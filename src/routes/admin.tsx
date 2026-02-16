@@ -2,6 +2,7 @@ import { HardGateAdmin } from "@/displays";
 import { api, Id } from "@/convex";
 import { createFileRoute } from "@tanstack/react-router";
 import { useAction, useMutation, useQuery } from "convex/react";
+import { useUser } from "@clerk/tanstack-react-start";
 import { useMemo, useState } from "react";
 
 export const Route = createFileRoute("/admin")({
@@ -9,6 +10,8 @@ export const Route = createFileRoute("/admin")({
 });
 
 function AdminRoute() {
+  const { user } = useUser();
+
   const tournaments = useQuery(api.functions.tournaments.getAllTournaments, {});
 
   const sortedTournaments = useMemo(() => {
@@ -161,6 +164,7 @@ function AdminRoute() {
               runJob("repairTournament", () =>
                 runRepairTournament({
                   tournamentId: repairTournamentId as Id<"tournaments">,
+                  clerkId: user?.id,
                 }),
               )
             }

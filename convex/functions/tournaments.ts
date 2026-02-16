@@ -15,7 +15,10 @@ import {
   action,
 } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
-import { requireAdmin, requireAdminForAction } from "../utils/auth";
+import {
+  requireAdmin,
+  requireAdminForActionWithClerkId,
+} from "../utils/auth";
 import { processData } from "../utils/batchProcess";
 import {
   logAudit,
@@ -736,6 +739,7 @@ export const repairTournamentScoresAndStandings: ReturnType<typeof action> =
   action({
     args: {
       tournamentId: v.id("tournaments"),
+      clerkId: v.optional(v.string()),
       options: v.optional(
         v.object({
           recomputeStandings: v.optional(v.boolean()),
@@ -743,7 +747,7 @@ export const repairTournamentScoresAndStandings: ReturnType<typeof action> =
       ),
     },
     handler: async (ctx: ActionCtx, args): Promise<unknown> => {
-      await requireAdminForAction(ctx);
+      await requireAdminForActionWithClerkId(ctx, { clerkId: args.clerkId });
 
       const tournament = await ctx.runQuery(
         internal.functions.tournaments.getTournaments_Internal,

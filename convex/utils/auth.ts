@@ -12,13 +12,42 @@ type AuthContext = QueryCtx | MutationCtx;
 
 export async function requireAdminForAction(ctx: ActionCtx): Promise<void> {
   const identity = await ctx.auth.getUserIdentity();
-  if (!identity) {
+  const passedClerkId = undefined;
+  const effectiveClerkId = (identity?.subject ?? passedClerkId ?? "").trim();
+
+  if (!effectiveClerkId) {
     throw new Error("Unauthorized: You must be signed in");
   }
 
   const adminCheck = await ctx.runQuery(
     internal.functions.members.getIsAdminByClerkId_Internal,
-    { clerkId: identity.subject },
+    { clerkId: effectiveClerkId },
+  );
+
+  if (!adminCheck.isAdmin) {
+    throw new Error("Forbidden: Admin access required");
+  }
+}
+
+export async function requireAdminForActionWithClerkId(
+  ctx: ActionCtx,
+  args: { clerkId?: string },
+): Promise<void> {
+  const identity = await ctx.auth.getUserIdentity();
+  const passedClerkId = args.clerkId?.trim();
+
+  if (identity && passedClerkId && identity.subject !== passedClerkId) {
+    throw new Error("Unauthorized: Clerk ID mismatch");
+  }
+
+  const effectiveClerkId = (identity?.subject ?? passedClerkId ?? "").trim();
+  if (!effectiveClerkId) {
+    throw new Error("Unauthorized: You must be signed in");
+  }
+
+  const adminCheck = await ctx.runQuery(
+    internal.functions.members.getIsAdminByClerkId_Internal,
+    { clerkId: effectiveClerkId },
   );
 
   if (!adminCheck.isAdmin) {
