@@ -296,6 +296,17 @@ export const getActiveMemberEmailRecipients = internalQuery({
   },
 });
 
+export const getUpcomingTournamentId = internalQuery({
+  args: emailsValidators.args.getUpcomingTournamentId,
+  handler: async (ctx) => {
+    const tournament = await getUpcomingTournament(ctx);
+    return {
+      ok: true,
+      tournamentId: tournament?._id ?? null,
+    } as const;
+  },
+});
+
 export const markReminderEmailSent = internalMutation({
   args: emailsValidators.args.markReminderEmailSent,
   handler: async (ctx, args) => {
@@ -429,6 +440,220 @@ export const adminSendGroupsEmailForTournament = action({
       customBlurb: args.customBlurb,
       force: args.force,
     });
+  },
+});
+
+/**
+ * Admin-only manual send for a weekly recap email.
+ * By default, targets the upcoming tournament (to determine the season recipients).
+ */
+export const adminSendWeeklyRecapEmailToActiveTourCards = action({
+  args: emailsValidators.args.adminSendWeeklyRecapEmailToActiveTourCards,
+  handler: async (ctx, args) => {
+    await requireAdminForAction(ctx);
+
+    const resolvedTournamentId =
+      args.tournamentId ??
+      (
+        await ctx.runQuery(
+          internal.functions.emails.getUpcomingTournamentId,
+          {},
+        )
+      ).tournamentId;
+
+    if (!resolvedTournamentId) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: "no_upcoming_tournament",
+      } as const;
+    }
+
+    const tournamentContext = (await ctx.runQuery(
+      internal.functions.emails.getActiveTourCardRecipientsForTournament,
+      { tournamentId: resolvedTournamentId },
+    )) as GroupsEmailContext;
+
+    const tournament = tournamentContext.tournament;
+    const apiKey = getBrevoApiKey();
+    const templateId = parseNumericEnv("BREVO_GROUPS_FINALIZED_TEMPLATE_ID");
+    const customBlurb = (args.customBlurb ?? "").trim().replace(/\n/g, "<br>");
+
+    const baseUrl = getAppBaseUrl({ allowLocalhostFallback: false });
+    const nextUpUrl = buildTournamentUrl({
+      baseUrl,
+      tournamentId: String(tournament._id),
+    });
+
+    const nextUpLogoUrl =
+      typeof tournament.logoUrl === "string" && tournament.logoUrl
+        ? tournament.logoUrl
+        : "";
+    const nextUpLogoDisplay = nextUpLogoUrl ? "inline-block" : "none";
+    const pgcLogoUrl = `${baseUrl}/logo192.png`;
+
+    const previousTournamentLogoUrl =
+      tournamentContext.previousTournamentLogoUrl;
+    const previousTournamentLogoDisplay = previousTournamentLogoUrl
+      ? "inline-block"
+      : "none";
+
+    const recipients = tournamentContext.recipients.map((r) => {
+      const recipientTourCardId = r.tourCardId ? String(r.tourCardId) : "";
+      const leaderboardParams = buildGroupsEmailLeaderboardTemplateParams({
+        leaderboardRows: tournamentContext.leaderboardRows,
+        recipientTourCardId,
+      });
+
+      return {
+        email: r.email,
+        name: r.name,
+        params: {
+          tournamentName: tournament.name,
+          seasonYear:
+            tournamentContext.seasonYear ?? new Date(Date.now()).getFullYear(),
+          previousTournamentName:
+            tournamentContext.previousTournamentName ?? "",
+          previousTournamentLogoUrl,
+          previousTournamentLogoDisplay,
+          champions: tournamentContext.champions ?? "",
+          pgcLogoUrl,
+          nextUpUrl,
+          nextUpLogoUrl,
+          nextUpLogoDisplay,
+          customBlurb,
+          ...leaderboardParams,
+        },
+      };
+    });
+
+    const summary = await sendBrevoTemplateEmailBatch({
+      apiKey,
+      templateId,
+      recipients,
+    });
+
+    return {
+      ok: true,
+      skipped: false,
+      tournamentId: tournament._id,
+      attempted: summary.attempted,
+      sent: summary.sent,
+      failed: summary.failed,
+      memberCount: tournamentContext.memberCount,
+      activeTourCardCount: tournamentContext.activeTourCardCount,
+    } as const;
+  },
+});
+
+/**
+ * Sends a single weekly recap test email to `BREVO_TEST_TO`.
+ * This never emails your full league list.
+ */
+export const sendWeeklyRecapEmailTest: ReturnType<typeof action> = action({
+  args: emailsValidators.args.sendWeeklyRecapEmailTest,
+  handler: async (ctx, args) => {
+    await requireAdminForAction(ctx);
+
+    const resolvedTournamentId =
+      args.tournamentId ??
+      (
+        await ctx.runQuery(
+          internal.functions.emails.getUpcomingTournamentId,
+          {},
+        )
+      ).tournamentId;
+
+    if (!resolvedTournamentId) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: "no_upcoming_tournament",
+      } as const;
+    }
+
+    const apiKey = getBrevoApiKey();
+    const templateId = parseNumericEnv("BREVO_GROUPS_FINALIZED_TEMPLATE_ID");
+    const testTo = getBrevoTestTo();
+
+    const tournamentContext = (await ctx.runQuery(
+      internal.functions.emails.getActiveTourCardRecipientsForTournament,
+      { tournamentId: resolvedTournamentId },
+    )) as GroupsEmailContext;
+
+    const tournament = tournamentContext.tournament;
+    const customBlurb = (args.customBlurb ?? "").trim().replace(/\n/g, "<br>");
+
+    const baseUrl = getAppBaseUrl({ allowLocalhostFallback: true });
+    const nextUpUrl = buildTournamentUrl({
+      baseUrl,
+      tournamentId: String(tournament._id),
+    });
+    const nextUpLogoUrl =
+      typeof tournament.logoUrl === "string" && tournament.logoUrl
+        ? tournament.logoUrl
+        : "";
+    const nextUpLogoDisplay = nextUpLogoUrl ? "inline-block" : "none";
+    const pgcLogoUrl = `${baseUrl}/logo192.png`;
+
+    const previousTournamentLogoUrl =
+      tournamentContext.previousTournamentLogoUrl;
+    const previousTournamentLogoDisplay = previousTournamentLogoUrl
+      ? "inline-block"
+      : "none";
+
+    const testRecipient =
+      tournamentContext.recipients.find((r) => r?.email === testTo) ?? null;
+    const recipientTourCardId = testRecipient?.tourCardId
+      ? String(testRecipient.tourCardId)
+      : "";
+
+    const leaderboardParams = buildGroupsEmailLeaderboardTemplateParams({
+      leaderboardRows: tournamentContext.leaderboardRows,
+      recipientTourCardId,
+    });
+
+    const summary = await sendBrevoTemplateEmailBatch({
+      apiKey,
+      templateId,
+      includeMessageIds: true,
+      recipients: [
+        {
+          email: testTo,
+          name: testRecipient?.name,
+          params: {
+            tournamentName: tournament.name,
+            seasonYear:
+              tournamentContext.seasonYear ??
+              new Date(Date.now()).getFullYear(),
+            previousTournamentName:
+              tournamentContext.previousTournamentName ?? "",
+            previousTournamentLogoUrl,
+            previousTournamentLogoDisplay,
+            champions: tournamentContext.champions ?? "",
+            pgcLogoUrl,
+            nextUpUrl,
+            nextUpLogoUrl,
+            nextUpLogoDisplay,
+            customBlurb,
+            ...leaderboardParams,
+          },
+        },
+      ],
+    });
+
+    return {
+      ok: true,
+      mode: "test",
+      testTo,
+      tournamentId: tournament._id,
+      attempted: summary.attempted,
+      sent: summary.sent,
+      failed: summary.failed,
+      messageIds: summary.messageIds ?? [],
+      wouldEmailMemberCount: tournamentContext.memberCount,
+      wouldEmailActiveTourCardCount: tournamentContext.activeTourCardCount,
+    } as const;
   },
 });
 

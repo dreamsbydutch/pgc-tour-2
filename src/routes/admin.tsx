@@ -28,6 +28,12 @@ function AdminRoute() {
   const runUpdateWorldRank = useAction(
     api.functions.cronJobs.updateGolfersWorldRankFromDataGolfInput_Public,
   );
+  const sendWeeklyRecapEmailTest = useAction(
+    api.functions.emails.sendWeeklyRecapEmailTest,
+  );
+  const sendWeeklyRecapEmailToAll = useAction(
+    api.functions.emails.adminSendWeeklyRecapEmailToActiveTourCards,
+  );
   const runRepairTournament = useAction(
     api.functions.tournaments.repairTournamentScoresAndStandings,
   );
@@ -42,6 +48,7 @@ function AdminRoute() {
   const [tournamentId, setTournamentId] = useState("");
   const [teamsJson, setTeamsJson] = useState("");
   const [importOutput, setImportOutput] = useState("");
+  const [weeklyRecapBody, setWeeklyRecapBody] = useState("");
 
   const runJob = async (key: string, fn: () => Promise<unknown>) => {
     setOutputs((prev) => ({ ...prev, [key]: "Running..." }));
@@ -119,6 +126,50 @@ function AdminRoute() {
             className="h-28 w-full rounded border p-2 text-xs"
             readOnly
             value={outputs.updateWorldRank ?? ""}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <div className="text-sm font-semibold">Weekly Recap Email</div>
+          <textarea
+            className="h-40 w-full rounded border p-2 text-sm"
+            value={weeklyRecapBody}
+            onChange={(event) => setWeeklyRecapBody(event.target.value)}
+            placeholder="Email body"
+          />
+          <div className="flex gap-2">
+            <button
+              className="rounded bg-primary px-4 py-2 text-primary-foreground"
+              onClick={() =>
+                runJob("weeklyRecapTest", () =>
+                  sendWeeklyRecapEmailTest({ customBlurb: weeklyRecapBody }),
+                )
+              }
+              type="button"
+            >
+              Send Test (to me)
+            </button>
+            <button
+              className="rounded bg-primary px-4 py-2 text-primary-foreground"
+              onClick={() =>
+                runJob("weeklyRecapSendAll", () =>
+                  sendWeeklyRecapEmailToAll({ customBlurb: weeklyRecapBody }),
+                )
+              }
+              type="button"
+            >
+              Send To Everyone
+            </button>
+          </div>
+          <textarea
+            className="h-28 w-full rounded border p-2 text-xs"
+            readOnly
+            value={outputs.weeklyRecapTest ?? ""}
+          />
+          <textarea
+            className="h-28 w-full rounded border p-2 text-xs"
+            readOnly
+            value={outputs.weeklyRecapSendAll ?? ""}
           />
         </div>
 

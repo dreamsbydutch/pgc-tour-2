@@ -49,6 +49,15 @@ export const emailsValidators = {
       reigningChampion: v.optional(v.string()),
       clubhouseUrl: v.optional(v.string()),
     },
+    getUpcomingTournamentId: {},
+    adminSendWeeklyRecapEmailToActiveTourCards: {
+      tournamentId: v.optional(v.id("tournaments")),
+      customBlurb: v.optional(v.string()),
+    },
+    sendWeeklyRecapEmailTest: {
+      tournamentId: v.optional(v.id("tournaments")),
+      customBlurb: v.optional(v.string()),
+    },
     sendMissingTeamReminderEmailTest: {
       tournamentId: v.optional(v.id("tournaments")),
     },
