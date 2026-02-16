@@ -1196,7 +1196,7 @@ export const runTeamsUpdateForTournament: ReturnType<typeof internalAction> =
           (updatedTeam.roundTwo ?? 0) - (tournament.course?.par ?? 72),
           (updatedTeam.roundThree ?? 0) - (tournament.course?.par ?? 72),
           (updatedTeam.roundFour ?? 0) - (tournament.course?.par ?? 72),
-          updatedTeam.today,
+          activeGolfers.roundState === "active" ? (updatedTeam.today ?? 0) : 0,
           bonusStrokes,
         ].map((score) => score ?? 0);
         updatedTeam.score = roundToDecimalPlace(

@@ -1,14 +1,21 @@
 import { HardGateAdmin } from "@/displays";
 import { api, Id } from "@/convex";
 import { createFileRoute } from "@tanstack/react-router";
-import { useAction, useMutation } from "convex/react";
-import { useState } from "react";
+import { useAction, useMutation, useQuery } from "convex/react";
+import { useMemo, useState } from "react";
 
 export const Route = createFileRoute("/admin")({
   component: AdminRoute,
 });
 
 function AdminRoute() {
+  const tournaments = useQuery(api.functions.tournaments.getAllTournaments, {});
+
+  const sortedTournaments = useMemo(() => {
+    const list = tournaments ?? [];
+    return [...list].sort((a, b) => (b.startDate ?? 0) - (a.startDate ?? 0));
+  }, [tournaments]);
+
   const runCreateGroups = useAction(
     api.functions.cronJobs.runCreateGroupsForNextTournament_Public,
   );
@@ -18,6 +25,9 @@ function AdminRoute() {
   const runUpdateWorldRank = useAction(
     api.functions.cronJobs.updateGolfersWorldRankFromDataGolfInput_Public,
   );
+  const runRepairTournament = useAction(
+    api.functions.tournaments.repairTournamentScoresAndStandings,
+  );
   const runRecomputeStandings = useMutation(
     api.functions.cronJobs.recomputeStandingsForCurrentSeason_Public,
   );
@@ -25,6 +35,7 @@ function AdminRoute() {
     api.functions.teams.importTeamsFromJson,
   );
   const [outputs, setOutputs] = useState<Record<string, string>>({});
+  const [repairTournamentId, setRepairTournamentId] = useState("");
   const [tournamentId, setTournamentId] = useState("");
   const [teamsJson, setTeamsJson] = useState("");
   const [importOutput, setImportOutput] = useState("");
@@ -122,6 +133,46 @@ function AdminRoute() {
             className="h-28 w-full rounded border p-2 text-xs"
             readOnly
             value={outputs.recomputeStandings ?? ""}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <div className="text-sm font-semibold">
+            Repair Tournament Scores + Standings
+          </div>
+          <select
+            className="w-full rounded border px-3 py-2 text-sm"
+            value={repairTournamentId}
+            onChange={(event) => setRepairTournamentId(event.target.value)}
+            disabled={!tournaments}
+          >
+            <option value="">
+              {tournaments ? "Select a tournament" : "Loading tournaments..."}
+            </option>
+            {sortedTournaments.map((t) => (
+              <option key={t._id} value={t._id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+          <button
+            className="rounded bg-primary px-4 py-2 text-primary-foreground"
+            onClick={() =>
+              runJob("repairTournament", () =>
+                runRepairTournament({
+                  tournamentId: repairTournamentId as Id<"tournaments">,
+                }),
+              )
+            }
+            type="button"
+            disabled={repairTournamentId.trim().length === 0}
+          >
+            Repair Selected Tournament
+          </button>
+          <textarea
+            className="h-28 w-full rounded border p-2 text-xs"
+            readOnly
+            value={outputs.repairTournament ?? ""}
           />
         </div>
 

@@ -5,9 +5,26 @@
  * Uses Clerk authentication with role-based access control.
  */
 
-import { MutationCtx, QueryCtx } from "../_generated/server";
+import { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
+import { internal } from "../_generated/api";
 
 type AuthContext = QueryCtx | MutationCtx;
+
+export async function requireAdminForAction(ctx: ActionCtx): Promise<void> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    throw new Error("Unauthorized: You must be signed in");
+  }
+
+  const adminCheck = await ctx.runQuery(
+    internal.functions.members.getIsAdminByClerkId_Internal,
+    { clerkId: identity.subject },
+  );
+
+  if (!adminCheck.isAdmin) {
+    throw new Error("Forbidden: Admin access required");
+  }
+}
 
 /**
  * Get the current authenticated user's Clerk ID

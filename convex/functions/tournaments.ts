@@ -12,8 +12,10 @@ import {
   mutation,
   internalMutation,
   internalAction,
+  action,
 } from "../_generated/server";
-import { requireAdmin } from "../utils/auth";
+import type { ActionCtx } from "../_generated/server";
+import { requireAdmin, requireAdminForAction } from "../utils/auth";
 import { processData } from "../utils/batchProcess";
 import {
   logAudit,
@@ -721,6 +723,59 @@ export const updateTournaments = mutation({
     return updatedTournament;
   },
 });
+
+/**
+ * Admin repair tool: recompute team scores/positions for a historical tournament and refresh season standings.
+ *
+ * Use when a tournament's underlying round data was wrong (e.g. round 4 was double-counted) and you need to
+ * regenerate:
+ * - tournament leaderboard (team `score`, `position`, `points`, `earnings`)
+ * - season standings (tour card totals/positions)
+ */
+export const repairTournamentScoresAndStandings: ReturnType<typeof action> =
+  action({
+    args: {
+      tournamentId: v.id("tournaments"),
+      options: v.optional(
+        v.object({
+          recomputeStandings: v.optional(v.boolean()),
+        }),
+      ),
+    },
+    handler: async (ctx: ActionCtx, args): Promise<unknown> => {
+      await requireAdminForAction(ctx);
+
+      const tournament = await ctx.runQuery(
+        internal.functions.tournaments.getTournaments_Internal,
+        { tournamentId: args.tournamentId },
+      );
+      const resolvedTournament = Array.isArray(tournament) ? null : tournament;
+      if (!resolvedTournament) throw new Error("Tournament not found");
+
+      const teams: unknown = await ctx.runAction(
+        internal.functions.teams.runTeamsUpdateForTournament,
+        { tournamentId: args.tournamentId },
+      );
+
+      const shouldRecomputeStandings =
+        args.options?.recomputeStandings !== false;
+
+      const standings: unknown | null = shouldRecomputeStandings
+        ? await ctx.runMutation(
+            internal.functions.cronJobs.recomputeStandingsForSeason,
+            { seasonId: resolvedTournament.seasonId },
+          )
+        : null;
+
+      return {
+        ok: true,
+        tournamentId: args.tournamentId,
+        seasonId: resolvedTournament.seasonId,
+        teams,
+        standings,
+      } as const;
+    },
+  });
 
 /**
  * Delete tournaments (hard delete by default)
