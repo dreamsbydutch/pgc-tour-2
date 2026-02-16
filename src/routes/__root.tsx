@@ -153,11 +153,13 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           <main className="pb-20 pt-16 md:pb-4 md:pt-20">{children}</main>
           <PWAInstallPrompt />
           <SignedOutPersistentSignIn />
-          <TanstackDevtools
-            config={{
-              position: "bottom-left",
-            }}
-          />
+          {import.meta.env.DEV ? (
+            <TanstackDevtools
+              config={{
+                position: "bottom-left",
+              }}
+            />
+          ) : null}
         </Providers>
         <Scripts />
       </body>

@@ -312,15 +312,18 @@ export function getBrevoTestTo(): string {
 }
 
 export function getAppBaseUrl(args: GetAppBaseUrlArgs): string {
-  const raw =
+  const raw = (
     process.env.APP_BASE_URL ??
     process.env.PUBLIC_APP_URL ??
     process.env.SITE_URL ??
-    process.env.VERCEL_URL;
+    process.env.VERCEL_URL
+  )
+    ?.trim()
+    .replace(/\/$/, "");
 
   if (raw && raw.length > 0) {
     const hasProtocol = raw.startsWith("http://") || raw.startsWith("https://");
-    return hasProtocol ? raw.replace(/\/$/, "") : `https://${raw}`;
+    return hasProtocol ? raw : `https://${raw}`;
   }
 
   if (args.allowLocalhostFallback) {
