@@ -477,7 +477,7 @@ export const adminSendWeeklyRecapEmailToActiveTourCards = action({
     const tournament = tournamentContext.tournament;
     const apiKey = getBrevoApiKey();
     const templateId = parseNumericEnv("BREVO_GROUPS_FINALIZED_TEMPLATE_ID");
-    const customBlurb = (args.customBlurb ?? "").trim().replace(/\n/g, "<br>");
+    const customBlurb = (args.customBlurb ?? "").trim();
 
     const baseUrl = getAppBaseUrl({ allowLocalhostFallback: false });
     const nextUpUrl = buildTournamentUrl({
@@ -582,7 +582,7 @@ export const sendWeeklyRecapEmailTest: ReturnType<typeof action> = action({
     )) as GroupsEmailContext;
 
     const tournament = tournamentContext.tournament;
-    const customBlurb = (args.customBlurb ?? "").trim().replace(/\n/g, "<br>");
+    const customBlurb = (args.customBlurb ?? "").trim();
 
     const baseUrl = getAppBaseUrl({ allowLocalhostFallback: true });
     const nextUpUrl = buildTournamentUrl({

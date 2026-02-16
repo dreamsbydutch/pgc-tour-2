@@ -29,7 +29,6 @@ export function formatScoreToPar(score: number | undefined): string {
   return score > 0 ? `+${score}` : `${score}`;
 }
 
-
 export function escapeEmailText(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -451,7 +450,7 @@ export async function sendGroupsEmailImpl(args: SendGroupsEmailImplArgs) {
 
   const apiKey = getBrevoApiKey();
   const templateId = parseNumericEnv("BREVO_GROUPS_FINALIZED_TEMPLATE_ID");
-  const customBlurb = (args.customBlurb ?? "").trim().replace(/\n/g, "<br>");
+  const customBlurb = (args.customBlurb ?? "").trim();
 
   const baseUrl = getAppBaseUrl({ allowLocalhostFallback: false });
   const nextUpUrl = buildTournamentUrl({

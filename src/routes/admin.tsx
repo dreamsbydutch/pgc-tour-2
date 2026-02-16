@@ -4,6 +4,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useUser } from "@clerk/tanstack-react-start";
 import { useMemo, useState } from "react";
+import { EnhancedMemberDoc } from "convex/types/types";
 
 export const Route = createFileRoute("/admin")({
   component: AdminRoute,
@@ -13,6 +14,16 @@ function AdminRoute() {
   const { user } = useUser();
 
   const tournaments = useQuery(api.functions.tournaments.getAllTournaments, {});
+  const members = useQuery(api.functions.members.getMembers, {
+    options: {
+      activeOnly: true,
+      sort: { sortBy: "lastname", sortOrder: "asc" },
+      pagination: { limit: 500, offset: 0 },
+    },
+  }) as EnhancedMemberDoc[] | null;
+  const seasons = useQuery(api.functions.seasons.getSeasons, {
+    options: { sort: { sortBy: "year", sortOrder: "desc" } },
+  }) as { _id: string; year: number; number: number }[] | null;
 
   const sortedTournaments = useMemo(() => {
     const list = tournaments ?? [];
@@ -40,6 +51,9 @@ function AdminRoute() {
   const runRecomputeStandings = useMutation(
     api.functions.cronJobs.recomputeStandingsForCurrentSeason_Public,
   );
+  const createTransaction = useMutation(
+    api.functions.transactions.createTransactions,
+  );
   const importTeamsFromJson = useMutation(
     api.functions.teams.importTeamsFromJson,
   );
@@ -49,6 +63,9 @@ function AdminRoute() {
   const [teamsJson, setTeamsJson] = useState("");
   const [importOutput, setImportOutput] = useState("");
   const [weeklyRecapBody, setWeeklyRecapBody] = useState("");
+  const [paymentMemberId, setPaymentMemberId] = useState("");
+  const [paymentSeasonId, setPaymentSeasonId] = useState("");
+  const [paymentAmountDollars, setPaymentAmountDollars] = useState("");
 
   const runJob = async (key: string, fn: () => Promise<unknown>) => {
     setOutputs((prev) => ({ ...prev, [key]: "Running..." }));
@@ -170,6 +187,83 @@ function AdminRoute() {
             className="h-28 w-full rounded border p-2 text-xs"
             readOnly
             value={outputs.weeklyRecapSendAll ?? ""}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <div className="text-sm font-semibold">
+            Create Payment Transaction
+          </div>
+          <select
+            className="w-full rounded border px-3 py-2 text-sm"
+            value={paymentMemberId}
+            onChange={(event) => setPaymentMemberId(event.target.value)}
+            disabled={!members}
+          >
+            <option value="">
+              {members ? "Select a member" : "Loading members..."}
+            </option>
+            {(members ?? []).map((m) => (
+              <option key={m._id} value={m._id}>
+                {(m.fullName ?? m.email) as string}
+              </option>
+            ))}
+          </select>
+          <select
+            className="w-full rounded border px-3 py-2 text-sm"
+            value={paymentSeasonId}
+            onChange={(event) => setPaymentSeasonId(event.target.value)}
+            disabled={!seasons}
+          >
+            <option value="">
+              {seasons ? "Select a season" : "Loading seasons..."}
+            </option>
+            {(seasons ?? []).map((s) => (
+              <option key={s._id} value={s._id}>
+                {`${s.year} (Season ${s.number})`}
+              </option>
+            ))}
+          </select>
+          <input
+            className="w-full rounded border px-3 py-2 text-sm"
+            value={paymentAmountDollars}
+            onChange={(event) => setPaymentAmountDollars(event.target.value)}
+            placeholder="Amount (dollars), e.g. 100 or 100.50"
+            inputMode="decimal"
+          />
+          <button
+            className="rounded bg-primary px-4 py-2 text-primary-foreground"
+            onClick={() =>
+              runJob("createPayment", async () => {
+                const amount = Number(paymentAmountDollars);
+                const cents = Math.round(amount * 100);
+                if (!Number.isFinite(cents) || cents === 0) {
+                  throw new Error("Amount must be a non-zero number");
+                }
+                return await createTransaction({
+                  data: {
+                    memberId: paymentMemberId as Id<"members">,
+                    seasonId: paymentSeasonId as Id<"seasons">,
+                    amount: cents,
+                    transactionType: "Payment",
+                    status: "completed",
+                  },
+                });
+              })
+            }
+            type="button"
+            disabled={
+              paymentMemberId.trim().length === 0 ||
+              paymentSeasonId.trim().length === 0 ||
+              paymentAmountDollars.trim().length === 0
+            }
+          >
+            Create Payment
+          </button>
+          <textarea
+            className="h-28 w-full rounded border p-2 text-xs"
+            readOnly
+            value={outputs.createPayment ?? ""}
           />
         </div>
 
