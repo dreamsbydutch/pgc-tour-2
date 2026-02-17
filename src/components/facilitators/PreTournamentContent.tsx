@@ -248,10 +248,11 @@ function usePreTournamentContentModel(props: {
       firstname && lastname
         ? `${firstname[0]}. ${lastname}`
         : (firstname ?? lastname ?? "Member");
-    const balanceNotice =
-      (props.member.account ?? 0) > 0
-        ? `Please send ${formatMoney(props.member.account ?? 0, true)} to puregolfcollectivetour@gmail.com to unlock your picks.`
-        : null;
+    const accountCents = props.member.account ?? 0;
+    const owesMoney = accountCents < 0;
+    const balanceNotice = owesMoney
+      ? `Please send ${formatMoney(Math.abs(accountCents), true)} to puregolfcollectivetour@gmail.com to unlock your picks.`
+      : null;
     const formattedRank = (() => {
       if (typeof positionRaw === "string" && positionRaw.trim()) {
         return positionRaw;
@@ -275,7 +276,7 @@ function usePreTournamentContentModel(props: {
       existingTeam: props.existingTeam ?? null,
       teamGolfers: props.teamGolfers,
       memberName,
-      hasBalance: (props.member.account ?? 0) > 0,
+      hasBalance: owesMoney,
       balanceNotice,
       formattedRank,
       pointsDisplay,
