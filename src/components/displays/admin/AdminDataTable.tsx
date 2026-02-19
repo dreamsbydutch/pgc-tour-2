@@ -19,8 +19,6 @@ import type { AdminDataTableColumn } from "@/lib";
  * - Ready: renders a standard table with the provided columns.
  * - Empty: renders a single empty-message row when there are no rows.
  *
- * @param props Table configuration and rows.
- * @returns A table suitable for admin CRUD screens.
  */
 export function AdminDataTable<T extends { _id: string }>(props: {
   rows?: T[];
