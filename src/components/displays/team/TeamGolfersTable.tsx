@@ -207,7 +207,7 @@ function useTeamGolfersTable(args: {
     );
 
     return { rows: [...sortedNonCut, ...sortedCut] };
-  }, [args.allGolfers, args.team.golferApiIds, args.tournament.currentRound]);
+  }, [args.allGolfers, args.team.golferApiIds]);
 }
 
 /**

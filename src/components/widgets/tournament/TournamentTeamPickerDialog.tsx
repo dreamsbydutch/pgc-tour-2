@@ -62,7 +62,7 @@ export function TournamentTeamPickerDialog(props: {
 
       return next;
     });
-  }, [model.kind, model.kind === "ready" ? model.groups : null]);
+  }, [model.kind, model.groups]);
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>

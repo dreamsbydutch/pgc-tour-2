@@ -40,6 +40,7 @@ import {
   buildUsageRateByGolferApiId,
   computePosChange,
   inferParFromLiveStats,
+  normalizeFieldPlayerFromDataGolf,
   isRoundRunningFromLiveStats,
   normalizePlayerNameFromDataGolf,
   parsePositionNumber,
@@ -1068,7 +1069,11 @@ export const runLiveTournamentSync: ReturnType<typeof internalAction> =
 
       const field =
         !tournamentStarted && fieldUpdates && Array.isArray(fieldUpdates.field)
-          ? (fieldUpdates.field as FieldPlayerWithAllTeeTimes[])
+          ? (fieldUpdates.field
+              .map((entry) => normalizeFieldPlayerFromDataGolf(entry))
+              .filter(
+                (entry): entry is FieldPlayerWithAllTeeTimes => entry !== null,
+              ) as FieldPlayerWithAllTeeTimes[])
           : [];
       const rankingsList = Array.isArray(rankings.rankings)
         ? (rankings.rankings as RankedPlayer[])

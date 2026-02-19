@@ -377,7 +377,7 @@ function useAccountPage() {
 
   const memberForAccount = useMemo<MemberForAccount | null>(() => {
     return isMemberForAccount(memberRaw) ? memberRaw : null;
-  }, [memberRaw]);
+  }, [memberRaw, isMemberForAccount]);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -408,7 +408,7 @@ function useAccountPage() {
       map.set(s._id, `${s.year} #${s.number}`);
     }
     return map;
-  }, [seasons]);
+  }, [seasons,isSeasonForLabel]);
 
   const tournamentHistory = useQuery(
     api.functions.members.getMyTournamentHistory,
