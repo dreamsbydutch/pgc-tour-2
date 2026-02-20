@@ -6,21 +6,14 @@
  * a single entry point per operation.
  */
 
-import { v } from "convex/values";
+import { GenericId, v } from "convex/values";
 import { query, mutation } from "../_generated/server";
 import { processData } from "../utils/batchProcess";
 import { requireAdmin } from "../utils/auth";
 import {
-  applyFilters,
-  enhanceCourse,
   formatParDisplay,
   formatTimeZone,
-  generateAnalytics,
   generateDisplayName,
-  getCourseRating,
-  getDifficultyCategory,
-  getOptimizedCourses,
-  getSortFunction,
   isInternational,
 } from "../utils/courses";
 import type {
@@ -30,6 +23,8 @@ import type {
 } from "../types/types";
 import { Doc } from "../_generated/dataModel";
 import { validators } from "../validators/common";
+import { applyFilters, getSortFunction } from "../utils/members";
+import { GenericQueryCtx } from "convex/server";
 
 /**
  * Creates a new course.
@@ -109,13 +104,6 @@ export const createCourses = mutation({
     if (!course) {
       throw new Error("Failed to create course");
     }
-    if (options.returnEnhanced) {
-      return await enhanceCourse(ctx, course, {
-        includeStatistics: options.includeStatistics,
-        includeTournaments: options.includeTournaments,
-      });
-    }
-
     return course;
   },
 });
@@ -187,78 +175,27 @@ export const getCourses = query({
       const course = await ctx.db.get(options.id);
       if (!course) return null;
 
-      return await enhanceCourse(ctx, course, options.enhance || {});
+      return course;
     }
     if (options.ids) {
       if (options.ids.length === 0) return [];
       const courses = await Promise.all(
         options.ids.map(async (id) => {
           const course = await ctx.db.get(id);
-          return course
-            ? await enhanceCourse(ctx, course, options.enhance || {})
-            : null;
+          return course ?? null;
         }),
       );
       return courses.filter((c): c is NonNullable<typeof c> => Boolean(c));
     }
-    let courses = await getOptimizedCourses(ctx, options);
-    courses = applyFilters(courses, options.filter || {});
-    if (options.championshipOnly) {
-      courses = courses.filter((c) => c.par >= 72);
-    }
-    if (options.internationalOnly) {
-      courses = courses.filter((c) => isInternational(c.location));
-    }
-    const processedCourses = processData(courses, {
-      sort: getSortFunction(options.sort || {}),
-      limit: options.pagination?.limit,
-      skip: options.pagination?.offset,
-    });
-    if (options.enhance && Object.values(options.enhance).some(Boolean)) {
-      const enhancedCourses = await Promise.all(
-        processedCourses.map((course) =>
-          enhanceCourse(ctx, course, options.enhance || {}),
-        ),
-      );
-
-      if (options.includeAnalytics) {
-        return {
-          courses: enhancedCourses,
-          analytics: await generateAnalytics(ctx, courses),
-          meta: {
-            total: courses.length,
-            filtered: processedCourses.length,
-            offset: options.pagination?.offset || 0,
-            limit: options.pagination?.limit,
-          },
-        };
-      }
-
-      return enhancedCourses;
-    }
-    const basicCourses = processedCourses.map((course) => ({
+    let courses = await ctx.db.query("courses").collect();
+    const basicCourses = courses.map((course) => ({
       ...course,
       displayName: generateDisplayName(course.name, course.location),
       parDisplay: formatParDisplay(course.par),
-      difficultyCategory: getDifficultyCategory(course.par),
-      courseRating: getCourseRating(course.par),
       timeZoneDisplay: formatTimeZone(course.timeZoneOffset),
       isInternational: isInternational(course.location),
       isChampionship: course.par >= 72,
     }));
-
-    if (options.includeAnalytics) {
-      return {
-        courses: basicCourses,
-        analytics: await generateAnalytics(ctx, courses),
-        meta: {
-          total: courses.length,
-          filtered: basicCourses.length,
-          offset: options.pagination?.offset || 0,
-          limit: options.pagination?.limit,
-        },
-      };
-    }
 
     return basicCourses;
   },
@@ -346,12 +283,6 @@ export const updateCourses = mutation({
     const updatedCourse = await ctx.db.get(args.courseId);
     if (!updatedCourse) {
       throw new Error("Failed to retrieve updated course");
-    }
-    if (options.returnEnhanced) {
-      return await enhanceCourse(ctx, updatedCourse, {
-        includeStatistics: options.includeStatistics,
-        includeTournaments: options.includeTournaments,
-      });
     }
 
     return updatedCourse;

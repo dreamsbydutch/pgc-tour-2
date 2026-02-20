@@ -1,4 +1,4 @@
-import type { LiveModelPlayer } from "../types/datagolf";
+import type { DataGolfLiveModelPlayer } from "../types/datagolf";
 import type {
   BuildUsageRateByGolferApiIdOptions,
   FieldPlayerWithAllTeeTimes,
@@ -238,7 +238,7 @@ export function buildUsageRateByGolferApiId(
 }
 
 export function isPlayerFinishedFromLiveStats(
-  player: LiveModelPlayer,
+  player: DataGolfLiveModelPlayer,
 ): boolean {
   const pos = String(player.current_pos ?? "")
     .trim()
@@ -279,7 +279,7 @@ export function isPlayerFinishedFromLiveStats(
 }
 
 export function isRoundRunningFromLiveStats(
-  liveStats: LiveModelPlayer[],
+  liveStats: DataGolfLiveModelPlayer[],
 ): boolean {
   return liveStats.some((p) => {
     if (isPlayerFinishedFromLiveStats(p)) return false;
@@ -306,13 +306,13 @@ export function parseThruFromLiveModel(thru: unknown): number | undefined {
 }
 
 export function areAllPlayersFinishedFromLiveStats(
-  liveStats: LiveModelPlayer[],
+  liveStats: DataGolfLiveModelPlayer[],
 ): boolean {
   if (liveStats.length === 0) return false;
   return liveStats.every(isPlayerFinishedFromLiveStats);
 }
 
-export function inferParFromLiveStats(liveStats: LiveModelPlayer[]): {
+export function inferParFromLiveStats(liveStats: DataGolfLiveModelPlayer[]): {
   par: number | null;
   samples: number;
 } {

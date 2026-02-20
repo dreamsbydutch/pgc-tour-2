@@ -15,10 +15,7 @@ import {
   action,
 } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
-import {
-  requireAdmin,
-  requireAdminForActionWithClerkId,
-} from "../utils/auth";
+import { requireAdmin, requireAdminForActionWithClerkId } from "../utils/auth";
 import { processData } from "../utils/batchProcess";
 import {
   logAudit,
@@ -469,6 +466,14 @@ export const getTournamentLeaderboardView = query({
     const tournament = args.tournamentId
       ? tournaments.find((t) => t._id === args.tournamentId)
       : (() => {
+          const inProgress = tournaments
+            .filter((t) => t.startDate <= now && t.endDate >= now)
+            .sort((a, b) => b.startDate - a.startDate);
+
+          if (inProgress.length > 0) {
+            return inProgress[0];
+          }
+
           const nearEnd = tournaments
             .filter((t) => Math.abs(t.endDate - now) <= twelveHoursMs)
             .sort(
@@ -483,7 +488,15 @@ export const getTournamentLeaderboardView = query({
             .filter((t) => t.startDate >= now)
             .sort((a, b) => a.startDate - b.startDate);
 
-          return upcoming[0];
+          if (upcoming.length > 0) {
+            return upcoming[0];
+          }
+
+          const past = tournaments
+            .filter((t) => t.endDate < now)
+            .sort((a, b) => b.endDate - a.endDate);
+
+          return past[0];
         })();
     if (!tournament)
       return {
@@ -1128,5 +1141,50 @@ export const duplicateFromPreviousPlayoff = internalMutation({
       teamsCopied,
       groupsCreated: groupSet.size,
     } as const;
+  },
+});
+
+export const setTournamentAsActive = internalMutation({
+  args: v.object({ tournamentId: v.id("tournaments") }),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.tournamentId, {
+      status: "active",
+      updatedAt: Date.now(),
+    });
+  },
+});
+export const setTournamentAsCompleted = internalMutation({
+  args: v.object({ tournamentId: v.id("tournaments") }),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.tournamentId, {
+      status: "completed",
+      updatedAt: Date.now(),
+    });
+  },
+});
+export const setTournamentAsLivePlay = internalMutation({
+  args: v.object({
+    tournamentId: v.id("tournaments"),
+    currentRound: v.optional(v.number()),
+  }),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.tournamentId, {
+      livePlay: true,
+      currentRound: args.currentRound,
+      updatedAt: Date.now(),
+    });
+  },
+});
+export const setTournamentAsNonLivePlay = internalMutation({
+  args: v.object({
+    tournamentId: v.id("tournaments"),
+    currentRound: v.optional(v.number()),
+  }),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.tournamentId, {
+      livePlay: false,
+      currentRound: args.currentRound,
+      updatedAt: Date.now(),
+    });
   },
 });
