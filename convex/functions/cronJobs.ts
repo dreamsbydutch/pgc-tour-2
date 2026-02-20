@@ -147,7 +147,10 @@ export const updateGolfersWorldRankFromDataGolfInput: ReturnType<
   handler: async (ctx) => {
     let rankings: unknown;
     try {
-      rankings = await ctx.runAction(api.functions.datagolf.fetchDataGolfRankings, {});
+      rankings = await ctx.runAction(
+        api.functions.datagolf.fetchDataGolfRankings,
+        {},
+      );
     } catch (err) {
       return {
         ok: false,
@@ -3157,8 +3160,9 @@ export const recomputeStandingsForSeason = internalMutation({
         const samePointsCount = list.filter(
           (a) => a.points === calc.points,
         ).length;
-        const betterPointsCount = list.filter((a) => a.points > calc.points)
-          .length;
+        const betterPointsCount = list.filter(
+          (a) => a.points > calc.points,
+        ).length;
         const position = `${samePointsCount > 1 ? "T" : ""}${betterPointsCount + 1}`;
 
         const playoff =
@@ -3193,16 +3197,17 @@ export const recomputeStandingsForSeason = internalMutation({
   },
 });
 
-export const runCreateGroupsForNextTournament_Public: ReturnType<typeof action> =
-  action({
-    args: cronJobsValidators.args.runCreateGroupsForNextTournament,
-    handler: async (ctx, args) => {
-      return await ctx.runAction(
-        internal.functions.cronJobs.runCreateGroupsForNextTournament,
-        args,
-      );
-    },
-  });
+export const runCreateGroupsForNextTournament_Public: ReturnType<
+  typeof action
+> = action({
+  args: cronJobsValidators.args.runCreateGroupsForNextTournament,
+  handler: async (ctx, args) => {
+    return await ctx.runAction(
+      internal.functions.cronJobs.runCreateGroupsForNextTournament,
+      args,
+    );
+  },
+});
 
 export const runLiveTournamentSync_Public: ReturnType<typeof action> = action({
   args: cronJobsValidators.args.runLiveTournamentSync,
@@ -3214,16 +3219,17 @@ export const runLiveTournamentSync_Public: ReturnType<typeof action> = action({
   },
 });
 
-export const recomputeStandingsForCurrentSeason_Public: ReturnType<typeof mutation> =
-  mutation({
-    args: cronJobsValidators.args.recomputeStandingsForCurrentSeason,
-    handler: async (ctx, _args) => {
-      return await ctx.runMutation(
-        internal.functions.cronJobs.recomputeStandingsForCurrentSeason,
-        {},
-      );
-    },
-  });
+export const recomputeStandingsForCurrentSeason_Public: ReturnType<
+  typeof mutation
+> = mutation({
+  args: cronJobsValidators.args.recomputeStandingsForCurrentSeason,
+  handler: async (ctx, _args) => {
+    return await ctx.runMutation(
+      internal.functions.cronJobs.recomputeStandingsForCurrentSeason,
+      {},
+    );
+  },
+});
 
 export const updateGolfersWorldRankFromDataGolfInput_Public: ReturnType<
   typeof action

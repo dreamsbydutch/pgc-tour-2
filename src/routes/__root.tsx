@@ -3,7 +3,11 @@ import { TanstackDevtools } from "@tanstack/react-devtools";
 import { useEffect } from "react";
 
 import { NavigationContainer } from "@/facilitators";
-import { Providers, PWAInstallPrompt, SignedOutPersistentSignIn } from "@/displays";
+import {
+  Providers,
+  PWAInstallPrompt,
+  SignedOutPersistentSignIn,
+} from "@/displays";
 
 import "../styles.css";
 

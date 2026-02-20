@@ -417,7 +417,9 @@ export function formatNumber(num: number): string {
   return new Intl.NumberFormat("en-US").format(num);
 }
 
-export function formatNumberToPercentage(value: number | null | undefined): string {
+export function formatNumberToPercentage(
+  value: number | null | undefined,
+): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "-";
 
   return new Intl.NumberFormat("en-US", {
