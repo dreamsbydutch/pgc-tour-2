@@ -3,10 +3,9 @@ import { TanstackDevtools } from "@tanstack/react-devtools";
 import { useEffect } from "react";
 
 import { NavigationContainer } from "@/facilitators";
+import { Providers, PWAInstallPrompt, SignedOutPersistentSignIn } from "@/displays";
 
 import "../styles.css";
-import { Providers, SignedOutPersistentSignIn } from "@/components/displays";
-import { PWAInstallPrompt } from "@/components/displays/PWAInstallPrompt";
 
 export const Route = createRootRoute({
   head: () => ({

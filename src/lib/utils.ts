@@ -10,8 +10,13 @@ import type {
   ArticleModule,
   ErrorResponse,
   NavigationError,
+  TimeLeftType,
 } from "./types";
-import type { LeaderboardTeamRow } from "./types";
+import type {
+  LeaderboardPgaRow,
+  LeaderboardTeamRow,
+  LeaderboardVariant,
+} from "./types";
 import type {
   ExtendedStandingsTourCard,
   StandingsMember,
@@ -379,17 +384,47 @@ export function capitalize(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 }
 
-export function formatMoney(amount: number, cents: boolean): string {
+export function formatMoney(amount: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    minimumFractionDigits: cents ? 2 : 0,
-    maximumFractionDigits: cents ? 2 : 0,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   }).format(amount / 100);
+}
+
+export function formatMoneyWithCents(amountCents: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amountCents / 100);
+}
+
+export function formatBuyIn(cents?: number): string {
+  if (typeof cents !== "number") {
+    return "$0";
+  }
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(cents / 100);
 }
 
 export function formatNumber(num: number): string {
   return new Intl.NumberFormat("en-US").format(num);
+}
+
+export function formatNumberToPercentage(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+
+  return new Intl.NumberFormat("en-US", {
+    style: "percent",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 export function formatRank(position: number): string {
@@ -487,6 +522,22 @@ export function dateTimeLocalInputValueToMs(value: string): number {
   return new Date(value).getTime();
 }
 
+export function calculateCountdownTimeLeft(
+  startDateTime: number,
+): TimeLeftType {
+  const difference = startDateTime - Date.now();
+
+  if (difference <= 0) {
+    return null;
+  }
+
+  return {
+    days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+    hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+    minutes: Math.floor((difference / 1000 / 60) % 60),
+    seconds: Math.floor((difference / 1000) % 60),
+  };
+}
 export function getTournamentTimeline<
   T extends {
     startDate: number;
@@ -872,6 +923,7 @@ export function formatTournamentDateRange(
   }).format(startDate);
 
   const end = new Intl.DateTimeFormat("en-US", {
+    month: "short",
     day: "numeric",
     year: "numeric",
   }).format(endDate);
@@ -886,7 +938,7 @@ export function formatToPar(score: number | null | undefined): string {
   return `${score}`;
 }
 
-export function formatNumberToPercentage(
+export function formatPercentageDisplay(
   value: number | null | undefined,
 ): string {
   if (!value) return "-";
@@ -906,7 +958,6 @@ export function formatMoneyUsd(amount: number | null | undefined): string {
   }
 }
 
-// -------------- COUNTRY FLAGS -----------------------------------------------------------------------------------------
 const EMOJI_FLAGS: Record<string, string> = {
   USA: "🇺🇸",
   CAN: "🇨🇦",
@@ -939,6 +990,7 @@ const EMOJI_FLAGS: Record<string, string> = {
   PUR: "🇵🇷",
   VEN: "🇻🇪",
 };
+
 const COUNTRY_NAME_ALIASES: Record<string, string> = {
   US: "United States",
   "U.S.": "United States",
@@ -963,12 +1015,22 @@ const COUNTRY_NAME_ALIASES: Record<string, string> = {
   "CAPE VERDE": "Cabo Verde",
   "CZECH REPUBLIC": "Czechia",
 };
+
 let isoCountriesLocaleReady = false;
+
 function ensureIsoCountriesLocaleReady() {
   if (isoCountriesLocaleReady) return;
   isoCountries.registerLocale(isoCountriesEn);
   isoCountriesLocaleReady = true;
 }
+
+function normalizeCountryInput(value: string): string {
+  const trimmed = value.trim();
+  const compact = trimmed.replace(/\s+/g, " ");
+  const noParens = compact.replace(/\s*\([^)]*\)\s*/g, " ").trim();
+  return noParens;
+}
+
 function iso2ToFlagEmoji(iso2: string): string | null {
   const upper = iso2.toUpperCase();
   if (!/^[A-Z]{2}$/.test(upper)) return null;
@@ -980,14 +1042,11 @@ function iso2ToFlagEmoji(iso2: string): string | null {
   ];
   return String.fromCodePoint(...codePoints);
 }
+
 function toIsoAlpha2(country: string): string | null {
   ensureIsoCountriesLocaleReady();
 
-  const normalized = country
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/\s*\([^)]*\)\s*/g, " ")
-    .trim();
+  const normalized = normalizeCountryInput(country);
   const upper = normalized.toUpperCase();
 
   if (/^[A-Z]{2}$/.test(upper)) return upper;
@@ -1008,16 +1067,13 @@ function toIsoAlpha2(country: string): string | null {
   );
   return retry ? retry.toUpperCase() : null;
 }
+
 export function getCountryFlagEmoji(
   country: string | null | undefined,
 ): string | null {
   if (!country) return null;
 
-  const normalized = country
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/\s*\([^)]*\)\s*/g, " ")
-    .trim();
+  const normalized = normalizeCountryInput(country);
   if (!normalized) return null;
 
   const upper = normalized.toUpperCase();
@@ -1028,7 +1084,6 @@ export function getCountryFlagEmoji(
   if (!iso2) return null;
   return iso2ToFlagEmoji(iso2);
 }
-//
 
 const SCORE_PENALTIES = {
   DQ: 999,
@@ -1061,6 +1116,28 @@ export function getPositionChangeForTeam(team: {
   );
 }
 
+export function sortPgaRows(rows: LeaderboardPgaRow[]): LeaderboardPgaRow[] {
+  const nonCut = rows.filter((r) => !isPlayerCut(r.position));
+  const cut = rows.filter((r) => isPlayerCut(r.position));
+
+  nonCut.sort(
+    (a, b) =>
+      calculateScoreForSorting(a.position, a.score) -
+      calculateScoreForSorting(b.position, b.score),
+  );
+
+  cut
+    .sort(
+      (a, b) =>
+        calculateScoreForSorting(a.position, a.score) -
+        calculateScoreForSorting(b.position, b.score),
+    )
+    .sort((a, b) => (a.group ?? 999) - (b.group ?? 999))
+    .sort((a, b) => (a.position ?? "").localeCompare(b.position ?? ""));
+
+  return [...nonCut, ...cut];
+}
+
 export function sortTeamRows(rows: LeaderboardTeamRow[]): LeaderboardTeamRow[] {
   const next = [...rows];
   next
@@ -1076,7 +1153,7 @@ export function sortTeamRows(rows: LeaderboardTeamRow[]): LeaderboardTeamRow[] {
 export function filterTeamRowsByTour(
   rows: LeaderboardTeamRow[],
   activeTourId: string,
-  variant: "regular" | "playoff",
+  variant: LeaderboardVariant,
 ): LeaderboardTeamRow[] {
   const sorted = sortTeamRows(rows);
 
@@ -1087,6 +1164,30 @@ export function filterTeamRowsByTour(
   }
 
   return sorted.filter((t) => (t.tourCard.tourId ?? "") === activeTourId);
+}
+
+export function getLeaderboardRowClass(args: {
+  type: "PGC" | "PGA";
+  isCut: boolean;
+  isUser: boolean;
+  isFriend: boolean;
+}): string {
+  const classes = [
+    "col-span-10 grid grid-flow-row grid-cols-10 py-0.5 sm:grid-cols-33",
+  ];
+
+  if (args.type === "PGC") {
+    if (args.isUser) classes.push("bg-slate-200 font-semibold");
+    else if (args.isFriend) classes.push("bg-slate-100");
+    if (args.isCut) classes.push("text-gray-400");
+  }
+
+  if (args.type === "PGA") {
+    if (args.isUser) classes.push("bg-slate-100");
+    if (args.isCut) classes.push("text-gray-400");
+  }
+
+  return classes.join(" ");
 }
 
 const DATAGOLF_BASE_URL = "https://feeds.datagolf.com/";
@@ -1358,43 +1459,4 @@ export function sortItems<T>(
     if (aVal > bVal) return direction === "asc" ? 1 : -1;
     return 0;
   });
-}
-
-export function formatLeaderboardThruDisplay(args: {
-  thru: number | null | undefined;
-  teeTimeDisplay?: string | null | undefined;
-}): string {
-  if (args.thru === 18) return "F";
-  if (args.thru == null || args.thru === 0) {
-    return formatTeeTimeTimeOfDay(args.teeTimeDisplay) ?? "-";
-  }
-  return String(args.thru);
-}
-
-export function formatLeaderboardStandingsPosition(args: {
-  points: number;
-  allPoints: number[];
-}): { rank: number; display: string } {
-  const same = args.allPoints.filter((p) => p === args.points).length;
-  const better = args.allPoints.filter((p) => p > args.points).length;
-  const rank = better + 1;
-  return { rank, display: `${same > 1 ? "T" : ""}${rank}` };
-}
-
-export function getStandingsPlayoffVariant(
-  rank: number,
-): "gold" | "silver" | null {
-  const goldCut = 15;
-  const silverCut = 35;
-  if (rank <= goldCut) return "gold";
-  if (rank <= silverCut) return "silver";
-  return null;
-}
-
-export function getStandingsVariantClass(
-  variant: "gold" | "silver" | null,
-): string {
-  if (variant === "gold") return "font-semibold text-amber-700";
-  if (variant === "silver") return "font-semibold text-slate-600";
-  return "text-muted-foreground";
 }

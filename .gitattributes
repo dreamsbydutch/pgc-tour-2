@@ -1,0 +1,2 @@
+# Keep Convex generated artifacts stable across platforms
+convex/_generated/* text eol=lf

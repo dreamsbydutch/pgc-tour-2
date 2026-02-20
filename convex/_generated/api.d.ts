@@ -18,6 +18,7 @@ import type * as functions__constants from "../functions/_constants.js";
 import type * as functions_courses from "../functions/courses.js";
 import type * as functions_cronJobs from "../functions/cronJobs.js";
 import type * as functions_datagolf from "../functions/datagolf.js";
+import type * as functions_emailData from "../functions/emailData.js";
 import type * as functions_emails from "../functions/emails.js";
 import type * as functions_golfers from "../functions/golfers.js";
 import type * as functions_members from "../functions/members.js";
@@ -91,6 +92,7 @@ declare const fullApi: ApiFromModules<{
   "functions/courses": typeof functions_courses;
   "functions/cronJobs": typeof functions_cronJobs;
   "functions/datagolf": typeof functions_datagolf;
+  "functions/emailData": typeof functions_emailData;
   "functions/emails": typeof functions_emails;
   "functions/golfers": typeof functions_golfers;
   "functions/members": typeof functions_members;

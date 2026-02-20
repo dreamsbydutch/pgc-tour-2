@@ -42,6 +42,7 @@ const schema = defineSchema({
   })
     .index("by_email", ["email"])
     .index("by_clerk_id", ["clerkId"])
+    .index("by_is_active", ["isActive"])
     .index("by_role", ["role"])
     .index("by_last_login", ["lastLoginAt"])
     .index("by_account", ["account"]),
@@ -345,6 +346,7 @@ const schema = defineSchema({
     .index("by_season", ["seasonId"])
     .index("by_member_season", ["memberId", "seasonId"])
     .index("by_member_season_type", ["memberId", "seasonId", "transactionType"])
+    .index("by_member_status_type", ["memberId", "status", "transactionType"])
     .index("by_type", ["transactionType"])
     .index("by_status", ["status"])
     .index("by_amount", ["amount"]),

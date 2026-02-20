@@ -9,7 +9,6 @@
     "dev": "vite dev --port 3000 --host",
     "start": "node .output/server/index.mjs",
     "build": "vite build",
-    "postbuild": "node scripts/patch-vercel-function-runtime.mjs",
     "serve": "vite preview",
     "test": "vitest run",
     "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
