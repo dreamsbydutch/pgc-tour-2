@@ -34,10 +34,10 @@ function AdminRoute() {
     api.functions.cronJobs.runCreateGroupsForNextTournament_Public,
   );
   const runLiveSync = useAction(
-    api.functions.cronJobs.runLiveTournamentSync_Public,
+    api.functions.cronJobs.runTournamentSync_Public,
   );
   const runUpdateWorldRank = useAction(
-    api.functions.cronJobs.updateGolfersWorldRankFromDataGolfInput_Public,
+    api.functions.cronJobs.updateGolfersWorldRankFromDataGolfAPI_Public,
   );
   const sendWeeklyRecapEmailTest = useAction(
     api.functions.emails.sendWeeklyRecapEmailTest,
@@ -94,6 +94,59 @@ function AdminRoute() {
     } catch (err) {
       setImportOutput(err instanceof Error ? err.message : "Unknown error");
     }
+  };
+
+  const runRoundTeeTimeMigration = async () => {
+    const tables = ["teams", "tournamentGolfers"] as const;
+    const aggregate: Record<
+      (typeof tables)[number],
+      { passes: number; scanned: number; converted: number; invalid: number }
+    > = {
+      teams: { passes: 0, scanned: 0, converted: 0, invalid: 0 },
+      tournamentGolfers: { passes: 0, scanned: 0, converted: 0, invalid: 0 },
+    };
+
+    for (const table of tables) {
+      let cursor: string | null = null;
+      for (let pass = 0; pass < 100; pass += 1) {
+        const args = {
+          outputType: "number",
+          target: table,
+          cursor,
+          pageSize: 250,
+        } as unknown as Parameters<typeof runLiveSync>[0];
+
+        const result = (await runLiveSync(args)) as {
+          hasMore?: boolean;
+          nextCursor?: string;
+          summaries?: {
+            teams?: { scanned?: number; converted?: number; invalid?: number };
+            tournamentGolfers?: {
+              scanned?: number;
+              converted?: number;
+              invalid?: number;
+            };
+          };
+        };
+
+        aggregate[table].passes += 1;
+        const summary =
+          table === "teams"
+            ? result.summaries?.teams
+            : result.summaries?.tournamentGolfers;
+        aggregate[table].scanned += summary?.scanned ?? 0;
+        aggregate[table].converted += summary?.converted ?? 0;
+        aggregate[table].invalid += summary?.invalid ?? 0;
+
+        if (!result.hasMore) {
+          break;
+        }
+
+        cursor = result.nextCursor ?? null;
+      }
+    }
+
+    return aggregate;
   };
 
   return (

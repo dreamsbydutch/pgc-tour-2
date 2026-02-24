@@ -872,6 +872,7 @@ export function formatTournamentDateRange(
   }).format(startDate);
 
   const end = new Intl.DateTimeFormat("en-US", {
+    month: "short",
     day: "numeric",
     year: "numeric",
   }).format(endDate);
