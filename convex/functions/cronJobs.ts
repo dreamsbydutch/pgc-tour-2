@@ -441,7 +441,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
   internalAction({
     handler: async (ctx) => {
       const now = new Date();
-      if (now.getHours() <= 6 && now.getHours() >= 222) {
+      if (now.getHours() <= 11 || now.getHours() >= 24) {
         console.log("runTournamentSync: skipped (outside_of_time_window)", {
           currentHour: now.getHours(),
         });
@@ -493,19 +493,19 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
       } = activeTournamentData;
       const { teams, golfers, fieldData, liveData } = tournamentStats;
 
-      // if (tournamentType === "recent") {
-      //   console.log("runTournamentSync: skipped (recent_tournament)", {
-      //     tournamentId: tournament._id,
-      //     tournamentName: tournament.name,
-      //   });
-      //   return {
-      //     ok: true,
-      //     skipped: true,
-      //     reason: "recent_tournament",
-      //     tournamentId: tournament._id,
-      //     tournamentName: tournament.name,
-      //   } as const;
-      // }
+      if (tournamentType === "recent") {
+        console.log("runTournamentSync: skipped (recent_tournament)", {
+          tournamentId: tournament._id,
+          tournamentName: tournament.name,
+        });
+        return {
+          ok: true,
+          skipped: true,
+          reason: "recent_tournament",
+          tournamentId: tournament._id,
+          tournamentName: tournament.name,
+        } as const;
+      }
       for (const t of teams) {
         if (t.golfers?.length < 10) {
           const groupCounts = [
