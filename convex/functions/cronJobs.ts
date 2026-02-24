@@ -441,7 +441,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
   internalAction({
     handler: async (ctx) => {
       const now = new Date();
-      if (now.getHours() <= 11 || now.getHours() >= 24) {
+      if (now.getHours() <= -11 || now.getHours() >= 24) {
         console.log("runTournamentSync: skipped (outside_of_time_window)", {
           currentHour: now.getHours(),
         });
@@ -493,19 +493,19 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
       } = activeTournamentData;
       const { teams, golfers, fieldData, liveData } = tournamentStats;
 
-      if (tournamentType === "recent") {
-        console.log("runTournamentSync: skipped (recent_tournament)", {
-          tournamentId: tournament._id,
-          tournamentName: tournament.name,
-        });
-        return {
-          ok: true,
-          skipped: true,
-          reason: "recent_tournament",
-          tournamentId: tournament._id,
-          tournamentName: tournament.name,
-        } as const;
-      }
+      // if (tournamentType === "recent") {
+      //   console.log("runTournamentSync: skipped (recent_tournament)", {
+      //     tournamentId: tournament._id,
+      //     tournamentName: tournament.name,
+      //   });
+      //   return {
+      //     ok: true,
+      //     skipped: true,
+      //     reason: "recent_tournament",
+      //     tournamentId: tournament._id,
+      //     tournamentName: tournament.name,
+      //   } as const;
+      // }
       for (const t of teams) {
         if (t.golfers?.length < 10) {
           const groupCounts = [
@@ -733,6 +733,11 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
 
       for (const g of golfers) {
         if (g.golfer?._id && g.tournamentGolfer?._id) {
+          const golferPosition =
+            g.live?.current_pos ??
+            g.historical?.fin_text ??
+            g.tournamentGolfer?.position ??
+            undefined;
           await ctx.runMutation(
             internal.functions.golfers.updateTournamentGolfer,
             {
@@ -740,23 +745,23 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                 _id: g.tournamentGolfer._id,
                 tournamentId: tournament._id,
                 golferId: g.golfer._id,
-                position:
-                  g.live?.current_pos ??
-                  g.historical?.fin_text ??
-                  g.tournamentGolfer?.position ??
-                  undefined,
+                position: golferPosition,
                 score:
                   g.live?.current_score ??
                   (g.historical
-                    ? (g.historical.round_1?.score ?? 0) -
-                      (g.historical.round_1?.course_par ?? 0) +
-                      ((g.historical.round_2?.score ?? 0) -
-                        (g.historical.round_2?.course_par ?? 0)) +
-                      ((g.historical.round_3?.score ?? 0) -
-                        (g.historical.round_3?.course_par ?? 0)) +
-                      ((g.historical.round_4?.score ?? 0) -
-                        (g.historical.round_4?.course_par ?? 0))
-                    : (g.tournamentGolfer.score ?? undefined)),
+                    ? roundToDecimalPlace(
+                        (g.historical.round_1?.score ?? 0) -
+                          (g.historical.round_1?.course_par ?? 0) +
+                          ((g.historical.round_2?.score ?? 0) -
+                            (g.historical.round_2?.course_par ?? 0)) +
+                          ((g.historical.round_3?.score ?? 0) -
+                            (g.historical.round_3?.course_par ?? 0)) +
+                          ((g.historical.round_4?.score ?? 0) -
+                            (g.historical.round_4?.course_par ?? 0)),
+                      )
+                    : g.tournamentGolfer.score
+                      ? roundToDecimalPlace(g.tournamentGolfer.score)
+                      : undefined),
                 endHole:
                   g.live?.end_hole ?? g.tournamentGolfer?.endHole ?? undefined,
                 makeCut:
@@ -764,17 +769,20 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                 topTen:
                   g.live?.top_10 ?? g.tournamentGolfer?.topTen ?? undefined,
                 win: g.live?.win ?? g.tournamentGolfer?.win ?? undefined,
-                today:
-                  g.live?.today ??
-                  (currentRound === 4
-                    ? (g.historical?.round_4?.score ?? 0) -
-                      (g.historical?.round_4?.course_par ?? 0)
-                    : (g.tournamentGolfer?.today ?? undefined)),
-                thru: g.live?.thru
-                  ? parseInt(g.live?.thru)
-                  : !isRoundRunning
-                    ? 18
-                    : 0,
+                today: ["CUT", "WD", "DQ", ""].includes(golferPosition ?? "")
+                  ? undefined
+                  : (g.live?.today ??
+                    (currentRound === 4
+                      ? (g.historical?.round_4?.score ?? 0) -
+                        (g.historical?.round_4?.course_par ?? 0)
+                      : (g.tournamentGolfer?.today ?? undefined))),
+                thru: ["CUT", "WD", "DQ", ""].includes(golferPosition ?? "")
+                  ? undefined
+                  : g.live?.thru
+                    ? parseInt(g.live?.thru)
+                    : !isRoundRunning
+                      ? 18
+                      : 0,
                 roundOne:
                   currentRound > 1 || (currentRound === 1 && !isRoundRunning)
                     ? g.live?.R1 && g.live.R1 > 0
@@ -1044,6 +1052,14 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           ),
           today: roundToDecimalPlace(
             (t.golfers
+              .filter((g) =>
+                ["CUT", "WD", "DQ", ""].includes(
+                  g.live?.current_pos ??
+                    g.historical?.fin_text ??
+                    g.tournamentGolfer?.position ??
+                    "",
+                ),
+              )
               .sort((a, b) => (a.live?.today ?? 500) - (b.live?.today ?? 500))
               .slice(0, currentRound >= 3 ? 5 : 10)
               .reduce((sum, val) => (sum ?? 0) + (val.live?.today ?? 0), 0) ??
@@ -1052,6 +1068,14 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           ),
           thru: roundToDecimalPlace(
             (t.golfers
+              .filter((g) =>
+                ["CUT", "WD", "DQ", ""].includes(
+                  g.live?.current_pos ??
+                    g.historical?.fin_text ??
+                    g.tournamentGolfer?.position ??
+                    "",
+                ),
+              )
               .sort((a, b) => (a.live?.today ?? 500) - (b.live?.today ?? 500))
               .slice(0, currentRound >= 3 ? 5 : 10)
               .reduce(

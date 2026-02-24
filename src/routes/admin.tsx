@@ -34,7 +34,7 @@ function AdminRoute() {
     api.functions.cronJobs.runCreateGroupsForNextTournament_Public,
   );
   const runLiveSync = useAction(
-    api.functions.cronJobs.recomputeStandings_Public,
+    api.functions.cronJobs.runTournamentSync_Public,
   );
   const runUpdateWorldRank = useAction(
     api.functions.cronJobs.updateGolfersWorldRankFromDataGolfAPI_Public,
