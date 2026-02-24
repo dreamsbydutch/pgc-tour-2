@@ -20,7 +20,7 @@ export async function requireAdminForAction(ctx: ActionCtx): Promise<void> {
   }
 
   const adminCheck = await ctx.runQuery(
-    internal.functions.members.getIsAdminByClerkId_Internal,
+    internal.functions.utils.getIsAdminByClerkId_Internal,
     { clerkId: effectiveClerkId },
   );
 
@@ -46,7 +46,7 @@ export async function requireAdminForActionWithClerkId(
   }
 
   const adminCheck = await ctx.runQuery(
-    internal.functions.members.getIsAdminByClerkId_Internal,
+    internal.functions.utils.getIsAdminByClerkId_Internal,
     { clerkId: effectiveClerkId },
   );
 

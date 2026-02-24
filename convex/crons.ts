@@ -9,7 +9,7 @@ const crons = cronJobs();
 crons.interval(
   "live_tournament_sync",
   { minutes: 4 },
-  internal.functions.cronJobs.runLiveTournamentSync,
+  internal.functions.cronJobs.runTournamentSync,
   {},
 );
 
@@ -17,7 +17,7 @@ crons.interval(
 crons.cron(
   "recompute_standings",
   "0 4 * * *",
-  internal.functions.cronJobs.recomputeStandingsForCurrentSeason,
+  internal.functions.cronJobs.recomputeStandings,
   {},
 );
 
