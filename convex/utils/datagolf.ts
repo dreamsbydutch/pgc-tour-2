@@ -1,9 +1,10 @@
 import { fetchWithRetry } from "./externalFetch";
 import type {
+  DataGolfFieldPlayer,
   DataGolfLiveTournamentStat,
-  DataGolfOddsFormat,
-  DataGolfSkillRatingCategoryKey,
+  DataGolfRankedPlayer,
 } from "../types/datagolf";
+import { Doc } from "../_generated/dataModel";
 
 const BASE_URL = "https://feeds.datagolf.com";
 
@@ -62,91 +63,28 @@ export async function fetchFromDataGolf<T = Record<string, never>>(
   return result.data;
 }
 
-export function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function parseNumberLike(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-export function impliedProbabilityFromOdds(
-  odds: number | string,
-  oddsFormat: DataGolfOddsFormat,
-): number | null {
-  if (oddsFormat === "percent") {
-    const percent = parseNumberLike(odds);
-    if (percent === null) return null;
-    return percent / 100;
-  }
-
-  if (oddsFormat === "decimal") {
-    const decimal = parseNumberLike(odds);
-    if (decimal === null || decimal <= 0) return null;
-    return 1 / decimal;
-  }
-
-  if (oddsFormat === "american") {
-    const american = parseNumberLike(odds);
-    if (american === null || american === 0) return null;
-    if (american > 0) return 100 / (american + 100);
-    const abs = Math.abs(american);
-    return abs / (abs + 100);
-  }
-
-  const fraction = String(odds).trim();
-  const parts = fraction.split("/").map((p) => p.trim());
-  if (parts.length !== 2) return null;
-  const numerator = Number(parts[0]);
-  const denominator = Number(parts[1]);
-  if (!Number.isFinite(numerator) || !Number.isFinite(denominator)) return null;
-  if (numerator < 0 || denominator <= 0) return null;
-  return denominator / (numerator + denominator);
-}
-
-const SKILL_RATING_CATEGORY_KEYS = [
-  "sg_putt",
-  "sg_arg",
-  "sg_app",
-  "sg_ott",
-  "sg_total",
-  "driving_acc",
-  "driving_dist",
-] as const;
-
-export function isSkillRatingCategoryKey(
-  value: string,
-): value is DataGolfSkillRatingCategoryKey {
-  return (SKILL_RATING_CATEGORY_KEYS as readonly string[]).includes(value);
-}
-
-const LIVE_TOURNAMENT_STATS = [
-  "sg_putt",
-  "sg_arg",
-  "sg_app",
-  "sg_ott",
-  "sg_t2g",
-  "sg_bs",
-  "sg_total",
-  "distance",
-  "accuracy",
-  "gir",
-  "prox_fw",
-  "prox_rgh",
-  "scrambling",
-  "great_shots",
-  "poor_shots",
-] as const satisfies readonly DataGolfLiveTournamentStat[];
-
 export function isLiveTournamentStat(
-  value: string,
+  value: DataGolfLiveTournamentStat,
 ): value is DataGolfLiveTournamentStat {
-  return (LIVE_TOURNAMENT_STATS as readonly string[]).includes(value);
+  return (
+    [
+      "sg_putt",
+      "sg_arg",
+      "sg_app",
+      "sg_ott",
+      "sg_t2g",
+      "sg_bs",
+      "sg_total",
+      "distance",
+      "accuracy",
+      "gir",
+      "prox_fw",
+      "prox_rgh",
+      "scrambling",
+      "great_shots",
+      "poor_shots",
+    ] as const satisfies readonly DataGolfLiveTournamentStat[]
+  ).includes(value);
 }
 
 export function buildQueryParams(
@@ -161,7 +99,7 @@ export function buildQueryParams(
   return searchParams.toString();
 }
 
-export function isPlayerFinishedFromLiveStats(player: {
+function isPlayerFinishedFromLiveStats(player: {
   current_pos?: string | null;
   thru?: number | undefined;
 }): boolean {
@@ -212,7 +150,7 @@ export function isRoundRunningFromLiveStats(
     if (raw === "F") return false;
 
     const parsed = Number.parseInt(raw, 10);
-    return Number.isFinite(parsed) && parsed > 0 && parsed < 18;
+    return Number.isFinite(parsed) && parsed >= 0 && parsed < 18;
   });
 }
 
@@ -246,7 +184,7 @@ export function normalizeDgSkillEstimateToPgcRating(
   return Math.min(150, Math.round(raw * 100) / 100);
 }
 
-export function normalizeEventTokens(name: string): string[] {
+function normalizeEventTokens(name: string): string[] {
   const STOP = new Set([
     "the",
     "a",
@@ -330,9 +268,50 @@ export function checkCompatabilityOfEventNames(
   return { ok, score, intersection, expectedTokens, actualTokens };
 }
 
-export function parseDataGolfTeeTimeToMs(value: string): number | null {
+export function parseDataGolfTeeTimeToMs(
+  value: string | undefined,
+  options?: {
+    baseDateMs?: number;
+    sourceUtcOffsetSeconds?: number;
+  },
+): number | undefined {
+  if (!value) return undefined;
   const raw = value.trim();
-  if (!raw) return null;
+  if (!raw) return undefined;
+
+  const timeOnlyMatch = /^(\d{1,2}):(\d{2})\s*([aApP][mM])$/.exec(raw);
+  if (timeOnlyMatch) {
+    const baseDateMs = options?.baseDateMs;
+    if (!Number.isFinite(baseDateMs)) return undefined;
+
+    const baseDate = new Date(baseDateMs as number);
+    if (Number.isNaN(baseDate.getTime())) return undefined;
+
+    const hourRaw = Number(timeOnlyMatch[1]);
+    const minute = Number(timeOnlyMatch[2]);
+    const ampm = timeOnlyMatch[3].toLowerCase();
+
+    if (!Number.isFinite(hourRaw) || !Number.isFinite(minute)) return undefined;
+    if (hourRaw < 1 || hourRaw > 12 || minute < 0 || minute > 59)
+      return undefined;
+
+    let hour24 = hourRaw % 12;
+    if (ampm === "pm") hour24 += 12;
+
+    const utcBase = Date.UTC(
+      baseDate.getUTCFullYear(),
+      baseDate.getUTCMonth(),
+      baseDate.getUTCDate(),
+      hour24,
+      minute,
+      0,
+      0,
+    );
+    if (Number.isNaN(utcBase)) return undefined;
+
+    const offsetMs = (options?.sourceUtcOffsetSeconds ?? 0) * 1000;
+    return utcBase - offsetMs;
+  }
 
   const direct = new Date(raw).getTime();
   if (!Number.isNaN(direct)) return direct;
@@ -342,7 +321,7 @@ export function parseDataGolfTeeTimeToMs(value: string): number | null {
       raw,
     );
 
-  if (!match) return null;
+  if (!match) return undefined;
 
   const year = Number(match[1]);
   const month = Number(match[2]);
@@ -360,7 +339,7 @@ export function parseDataGolfTeeTimeToMs(value: string): number | null {
     !Number.isFinite(minute) ||
     !Number.isFinite(second)
   ) {
-    return null;
+    return undefined;
   }
 
   if (tzRaw) {
@@ -372,9 +351,54 @@ export function parseDataGolfTeeTimeToMs(value: string): number | null {
 
     const iso = `${match[1]}-${match[2]}-${match[3]}T${hh}:${mm}:${ss}${normalizedTz}`;
     const parsed = new Date(iso).getTime();
-    return Number.isNaN(parsed) ? null : parsed;
+    return Number.isNaN(parsed) ? undefined : parsed;
   }
 
   const utc = Date.UTC(year, month - 1, day, hour, minute, second);
-  return Number.isNaN(utc) ? null : utc;
+  return Number.isNaN(utc) ? undefined : utc;
+}
+export function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+export function computeHasTournamentStarted(
+  tournament: Pick<
+    Doc<"tournaments">,
+    "_id" | "status" | "startDate" | "livePlay"
+  >,
+): boolean {
+  return (
+    tournament.status === "active" ||
+    tournament.status === "completed" ||
+    tournament.livePlay === true ||
+    (tournament.status !== "upcoming" &&
+      isFiniteNumber(tournament.startDate) &&
+      tournament.startDate > 0 &&
+      Date.now() >= tournament.startDate)
+  );
+}
+
+export function computeActiveApiIds(args: {
+  field: { dg_id: number }[];
+  liveStats: { dg_id: number }[];
+}): Set<number> {
+  const liveFieldApiIds = new Set(args.liveStats.map((p) => p.dg_id));
+  if (liveFieldApiIds.size > 0) return liveFieldApiIds;
+  return new Set(args.field.map((f) => f.dg_id));
+}
+
+export function buildFieldById(
+  field: DataGolfFieldPlayer[],
+): Map<number, DataGolfFieldPlayer> {
+  const fieldById = new Map<number, DataGolfFieldPlayer>();
+  for (const f of field) fieldById.set(f.dg_id, f);
+  return fieldById;
+}
+
+export function buildRankingById(
+  rankings: DataGolfRankedPlayer[],
+): Map<number, DataGolfRankedPlayer> {
+  const rankingById = new Map<number, DataGolfRankedPlayer>();
+  for (const r of rankings) rankingById.set(r.dg_id, r);
+  return rankingById;
 }
