@@ -37,7 +37,7 @@ function AdminRoute() {
     api.functions.cronJobs.runTournamentSync_Public,
   );
   const runUpdateWorldRank = useAction(
-    api.functions.cronJobs.updateGolfersWorldRankFromDataGolfAPI_Public,
+    api.functions.cronJobs.recomputeStandings_Public,
   );
   const sendWeeklyRecapEmailTest = useAction(
     api.functions.emails.sendWeeklyRecapEmailTest,
