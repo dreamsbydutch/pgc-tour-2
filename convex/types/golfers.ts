@@ -25,14 +25,24 @@ export type DedupeResult = {
 };
 
 import type { Doc } from "../_generated/dataModel";
-import { DataGolfFieldPlayer, DataGolfRankedPlayer } from "./datagolf";
+import {
+  DataGolfFieldPlayer,
+  DataGolfHistoricalPlayer,
+  DataGolfLiveModelPlayer,
+  DataGolfRankedPlayer,
+} from "./datagolf";
 
 export type ValidateGolferDataInput = Partial<
   Pick<Doc<"golfers">, "apiId" | "playerName" | "country" | "worldRank">
 >;
 
-export type EnhancedGolfer = DataGolfFieldPlayer & {
+export type EnhancedGolfer = {
+  field?: DataGolfFieldPlayer;
   ranking?: DataGolfRankedPlayer;
+  live?: DataGolfLiveModelPlayer;
+  historical?: DataGolfHistoricalPlayer;
+  tournamentGolfer?: Doc<"tournamentGolfers">;
+  golfer?: Doc<"golfers">;
 };
 
 export type BuildUsageRateByGolferApiIdOptions = {

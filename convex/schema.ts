@@ -143,7 +143,7 @@ const schema = defineSchema({
     livePlay: v.optional(v.boolean()),
 
     // DataGolf sync markers (used to avoid unnecessary live-sync writes)
-    dataGolfInPlayLastUpdate: v.optional(v.string()),
+    dataGolfInPlayLastUpdate: v.optional(v.union(v.string(), v.number())), // Timestamp or version string of last DataGolf "in play" update
 
     // Timestamp for the last successful live leaderboard sync that applied updates.
     leaderboardLastUpdatedAt: v.optional(v.number()),
@@ -219,13 +219,13 @@ const schema = defineSchema({
     round: v.optional(v.number()),
 
     // Round-specific tee times and scores
-    roundOneTeeTime: v.optional(v.string()),
+    roundOneTeeTime: v.optional(v.union(v.number(), v.string())),
     roundOne: v.optional(v.number()),
-    roundTwoTeeTime: v.optional(v.string()),
+    roundTwoTeeTime: v.optional(v.union(v.number(), v.string())),
     roundTwo: v.optional(v.number()),
-    roundThreeTeeTime: v.optional(v.string()),
+    roundThreeTeeTime: v.optional(v.union(v.number(), v.string())),
     roundThree: v.optional(v.number()),
-    roundFourTeeTime: v.optional(v.string()),
+    roundFourTeeTime: v.optional(v.union(v.number(), v.string())),
     roundFour: v.optional(v.number()),
 
     updatedAt: v.optional(v.number()),
@@ -278,13 +278,13 @@ const schema = defineSchema({
     group: v.optional(v.number()),
 
     // Round-specific data
-    roundOneTeeTime: v.optional(v.string()),
+    roundOneTeeTime: v.optional(v.union(v.number(), v.string())),
     roundOne: v.optional(v.number()),
-    roundTwoTeeTime: v.optional(v.string()),
+    roundTwoTeeTime: v.optional(v.union(v.number(), v.string())),
     roundTwo: v.optional(v.number()),
-    roundThreeTeeTime: v.optional(v.string()),
+    roundThreeTeeTime: v.optional(v.union(v.number(), v.string())),
     roundThree: v.optional(v.number()),
-    roundFourTeeTime: v.optional(v.string()),
+    roundFourTeeTime: v.optional(v.union(v.number(), v.string())),
     roundFour: v.optional(v.number()),
 
     // Tournament-specific metadata
