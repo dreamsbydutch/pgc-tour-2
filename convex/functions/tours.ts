@@ -1,127 +1,9 @@
-/**
- * Tour Management - Simplified CRUD Functions
- *
- * Clean CRUD operations with comprehensive options objects.
- * Each function (create, get, update, delete) handles all use cases
- * through flexible configuration rather than multiple specialized functions.
- */
-
-import { query, mutation } from "../_generated/server";
-import { requireAdmin } from "../utils/auth";
-import { processData } from "../utils/batchProcess";
-import { sumArray } from "../utils/sumArray";
-import { applyFilters, getSortFunction } from "../utils/tours";
-import { logAudit, computeChanges } from "../utils/auditLog";
-import type { TourDoc } from "../types/types";
+import { query } from "../_generated/server";
 import { v } from "convex/values";
-import { formatCents } from "../utils";
+import type { Doc } from "../_generated/dataModel";
 
 /**
- * Create tours with comprehensive options
- *
- * @example
- * Basic tour creation
- * const tour = await ctx.runMutation(api.functions.tours.createTours, {
- *   data: {
- *     name: "PGA Tour 2025 Spring",
- *     shortForm: "PGA",
- *     logoUrl: "https://example.com/logo.png",
- *     seasonId: "season123",
- *     buyIn: 10000,
- *     playoffSpots: [8, 4, 2]
- *   }
- * });
- *
- * With advanced options
- * const tour = await ctx.runMutation(api.functions.tours.createTours, {
- *   data: { ... },
- *   options: {
- *     skipValidation: false,
- *     setActive: true,
- *     autoCreateTourCards: true,
- *     returnEnhanced: true
- *   }
- * });
- */
-export const createTours = mutation({
-  args: {
-    data: v.object({
-      name: v.string(),
-      shortForm: v.string(),
-      logoUrl: v.string(),
-      seasonId: v.id("seasons"),
-      buyIn: v.number(),
-      playoffSpots: v.array(v.number()),
-      maxParticipants: v.optional(v.number()),
-    }),
-  },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx);
-    const tourId = await ctx.db.insert("tours", {
-      name: args.data.name,
-      shortForm: args.data.shortForm,
-      logoUrl: args.data.logoUrl,
-      seasonId: args.data.seasonId,
-      buyIn: args.data.buyIn,
-      playoffSpots: args.data.playoffSpots,
-      maxParticipants: args.data.maxParticipants,
-      updatedAt: Date.now(),
-    });
-
-    await logAudit(ctx, {
-      entityType: "tours",
-      entityId: tourId,
-      action: "created",
-      metadata: {
-        seasonId: args.data.seasonId,
-        name: args.data.name,
-      },
-    });
-
-    const tour = await ctx.db.get(tourId);
-    if (!tour) throw new Error("Failed to retrieve created tour");
-
-    return tour;
-  },
-});
-
-/**
- * Get tours with comprehensive query options
- *
- * @example
- * Get single tour by ID
- * const tour = await ctx.runQuery(api.functions.tours.getTours, {
- *   options: { id: "tour123" }
- * });
- *
- * Get multiple tours by IDs
- * const tours = await ctx.runQuery(api.functions.tours.getTours, {
- *   options: { ids: ["tour1", "tour2", "tour3"] }
- * });
- *
- * Get tours with filtering, sorting, and pagination
- * const result = await ctx.runQuery(api.functions.tours.getTours, {
- *   options: {
- *     filter: {
- *       seasonId: "season123",
- *       minBuyIn: 5000,
- *       searchTerm: "PGA"
- *     },
- *     sort: {
- *       sortBy: "buyIn",
- *       sortOrder: "desc"
- *     },
- *     pagination: {
- *       limit: 20,
- *       offset: 0
- *     },
- *     enhance: {
- *       includeSeason: true,
- *       includeParticipants: true,
- *       includeStatistics: true
- *     }
- *   }
- * });
+ * Returns tours with optional filtering, sorting, pagination, and enhancement.
  */
 export const getTours = query({
   args: {
@@ -162,110 +44,152 @@ export const getTours = query({
             sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
           }),
         ),
+        pagination: v.optional(
+          v.object({
+            limit: v.optional(v.number()),
+            offset: v.optional(v.number()),
+          }),
+        ),
+        enhance: v.optional(
+          v.object({
+            includeSeason: v.optional(v.boolean()),
+            includeTournaments: v.optional(v.boolean()),
+            includeParticipants: v.optional(v.boolean()),
+            includeStatistics: v.optional(v.boolean()),
+            includeTourCards: v.optional(v.boolean()),
+          }),
+        ),
+        includeAnalytics: v.optional(v.boolean()),
       }),
     ),
   },
   handler: async (ctx, args) => {
-    const options = args.options || {};
+    const options = args.options ?? {};
+    const filter = options.filter ?? {};
+    const sort = options.sort ?? {};
+    const pagination = options.pagination ?? {};
+    const enhance = options.enhance ?? {};
+
+    let tours: Doc<"tours">[];
 
     if (options.id) {
-      const tour = await ctx.db.get(options.id);
-      if (!tour) return null;
-
-      return {
-        ...tour,
-        buyIn: formatCents(tour.buyIn),
-        playoffSpots: sumArray(tour.playoffSpots),
-      };
+      const single = await ctx.db.get(options.id);
+      tours = single ? [single] : [];
+    } else if (options.ids && options.ids.length > 0) {
+      const docs = await Promise.all(options.ids.map((id) => ctx.db.get(id)));
+      tours = docs.filter((tour): tour is Doc<"tours"> => tour !== null);
+    } else if (filter.seasonId) {
+      tours = await ctx.db
+        .query("tours")
+        .withIndex("by_season", (q) => q.eq("seasonId", filter.seasonId!))
+        .collect();
+    } else {
+      tours = await ctx.db.query("tours").collect();
     }
 
-    if (options.ids) {
-      const tours = await Promise.all(
-        options.ids.map(async (id) => {
-          const tour = await ctx.db.get(id);
-          return tour;
-        }),
-      );
-      return tours.filter(Boolean).map((tour) => ({
-        ...tour,
-        buyIn: formatCents(tour?.buyIn ?? 0),
-        playoffSpots: sumArray(tour?.playoffSpots ?? []),
-      }));
-    }
-
-    let tours = await ctx.db.query("tours").collect();
-    tours = applyFilters(tours, options.filter || {});
-    const processedTours = processData(tours, {
-      sort: getSortFunction(options.sort || {}),
+    const filtered = tours.filter((tour) => {
+      if (filter.shortForm && tour.shortForm !== filter.shortForm) return false;
+      if (filter.minBuyIn !== undefined && tour.buyIn < filter.minBuyIn)
+        return false;
+      if (filter.maxBuyIn !== undefined && tour.buyIn > filter.maxBuyIn)
+        return false;
+      if (
+        filter.minParticipants !== undefined &&
+        (tour.maxParticipants ?? 0) < filter.minParticipants
+      ) {
+        return false;
+      }
+      if (
+        filter.maxParticipants !== undefined &&
+        (tour.maxParticipants ?? 0) > filter.maxParticipants
+      ) {
+        return false;
+      }
+      if (
+        filter.searchTerm &&
+        !`${tour.name} ${tour.shortForm}`
+          .toLowerCase()
+          .includes(filter.searchTerm.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filter.playoffSpotsMin !== undefined &&
+        tour.playoffSpots.length < filter.playoffSpotsMin
+      ) {
+        return false;
+      }
+      if (
+        filter.playoffSpotsMax !== undefined &&
+        tour.playoffSpots.length > filter.playoffSpotsMax
+      ) {
+        return false;
+      }
+      if (
+        filter.createdAfter !== undefined &&
+        tour._creationTime < filter.createdAfter
+      ) {
+        return false;
+      }
+      if (
+        filter.createdBefore !== undefined &&
+        tour._creationTime > filter.createdBefore
+      ) {
+        return false;
+      }
+      if (
+        filter.updatedAfter !== undefined &&
+        (tour.updatedAt ?? 0) < filter.updatedAfter
+      ) {
+        return false;
+      }
+      if (
+        filter.updatedBefore !== undefined &&
+        (tour.updatedAt ?? 0) > filter.updatedBefore
+      ) {
+        return false;
+      }
+      return true;
     });
-    return processedTours.map((tour) => ({
-      ...tour,
-      buyIn: formatCents(tour.buyIn),
-      playoffSpots: sumArray(tour.playoffSpots),
-    }));
-  },
-});
 
-/**
- * Update tours with comprehensive options
- *
- * @example
- * Basic update
- * const updatedTour = await ctx.runMutation(api.functions.tours.updateTours, {
- *   tourId: "tour123",
- *   data: { name: "Updated Tour Name", buyIn: 15000 }
- * });
- *
- * Advanced update with options
- * const result = await ctx.runMutation(api.functions.tours.updateTours, {
- *   tourId: "tour123",
- *   data: { buyIn: 20000 },
- *   options: {
- *     skipValidation: false,
- *     updateTimestamp: true,
- *     cascadeToTourCards: true,
- *     returnEnhanced: true,
- *     includeStatistics: true
- *   }
- * });
- */
-export const updateTours = mutation({
-  args: {
-    tourId: v.id("tours"),
-    data: v.object({
-      name: v.optional(v.string()),
-      shortForm: v.optional(v.string()),
-      logoUrl: v.optional(v.string()),
-      buyIn: v.optional(v.number()),
-      playoffSpots: v.optional(v.array(v.number())),
-      maxParticipants: v.optional(v.number()),
-    }),
-  },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx);
-    const tour = await ctx.db.get(args.tourId);
-    if (!tour) {
-      throw new Error("Tour not found");
+    const sortOrder = sort.sortOrder === "asc" ? 1 : -1;
+    const sortBy = sort.sortBy ?? "name";
+
+    const sorted = [...filtered].sort((a, b) => {
+      if (sortBy === "shortForm")
+        return a.shortForm.localeCompare(b.shortForm) * sortOrder;
+      if (sortBy === "buyIn") return (a.buyIn - b.buyIn) * sortOrder;
+      if (sortBy === "maxParticipants") {
+        return (
+          ((a.maxParticipants ?? 0) - (b.maxParticipants ?? 0)) * sortOrder
+        );
+      }
+      if (sortBy === "createdAt")
+        return (a._creationTime - b._creationTime) * sortOrder;
+      if (sortBy === "updatedAt")
+        return ((a.updatedAt ?? 0) - (b.updatedAt ?? 0)) * sortOrder;
+      if (sortBy === "playoffSpots") {
+        return (a.playoffSpots.length - b.playoffSpots.length) * sortOrder;
+      }
+      return a.name.localeCompare(b.name) * sortOrder;
+    });
+
+    const offset = Math.max(0, pagination.offset ?? 0);
+    const limit =
+      pagination.limit && pagination.limit > 0
+        ? pagination.limit
+        : sorted.length;
+    const paginated = sorted.slice(offset, offset + limit);
+
+    if (!enhance.includeSeason) {
+      return paginated;
     }
 
-    const updateData: Partial<TourDoc> = { ...args.data };
-    updateData.updatedAt = Date.now();
-
-    await ctx.db.patch(args.tourId, updateData);
-
-    const changes = computeChanges(tour, updateData);
-    if (Object.keys(changes).length > 0) {
-      await logAudit(ctx, {
-        entityType: "tours",
-        entityId: args.tourId,
-        action: "updated",
-        changes,
-      });
-    }
-
-    const updatedTour = await ctx.db.get(args.tourId);
-    if (!updatedTour) throw new Error("Failed to retrieve updated tour");
-
-    return updatedTour;
+    return await Promise.all(
+      paginated.map(async (tour) => ({
+        ...tour,
+        season: (await ctx.db.get(tour.seasonId)) ?? undefined,
+      })),
+    );
   },
 });
