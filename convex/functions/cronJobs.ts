@@ -311,6 +311,12 @@ export const recomputeStandings: ReturnType<typeof internalMutation> =
           reason: "no_current_season",
         } as const;
       }
+      const tournaments = await ctx.db
+        .query("tournaments")
+        .withIndex("by_season", (q) =>
+          q.eq("seasonId", currentSeason.season._id),
+        )
+        .collect();
       const tourCards = await ctx.db
         .query("tourCards")
         .withIndex("by_season", (q) =>
@@ -332,10 +338,11 @@ export const recomputeStandings: ReturnType<typeof internalMutation> =
             .withIndex("by_tour_card", (q) => q.eq("tourCardId", tc._id))
             .collect();
 
-          const completed = teams
-            .filter((t) => (t.round ?? 0) > 4)
-            .sort((a, b) => a._creationTime - b._creationTime);
-
+          const completed = teams.filter(
+            (t) =>
+              tournaments.find((tr) => tr._id === t.tournamentId)?.status ===
+              "completed",
+          );
           const points = completed.reduce(
             (sum, t) => sum + Math.round(t.points ?? 0),
             0,
@@ -441,7 +448,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
   internalAction({
     handler: async (ctx) => {
       const now = new Date();
-      if (now.getHours() <= -11 || now.getHours() >= 24) {
+      if (now.getHours() <= 11 || now.getHours() >= 24) {
         console.log("runTournamentSync: skipped (outside_of_time_window)", {
           currentHour: now.getHours(),
         });
@@ -491,21 +498,22 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         isPlayoff,
         type: tournamentType,
       } = activeTournamentData;
-      const { teams, golfers, fieldData, liveData } = tournamentStats;
+      const { teams, golfers, fieldData, liveData, historicalData } =
+        tournamentStats;
 
-      // if (tournamentType === "recent") {
-      //   console.log("runTournamentSync: skipped (recent_tournament)", {
-      //     tournamentId: tournament._id,
-      //     tournamentName: tournament.name,
-      //   });
-      //   return {
-      //     ok: true,
-      //     skipped: true,
-      //     reason: "recent_tournament",
-      //     tournamentId: tournament._id,
-      //     tournamentName: tournament.name,
-      //   } as const;
-      // }
+      if (tournamentType === "recent") {
+        console.log("runTournamentSync: skipped (recent_tournament)", {
+          tournamentId: tournament._id,
+          tournamentName: tournament.name,
+        });
+        return {
+          ok: true,
+          skipped: true,
+          reason: "recent_tournament",
+          tournamentId: tournament._id,
+          tournamentName: tournament.name,
+        } as const;
+      }
       for (const t of teams) {
         if (t.golfers?.length < 10) {
           const groupCounts = [
@@ -688,11 +696,16 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           golfersCreated: golfers.length,
         };
       }
-      var currentRound = liveData.info ? liveData.info.current_round : 0;
+      var currentRound = liveData.info
+        ? liveData.info.current_round
+        : historicalData.event_completed
+          ? 5
+          : 0;
       var isRoundRunning = liveData.info
         ? isRoundRunningFromLiveStats(
             golfers.map((g) => ({
-              current_pos: g.live?.current_pos ?? undefined,
+              current_pos:
+                g.live?.current_pos ?? g.historical?.fin_text ?? undefined,
               thru: parseFloat(g.live?.thru ?? ""),
             })),
           )
@@ -711,17 +724,14 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
       await ctx.runMutation(internal.functions.utils.updateTournamentInfo, {
         tournament: {
           _id: tournament._id,
-          currentRound:
-            (currentRound === 4 && !isRoundRunning) || currentRound > 4
-              ? 5
-              : currentRound,
+          currentRound: (!isRoundRunning ? 0.5 : 0) + currentRound,
           livePlay: isRoundRunning,
           status:
             (currentRound > 1 && currentRound < 4) ||
             (currentRound === 1 && isRoundRunning) ||
             (currentRound === 4 && isRoundRunning)
               ? "active"
-              : currentRound === 4 && !isRoundRunning
+              : currentRound >= 4 && !isRoundRunning
                 ? "completed"
                 : currentRound <= 1
                   ? "upcoming"
@@ -730,14 +740,37 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         },
       });
       const usageMap = buildUsageRateByGolferApiId({ teams });
+      console.log(golfers);
 
       for (const g of golfers) {
         if (g.golfer?._id && g.tournamentGolfer?._id) {
-          const golferPosition =
-            g.live?.current_pos ??
-            g.historical?.fin_text ??
-            g.tournamentGolfer?.position ??
-            undefined;
+          const betterGolfers = golfers.filter(
+            (og) =>
+              (["CUT", "WD", "DQ", ""].includes(og.live?.current_pos ?? "")
+                ? 999
+                : (og.live?.current_score ?? 0)) <
+              (["CUT", "WD", "DQ", ""].includes(g.live?.current_pos ?? "")
+                ? 999
+                : (g.live?.current_score ?? 0)),
+          ).length;
+          const betterGolfersPast = golfers.filter(
+            (og) =>
+              (["CUT", "WD", "DQ", ""].includes(og.live?.current_pos ?? "")
+                ? 999
+                : (og.live?.current_score ?? 0) - (og.live?.today ?? 0)) <
+              (["CUT", "WD", "DQ", ""].includes(g.live?.current_pos ?? "")
+                ? 999
+                : (g.live?.current_score ?? 0) - (g.live?.today ?? 0)),
+          ).length;
+          const tiedGolfers = golfers.filter(
+            (og) =>
+              (["CUT", "WD", "DQ", ""].includes(og.live?.current_pos ?? "")
+                ? 999
+                : (og.live?.current_score ?? 0)) ===
+              (["CUT", "WD", "DQ", ""].includes(g.live?.current_pos ?? "")
+                ? 999
+                : (g.live?.current_score ?? 0)),
+          ).length;
           await ctx.runMutation(
             internal.functions.golfers.updateTournamentGolfer,
             {
@@ -745,7 +778,14 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                 _id: g.tournamentGolfer._id,
                 tournamentId: tournament._id,
                 golferId: g.golfer._id,
-                position: golferPosition,
+                position: ["CUT", "WD", "DQ", ""].includes(
+                  g.live?.current_pos ?? "",
+                )
+                  ? g.live?.current_pos
+                  : tiedGolfers > 1
+                    ? `T${betterGolfers + 1}`
+                    : `${betterGolfers + 1}`,
+                posChange: betterGolfersPast - betterGolfers,
                 score:
                   g.live?.current_score ??
                   (g.historical
@@ -769,14 +809,24 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                 topTen:
                   g.live?.top_10 ?? g.tournamentGolfer?.topTen ?? undefined,
                 win: g.live?.win ?? g.tournamentGolfer?.win ?? undefined,
-                today: ["CUT", "WD", "DQ", ""].includes(golferPosition ?? "")
+                today: ["CUT", "WD", "DQ", ""].includes(
+                  g.live?.current_pos ??
+                    g.historical?.fin_text ??
+                    g.tournamentGolfer?.position ??
+                    "",
+                )
                   ? undefined
                   : (g.live?.today ??
                     (currentRound === 4
                       ? (g.historical?.round_4?.score ?? 0) -
                         (g.historical?.round_4?.course_par ?? 0)
                       : (g.tournamentGolfer?.today ?? undefined))),
-                thru: ["CUT", "WD", "DQ", ""].includes(golferPosition ?? "")
+                thru: ["CUT", "WD", "DQ", ""].includes(
+                  g.live?.current_pos ??
+                    g.historical?.fin_text ??
+                    g.tournamentGolfer?.position ??
+                    "",
+                )
                   ? undefined
                   : g.live?.thru
                     ? parseInt(g.live?.thru)
@@ -789,12 +839,11 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                       ? g.live.R1
                       : g.historical?.round_1?.score &&
                           g.historical.round_1.score > 0
-                        ? g.historical.round_1.score -
-                          g.historical.round_1.course_par
+                        ? g.historical.round_1.score
                         : g.tournamentGolfer?.roundOne &&
                             g.tournamentGolfer.roundOne > 0
                           ? g.tournamentGolfer.roundOne
-                          : undefined
+                          : course.par + 8
                     : undefined,
                 roundTwo:
                   currentRound > 2 || (currentRound === 2 && !isRoundRunning)
@@ -802,12 +851,11 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                       ? g.live.R2
                       : g.historical?.round_2?.score &&
                           g.historical.round_2.score > 0
-                        ? g.historical.round_2.score -
-                          g.historical.round_2.course_par
+                        ? g.historical.round_2.score
                         : g.tournamentGolfer?.roundTwo &&
                             g.tournamentGolfer.roundTwo > 0
                           ? g.tournamentGolfer.roundTwo
-                          : undefined
+                          : course.par + 8
                     : undefined,
                 roundThree:
                   currentRound > 3 || (currentRound === 3 && !isRoundRunning)
@@ -815,8 +863,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                       ? g.live.R3
                       : g.historical?.round_3?.score &&
                           g.historical.round_3.score > 0
-                        ? g.historical.round_3.score -
-                          g.historical.round_3.course_par
+                        ? g.historical.round_3.score
                         : g.tournamentGolfer?.roundThree &&
                             g.tournamentGolfer.roundThree > 0
                           ? g.tournamentGolfer.roundThree
@@ -828,8 +875,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                       ? g.live.R4
                       : g.historical?.round_4?.score &&
                           g.historical.round_4.score > 0
-                        ? g.historical.round_4.score -
-                          g.historical.round_4.course_par
+                        ? g.historical.round_4.score
                         : g.tournamentGolfer?.roundFour &&
                             g.tournamentGolfer.roundFour > 0
                           ? g.tournamentGolfer.roundFour
@@ -913,25 +959,31 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                         ) ?? undefined)),
                 usage: usageMap.get(g.golfer?.apiId ?? -1) ?? 0,
                 round:
-                  (g.live?.R1 ?? 0) > 0 &&
-                  (g.live?.R2 ?? 0) > 0 &&
-                  (g.live?.R3 ?? 0) > 0 &&
-                  (g.live?.R4 ?? 0) > 0
+                  (!isRoundRunning ? 0.5 : 0) +
+                  (((g.live?.R1 ?? g.historical?.round_1?.score ?? 0) > 0 &&
+                    (g.live?.R2 ?? g.historical?.round_2?.score ?? 0) > 0 &&
+                    (g.live?.R3 ?? g.historical?.round_3?.score ?? 0) > 0 &&
+                    (g.live?.R4 ?? g.historical?.round_4?.score ?? 0) > 0) ||
+                  ["CUT", "WD", "DQ"].includes(
+                    g.live?.current_pos ?? g.historical?.fin_text ?? "",
+                  )
                     ? 5
-                    : (g.live?.R1 ?? 0) > 0 &&
-                        (g.live?.R2 ?? 0) > 0 &&
-                        (g.live?.R3 ?? 0) > 0 &&
+                    : (g.live?.R1 ?? g.historical?.round_1?.score ?? 0) > 0 &&
+                        (g.live?.R2 ?? g.historical?.round_2?.score ?? 0) > 0 &&
+                        (g.live?.R3 ?? g.historical?.round_3?.score ?? 0) > 0 &&
                         (g.live?.thru === "F"
                           ? 18
                           : parseInt(g.live?.thru ?? "0")) > 0
                       ? 4
-                      : (g.live?.R1 ?? 0) > 0 &&
-                          (g.live?.R2 ?? 0) > 0 &&
+                      : (g.live?.R1 ?? g.historical?.round_1?.score ?? 0) > 0 &&
+                          (g.live?.R2 ?? g.historical?.round_2?.score ?? 0) >
+                            0 &&
                           (g.live?.thru === "F"
                             ? 18
                             : parseInt(g.live?.thru ?? "0")) > 0
                         ? 3
-                        : (g.live?.R1 ?? 0) > 0 &&
+                        : (g.live?.R1 ?? g.historical?.round_1?.score ?? 0) >
+                              0 &&
                             (g.live?.thru === "F"
                               ? 18
                               : parseInt(g.live?.thru ?? "0")) > 0
@@ -940,7 +992,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                                 ? 18
                                 : parseInt(g.live?.thru ?? "0")) > 0
                             ? 1
-                            : 0,
+                            : 0),
               },
             },
           );
@@ -951,7 +1003,10 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         tourCard?: Doc<"tourCards">;
       })[] = [];
       for (const t of teams) {
-        currentRound = Math.max(...t.golfers.map((g) => g.live?.round ?? 0), 0);
+        currentRound = Math.max(
+          ...t.golfers.map((g) => g.live?.round ?? (g.historical ? 5 : 0)),
+          0,
+        );
         isRoundRunning =
           t.golfers.filter(
             (g) =>
@@ -1052,29 +1107,47 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           ),
           today: roundToDecimalPlace(
             (t.golfers
-              .filter((g) =>
-                ["CUT", "WD", "DQ", ""].includes(
-                  g.live?.current_pos ??
-                    g.historical?.fin_text ??
-                    g.tournamentGolfer?.position ??
-                    "",
-                ),
+              .filter(
+                (g) =>
+                  !["CUT", "WD", "DQ", ""].includes(
+                    g.tournamentGolfer?.position ?? "",
+                  ),
               )
-              .sort((a, b) => (a.live?.today ?? 500) - (b.live?.today ?? 500))
+              .sort((a, b) => {
+                const aToday =
+                  a.live?.today ??
+                  (a.historical?.round_4
+                    ? (a.historical.round_4.score ?? 0) -
+                      (a.historical.round_4.course_par ?? 0)
+                    : 500);
+                const bToday =
+                  b.live?.today ??
+                  (b.historical?.round_4
+                    ? (b.historical.round_4.score ?? 0) -
+                      (b.historical.round_4.course_par ?? 0)
+                    : 500);
+                return aToday - bToday;
+              })
               .slice(0, currentRound >= 3 ? 5 : 10)
-              .reduce((sum, val) => (sum ?? 0) + (val.live?.today ?? 0), 0) ??
-              0) / (currentRound >= 3 ? 5 : 10),
+              .reduce(
+                (sum, val) =>
+                  (sum ?? 0) +
+                  (val.live?.today ??
+                    (val.historical?.round_4
+                      ? (val.historical.round_4.score ?? 0) -
+                        (val.historical.round_4.course_par ?? 0)
+                      : 0)),
+                0,
+              ) ?? 0) / (currentRound >= 3 ? 5 : 10),
             1,
           ),
           thru: roundToDecimalPlace(
             (t.golfers
-              .filter((g) =>
-                ["CUT", "WD", "DQ", ""].includes(
-                  g.live?.current_pos ??
-                    g.historical?.fin_text ??
-                    g.tournamentGolfer?.position ??
-                    "",
-                ),
+              .filter(
+                (g) =>
+                  !["CUT", "WD", "DQ", ""].includes(
+                    g.tournamentGolfer?.position ?? "",
+                  ),
               )
               .sort((a, b) => (a.live?.today ?? 500) - (b.live?.today ?? 500))
               .slice(0, currentRound >= 3 ? 5 : 10)
@@ -1220,24 +1293,6 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           if (teamsAhead === 0 && teamsTied > 0) {
             // TODO Implement golfers earnings tiebreaker
           }
-          console.log(
-            awardTeamEarnings(tier, teamsAhead, teamsTied),
-            awardTeamPlayoffPoints(tier, teamsAhead, teamsTied),
-            {
-              teamId: t._id,
-              teamName: t.tourCard?.displayName ?? "",
-              score: t.score,
-              today: t.today,
-              position:
-                teamsTied > 1 ? `T${teamsAhead + 1}` : `${teamsAhead + 1}`,
-              pastPosition:
-                teamsTiedPast > 1
-                  ? `T${teamsAheadPast + 1}`
-                  : `${teamsAheadPast + 1}`,
-              points: tier.points,
-              payouts: tier.payouts,
-            },
-          );
           await ctx.runMutation(internal.functions.teams.updateTeam, {
             team: {
               _id: t._id,

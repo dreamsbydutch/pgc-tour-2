@@ -202,7 +202,7 @@ export const getRoundScore = (
     roundThree?: number | null | undefined;
     roundFour?: number | null | undefined;
   },
-  round: 0 | 1 | 2 | 3 | 4 | 5,
+  round: 0 | 1 | 2 | 3 | 4 | 4.5,
 ) =>
   round === 1
     ? g.roundOne
@@ -218,7 +218,7 @@ export const avgArrayToPar = (
     roundThree?: number | null | undefined;
     roundFour?: number | null | undefined;
   }[],
-  round: 0 | 1 | 2 | 3 | 4 | 5,
+  round: 0 | 1 | 2 | 3 | 4 | 4.5,
   par: number,
 ) => {
   const vals = obj.map((g) => {
@@ -233,7 +233,7 @@ export const avgThru = (golfers: { thru: number | null | undefined }[]) =>
   avgArray(golfers.map((g) => g.thru));
 export const selectionCountByPlayoffTournamentRound = (
   eventNumber: 0 | 1 | 2 | 3,
-  round: 0 | 1 | 2 | 3 | 4 | 5,
+  round: 0 | 1 | 2 | 3 | 4 | 4.5,
 ) => {
   if (eventNumber <= 1) return round <= 2 ? 10 : 5;
   if (eventNumber === 2) return 5;
@@ -241,7 +241,7 @@ export const selectionCountByPlayoffTournamentRound = (
 };
 export const categorizeTeamGolfersForRound = (
   golfers: EnhancedTournamentGolferDoc[],
-  round: 0 | 1 | 2 | 3 | 4 | 5,
+  round: 0 | 1 | 2 | 3 | 4 | 4.5,
   eventIndex: 0 | 1 | 2 | 3,
   liveMode: boolean,
   tournamentRound: number | undefined,
@@ -355,7 +355,7 @@ export const categorizeTeamGolfersForRound = (
     } else {
       roundState = "upcoming";
     }
-  } else if (round === 5) {
+  } else if (round === 4.5) {
     if (sortedGolfers.every((g) => g.roundFour !== null)) {
       roundState = "completed";
     } else if (
