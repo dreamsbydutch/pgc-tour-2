@@ -568,28 +568,22 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                   return aRank - bRank;
                 });
               if (count === 2) {
-                await ctx.runMutation(
-                  internal.functions.teams.updateTeamRoster,
-                  {
-                    teamId: t._id,
-                    apiIds: [
-                      ...t.golfers.map((g) => g.golfer?.apiId ?? -1),
-                      availableGolfers[0].golfer?.apiId ?? -1,
-                      availableGolfers[1].golfer?.apiId ?? -1,
-                    ],
-                  },
-                );
+                await ctx.runMutation(api.functions.teams.updateTeamRoster, {
+                  teamId: t._id,
+                  apiIds: [
+                    ...t.golfers.map((g) => g.golfer?.apiId ?? -1),
+                    availableGolfers[0].golfer?.apiId ?? -1,
+                    availableGolfers[1].golfer?.apiId ?? -1,
+                  ],
+                });
               } else {
-                await ctx.runMutation(
-                  internal.functions.teams.updateTeamRoster,
-                  {
-                    teamId: t._id,
-                    apiIds: [
-                      ...t.golfers.map((g) => g.golfer?.apiId ?? -1),
-                      availableGolfers[0].golfer?.apiId ?? -1,
-                    ],
-                  },
-                );
+                await ctx.runMutation(api.functions.teams.updateTeamRoster, {
+                  teamId: t._id,
+                  apiIds: [
+                    ...t.golfers.map((g) => g.golfer?.apiId ?? -1),
+                    availableGolfers[0].golfer?.apiId ?? -1,
+                  ],
+                });
               }
             }
           }
@@ -1293,7 +1287,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           if (teamsAhead === 0 && teamsTied > 0) {
             // TODO Implement golfers earnings tiebreaker
           }
-          await ctx.runMutation(internal.functions.teams.updateTeam, {
+          await ctx.runMutation(api.functions.teams.updateTeam, {
             team: {
               _id: t._id,
               makeCut: t.makeCut,
