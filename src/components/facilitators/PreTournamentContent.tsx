@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Dialog,
@@ -437,8 +437,8 @@ function TournamentTeamPickerDialog(props: {
     tournamentId,
     tourCardId,
   } = props;
-  const createTeam = useMutation(api.functions.teams.createTeams);
-  const updateTeam = useMutation(api.functions.teams.updateTeams);
+  const createTeam = useMutation(api.functions.teams.createTeam);
+  const updateTeam = useMutation(api.functions.teams.updateTeam);
 
   const pickPool = useQuery(
     api.functions.tournaments.getTournamentPickPool,
@@ -458,13 +458,29 @@ function TournamentTeamPickerDialog(props: {
   const [selectedApiIds, setSelectedApiIds] = useState<number[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const initializedPickerSeedRef = useRef<string | null>(null);
+
+  const pickerSeedKey = `${tournamentId}:${tourCardId}:${existingTeam?._id ?? "new"}`;
 
   useEffect(() => {
-    if (!open) return;
-    setSelectedApiIds(teamGolfers.map((g) => g.apiId ?? -1) ?? []);
+    if (!open) {
+      initializedPickerSeedRef.current = null;
+      return;
+    }
+
+    if (initializedPickerSeedRef.current === pickerSeedKey) {
+      return;
+    }
+
+    initializedPickerSeedRef.current = pickerSeedKey;
+    setSelectedApiIds(
+      teamGolfers
+        .map((golfer) => golfer.apiId)
+        .filter((apiId): apiId is number => typeof apiId === "number"),
+    );
     setErrorMessage(null);
     setIsSaving(false);
-  }, [open, teamGolfers]);
+  }, [open, pickerSeedKey, teamGolfers]);
 
   const model = useMemo(() => {
     if (!open) {
@@ -593,20 +609,13 @@ function TournamentTeamPickerDialog(props: {
         const tournamentIdValue = tournamentId as unknown as Id<"tournaments">;
         const tourCardIdValue = tourCardId as unknown as Id<"tourCards">;
 
-        if (existingTeam?._id) {
-          await updateTeam({
-            teamId: existingTeam._id as unknown as Id<"teams">,
-            data: { golferIds: selectedApiIds },
-          });
-        } else {
-          await createTeam({
-            data: {
-              tournamentId: tournamentIdValue,
-              tourCardId: tourCardIdValue,
-              golferIds: selectedApiIds,
-            },
-          });
-        }
+        await createTeam({
+          data: {
+            tournamentId: tournamentIdValue,
+            tourCardId: tourCardIdValue,
+            golferIds: selectedApiIds,
+          },
+        });
 
         onOpenChange(false);
       } catch (e) {

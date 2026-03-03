@@ -331,3 +331,46 @@ export const getTournamentLeaderboardView = query({
     };
   },
 });
+
+export const getTournamentPickPool = query({
+  args: {
+    tournamentId: v.id("tournaments"),
+  },
+  handler: async (ctx, args) => {
+    const tournamentGolfers = await ctx.db
+      .query("tournamentGolfers")
+      .withIndex("by_tournament", (q) => q.eq("tournamentId", args.tournamentId))
+      .collect();
+
+    const pickPool = await Promise.all(
+      tournamentGolfers.map(async (tournamentGolfer) => {
+        const golfer = await ctx.db.get(tournamentGolfer.golferId);
+        if (!golfer) return null;
+
+        return {
+          golferApiId: golfer.apiId,
+          playerName: golfer.playerName,
+          group: tournamentGolfer.group ?? null,
+          worldRank: tournamentGolfer.worldRank ?? golfer.worldRank ?? null,
+          rating: tournamentGolfer.rating ?? null,
+        };
+      }),
+    );
+
+    return pickPool
+      .filter((row) => row !== null)
+      .sort((a, b) => {
+        const groupA = a.group ?? Number.MAX_SAFE_INTEGER;
+        const groupB = b.group ?? Number.MAX_SAFE_INTEGER;
+
+        if (groupA !== groupB) return groupA - groupB;
+
+        const rankA = a.worldRank ?? Number.MAX_SAFE_INTEGER;
+        const rankB = b.worldRank ?? Number.MAX_SAFE_INTEGER;
+
+        if (rankA !== rankB) return rankA - rankB;
+
+        return a.playerName.localeCompare(b.playerName);
+      });
+  },
+});
