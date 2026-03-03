@@ -129,34 +129,37 @@ export const getActiveTournamentData = internalQuery({
     tournament = tournaments
       .filter((t) => t.startDate > Date.now())
       .sort((a, b) => a.startDate - b.startDate)[0];
-    if (!tournament) {
-      // const playoffIndex = playoffTournaments.findIndex(
-      //   (t) => t._id === tournament?._id,
-      // );
-      // const isPlayoff = playoffIndex !== -1;
-      return { ok: false };
-      // const course = await ctx.db.get(tournament.courseId);
-      // return {
-      //   ok: true,
-      //   type: "next",
-      //   tournament,
-      //   course: course as Doc<"courses">,
-      //   tier: tiers.find(
-      //     (tier) => tier._id === tournament?.tierId,
-      //   ) as Doc<"tiers">,
-      //   tours,
-      //   isPlayoff,
-      //   eventIndex:
-      //     playoffIndex !== -1 ? ((playoffIndex + 1) as 0 | 1 | 2 | 3) : 0,
-      //   playoffTournaments,
-      //   seasonTournaments: tournaments
-      //     .filter(
-      //       (t) =>
-      //         t.tierId !==
-      //         tiers.find((tier) => tier.name.toLowerCase() === "playoff")?._id,
-      //     )
-      //     .sort((a, b) => a.startDate - b.startDate),
-      // };
+    console.log(
+      "No active tournament found, defaulting to next tournament:",
+      tournament,
+    );
+    if (tournament) {
+      const playoffIndex = playoffTournaments.findIndex(
+        (t) => t._id === tournament?._id,
+      );
+      const isPlayoff = playoffIndex !== -1;
+      const course = await ctx.db.get(tournament.courseId);
+      return {
+        ok: true,
+        type: "next",
+        tournament,
+        course: course as Doc<"courses">,
+        tier: tiers.find(
+          (tier) => tier._id === tournament?.tierId,
+        ) as Doc<"tiers">,
+        tours,
+        isPlayoff,
+        eventIndex:
+          playoffIndex !== -1 ? ((playoffIndex + 1) as 0 | 1 | 2 | 3) : 0,
+        playoffTournaments,
+        seasonTournaments: tournaments
+          .filter(
+            (t) =>
+              t.tierId !==
+              tiers.find((tier) => tier.name.toLowerCase() === "playoff")?._id,
+          )
+          .sort((a, b) => a.startDate - b.startDate),
+      };
     }
     tournament = tournaments
       .filter((t) => t.endDate < Date.now())
@@ -296,9 +299,15 @@ export const getExternalDataForTournament = internalAction({
       }
     | { ok: false }
   > => {
+    const tournamentForDataGolf = {
+      _id: args.tournament._id,
+      name: args.tournament.name,
+      apiId: args.tournament.apiId,
+      seasonId: args.tournament.seasonId,
+    };
     const fieldData = await ctx.runAction(
       api.functions.datagolf.fetchFieldUpdates,
-      { tournament: args.tournament },
+      { tournament: tournamentForDataGolf },
     );
     const rankingData = await ctx.runAction(
       api.functions.datagolf.fetchDataGolfRankings,
@@ -306,12 +315,12 @@ export const getExternalDataForTournament = internalAction({
     );
     const liveData = await ctx.runAction(
       api.functions.datagolf.fetchLiveModelPredictions,
-      { tournament: args.tournament },
+      { tournament: tournamentForDataGolf },
     );
     const historicalData = await ctx.runAction(
       api.functions.datagolf.fetchHistoricalRoundData,
       {
-        tournament: args.tournament,
+        tournament: tournamentForDataGolf,
         options: {
           tour: "pga",
           year: new Date().getFullYear(),
@@ -322,7 +331,7 @@ export const getExternalDataForTournament = internalAction({
     const winningsData = await ctx.runAction(
       api.functions.datagolf.fetchHistoricalEventDataEvents,
       {
-        tournament: args.tournament,
+        tournament: tournamentForDataGolf,
         options: {
           tour: "pga",
           year: new Date().getFullYear(),
@@ -364,7 +373,11 @@ export const getAllDataForTournament = internalAction({
     | {
         ok: true;
         golfers: EnhancedGolfer[];
-        teams: (Doc<"teams"> & { golfers: EnhancedGolfer[], tourCard?: Doc<"tourCards">, tour?: Doc<"tours"> })[];
+        teams: (Doc<"teams"> & {
+          golfers: EnhancedGolfer[];
+          tourCard?: Doc<"tourCards">;
+          tour?: Doc<"tours">;
+        })[];
         fieldData: DataGolfFieldUpdatesResponse;
         rankingData: DataGolfRankingsResponse;
         liveData: DataGolfLiveModelPredictionsResponse;

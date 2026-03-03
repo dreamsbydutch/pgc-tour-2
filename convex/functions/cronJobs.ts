@@ -157,13 +157,29 @@ export const runCreateGroupsForNextTournament: ReturnType<
       };
     }
 
+    const tournamentForDataGolf = {
+      _id: tournament._id,
+      name: tournament.name,
+      apiId: tournament.apiId,
+      seasonId: tournament.seasonId,
+    };
     let fieldUpdates: unknown;
     let rankings: unknown;
     try {
-      [fieldUpdates, rankings] = await Promise.all([
-        ctx.runAction(api.functions.datagolf.fetchFieldUpdates, { tournament }),
+      const [fieldResult, rankingsResult] = await Promise.allSettled([
+        ctx.runAction(api.functions.datagolf.fetchFieldUpdates, {
+          tournament: tournamentForDataGolf,
+        }),
         ctx.runAction(api.functions.datagolf.fetchDataGolfRankings, {}),
       ]);
+      if (fieldResult.status === "rejected") {
+        throw fieldResult.reason;
+      }
+      if (rankingsResult.status === "rejected") {
+        throw rankingsResult.reason;
+      }
+      fieldUpdates = fieldResult.value;
+      rankings = rankingsResult.value;
     } catch (err) {
       return {
         ok: false,
