@@ -20,6 +20,7 @@ import {
   getBrevoApiKey,
   getBrevoTestTo,
   parseNumericEnv,
+  parseNumericEnvOptional,
   buildTournamentUrl,
   requireAdminForAction,
   requireAdminForQuery,
@@ -476,7 +477,9 @@ export const adminSendWeeklyRecapEmailToActiveTourCards = action({
 
     const tournament = tournamentContext.tournament;
     const apiKey = getBrevoApiKey();
-    const templateId = parseNumericEnv("BREVO_GROUPS_FINALIZED_TEMPLATE_ID");
+    const templateId =
+      parseNumericEnvOptional("BREVO_WEEKLY_RECAP_TEMPLATE_ID") ??
+      parseNumericEnv("BREVO_GROUPS_FINALIZED_TEMPLATE_ID");
     const customBlurb = (args.customBlurb ?? "").trim();
 
     const baseUrl = getAppBaseUrl({ allowLocalhostFallback: false });
@@ -573,7 +576,9 @@ export const sendWeeklyRecapEmailTest: ReturnType<typeof action> = action({
     }
 
     const apiKey = getBrevoApiKey();
-    const templateId = parseNumericEnv("BREVO_GROUPS_FINALIZED_TEMPLATE_ID");
+    const templateId =
+      parseNumericEnvOptional("BREVO_WEEKLY_RECAP_TEMPLATE_ID") ??
+      parseNumericEnv("BREVO_GROUPS_FINALIZED_TEMPLATE_ID");
     const testTo = getBrevoTestTo();
 
     const tournamentContext = (await ctx.runQuery(
@@ -617,6 +622,7 @@ export const sendWeeklyRecapEmailTest: ReturnType<typeof action> = action({
       apiKey,
       templateId,
       includeMessageIds: true,
+      includeErrorReasons: true,
       recipients: [
         {
           email: testTo,
@@ -651,6 +657,7 @@ export const sendWeeklyRecapEmailTest: ReturnType<typeof action> = action({
       sent: summary.sent,
       failed: summary.failed,
       messageIds: summary.messageIds ?? [],
+      errorReasons: summary.errorReasons ?? [],
       wouldEmailMemberCount: tournamentContext.memberCount,
       wouldEmailActiveTourCardCount: tournamentContext.activeTourCardCount,
     } as const;

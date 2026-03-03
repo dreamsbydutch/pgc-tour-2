@@ -66,6 +66,7 @@ export type SendBrevoTemplateEmailBatchArgs = {
   templateId: number;
   recipients: SendBrevoTemplateEmailBatchRecipient[];
   includeMessageIds?: boolean;
+  includeErrorReasons?: boolean;
 };
 
 export type SendBrevoTemplateEmailBatchResult = {
@@ -73,6 +74,7 @@ export type SendBrevoTemplateEmailBatchResult = {
   sent: number;
   failed: number;
   messageIds?: string[];
+  errorReasons?: string[];
 };
 
 export type RequireAdminForActionCtx = {

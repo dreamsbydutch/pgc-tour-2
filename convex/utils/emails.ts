@@ -295,6 +295,16 @@ export function parseNumericEnv(name: string): number {
   return value;
 }
 
+export function parseNumericEnvOptional(name: string): number | null {
+  const raw = process.env[name];
+  if (!raw) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    throw new Error(`${name} must be a number`);
+  }
+  return value;
+}
+
 export function getBrevoApiKey(): string {
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) throw new Error("Missing BREVO_API_KEY");
@@ -350,6 +360,7 @@ export async function sendBrevoTemplateEmailBatch(
   let sent = 0;
   let failed = 0;
   const messageIds: string[] = [];
+  const errorReasons: string[] = [];
 
   for (let i = 0; i < args.recipients.length; i += maxConcurrency) {
     const batch = args.recipients.slice(i, i + maxConcurrency);
@@ -390,7 +401,14 @@ export async function sendBrevoTemplateEmailBatch(
 
     for (const r of results) {
       if (r.status === "fulfilled") sent += 1;
-      else failed += 1;
+      else {
+        failed += 1;
+        if (args.includeErrorReasons) {
+          const reason =
+            r.reason instanceof Error ? r.reason.message : String(r.reason);
+          errorReasons.push(reason);
+        }
+      }
     }
   }
 
@@ -399,6 +417,7 @@ export async function sendBrevoTemplateEmailBatch(
     sent,
     failed,
     ...(args.includeMessageIds ? { messageIds } : {}),
+    ...(args.includeErrorReasons ? { errorReasons } : {}),
   };
 }
 

@@ -40,6 +40,7 @@ Email actions use Brevo SMTP + template IDs configured in the Convex dashboard:
 - `BREVO_API_KEY`
 - `BREVO_TEST_TO`
 - `BREVO_GROUPS_FINALIZED_TEMPLATE_ID`
+- `BREVO_WEEKLY_RECAP_TEMPLATE_ID` (optional; falls back to groups template id)
 - `BREVO_MISSING_TEAM_REMINDER_TEMPLATE_ID`
 - `BREVO_SEASON_START_TEMPLATE_ID`
 
