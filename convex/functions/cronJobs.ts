@@ -492,6 +492,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           tournament: {
             _id: activeTournamentData.tournament._id,
             name: activeTournamentData.tournament.name,
+            endDate: activeTournamentData.tournament.endDate,
             apiId: activeTournamentData.tournament.apiId,
             seasonId: activeTournamentData.tournament.seasonId,
           },
@@ -511,7 +512,6 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         tournament,
         course,
         tier,
-        isPlayoff,
         type: tournamentType,
       } = activeTournamentData;
       const { teams, golfers, fieldData, liveData, historicalData } =
@@ -706,12 +706,12 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           golfersCreated: golfers.length,
         };
       }
-      var currentRound = liveData.info
+      let currentRound = liveData.info
         ? liveData.info.current_round
         : historicalData.event_completed
           ? 5
           : 0;
-      var isRoundRunning = liveData.info
+      let isRoundRunning = liveData.info
         ? isRoundRunningFromLiveStats(
             golfers.map((g) => ({
               current_pos:
@@ -723,7 +723,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
       const firstTeeTime = earliestTimeStr(
         golfers
           .map((g) =>
-            g.field && !!!g.field.teetimes.find((tt) => tt.round_num === 1)
+            g.field && !g.field.teetimes.find((tt) => tt.round_num === 1)
               ? g.field.teetimes.find((tt) => tt.round_num === 1)?.teetime
               : g.historical && g.historical.round_1
                 ? g.historical.round_1.teetime

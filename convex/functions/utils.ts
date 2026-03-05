@@ -281,6 +281,7 @@ export const getExternalDataForTournament = internalAction({
       _id: v.id("tournaments"),
       name: v.string(),
       apiId: v.optional(v.string()),
+      endDate: v.number(),
       seasonId: v.id("seasons"),
     }),
     tzOffset: v.optional(v.number()),
@@ -317,7 +318,10 @@ export const getExternalDataForTournament = internalAction({
       api.functions.datagolf.fetchLiveModelPredictions,
       { tournament: tournamentForDataGolf },
     );
-    const historicalData = await ctx.runAction(
+    console.log(Date.now(), args.tournament.endDate, "Fetching historical data:", {
+      tournamentForDataGolf,
+    });
+    const historicalData = args.tournament.endDate < Date.now() ? await ctx.runAction(
       api.functions.datagolf.fetchHistoricalRoundData,
       {
         tournament: tournamentForDataGolf,
@@ -327,7 +331,7 @@ export const getExternalDataForTournament = internalAction({
           tzOffset: args.tzOffset,
         },
       },
-    );
+    ) : null;
     const winningsData = await ctx.runAction(
       api.functions.datagolf.fetchHistoricalEventDataEvents,
       {
@@ -361,6 +365,7 @@ export const getAllDataForTournament = internalAction({
     tournament: v.object({
       _id: v.id("tournaments"),
       name: v.string(),
+      endDate: v.number(),
       apiId: v.optional(v.string()),
       seasonId: v.id("seasons"),
     }),
