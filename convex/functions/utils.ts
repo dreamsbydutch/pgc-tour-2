@@ -321,7 +321,7 @@ export const getExternalDataForTournament = internalAction({
     console.log(Date.now(), args.tournament.endDate, "Fetching historical data:", {
       tournamentForDataGolf,
     });
-    const historicalData = args.tournament.endDate < Date.now() ? await ctx.runAction(
+    const historicalData = args.tournament.endDate > Date.now() ? await ctx.runAction(
       api.functions.datagolf.fetchHistoricalRoundData,
       {
         tournament: tournamentForDataGolf,
