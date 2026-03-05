@@ -708,7 +708,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
       }
       let currentRound = liveData.info
         ? liveData.info.current_round
-        : historicalData.event_completed
+        : historicalData?.event_completed
           ? 5
           : 0;
       let isRoundRunning = liveData.info
