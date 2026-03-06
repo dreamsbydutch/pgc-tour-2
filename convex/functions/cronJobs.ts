@@ -744,7 +744,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
               : currentRound >= 4 && !isRoundRunning
                 ? "completed"
                 : currentRound <= 1
-                  ? "upcoming"
+                  ? "active" // TODO: CHANGE BACK TO UPCOMING
                   : undefined,
           startDate: firstTeeTime,
         },
