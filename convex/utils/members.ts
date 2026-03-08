@@ -171,7 +171,7 @@ export function normalizePersonName(value: string | undefined): string {
 
   const tokens = raw
     .split(/\s+/)
-    .map((t) => t.trim())
+    .map((t) => (t ? t.trim() : ""))
     .filter(Boolean)
     .map(normalizeNameToken);
 
