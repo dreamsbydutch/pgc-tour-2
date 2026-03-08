@@ -281,6 +281,7 @@ export const getExternalDataForTournament = internalAction({
       _id: v.id("tournaments"),
       name: v.string(),
       apiId: v.optional(v.string()),
+      endDate: v.number(),
       seasonId: v.id("seasons"),
     }),
     tzOffset: v.optional(v.number()),
@@ -294,8 +295,8 @@ export const getExternalDataForTournament = internalAction({
         fieldData: DataGolfFieldUpdatesResponse;
         rankingData: DataGolfRankingsResponse;
         liveData: DataGolfLiveModelPredictionsResponse;
-        historicalData: DataGolfHistoricalRoundDataResponse;
-        winningsData: DataGolfHistoricalEventDataResponse;
+        historicalData: DataGolfHistoricalRoundDataResponse|undefined;
+        winningsData: DataGolfHistoricalEventDataResponse|undefined;
       }
     | { ok: false }
   > => {
@@ -317,7 +318,8 @@ export const getExternalDataForTournament = internalAction({
       api.functions.datagolf.fetchLiveModelPredictions,
       { tournament: tournamentForDataGolf },
     );
-    const historicalData = await ctx.runAction(
+    console.log(Date.now() > args.tournament.endDate, Date.now() , args.tournament.endDate);
+    const historicalData = args.tournament.endDate < Date.now() ? await ctx.runAction(
       api.functions.datagolf.fetchHistoricalRoundData,
       {
         tournament: tournamentForDataGolf,
@@ -327,8 +329,8 @@ export const getExternalDataForTournament = internalAction({
           tzOffset: args.tzOffset,
         },
       },
-    );
-    const winningsData = await ctx.runAction(
+    ) : undefined;
+    const winningsData = args.tournament.endDate < Date.now() ? await ctx.runAction(
       api.functions.datagolf.fetchHistoricalEventDataEvents,
       {
         tournament: tournamentForDataGolf,
@@ -337,7 +339,7 @@ export const getExternalDataForTournament = internalAction({
           year: new Date().getFullYear(),
         },
       },
-    );
+    ):undefined;
     if ("ok" in fieldData && !rankingData && "ok" in liveData) {
       return {
         ok: false,
@@ -349,9 +351,9 @@ export const getExternalDataForTournament = internalAction({
       rankingData: rankingData as DataGolfRankingsResponse,
       liveData: liveData as unknown as DataGolfLiveModelPredictionsResponse,
       historicalData:
-        historicalData as unknown as DataGolfHistoricalRoundDataResponse,
+        historicalData as unknown as DataGolfHistoricalRoundDataResponse|undefined,
       winningsData:
-        winningsData as unknown as DataGolfHistoricalEventDataResponse,
+        winningsData as unknown as DataGolfHistoricalEventDataResponse|undefined,
     };
   },
 });
@@ -361,6 +363,7 @@ export const getAllDataForTournament = internalAction({
     tournament: v.object({
       _id: v.id("tournaments"),
       name: v.string(),
+      endDate: v.number(),
       apiId: v.optional(v.string()),
       seasonId: v.id("seasons"),
     }),
@@ -381,8 +384,8 @@ export const getAllDataForTournament = internalAction({
         fieldData: DataGolfFieldUpdatesResponse;
         rankingData: DataGolfRankingsResponse;
         liveData: DataGolfLiveModelPredictionsResponse;
-        historicalData: DataGolfHistoricalRoundDataResponse;
-        winningsData: DataGolfHistoricalEventDataResponse;
+        historicalData: DataGolfHistoricalRoundDataResponse|undefined;
+        winningsData: DataGolfHistoricalEventDataResponse|undefined;
       }
     | { ok: false }
   > => {
@@ -420,13 +423,13 @@ export const getAllDataForTournament = internalAction({
       live: externalData.liveData.data
         ? externalData.liveData.data.find((p) => p.dg_id === g.golfer?.apiId)
         : undefined,
-      historical: externalData.historicalData.scores
-        ? externalData.historicalData.scores.find(
+      historical: externalData.historicalData?.scores
+        ? externalData.historicalData?.scores.find(
             (e) => e.dg_id === g.golfer?.apiId,
           )
         : undefined,
-      winnings: externalData.winningsData.event_stats
-        ? externalData.winningsData.event_stats.find(
+      winnings: externalData.winningsData?.event_stats
+        ? externalData.winningsData?.event_stats.find(
             (e) => e.dg_id === g.golfer?.apiId,
           )
         : undefined,

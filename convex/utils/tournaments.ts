@@ -45,7 +45,7 @@ export function getCalculatedStatus(
 
   const now = Date.now();
 
-  if (now < startDate) return "upcoming";
+  if (now < startDate) return "active"; // TEMP: CHANGE BACK TO UPCOMING
   if (now >= startDate && now <= endDate) return "active";
   return "completed";
 }
