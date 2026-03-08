@@ -1,6 +1,6 @@
 import { Doc } from "../_generated/dataModel";
 import { CENTS_PER_DOLLAR, MS_PER_DAY } from "../functions/_constants";
-import type { BuildUsageRateByGolferApiIdOptions } from "../types/golfers";
+import type { BuildUsageRateByGolferApiIdOptions } from "../types/types";
 import {
   EnhancedTournamentDoc,
   EnhancedTournamentGolferDoc,

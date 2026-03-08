@@ -21,6 +21,7 @@ import {
   roundToDecimalPlace,
 } from "../utils";
 import { determineGroupIndex } from "../utils/golfers";
+import { EnhancedGolfer } from "../types/types";
 
 /**
  * Fetches the latest DataGolf rankings and applies OWGR/country/name updates into `golfers`.
@@ -722,7 +723,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         : false;
       const firstTeeTime = earliestTimeStr(
         golfers
-          .map((g) =>
+          .map((g: EnhancedGolfer) =>
             g.field && !g.field.teetimes.find((tt) => tt.round_num === 1)
               ? g.field.teetimes.find((tt) => tt.round_num === 1)?.teetime
               : g.historical && g.historical.round_1
@@ -750,7 +751,6 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         },
       });
       const usageMap = buildUsageRateByGolferApiId({ teams });
-      console.log(golfers);
 
       for (const g of golfers) {
         if (g.golfer?._id && g.tournamentGolfer?._id) {

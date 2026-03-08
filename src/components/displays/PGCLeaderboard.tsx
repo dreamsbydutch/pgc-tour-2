@@ -211,7 +211,7 @@ function TeamGolfersTable(props: {
               : golfer.roundFourTeeTime;
       return (
         <td className="text-xs" colSpan={2}>
-          {formatTeeTimeTimeOfDay(teeTimeDisplay) ?? "-"}
+          {formatTeeTimeTimeOfDay(teeTimeDisplay?.toString()) ?? "-"}
         </td>
       );
     }

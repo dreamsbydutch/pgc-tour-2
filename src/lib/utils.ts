@@ -184,7 +184,7 @@ export function formatTeeTimeTimeOfDay(
 ): string | null {
   if (!value) return null;
 
-  const trimmed = value.trim();
+  const trimmed = value ? value.trim() : "";
   if (!trimmed) return null;
 
   const ampmMatch = trimmed.match(/\b(\d{1,2}):(\d{2})\s*([AP]M)\b/i);
@@ -362,11 +362,11 @@ export function formatCentsAsDollars(cents: number): string {
 }
 
 export function parseNumberList(input: string): number[] {
-  const trimmed = input.trim();
+  const trimmed = input ? input.trim() : "";
   if (!trimmed) return [];
   const parts = trimmed
     .split(",")
-    .map((p) => p.trim())
+    .map((p) => (p ? p.trim() : ""))
     .filter(Boolean);
   const nums = parts.map((p) => Number(p));
   if (nums.some((n) => !Number.isFinite(n))) {

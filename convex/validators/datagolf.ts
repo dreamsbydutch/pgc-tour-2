@@ -13,7 +13,7 @@ import {
   parseDataGolfTeeTimeToMs,
 } from "../utils/datagolf";
 import { Doc, Id } from "../_generated/dataModel";
-import { EnhancedGolfer } from "../types/golfers";
+import { EnhancedGolfer } from "../types/types";
 
 const vFileFormat = v.union(v.literal("json"), v.literal("csv"));
 const vOddsFormat = v.union(

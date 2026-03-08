@@ -1,1 +1,0 @@
-export { sumArray } from "./misc";

@@ -229,12 +229,14 @@ const schema = defineSchema({
     roundFour: v.optional(v.number()),
 
     updatedAt: v.optional(v.number()),
+    updatedRosterAt: v.optional(v.number()), // Timestamp for last roster change (golferIds update)
   })
     .index("by_tournament", ["tournamentId"])
     .index("by_tour_card", ["tourCardId"])
     .index("by_tournament_tour_card", ["tournamentId", "tourCardId"])
     .index("by_tournament_points", ["tournamentId", "points"])
-    .index("by_tournament_position", ["tournamentId", "position"]),
+    .index("by_tournament_position", ["tournamentId", "position"])
+    .index("by_tournament_updated_roster", ["tournamentId", "updatedRosterAt"]),
 
   // =========================================================================
   // GOLFER DATA

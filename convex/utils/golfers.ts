@@ -7,9 +7,9 @@ import type {
   GolferOptimizedQueryOptions,
   GolferSortFunction,
   GolferSortOptions,
+  GroupLimits,
   TournamentGolferDoc,
 } from "../types/types";
-import type { GroupLimits } from "../types/golfers";
 import { normalize } from "./misc";
 
 export function normalizeCountry(country?: string): string | undefined {

@@ -105,7 +105,7 @@ export function PGALeaderboard(props: {
                 topTen: golfer.topTen ?? 0,
                 win: golfer.win ?? 0,
                 usage: golfer.usage ?? 0,
-                teeTimeDisplay: teeTimeDisplay ?? "-",
+                teeTimeDisplay: teeTimeDisplay?.toString() ?? "-",
               }}
             />
           </Fragment>

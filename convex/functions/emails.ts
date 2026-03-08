@@ -1,4 +1,4 @@
-import { emailsValidators } from "../validators/emails";
+import { emailsValidators } from "../validators/common";
 
 import {
   action,

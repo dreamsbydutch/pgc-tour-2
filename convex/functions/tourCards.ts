@@ -5,7 +5,7 @@
  */
 
 import { mutation, query } from "../_generated/server";
-import { tourCardsValidators } from "../validators/tourCards";
+import { tourCardsValidators } from "../validators/common";
 import {
   isCompletedTourCardFee,
   requireTourCardOwner,

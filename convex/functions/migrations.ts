@@ -133,7 +133,7 @@ function normalizeEpochNumber(value: number): number | null {
  * @returns Parsed timestamp when valid, otherwise null.
  */
 function parseSqlDateTimeToEpochMs(value: string): number | null {
-  const match = SQL_DATETIME_REGEX.exec(value.trim());
+  const match = SQL_DATETIME_REGEX.exec(value ? value.trim() : "");
   if (!match) {
     return null;
   }
@@ -197,7 +197,7 @@ function parseTimeOnlyToEpochMs(
   value: string,
   referenceDateMs: number,
 ): number | null {
-  const match = TIME_ONLY_AMPM_REGEX.exec(value.trim());
+  const match = TIME_ONLY_AMPM_REGEX.exec(value ? value.trim() : "");
   if (!match) {
     return null;
   }
@@ -260,7 +260,7 @@ function normalizeLegacyTeeTimeValue(
     return base;
   }
 
-  const trimmed = value.trim();
+  const trimmed = value ? value.trim() : "";
   if (!trimmed) {
     return { normalized: null, converted: false, invalid: false };
   }

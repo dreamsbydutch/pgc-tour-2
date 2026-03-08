@@ -5,7 +5,7 @@ import {
   internalMutation,
   internalQuery,
 } from "../_generated/server";
-import { EnhancedGolfer } from "../types/golfers";
+import { EnhancedGolfer } from "../types/types";
 import { api, internal } from "../_generated/api";
 import {
   DataGolfFieldUpdatesResponse,
@@ -295,8 +295,8 @@ export const getExternalDataForTournament = internalAction({
         fieldData: DataGolfFieldUpdatesResponse;
         rankingData: DataGolfRankingsResponse;
         liveData: DataGolfLiveModelPredictionsResponse;
-        historicalData: DataGolfHistoricalRoundDataResponse|undefined;
-        winningsData: DataGolfHistoricalEventDataResponse|undefined;
+        historicalData: DataGolfHistoricalRoundDataResponse | undefined;
+        winningsData: DataGolfHistoricalEventDataResponse | undefined;
       }
     | { ok: false }
   > => {
@@ -318,28 +318,35 @@ export const getExternalDataForTournament = internalAction({
       api.functions.datagolf.fetchLiveModelPredictions,
       { tournament: tournamentForDataGolf },
     );
-    console.log(Date.now() > args.tournament.endDate, Date.now() , args.tournament.endDate);
-    const historicalData = args.tournament.endDate < Date.now() ? await ctx.runAction(
-      api.functions.datagolf.fetchHistoricalRoundData,
-      {
-        tournament: tournamentForDataGolf,
-        options: {
-          tour: "pga",
-          year: new Date().getFullYear(),
-          tzOffset: args.tzOffset,
-        },
-      },
-    ) : undefined;
-    const winningsData = args.tournament.endDate < Date.now() ? await ctx.runAction(
-      api.functions.datagolf.fetchHistoricalEventDataEvents,
-      {
-        tournament: tournamentForDataGolf,
-        options: {
-          tour: "pga",
-          year: new Date().getFullYear(),
-        },
-      },
-    ):undefined;
+    console.log(
+      Date.now() > args.tournament.endDate,
+      Date.now(),
+      args.tournament.endDate,
+    );
+    const historicalData =
+      args.tournament.endDate < Date.now()
+        ? await ctx.runAction(api.functions.datagolf.fetchHistoricalRoundData, {
+            tournament: tournamentForDataGolf,
+            options: {
+              tour: "pga",
+              year: new Date().getFullYear(),
+              tzOffset: args.tzOffset,
+            },
+          })
+        : undefined;
+    const winningsData =
+      args.tournament.endDate < Date.now()
+        ? await ctx.runAction(
+            api.functions.datagolf.fetchHistoricalEventDataEvents,
+            {
+              tournament: tournamentForDataGolf,
+              options: {
+                tour: "pga",
+                year: new Date().getFullYear(),
+              },
+            },
+          )
+        : undefined;
     if ("ok" in fieldData && !rankingData && "ok" in liveData) {
       return {
         ok: false,
@@ -350,10 +357,12 @@ export const getExternalDataForTournament = internalAction({
       fieldData: fieldData as unknown as DataGolfFieldUpdatesResponse,
       rankingData: rankingData as DataGolfRankingsResponse,
       liveData: liveData as unknown as DataGolfLiveModelPredictionsResponse,
-      historicalData:
-        historicalData as unknown as DataGolfHistoricalRoundDataResponse|undefined,
-      winningsData:
-        winningsData as unknown as DataGolfHistoricalEventDataResponse|undefined,
+      historicalData: historicalData as unknown as
+        | DataGolfHistoricalRoundDataResponse
+        | undefined,
+      winningsData: winningsData as unknown as
+        | DataGolfHistoricalEventDataResponse
+        | undefined,
     };
   },
 });
@@ -384,8 +393,8 @@ export const getAllDataForTournament = internalAction({
         fieldData: DataGolfFieldUpdatesResponse;
         rankingData: DataGolfRankingsResponse;
         liveData: DataGolfLiveModelPredictionsResponse;
-        historicalData: DataGolfHistoricalRoundDataResponse|undefined;
-        winningsData: DataGolfHistoricalEventDataResponse|undefined;
+        historicalData: DataGolfHistoricalRoundDataResponse | undefined;
+        winningsData: DataGolfHistoricalEventDataResponse | undefined;
       }
     | { ok: false }
   > => {

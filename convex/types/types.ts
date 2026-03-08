@@ -6,19 +6,22 @@
  */
 
 import type { Doc, Id } from "../_generated/dataModel";
-import type { DatabaseReader, DatabaseWriter } from "../_generated/server";
+import type {
+  DatabaseReader,
+  DatabaseWriter,
+  MutationCtx,
+  QueryCtx,
+} from "../_generated/server";
+import type {
+  DataGolfFieldPlayer,
+  DataGolfHistoricalPlayer,
+  DataGolfLiveModelPlayer,
+  DataGolfRankedPlayer,
+} from "./datagolf";
 
 // =============================================================================
 // DATABASE CONTEXT TYPES
 // =============================================================================
-
-export interface QueryContext {
-  db: DatabaseReader;
-}
-
-export interface MutationContext {
-  db: DatabaseWriter;
-}
 
 // Generic database context for helper functions
 export interface DatabaseContext {
@@ -67,7 +70,6 @@ export interface EnhancedTournamentDoc extends TournamentDoc {
   isPlayoff?: boolean;
   eventIndex?: number;
   playoffEvents?: Id<"tournaments">[] | null;
-  
 }
 
 export interface EnhancedTournamentGolferDoc extends TournamentGolferDoc {
@@ -789,41 +791,259 @@ export interface MigrationData {
 }
 
 // =============================================================================
-// UTILITY FUNCTION TYPES
+// CONSOLIDATED CROSS-MODULE TYPES
 // =============================================================================
 
-export interface TourUpdateData {
-  name?: string;
-  shortForm?: string;
-  logoUrl?: string;
-  buyIn?: number;
-  playoffSpots?: number[];
-  maxParticipants?: number;
+export type AuditAction = "created" | "updated" | "deleted" | "restored";
+
+export type AuditLogChanges = Record<string, { old: unknown; new: unknown }>;
+
+export type AuditLogParams = {
+  memberId?: Id<"members">;
+  clerkId?: string;
+  entityType: string;
+  entityId: string;
+  action: AuditAction;
+  changes?: AuditLogChanges;
+  metadata?: Record<string, unknown>;
+  ipAddress?: string;
+  userAgent?: string;
+};
+
+export type AuthCtx = QueryCtx | MutationCtx;
+
+export type FetchWithRetryConfig = {
+  timeout?: number;
+  retries?: number;
+  retryDelay?: number;
+  validateResponse?: (json: unknown) => boolean;
+  logPrefix?: string;
+};
+
+export type FetchResult<T> =
+  | {
+      ok: true;
+      data: T;
+      attempts: number;
+    }
+  | {
+      ok: false;
+      error: string;
+      attempts: number;
+    };
+
+export type UpsertResult = {
+  total: number;
+  inserted: number;
+  updated: number;
+  dryRun: boolean;
+};
+
+export type SyncResult = {
+  fetched: number;
+  upserted: UpsertResult;
+};
+
+export type NormalizeNamesResult = {
+  scanned: number;
+  changed: number;
+};
+
+export type DedupeResult = {
+  scanned: number;
+  duplicateGroups: number;
+  kept: number;
+  removed: number;
+  updatedTournamentGolfers: number;
+  updatedTeams: number;
+};
+
+export type ValidateMemberDataInput = {
+  clerkId?: string;
+  email?: string;
+  firstname?: string;
+  lastname?: string;
+  displayName?: string;
+  isActive?: boolean;
+  role?: "admin" | "moderator" | "regular";
+  account?: number;
+  friends?: (string | Id<"members">)[];
+};
+
+export type ClerkEmail = {
+  email_address?: string;
+};
+
+export type ClerkUser = {
+  id: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  full_name?: string | null;
+  email_addresses?: ClerkEmail[];
+};
+
+export type ClerkUserRow = {
+  clerkId: string;
+  email: string | null;
+  fullName: string;
+};
+
+export type FetchClerkUsersOptions = {
+  limit: number;
+  offset: number;
+};
+
+export type MembersWhereOp =
+  | "eq"
+  | "neq"
+  | "in"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "contains"
+  | "startsWith"
+  | "endsWith"
+  | "includes"
+  | "exists";
+
+export type MembersWhereValue = string | number | boolean | null;
+
+export type MembersWhereCondition = {
+  field: string;
+  op?: MembersWhereOp;
+  value?: MembersWhereValue;
+  values?: MembersWhereValue[];
+  caseInsensitive?: boolean;
+};
+
+export type MembersOrderBy = {
+  field: string;
+  direction?: "asc" | "desc";
+  nulls?: "first" | "last";
+  caseInsensitive?: boolean;
+};
+
+export type ValidateSeasonDataInput = Partial<
+  Pick<
+    Doc<"seasons">,
+    "year" | "number" | "startDate" | "endDate" | "registrationDeadline"
+  >
+>;
+
+export type ValidateTierDataInput = Partial<
+  Pick<Doc<"tiers">, "name" | "payouts" | "points">
+> & {
+  minimumParticipants?: number;
+  maximumParticipants?: number;
   description?: string;
-  updatedAt?: number;
-}
+};
 
-export interface OptimizedQueryOptions {
-  filter?: TourFilterOptions;
-  activeOnly?: boolean;
-}
+export type ValidateTourCardDataInput = Partial<
+  Pick<
+    Doc<"tourCards">,
+    | "displayName"
+    | "earnings"
+    | "points"
+    | "wins"
+    | "topTen"
+    | "appearances"
+    | "madeCut"
+  >
+>;
 
-export interface TournamentOptimizedQueryOptions {
-  filter?: TournamentFilterOptions;
-  activeOnly?: boolean;
-  upcomingOnly?: boolean;
-  liveOnly?: boolean;
-}
+export type TournamentStatus = Doc<"tournaments">["status"];
 
-export interface EnhanceOptions {
-  includeSeason?: boolean;
-  includeStatistics?: boolean;
-  includeParticipants?: boolean;
-  includeTournaments?: boolean;
-  includeTourCards?: boolean;
-}
+export type ValidateTournamentDataInput = Partial<
+  Pick<
+    Doc<"tournaments">,
+    | "name"
+    | "seasonId"
+    | "tierId"
+    | "courseId"
+    | "startDate"
+    | "endDate"
+    | "status"
+  >
+>;
 
-// Enhanced participant type with member data
-export interface ParticipantWithMember extends TourCardDoc {
-  member: MemberDoc | null;
-}
+export type ValidateTourDataInput = Partial<
+  Pick<
+    Doc<"tours">,
+    | "name"
+    | "shortForm"
+    | "buyIn"
+    | "maxParticipants"
+    | "playoffSpots"
+    | "logoUrl"
+  >
+>;
+
+export type ValidateTeamDataInput = {
+  golferIds?: number[];
+  earnings?: number;
+  points?: number;
+  score?: number;
+  round?: number;
+  position?: string;
+};
+
+export type TeamGolferWithTournamentFields = Omit<GolferDoc, "worldRank"> & {
+  worldRank: number | null;
+  group: number | null;
+  rating: number | null;
+};
+
+export type ValidateGolferDataInput = Partial<
+  Pick<Doc<"golfers">, "apiId" | "playerName" | "country" | "worldRank">
+>;
+
+export type EnhancedGolfer = {
+  field?: DataGolfFieldPlayer;
+  ranking?: DataGolfRankedPlayer;
+  live?: DataGolfLiveModelPlayer;
+  historical?: DataGolfHistoricalPlayer;
+  tournamentGolfer?: Doc<"tournamentGolfers">;
+  golfer?: Doc<"golfers">;
+};
+
+export type BuildUsageRateByGolferApiIdOptions = {
+  teams: {
+    golferIds: number[];
+  }[];
+};
+
+export type GroupLimits = {
+  GROUP_1: { percentage: number; maxCount: number };
+  GROUP_2: { percentage: number; maxCount: number };
+  GROUP_3: { percentage: number; maxCount: number };
+  GROUP_4: { percentage: number; maxCount: number };
+};
+
+export type TransactionType =
+  | "TourCardFee"
+  | "TournamentWinnings"
+  | "Withdrawal"
+  | "Deposit"
+  | "LeagueDonation"
+  | "CharityDonation"
+  | "Payment"
+  | "Refund"
+  | "Adjustment";
+
+export type TransactionStatus =
+  | "pending"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type ToSignedAmountCentsArgs = {
+  transactionType: TransactionType;
+  amountCents: number;
+};
+
+export type MemberEmailRow = {
+  member: {
+    email: string;
+  };
+};

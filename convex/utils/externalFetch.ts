@@ -1,4 +1,4 @@
-import type { FetchResult, FetchWithRetryConfig } from "../types/externalFetch";
+import { FetchResult, FetchWithRetryConfig } from "../types/types";
 
 const DEFAULT_CONFIG: Required<Omit<FetchWithRetryConfig, "validateResponse">> =
   {
