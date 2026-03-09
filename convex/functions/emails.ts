@@ -1,4 +1,4 @@
-import { emailsValidators } from "../validators/emails";
+import { emailsValidators } from "../validators/common";
 
 import {
   action,
@@ -6,27 +6,279 @@ import {
   internalMutation,
   internalQuery,
   query,
+  type ActionCtx,
+  type QueryCtx,
 } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import type { GroupsEmailContext } from "../types/emails";
+import { requireAdmin, requireAdminAction } from "./auth";
 import {
   formatMemberName,
   getChampionsStringForTournamentId,
   getLeaderboardRowsForTournament,
-  getPreviousCompletedTournamentName,
   getUpcomingTournament,
   getAppBaseUrl,
   getBrevoApiKey,
   getBrevoTestTo,
   parseNumericEnv,
+  parseNumericEnvOptional,
   buildTournamentUrl,
-  requireAdminForAction,
-  requireAdminForQuery,
   buildGroupsEmailLeaderboardTemplateParams,
   sendBrevoTemplateEmailBatch,
-  sendGroupsEmailImpl,
 } from "../utils/emails";
+
+type TournamentDoc = Doc<"tournaments">;
+type MemberDoc = Doc<"members">;
+type TourCardDoc = Doc<"tourCards">;
+type EmailRecipient = GroupsEmailContext["recipients"][number];
+
+function getCurrentYear(): number {
+  return new Date(Date.now()).getFullYear();
+}
+
+function getLogoDetails(logoUrl: unknown): {
+  logoUrl: string;
+  logoDisplay: "inline-block" | "none";
+} {
+  const normalizedLogoUrl = typeof logoUrl === "string" ? logoUrl : "";
+  return {
+    logoUrl: normalizedLogoUrl,
+    logoDisplay: normalizedLogoUrl ? "inline-block" : "none",
+  };
+}
+
+function getPreviousCompletedTournament(
+  tournaments: TournamentDoc[],
+  tournament: TournamentDoc,
+  now: number,
+): TournamentDoc | undefined {
+  return tournaments
+    .filter(
+      (candidate) =>
+        candidate.startDate < tournament.startDate &&
+        (candidate.status === "completed" || candidate.endDate <= now),
+    )
+    .sort((left, right) => right.startDate - left.startDate)[0];
+}
+
+async function buildGroupsEmailContext(
+  ctx: QueryCtx,
+  tournamentId: Id<"tournaments">,
+): Promise<GroupsEmailContext> {
+  const tournament = await ctx.db.get(tournamentId);
+  if (!tournament) {
+    throw new Error("Tournament not found");
+  }
+
+  const [season, tournaments, tourCards] = await Promise.all([
+    ctx.db.get(tournament.seasonId),
+    ctx.db
+      .query("tournaments")
+      .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
+      .collect(),
+    ctx.db
+      .query("tourCards")
+      .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
+      .collect(),
+  ]);
+
+  const previousTournament = getPreviousCompletedTournament(
+    tournaments,
+    tournament,
+    Date.now(),
+  );
+
+  const [champions, leaderboardRows] = previousTournament
+    ? await Promise.all([
+        getChampionsStringForTournamentId({
+          ctx,
+          tournamentId: previousTournament._id,
+        }),
+        getLeaderboardRowsForTournament({
+          ctx,
+          tournamentId: previousTournament._id,
+        }),
+      ])
+    : ["", []];
+
+  const uniqueTourCardByMemberId = new Map<Id<"members">, TourCardDoc>();
+  for (const tourCard of tourCards) {
+    if (!uniqueTourCardByMemberId.has(tourCard.memberId)) {
+      uniqueTourCardByMemberId.set(tourCard.memberId, tourCard);
+    }
+  }
+
+  const members = await Promise.all(
+    [...uniqueTourCardByMemberId.keys()].map((memberId) =>
+      ctx.db.get(memberId),
+    ),
+  );
+
+  const recipients = members
+    .filter((member): member is MemberDoc => Boolean(member))
+    .filter((member) => member.isActive !== false)
+    .map((member) => ({
+      memberId: member._id,
+      tourCardId: uniqueTourCardByMemberId.get(member._id)?._id,
+      email: member.email,
+      name: formatMemberName(member),
+    }))
+    .sort((left, right) => left.email.localeCompare(right.email));
+
+  return {
+    tournament,
+    seasonYear: season?.year ?? getCurrentYear(),
+    previousTournamentName: previousTournament?.name ?? "",
+    previousTournamentLogoUrl: getLogoDetails(previousTournament?.logoUrl)
+      .logoUrl,
+    champions,
+    leaderboardRows,
+    recipients,
+    activeTourCardCount: tourCards.length,
+    memberCount: recipients.length,
+  };
+}
+
+function buildTournamentEmailParams(args: {
+  context: GroupsEmailContext;
+  baseUrl: string;
+  recipientTourCardId?: string;
+  customBlurb?: string;
+}): Record<string, string | number> {
+  const tournamentLogo = getLogoDetails(args.context.tournament.logoUrl);
+  const previousTournamentLogo = getLogoDetails(
+    args.context.previousTournamentLogoUrl,
+  );
+  const leaderboardParams = buildGroupsEmailLeaderboardTemplateParams({
+    leaderboardRows: args.context.leaderboardRows,
+    recipientTourCardId: args.recipientTourCardId ?? "",
+  });
+
+  return {
+    tournamentName: args.context.tournament.name,
+    seasonYear: args.context.seasonYear ?? getCurrentYear(),
+    previousTournamentName: args.context.previousTournamentName ?? "",
+    previousTournamentLogoUrl: previousTournamentLogo.logoUrl,
+    previousTournamentLogoDisplay: previousTournamentLogo.logoDisplay,
+    champions: args.context.champions ?? "",
+    pgcLogoUrl: `${args.baseUrl}/logo192.png`,
+    nextUpUrl: buildTournamentUrl({
+      baseUrl: args.baseUrl,
+      tournamentId: String(args.context.tournament._id),
+    }),
+    nextUpLogoUrl: tournamentLogo.logoUrl,
+    nextUpLogoDisplay: tournamentLogo.logoDisplay,
+    customBlurb: (args.customBlurb ?? "").trim(),
+    ...leaderboardParams,
+  };
+}
+
+function buildTournamentEmailRecipients(args: {
+  context: GroupsEmailContext;
+  baseUrl: string;
+  customBlurb?: string;
+}) {
+  return args.context.recipients.map((recipient) => ({
+    email: recipient.email,
+    name: recipient.name,
+    params: buildTournamentEmailParams({
+      context: args.context,
+      baseUrl: args.baseUrl,
+      recipientTourCardId: recipient.tourCardId
+        ? String(recipient.tourCardId)
+        : "",
+      customBlurb: args.customBlurb,
+    }),
+  }));
+}
+
+function findEmailRecipientByAddress(
+  recipients: EmailRecipient[],
+  email: string,
+): EmailRecipient | null {
+  return recipients.find((recipient) => recipient.email === email) ?? null;
+}
+
+async function resolveUpcomingTournamentId(
+  ctx: ActionCtx,
+  tournamentId: Id<"tournaments"> | undefined,
+): Promise<Id<"tournaments"> | null> {
+  if (tournamentId) {
+    return tournamentId;
+  }
+
+  const result = await ctx.runQuery(
+    internal.functions.emails.getUpcomingTournamentId,
+    {},
+  );
+  return result.tournamentId;
+}
+
+async function sendGroupsEmailInternal(args: {
+  ctx: ActionCtx;
+  tournamentId: Id<"tournaments">;
+  customBlurb?: string;
+  force?: boolean;
+}): Promise<
+  | {
+      ok: true;
+      skipped: true;
+      reason: "already_sent";
+      tournamentId: Id<"tournaments">;
+    }
+  | {
+      ok: true;
+      skipped: false;
+      tournamentId: Id<"tournaments">;
+      attempted: number;
+      sent: number;
+      failed: number;
+      memberCount: number;
+      activeTourCardCount: number;
+    }
+> {
+  const context = (await args.ctx.runQuery(
+    internal.functions.emails.getActiveTourCardRecipientsForTournament,
+    { tournamentId: args.tournamentId },
+  )) as GroupsEmailContext;
+
+  if (context.tournament.groupsEmailSentAt && !args.force) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "already_sent",
+      tournamentId: context.tournament._id,
+    };
+  }
+
+  const summary = await sendBrevoTemplateEmailBatch({
+    apiKey: getBrevoApiKey(),
+    templateId: parseNumericEnv("BREVO_GROUPS_FINALIZED_TEMPLATE_ID"),
+    recipients: buildTournamentEmailRecipients({
+      context,
+      baseUrl: getAppBaseUrl({ allowLocalhostFallback: false }),
+      customBlurb: args.customBlurb,
+    }),
+  });
+
+  if (summary.sent > 0) {
+    await args.ctx.runMutation(internal.functions.emails.markGroupsEmailSent, {
+      tournamentId: context.tournament._id,
+    });
+  }
+
+  return {
+    ok: true,
+    skipped: false,
+    tournamentId: context.tournament._id,
+    attempted: summary.attempted,
+    sent: summary.sent,
+    failed: summary.failed,
+    memberCount: context.memberCount,
+    activeTourCardCount: context.activeTourCardCount,
+  };
+}
 
 /**
  * Lists unique email recipients for the tournament based on “active” tour cards.
@@ -34,93 +286,7 @@ import {
  */
 export const getActiveTourCardRecipientsForTournament = internalQuery({
   args: emailsValidators.args.getActiveTourCardRecipientsForTournament,
-  handler: async (ctx, args) => {
-    const tournament = await ctx.db.get(args.tournamentId);
-    if (!tournament) throw new Error("Tournament not found");
-
-    const season = await ctx.db.get(tournament.seasonId);
-    const seasonYear = season?.year ?? new Date(Date.now()).getFullYear();
-
-    const now = Date.now();
-    const tournaments = await ctx.db
-      .query("tournaments")
-      .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-      .collect();
-
-    const previous = tournaments
-      .filter(
-        (t) =>
-          t.startDate < tournament.startDate &&
-          (t.status === "completed" || t.endDate <= now),
-      )
-      .sort((a, b) => b.startDate - a.startDate)[0];
-
-    const previousTournamentName =
-      previous?.name ??
-      (await getPreviousCompletedTournamentName({
-        ctx,
-        tournament,
-      }));
-
-    const previousTournamentLogoUrl =
-      previous &&
-      typeof (previous as { logoUrl?: unknown }).logoUrl === "string"
-        ? (previous as { logoUrl: string }).logoUrl
-        : "";
-
-    const champions = previous
-      ? await getChampionsStringForTournamentId({
-          ctx,
-          tournamentId: previous._id,
-        })
-      : "";
-
-    const leaderboardRows = previous
-      ? await getLeaderboardRowsForTournament({
-          ctx,
-          tournamentId: previous._id,
-        })
-      : [];
-
-    const tourCards = await ctx.db
-      .query("tourCards")
-      .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-      .collect();
-
-    const byMemberId = new Map<Id<"members">, Doc<"tourCards">>();
-    for (const tc of tourCards) {
-      if (!byMemberId.has(tc.memberId)) byMemberId.set(tc.memberId, tc);
-    }
-
-    const members = await Promise.all(
-      [...byMemberId.keys()].map((memberId) => ctx.db.get(memberId)),
-    );
-
-    const recipients = members
-      .filter((m): m is Doc<"members"> => Boolean(m))
-      .filter((m) => m.isActive !== false)
-      .map((member) => {
-        const tc = byMemberId.get(member._id);
-        return {
-          memberId: member._id,
-          tourCardId: tc?._id,
-          email: member.email,
-          name: formatMemberName(member),
-        };
-      });
-
-    return {
-      tournament,
-      seasonYear,
-      previousTournamentName,
-      previousTournamentLogoUrl,
-      champions,
-      leaderboardRows,
-      recipients,
-      activeTourCardCount: tourCards.length,
-      memberCount: recipients.length,
-    };
-  },
+  handler: async (ctx, args) => buildGroupsEmailContext(ctx, args.tournamentId),
 });
 
 /**
@@ -180,7 +346,11 @@ export const getMissingTeamReminderRecipientsForUpcomingTournament =
       );
 
       const membersWithTourCards = new Set<Id<"members">>();
-      for (const tc of tourCards) membersWithTourCards.add(tc.memberId);
+      const memberIdByTourCardId = new Map<Id<"tourCards">, Id<"members">>();
+      for (const tourCard of tourCards) {
+        membersWithTourCards.add(tourCard.memberId);
+        memberIdByTourCardId.set(tourCard._id, tourCard.memberId);
+      }
 
       const missingByEmail = new Map<
         string,
@@ -214,15 +384,12 @@ export const getMissingTeamReminderRecipientsForUpcomingTournament =
         }
       }
 
-      const teamTourCardIds = Array.from(
-        new Set(teams.map((t) => t.tourCardId)),
-      ) as Id<"tourCards">[];
-      const teamTourCards = await Promise.all(
-        teamTourCardIds.map((id) => ctx.db.get(id)),
-      );
       const membersWithAnyTeam = new Set<Id<"members">>();
-      for (const tc of teamTourCards) {
-        if (tc) membersWithAnyTeam.add(tc.memberId);
+      for (const team of teams) {
+        const memberId = memberIdByTourCardId.get(team.tourCardId);
+        if (memberId) {
+          membersWithAnyTeam.add(memberId);
+        }
       }
 
       for (const member of activeMembers) {
@@ -233,11 +400,10 @@ export const getMissingTeamReminderRecipientsForUpcomingTournament =
         const key = email.toLowerCase();
         if (missingByEmail.has(key)) continue;
 
-        const missingTeamCount = membersWithTourCards.has(member._id) ? 1 : 1;
         missingByEmail.set(key, {
           email,
           name: formatMemberName(member),
-          missingTeamCount,
+          missingTeamCount: 1,
         });
       }
 
@@ -296,27 +462,23 @@ export const getActiveMemberEmailRecipients = internalQuery({
   },
 });
 
+export const getUpcomingTournamentId = internalQuery({
+  args: emailsValidators.args.getUpcomingTournamentId,
+  handler: async (ctx) => {
+    const tournament = await getUpcomingTournament(ctx);
+    return {
+      ok: true,
+      tournamentId: tournament?._id ?? null,
+    } as const;
+  },
+});
+
 export const markReminderEmailSent = internalMutation({
   args: emailsValidators.args.markReminderEmailSent,
   handler: async (ctx, args) => {
     const now = Date.now();
     await ctx.db.patch(args.tournamentId, { reminderEmailSentAt: now });
     return { tournamentId: args.tournamentId, reminderEmailSentAt: now };
-  },
-});
-
-export const getIsAdminByClerkId = internalQuery({
-  args: emailsValidators.args.getIsAdminByClerkId,
-  handler: async (ctx, args) => {
-    const member = await ctx.db
-      .query("members")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-
-    return {
-      ok: true,
-      isAdmin: Boolean(member && member.role === "admin"),
-    } as const;
   },
 });
 
@@ -327,72 +489,20 @@ export const getIsAdminByClerkId = internalQuery({
 export const adminGetGroupsEmailPreview: ReturnType<typeof query> = query({
   args: emailsValidators.args.adminGetGroupsEmailPreview,
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized: You must be signed in");
+    await requireAdmin(ctx);
 
-    const member = await ctx.db
-      .query("members")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-      .first();
-
-    if (!member || member.role !== "admin") {
-      throw new Error("Forbidden: Admin access required");
-    }
-
-    const tournament = await ctx.db.get(args.tournamentId);
-    if (!tournament) throw new Error("Tournament not found");
-
-    const tournaments = await ctx.db
-      .query("tournaments")
-      .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-      .collect();
-
-    const now = Date.now();
-    const previous = tournaments
-      .filter(
-        (t) =>
-          t.startDate < tournament.startDate &&
-          (t.status === "completed" || t.endDate <= now),
-      )
-      .sort((a, b) => b.startDate - a.startDate)[0];
-
-    const previousTournamentName = previous?.name ?? "";
-
-    const tourCards = await ctx.db
-      .query("tourCards")
-      .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-      .collect();
-
-    const byMemberId = new Map<Id<"members">, true>();
-    for (const tc of tourCards) {
-      if (!byMemberId.has(tc.memberId)) byMemberId.set(tc.memberId, true);
-    }
-
-    const members = await Promise.all(
-      [...byMemberId.keys()].map((memberId) => ctx.db.get(memberId)),
-    );
-
-    const recipientCount = members
-      .filter((m): m is Doc<"members"> => Boolean(m))
-      .filter((m) => m.isActive !== false).length;
-
-    const championsComputed = previous
-      ? await getChampionsStringForTournamentId({
-          ctx,
-          tournamentId: previous._id,
-        })
-      : "";
+    const context = await buildGroupsEmailContext(ctx, args.tournamentId);
 
     return {
       ok: true,
-      tournamentId: tournament._id,
-      tournamentName: tournament.name,
-      groupsEmailSentAt: tournament.groupsEmailSentAt ?? null,
-      previousTournamentName,
-      champions: championsComputed,
-      memberCount: recipientCount,
-      activeTourCardCount: tourCards.length,
-      recipientCount,
+      tournamentId: context.tournament._id,
+      tournamentName: context.tournament.name,
+      groupsEmailSentAt: context.tournament.groupsEmailSentAt ?? null,
+      previousTournamentName: context.previousTournamentName,
+      champions: context.champions,
+      memberCount: context.memberCount,
+      activeTourCardCount: context.activeTourCardCount,
+      recipientCount: context.recipients.length,
     } as const;
   },
 });
@@ -405,7 +515,7 @@ export const sendGroupsEmailForTournament: ReturnType<typeof internalAction> =
   internalAction({
     args: emailsValidators.args.sendGroupsEmailForTournament,
     handler: async (ctx, args) => {
-      return await sendGroupsEmailImpl({
+      return await sendGroupsEmailInternal({
         ctx,
         tournamentId: args.tournamentId,
         customBlurb: args.customBlurb,
@@ -421,14 +531,148 @@ export const sendGroupsEmailForTournament: ReturnType<typeof internalAction> =
 export const adminSendGroupsEmailForTournament = action({
   args: emailsValidators.args.adminSendGroupsEmailForTournament,
   handler: async (ctx, args) => {
-    await requireAdminForAction(ctx);
+    await requireAdminAction(ctx);
 
-    return await sendGroupsEmailImpl({
+    return await sendGroupsEmailInternal({
       ctx,
       tournamentId: args.tournamentId,
       customBlurb: args.customBlurb,
       force: args.force,
     });
+  },
+});
+
+/**
+ * Admin-only manual send for a weekly recap email.
+ * By default, targets the upcoming tournament (to determine the season recipients).
+ */
+export const adminSendWeeklyRecapEmailToActiveTourCards = action({
+  args: emailsValidators.args.adminSendWeeklyRecapEmailToActiveTourCards,
+  handler: async (ctx, args) => {
+    await requireAdminAction(ctx);
+
+    const resolvedTournamentId = await resolveUpcomingTournamentId(
+      ctx,
+      args.tournamentId,
+    );
+
+    if (!resolvedTournamentId) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: "no_upcoming_tournament",
+      } as const;
+    }
+
+    const tournamentContext = (await ctx.runQuery(
+      internal.functions.emails.getActiveTourCardRecipientsForTournament,
+      { tournamentId: resolvedTournamentId },
+    )) as GroupsEmailContext;
+
+    const tournament = tournamentContext.tournament;
+    const apiKey = getBrevoApiKey();
+    const templateId =
+      parseNumericEnvOptional("BREVO_WEEKLY_RECAP_TEMPLATE_ID") ??
+      parseNumericEnv("BREVO_GROUPS_FINALIZED_TEMPLATE_ID");
+
+    const summary = await sendBrevoTemplateEmailBatch({
+      apiKey,
+      templateId,
+      recipients: buildTournamentEmailRecipients({
+        context: tournamentContext,
+        baseUrl: getAppBaseUrl({ allowLocalhostFallback: false }),
+        customBlurb: args.customBlurb,
+      }),
+    });
+
+    return {
+      ok: true,
+      skipped: false,
+      tournamentId: tournament._id,
+      attempted: summary.attempted,
+      sent: summary.sent,
+      failed: summary.failed,
+      memberCount: tournamentContext.memberCount,
+      activeTourCardCount: tournamentContext.activeTourCardCount,
+    } as const;
+  },
+});
+
+/**
+ * Sends a single weekly recap test email to `BREVO_TEST_TO`.
+ * This never emails your full league list.
+ */
+export const sendWeeklyRecapEmailTest: ReturnType<typeof action> = action({
+  args: emailsValidators.args.sendWeeklyRecapEmailTest,
+  handler: async (ctx, args) => {
+    await requireAdminAction(ctx);
+
+    const resolvedTournamentId = await resolveUpcomingTournamentId(
+      ctx,
+      args.tournamentId,
+    );
+
+    if (!resolvedTournamentId) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: "no_upcoming_tournament",
+      } as const;
+    }
+
+    const apiKey = getBrevoApiKey();
+    const templateId =
+      parseNumericEnvOptional("BREVO_WEEKLY_RECAP_TEMPLATE_ID") ??
+      parseNumericEnv("BREVO_GROUPS_FINALIZED_TEMPLATE_ID");
+    const testTo = getBrevoTestTo();
+
+    const tournamentContext = (await ctx.runQuery(
+      internal.functions.emails.getActiveTourCardRecipientsForTournament,
+      { tournamentId: resolvedTournamentId },
+    )) as GroupsEmailContext;
+
+    const tournament = tournamentContext.tournament;
+    const baseUrl = getAppBaseUrl({ allowLocalhostFallback: true });
+    const testRecipient = findEmailRecipientByAddress(
+      tournamentContext.recipients,
+      testTo,
+    );
+    const recipientTourCardId = testRecipient?.tourCardId
+      ? String(testRecipient.tourCardId)
+      : "";
+
+    const summary = await sendBrevoTemplateEmailBatch({
+      apiKey,
+      templateId,
+      includeMessageIds: true,
+      includeErrorReasons: true,
+      recipients: [
+        {
+          email: testTo,
+          name: testRecipient?.name,
+          params: buildTournamentEmailParams({
+            context: tournamentContext,
+            baseUrl,
+            recipientTourCardId,
+            customBlurb: args.customBlurb,
+          }),
+        },
+      ],
+    });
+
+    return {
+      ok: true,
+      mode: "test",
+      testTo,
+      tournamentId: tournament._id,
+      attempted: summary.attempted,
+      sent: summary.sent,
+      failed: summary.failed,
+      messageIds: summary.messageIds ?? [],
+      errorReasons: summary.errorReasons ?? [],
+      wouldEmailMemberCount: tournamentContext.memberCount,
+      wouldEmailActiveTourCardCount: tournamentContext.activeTourCardCount,
+    } as const;
   },
 });
 
@@ -529,7 +773,7 @@ export const sendMissingTeamReminderForUpcomingTournament: ReturnType<
 export const sendGroupsEmailTest: ReturnType<typeof action> = action({
   args: emailsValidators.args.sendGroupsEmailTest,
   handler: async (ctx, args) => {
-    await requireAdminForAction(ctx);
+    await requireAdminAction(ctx);
 
     const apiKey = getBrevoApiKey();
     const templateId = parseNumericEnv("BREVO_GROUPS_FINALIZED_TEMPLATE_ID");
@@ -542,52 +786,15 @@ export const sendGroupsEmailTest: ReturnType<typeof action> = action({
 
     const tournament = context.tournament;
 
-    const customBlurb = (args.customBlurb ?? "").trim().replace(/\n/g, "<br>");
-
     const baseUrl = getAppBaseUrl({ allowLocalhostFallback: true });
-    const nextUpUrl = buildTournamentUrl({
-      baseUrl,
-      tournamentId: String(tournament._id),
-    });
-    const nextUpLogoUrl =
-      typeof tournament.logoUrl === "string" && tournament.logoUrl
-        ? tournament.logoUrl
-        : "";
-    const nextUpLogoDisplay = nextUpLogoUrl ? "inline-block" : "none";
-    const pgcLogoUrl = `${baseUrl}/logo192.png`;
-
-    const previousTournamentLogoUrl = context.previousTournamentLogoUrl;
-    const previousTournamentLogoDisplay = previousTournamentLogoUrl
-      ? "inline-block"
-      : "none";
-
-    const leaderboardRows = context.leaderboardRows;
-
-    // const top10 = leaderboardRows.slice(0, 10);
-
-    const testRecipient =
-      context.recipients.find(
-        (r: GroupsEmailContext["recipients"][number]) => r?.email === testTo,
-      ) ?? null;
+    const testRecipient = findEmailRecipientByAddress(
+      context.recipients,
+      testTo,
+    );
 
     const recipientTourCardId = testRecipient?.tourCardId
       ? String(testRecipient.tourCardId)
       : "";
-
-    // const meIndex = recipientTourCardId
-    //   ? leaderboardRows.findIndex(
-    //       (row: LeaderboardTopRow) =>
-    //         String(row.tourCardId) === recipientTourCardId,
-    //     )
-    //   : -1;
-
-    // const meRow = meIndex >= 10 ? leaderboardRows[meIndex] : null;
-    // const meRowDisplay = meRow ? "table-row" : "none";
-
-    const leaderboardParams = buildGroupsEmailLeaderboardTemplateParams({
-      leaderboardRows,
-      recipientTourCardId,
-    });
 
     const summary = await sendBrevoTemplateEmailBatch({
       apiKey,
@@ -597,21 +804,12 @@ export const sendGroupsEmailTest: ReturnType<typeof action> = action({
         {
           email: testTo,
           name: testRecipient?.name,
-          params: {
-            tournamentName: tournament.name,
-            seasonYear:
-              context.seasonYear ?? new Date(Date.now()).getFullYear(),
-            previousTournamentName: context.previousTournamentName ?? "",
-            previousTournamentLogoUrl,
-            previousTournamentLogoDisplay,
-            champions: context.champions ?? "",
-            pgcLogoUrl,
-            nextUpUrl,
-            nextUpLogoUrl,
-            nextUpLogoDisplay,
-            ...leaderboardParams,
-            customBlurb,
-          },
+          params: buildTournamentEmailParams({
+            context,
+            baseUrl,
+            recipientTourCardId,
+            customBlurb: (args.customBlurb ?? "").trim().replace(/\n/g, "<br>"),
+          }),
         },
       ],
     });
@@ -638,7 +836,7 @@ export const sendGroupsEmailTest: ReturnType<typeof action> = action({
 export const sendSeasonStartEmailTest: ReturnType<typeof action> = action({
   args: emailsValidators.args.sendSeasonStartEmailTest,
   handler: async (ctx, args) => {
-    await requireAdminForAction(ctx);
+    await requireAdminAction(ctx);
 
     const apiKey = getBrevoApiKey();
     const templateId = parseNumericEnv("BREVO_SEASON_START_TEMPLATE_ID");
@@ -688,7 +886,7 @@ export const sendSeasonStartEmailTest: ReturnType<typeof action> = action({
 export const adminGetSeasonStartEmailPreview = query({
   args: emailsValidators.args.adminGetSeasonStartEmailPreview,
   handler: async (ctx) => {
-    await requireAdminForQuery(ctx);
+    await requireAdmin(ctx);
 
     const members = await ctx.db.query("members").collect();
     const activeMemberCount = members.filter(
@@ -711,7 +909,7 @@ export const adminSendSeasonStartEmailToActiveMembers: ReturnType<
 > = action({
   args: emailsValidators.args.adminSendSeasonStartEmailToActiveMembers,
   handler: async (ctx, args) => {
-    await requireAdminForAction(ctx);
+    await requireAdminAction(ctx);
 
     const apiKey = getBrevoApiKey();
     const templateId = parseNumericEnv("BREVO_SEASON_START_TEMPLATE_ID");
@@ -767,6 +965,8 @@ export const sendMissingTeamReminderEmailTest: ReturnType<typeof action> =
   action({
     args: emailsValidators.args.sendMissingTeamReminderEmailTest,
     handler: async (ctx, args) => {
+      await requireAdminAction(ctx);
+
       const apiKey = getBrevoApiKey();
       const templateId = parseNumericEnv(
         "BREVO_MISSING_TEAM_REMINDER_TEMPLATE_ID",

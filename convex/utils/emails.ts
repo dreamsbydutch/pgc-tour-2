@@ -1,18 +1,14 @@
 import type { QueryCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
-import { internal } from "../_generated/api";
 import type {
   BuildTournamentUrlArgs,
   GetAppBaseUrlArgs,
   GetChampionsStringForTournamentIdArgs,
   GetLeaderboardRowsForTournamentArgs,
   GetPreviousCompletedTournamentNameArgs,
-  GroupsEmailContext,
   LeaderboardTopRow,
-  RequireAdminForActionCtx,
   SendBrevoTemplateEmailBatchArgs,
   SendBrevoTemplateEmailBatchResult,
-  SendGroupsEmailImplArgs,
 } from "../types/emails";
 import { calculateScoreForSorting } from "./misc";
 
@@ -28,7 +24,6 @@ export function formatScoreToPar(score: number | undefined): string {
   if (score === 0) return "E";
   return score > 0 ? `+${score}` : `${score}`;
 }
-
 
 export function escapeEmailText(value: string): string {
   return value
@@ -296,6 +291,16 @@ export function parseNumericEnv(name: string): number {
   return value;
 }
 
+export function parseNumericEnvOptional(name: string): number | null {
+  const raw = process.env[name];
+  if (!raw) return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    throw new Error(`${name} must be a number`);
+  }
+  return value;
+}
+
 export function getBrevoApiKey(): string {
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) throw new Error("Missing BREVO_API_KEY");
@@ -313,15 +318,18 @@ export function getBrevoTestTo(): string {
 }
 
 export function getAppBaseUrl(args: GetAppBaseUrlArgs): string {
-  const raw =
+  const raw = (
     process.env.APP_BASE_URL ??
     process.env.PUBLIC_APP_URL ??
     process.env.SITE_URL ??
-    process.env.VERCEL_URL;
+    process.env.VERCEL_URL
+  )
+    ?.trim()
+    .replace(/\/$/, "");
 
   if (raw && raw.length > 0) {
     const hasProtocol = raw.startsWith("http://") || raw.startsWith("https://");
-    return hasProtocol ? raw.replace(/\/$/, "") : `https://${raw}`;
+    return hasProtocol ? raw : `https://${raw}`;
   }
 
   if (args.allowLocalhostFallback) {
@@ -348,6 +356,7 @@ export async function sendBrevoTemplateEmailBatch(
   let sent = 0;
   let failed = 0;
   const messageIds: string[] = [];
+  const errorReasons: string[] = [];
 
   for (let i = 0; i < args.recipients.length; i += maxConcurrency) {
     const batch = args.recipients.slice(i, i + maxConcurrency);
@@ -388,7 +397,14 @@ export async function sendBrevoTemplateEmailBatch(
 
     for (const r of results) {
       if (r.status === "fulfilled") sent += 1;
-      else failed += 1;
+      else {
+        failed += 1;
+        if (args.includeErrorReasons) {
+          const reason =
+            r.reason instanceof Error ? r.reason.message : String(r.reason);
+          errorReasons.push(reason);
+        }
+      }
     }
   }
 
@@ -397,181 +413,6 @@ export async function sendBrevoTemplateEmailBatch(
     sent,
     failed,
     ...(args.includeMessageIds ? { messageIds } : {}),
+    ...(args.includeErrorReasons ? { errorReasons } : {}),
   };
-}
-
-export async function requireAdminForAction(ctx: RequireAdminForActionCtx) {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) {
-    throw new Error("Unauthorized: You must be signed in");
-  }
-
-  const isAdminResult = await ctx.runQuery(
-    internal.functions.emails.getIsAdminByClerkId,
-    { clerkId: identity.subject },
-  );
-
-  if (!isAdminResult?.isAdmin) {
-    throw new Error("Forbidden: Admin access required");
-  }
-}
-
-export async function requireAdminForQuery(ctx: QueryCtx) {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) {
-    throw new Error("Unauthorized: You must be signed in");
-  }
-
-  const member = await ctx.db
-    .query("members")
-    .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-    .first();
-
-  if (!member || member.role !== "admin") {
-    throw new Error("Forbidden: Admin access required");
-  }
-}
-
-export async function sendGroupsEmailImpl(args: SendGroupsEmailImplArgs) {
-  const tournamentContext = (await args.ctx.runQuery(
-    internal.functions.emails.getActiveTourCardRecipientsForTournament,
-    { tournamentId: args.tournamentId },
-  )) as GroupsEmailContext;
-
-  const tournament = tournamentContext.tournament;
-
-  if (tournament.groupsEmailSentAt && !args.force) {
-    return {
-      ok: true,
-      skipped: true,
-      reason: "already_sent",
-      tournamentId: tournament._id,
-    } as const;
-  }
-
-  const apiKey = getBrevoApiKey();
-  const templateId = parseNumericEnv("BREVO_GROUPS_FINALIZED_TEMPLATE_ID");
-  const customBlurb = (args.customBlurb ?? "").trim().replace(/\n/g, "<br>");
-
-  const baseUrl = getAppBaseUrl({ allowLocalhostFallback: false });
-  const nextUpUrl = buildTournamentUrl({
-    baseUrl,
-    tournamentId: String(tournament._id),
-  });
-  const nextUpLogoUrl =
-    typeof tournament.logoUrl === "string" && tournament.logoUrl
-      ? tournament.logoUrl
-      : "";
-  const nextUpLogoDisplay = nextUpLogoUrl ? "inline-block" : "none";
-  const pgcLogoUrl = `${baseUrl}/logo192.png`;
-
-  const previousTournamentLogoUrl = tournamentContext.previousTournamentLogoUrl;
-  const previousTournamentLogoDisplay = previousTournamentLogoUrl
-    ? "inline-block"
-    : "none";
-
-  const leaderboardRows = tournamentContext.leaderboardRows;
-
-  const top10 = leaderboardRows.slice(0, 10);
-
-  const recipients = tournamentContext.recipients.map((r) => {
-    const recipientTourCardId = r.tourCardId ? String(r.tourCardId) : "";
-    const meIndex = recipientTourCardId
-      ? leaderboardRows.findIndex(
-          (row) => String(row.tourCardId) === recipientTourCardId,
-        )
-      : -1;
-
-    const meRow = meIndex >= 10 ? leaderboardRows[meIndex] : null;
-    const meRowDisplay = meRow ? "table-row" : "none";
-
-    const meRowBg = "#dbeafe";
-    const meRowBorderLeft = "3px solid #2563eb";
-
-    const leaderboardParams = Object.fromEntries(
-      Array.from({ length: 10 }, (_, idx) => {
-        const row = top10[idx] ?? {};
-        const n = idx + 1;
-
-        const isChampion = row.isChampion === true;
-        const isMe =
-          recipientTourCardId &&
-          typeof row.tourCardId !== "undefined" &&
-          String(row.tourCardId) === recipientTourCardId;
-
-        const baseBg = idx % 2 === 0 ? "#ffffff" : "#f8fafc";
-        let bg = baseBg;
-        let borderLeft = "0px solid transparent";
-
-        if (isChampion) {
-          bg = "#fef3c7";
-          borderLeft = "3px solid #f59e0b";
-        }
-
-        if (isMe) {
-          bg = isChampion ? "#fef3c7" : "#dbeafe";
-          borderLeft = "3px solid #2563eb";
-        }
-
-        return [
-          [`leaderboardTop${n}Pos`, row.position ?? ""],
-          [`leaderboardTop${n}Name`, row.displayName ?? ""],
-          [`leaderboardTop${n}Tour`, row.tourShortForm ?? ""],
-          [`leaderboardTop${n}Score`, row.scoreText ?? ""],
-          [`leaderboardTop${n}Bg`, bg],
-          [`leaderboardTop${n}BorderLeft`, borderLeft],
-        ];
-      }).flat(),
-    );
-
-    return {
-      email: r.email,
-      name: r.name,
-      params: {
-        tournamentName: tournament.name,
-        seasonYear:
-          tournamentContext.seasonYear ?? new Date(Date.now()).getFullYear(),
-        previousTournamentName: tournamentContext.previousTournamentName ?? "",
-        previousTournamentLogoUrl,
-        previousTournamentLogoDisplay,
-        champions: tournamentContext.champions ?? "",
-        pgcLogoUrl,
-        nextUpUrl,
-        nextUpLogoUrl,
-        nextUpLogoDisplay,
-        leaderboardMeRowDisplay: meRowDisplay,
-        leaderboardMePos: meRow?.position ?? "",
-        leaderboardMeName: meRow?.displayName ?? "",
-        leaderboardMeTour: meRow?.tourShortForm ?? "",
-        leaderboardMeScore: meRow?.scoreText ?? "",
-        leaderboardMeBg: meRowBg,
-        leaderboardMeBorderLeft: meRowBorderLeft,
-        ...leaderboardParams,
-        customBlurb,
-      },
-    };
-  });
-
-  const summary = await sendBrevoTemplateEmailBatch({
-    apiKey,
-    templateId,
-    recipients,
-  });
-
-  if (summary.sent > 0) {
-    await args.ctx.runMutation(internal.functions.emails.markGroupsEmailSent, {
-      tournamentId: tournament._id,
-    });
-  }
-
-  return {
-    ok: true,
-    skipped: false,
-    tournamentId: tournament._id,
-    attempted: summary.attempted,
-    sent: summary.sent,
-    failed: summary.failed,
-    memberCount: tournamentContext.memberCount,
-    activeTourCardCount: tournamentContext.activeTourCardCount,
-  } as const;
 }

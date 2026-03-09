@@ -35,6 +35,6 @@ export const GROUP_LIMITS = {
   GROUP_4: { percentage: 0.25, maxCount: 30 },
 } as const;
 
-export const MAX_PRETOURNAMENT_LEADTIME = 3 * 24 * 60 * 60 * 1000;
+export const MAX_PRETOURNAMENT_LEADTIME = 3 * MS_PER_DAY;
 
 export const DEFAULT_MAX_PARTICIPANTS = 75;

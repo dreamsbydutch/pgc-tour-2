@@ -1,4 +1,10 @@
-import { ProcessDataOptions } from "../types/types";
+
+interface ProcessDataOptions<T> {
+  filter?: (item: T) => boolean;
+  sort?: (a: T, b: T) => number;
+  skip?: number;
+  limit?: number;
+}
 
 export async function batchProcess<T>(
   items: T[],

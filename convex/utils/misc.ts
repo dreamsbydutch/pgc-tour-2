@@ -1,6 +1,6 @@
 import { Doc } from "../_generated/dataModel";
 import { CENTS_PER_DOLLAR, MS_PER_DAY } from "../functions/_constants";
-import type { BuildUsageRateByGolferApiIdOptions } from "../types/golfers";
+import type { BuildUsageRateByGolferApiIdOptions } from "../types/types";
 import {
   EnhancedTournamentDoc,
   EnhancedTournamentGolferDoc,
@@ -202,7 +202,7 @@ export const getRoundScore = (
     roundThree?: number | null | undefined;
     roundFour?: number | null | undefined;
   },
-  round: 0 | 1 | 2 | 3 | 4 | 5,
+  round: 0 | 1 | 2 | 3 | 4 | 4.5,
 ) =>
   round === 1
     ? g.roundOne
@@ -218,7 +218,7 @@ export const avgArrayToPar = (
     roundThree?: number | null | undefined;
     roundFour?: number | null | undefined;
   }[],
-  round: 0 | 1 | 2 | 3 | 4 | 5,
+  round: 0 | 1 | 2 | 3 | 4 | 4.5,
   par: number,
 ) => {
   const vals = obj.map((g) => {
@@ -233,7 +233,7 @@ export const avgThru = (golfers: { thru: number | null | undefined }[]) =>
   avgArray(golfers.map((g) => g.thru));
 export const selectionCountByPlayoffTournamentRound = (
   eventNumber: 0 | 1 | 2 | 3,
-  round: 0 | 1 | 2 | 3 | 4 | 5,
+  round: 0 | 1 | 2 | 3 | 4 | 4.5,
 ) => {
   if (eventNumber <= 1) return round <= 2 ? 10 : 5;
   if (eventNumber === 2) return 5;
@@ -241,7 +241,7 @@ export const selectionCountByPlayoffTournamentRound = (
 };
 export const categorizeTeamGolfersForRound = (
   golfers: EnhancedTournamentGolferDoc[],
-  round: 0 | 1 | 2 | 3 | 4 | 5,
+  round: 0 | 1 | 2 | 3 | 4 | 4.5,
   eventIndex: 0 | 1 | 2 | 3,
   liveMode: boolean,
   tournamentRound: number | undefined,
@@ -279,9 +279,9 @@ export const categorizeTeamGolfersForRound = (
       liveMode &&
       sortedGolfers.every((g) => g.thru === null || (g.thru ?? 0) === 0)
     ) {
-      roundState = "upcoming";
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     } else {
-      roundState = "upcoming";
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     }
   } else if (round === 2) {
     if (sortedGolfers.every((g) => g.roundTwo !== null)) {
@@ -303,9 +303,9 @@ export const categorizeTeamGolfersForRound = (
       liveMode &&
       sortedGolfers.every((g) => g.thru === null || (g.thru ?? 0) === 0)
     ) {
-      roundState = "upcoming";
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     } else {
-      roundState = "upcoming";
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     }
   } else if (round === 3) {
     if (sortedGolfers.every((g) => g.roundThree !== null)) {
@@ -327,9 +327,9 @@ export const categorizeTeamGolfersForRound = (
       liveMode &&
       sortedGolfers.every((g) => g.thru === null || (g.thru ?? 0) === 0)
     ) {
-      roundState = "upcoming";
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     } else {
-      roundState = "upcoming";
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     }
   } else if (round === 4) {
     if (sortedGolfers.every((g) => g.roundFour !== null)) {
@@ -351,11 +351,11 @@ export const categorizeTeamGolfersForRound = (
       liveMode &&
       sortedGolfers.every((g) => g.thru === null || (g.thru ?? 0) === 0)
     ) {
-      roundState = "upcoming";
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     } else {
-      roundState = "upcoming";
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     }
-  } else if (round === 5) {
+  } else if (round === 4.5) {
     if (sortedGolfers.every((g) => g.roundFour !== null)) {
       roundState = "completed";
     } else if (
@@ -364,7 +364,7 @@ export const categorizeTeamGolfersForRound = (
     ) {
       roundState = "completed";
     } else {
-      roundState = "upcoming";
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     }
   }
 
@@ -532,21 +532,18 @@ export const dateUtils = {
   },
 } as const;
 
-export const earliestTimeStr = (times: Array<string | null | undefined>) => {
-  const valid = times.filter((t): t is string => Boolean(t && t.trim().length));
+export const earliestTimeStr = (times: Array<number | null | undefined>) => {
+  const valid = times.filter((t): t is number => Boolean(t));
   if (!valid.length) return undefined;
   try {
-    const parsed = valid
-      .map((t) => ({ t, d: new Date(t).getTime() }))
-      .filter(({ d }) => !Number.isNaN(d));
-    if (parsed.length === valid.length && parsed.length > 0) {
-      parsed.sort((a, b) => a.d - b.d);
-      return parsed[0]?.t;
+    if (valid.length > 0) {
+      valid.sort((a, b) => a - b);
+      return valid[0];
     }
   } catch (err) {
     void err;
   }
-  const sorted = [...valid].sort();
+  const sorted = [...valid].sort((a, b) => a - b);
   return sorted[0];
 };
 
@@ -557,53 +554,22 @@ const avgAwards = (arr: number[], start: number, count: number) => {
 };
 
 export const awardTeamPlayoffPoints = (
-  tournament: EnhancedTournamentDoc,
-  team: EnhancedTournamentTeamDoc,
+  tier: Doc<"tiers">,
+  aheadCount: number,
+  tiedCount: number,
 ) => {
   return roundToDecimalPlace(
-    avgAwards(
-      tournament.tier?.points ?? [],
-      tournament.teams?.filter(
-        (t) =>
-          t.tourId &&
-          t.tourId === team.tourId &&
-          calculateScoreForSorting(t.position, t.score) <
-            calculateScoreForSorting(team.position, team.score),
-      ).length ?? 0,
-      tournament.teams?.filter(
-        (t) =>
-          t.tourId &&
-          t.tourId === team.tourId &&
-          calculateScoreForSorting(t.position, t.score) ===
-            calculateScoreForSorting(team.position, team.score),
-      ).length ?? 0,
-    ),
+    avgAwards(tier.points ?? [], aheadCount, tiedCount),
     0,
   );
 };
 export const awardTeamEarnings = (
-  tournament: EnhancedTournamentDoc,
-  team: EnhancedTournamentTeamDoc,
-  isPlayoff: boolean,
+  tier: Doc<"tiers">,
+  aheadCount: number,
+  tiedCount: number,
 ) => {
   return roundToDecimalPlace(
-    avgAwards(
-      tournament.tier?.payouts ?? [],
-      tournament.teams?.filter(
-        (t) =>
-          t.tourId &&
-          (isPlayoff ? t.playoff === team.playoff : t.tourId === team.tourId) &&
-          calculateScoreForSorting(t.position, t.score) <
-            calculateScoreForSorting(team.position, team.score),
-      ).length ?? 0,
-      tournament.teams?.filter(
-        (t) =>
-          t.tourId &&
-          (isPlayoff ? t.playoff === team.playoff : t.tourId === team.tourId) &&
-          calculateScoreForSorting(t.position, t.score) ===
-            calculateScoreForSorting(team.position, team.score),
-      ).length ?? 0,
-    ),
+    avgAwards(tier.payouts ?? [], aheadCount, tiedCount),
     0,
   );
 };

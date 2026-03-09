@@ -1,5 +1,5 @@
 import type { Doc, Id } from "../_generated/dataModel";
-import type { ActionCtx, QueryCtx } from "../_generated/server";
+import type { QueryCtx } from "../_generated/server";
 
 export type LeaderboardTopRow = {
   tourCardId: Id<"tourCards">;
@@ -66,6 +66,7 @@ export type SendBrevoTemplateEmailBatchArgs = {
   templateId: number;
   recipients: SendBrevoTemplateEmailBatchRecipient[];
   includeMessageIds?: boolean;
+  includeErrorReasons?: boolean;
 };
 
 export type SendBrevoTemplateEmailBatchResult = {
@@ -73,16 +74,5 @@ export type SendBrevoTemplateEmailBatchResult = {
   sent: number;
   failed: number;
   messageIds?: string[];
-};
-
-export type RequireAdminForActionCtx = {
-  auth: ActionCtx["auth"];
-  runQuery: ActionCtx["runQuery"];
-};
-
-export type SendGroupsEmailImplArgs = {
-  ctx: ActionCtx;
-  tournamentId: Id<"tournaments">;
-  customBlurb?: string;
-  force?: boolean;
+  errorReasons?: string[];
 };
