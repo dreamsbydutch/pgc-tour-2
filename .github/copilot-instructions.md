@@ -119,9 +119,7 @@ Auth & providers:
 - Providers are wired in `src/components/facilitators/providers/Providers.tsx` (Convex + Clerk + PostHog) and imported from `@/facilitators`.
 - Preserve existing `"use client"` directives where present; don’t add them broadly unless required by the surrounding pattern.
 
-## Convex: How it works in this repo
-
-## Convex Direction (Important)
+## Convex
 
 We prefer:
 
@@ -167,25 +165,39 @@ Use the correct server function type:
 
 ### CRUD pattern (project convention)
 
-Most domain modules follow a consistent “single CRUD function with options” shape:
+Most domain modules follow a consistent CRUD naming shape:
 
 - `createXxx` (mutation)
 - `getXxx` (query)
 - `updateXxx` (mutation)
 - `deleteXxx` (mutation)
 
-Conventions:
+Keep names and public API shape consistent when adding new entities/functions unless the user requests otherwise. Use the contract rules below for return types, validation, auth, and failure behavior.
 
-- `args.data` holds the core payload.
-- `args.options` is optional and controls behavior, validation, response shaping.
-- Common flags:
-  - `skipValidation?: boolean`
-  - `returnEnhanced?: boolean`
-  - `includeStatistics?: boolean`
+### Convex CRUD contracts (important)
 
-Keep these conventions when adding new entities/functions unless the user requests otherwise.
+When working on `convex/functions/*.ts`, prefer these conventions unless the user asks for a different API shape:
 
-### “Enhanced” docs pattern
+- Add explicit handler return types for Convex functions when the return contract is meaningful.
+- For CRUD-style commands (`createXxx`, `updateXxx`, `deleteXxx`, and required `getXxxById` reads), **throw on failure**.
+  - Throw for invalid input, missing required records, blocked deletes, auth failures, and invariant violations.
+  - Keep success return types narrow and success-only when the function throws on failure.
+- Reserve maybe-style returns (`{ ok: false }`, `null`, etc.) for optional reads where absence is a normal outcome.
+  - Good examples: `getCurrentSeason`, `findXxx`, `maybeGetXxx`.
+  - Avoid mixing thrown failures and `{ ok: false }` branches in the same function family unless the user explicitly wants that contract.
+- Validate referenced docs before writes.
+  - `v.id("...")` only validates id shape, not document existence.
+  - Check related records like `seasonId`, `tierId`, `tourId`, etc. before insert/update.
+- Protect deletes from orphaning related data.
+  - Before deleting, check for dependent records and throw instead of leaving dangling references.
+  - Convex does not enforce foreign keys for this repo.
+- Enforce runtime invariants that schema validators cannot fully express.
+  - Examples: date ordering, same-year season boundaries, matching payouts/points lengths, non-negative money amounts, ordered unique playoff spots, and playoff spots not exceeding max participants.
+- For internal admin CRUD, keep `requireAdmin(ctx)` on user-driven operations.
+  - Do not assume `internalMutation` or `internalQuery` is sufficient authorization by itself.
+  - For cron/system workflows, prefer a separate internal core function without user auth and keep the admin wrapper gated.
+
+### Enhanced docs pattern
 
 Most modules implement an internal helper:
 

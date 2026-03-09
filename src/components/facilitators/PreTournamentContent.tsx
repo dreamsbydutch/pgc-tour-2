@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Dialog,
@@ -16,10 +16,6 @@ import { cn, formatMoney } from "@/lib";
 import { useMutation, useQuery } from "convex/react";
 import { api, Id } from "@/convex";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import {
-  EnhancedTournamentDoc,
-  EnhancedTournamentTeamDoc,
-} from "convex/types/types";
 import { SignedOut, useClerk } from "@clerk/tanstack-react-start";
 
 /**
@@ -248,10 +244,11 @@ function usePreTournamentContentModel(props: {
       firstname && lastname
         ? `${firstname[0]}. ${lastname}`
         : (firstname ?? lastname ?? "Member");
-    const balanceNotice =
-      (props.member.account ?? 0) > 0
-        ? `Please send ${formatMoney(props.member.account ?? 0, true)} to puregolfcollectivetour@gmail.com to unlock your picks.`
-        : null;
+    const accountCents = props.member.account ?? 0;
+    const owesMoney = accountCents < 0;
+    const balanceNotice = owesMoney
+      ? `Please send ${formatMoney(Math.abs(accountCents), true)} to puregolfcollectivetour@gmail.com to unlock your picks.`
+      : null;
     const formattedRank = (() => {
       if (typeof positionRaw === "string" && positionRaw.trim()) {
         return positionRaw;
@@ -275,7 +272,7 @@ function usePreTournamentContentModel(props: {
       existingTeam: props.existingTeam ?? null,
       teamGolfers: props.teamGolfers,
       memberName,
-      hasBalance: (props.member.account ?? 0) > 0,
+      hasBalance: owesMoney,
       balanceNotice,
       formattedRank,
       pointsDisplay,
@@ -400,7 +397,7 @@ function TeamPickCard(props: {
  * - Creates or updates the viewer's team for the tournament via Convex.
  *
  * Data sources:
- * - `api.functions.tournaments.getTournamentPickPool`
+ * - `api.functions.utils.getTournamentPickPool`
  * - `api.functions.teams.createTeams` / `api.functions.teams.updateTeams`
  *
  * @param props.open - Controls dialog visibility.
@@ -436,11 +433,11 @@ function TournamentTeamPickerDialog(props: {
     tournamentId,
     tourCardId,
   } = props;
-  const createTeam = useMutation(api.functions.teams.createTeams);
-  const updateTeam = useMutation(api.functions.teams.updateTeams);
+  const createTeam = useMutation(api.functions.teams.createTeam);
+  const updateTeam = useMutation(api.functions.teams.updateTeam);
 
   const pickPool = useQuery(
-    api.functions.tournaments.getTournamentPickPool,
+    api.functions.utils.getTournamentPickPool,
     open
       ? { tournamentId: tournamentId as unknown as Id<"tournaments"> }
       : "skip",
@@ -457,13 +454,29 @@ function TournamentTeamPickerDialog(props: {
   const [selectedApiIds, setSelectedApiIds] = useState<number[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const initializedPickerSeedRef = useRef<string | null>(null);
+
+  const pickerSeedKey = `${tournamentId}:${tourCardId}:${existingTeam?._id ?? "new"}`;
 
   useEffect(() => {
-    if (!open) return;
-    setSelectedApiIds(teamGolfers.map((g) => g.apiId ?? -1) ?? []);
+    if (!open) {
+      initializedPickerSeedRef.current = null;
+      return;
+    }
+
+    if (initializedPickerSeedRef.current === pickerSeedKey) {
+      return;
+    }
+
+    initializedPickerSeedRef.current = pickerSeedKey;
+    setSelectedApiIds(
+      teamGolfers
+        .map((golfer) => golfer.apiId)
+        .filter((apiId): apiId is number => typeof apiId === "number"),
+    );
     setErrorMessage(null);
     setIsSaving(false);
-  }, [open, teamGolfers]);
+  }, [open, pickerSeedKey, teamGolfers]);
 
   const model = useMemo(() => {
     if (!open) {
@@ -592,20 +605,13 @@ function TournamentTeamPickerDialog(props: {
         const tournamentIdValue = tournamentId as unknown as Id<"tournaments">;
         const tourCardIdValue = tourCardId as unknown as Id<"tourCards">;
 
-        if (existingTeam?._id) {
-          await updateTeam({
-            teamId: existingTeam._id as unknown as Id<"teams">,
-            data: { golferIds: selectedApiIds },
-          });
-        } else {
-          await createTeam({
-            data: {
-              tournamentId: tournamentIdValue,
-              tourCardId: tourCardIdValue,
-              golferIds: selectedApiIds,
-            },
-          });
-        }
+        await createTeam({
+          data: {
+            tournamentId: tournamentIdValue,
+            tourCardId: tourCardIdValue,
+            golferIds: selectedApiIds,
+          },
+        });
 
         onOpenChange(false);
       } catch (e) {

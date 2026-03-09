@@ -20,6 +20,9 @@ import {
   TourDoc,
   TournamentDoc,
 } from "convex/types/types";
+import { requireAdmin } from "convex/utils/auth";
+import { query } from "convex/_generated/server";
+import { internal } from "convex/_generated/api";
 
 export const Route = createFileRoute("/")({
   component: App,
@@ -27,6 +30,7 @@ export const Route = createFileRoute("/")({
 
 function App() {
   const model = useHomePage();
+  const x = useQuery(api.functions.seasons.getSeasons, {});
 
   if (model.kind === "loading") {
     return <HomePageSkeleton />;
