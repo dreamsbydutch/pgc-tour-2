@@ -1,281 +1,295 @@
-/**
- * Season Management - Simplified CRUD Functions
- *
- * Clean CRUD operations with comprehensive options objects.
- * Each function (create, get, update, delete) handles all use cases
- * through flexible configuration rather than multiple specialized functions.
- */
-
-import { query, mutation, internalQuery } from "../_generated/server";
+import { internalMutation, query } from "../_generated/server";
 import { v } from "convex/values";
-import { requireAdmin } from "../utils/auth";
-import { processData } from "../utils/batchProcess";
-import { logAudit, computeChanges } from "../utils/auditLog";
-import { applyFilters, getSortFunction } from "../utils/seasons";
-import type { SeasonDoc } from "../types/types";
+import type { Doc, Id } from "../_generated/dataModel";
+import { requireAdmin } from "./auth";
 
-/**
- * Creates a new season.
- *
- * Behavior:
- * - Requires admin.
- * - Validates for duplicate (year, number) unless `options.skipValidation`.
- * - Optionally returns an enhanced season view when `options.returnEnhanced`.
- *
- * @param args.data Core season fields to insert.
- * @param args.options Optional behavior flags (validation + response shaping).
- * @returns The created season doc, or an enhanced season doc when requested.
- */
-export const createSeasons = mutation({
-  args: {
-    data: v.object({
-      year: v.number(),
-      number: v.number(),
-      startDate: v.optional(v.number()),
-      endDate: v.optional(v.number()),
-      registrationDeadline: v.optional(v.number()),
-    }),
-  },
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx);
+type SeasonReturnType = { ok: false } | { ok: true; season: Doc<"seasons"> };
+type SeasonsReturnType =
+  | { ok: false }
+  | { ok: true; seasons: Doc<"seasons">[] };
+type CreateSeasonReturnType = { ok: true; season: Doc<"seasons"> };
+type UpdateSeasonReturnType = { ok: true; season: Doc<"seasons"> };
+type DeleteSeasonReturnType = { ok: true };
+type StandingsViewDataReturnType = {
+  tours: Doc<"tours">[];
+  tiers: Doc<"tiers">[];
+  tournaments: Doc<"tournaments">[];
+  tourCards: Doc<"tourCards">[];
+  teams: Doc<"teams">[];
+};
 
-    const seasonId = await ctx.db.insert("seasons", {
-      year: args.data.year,
-      number: args.data.number,
-      startDate: args.data.startDate,
-      endDate: args.data.endDate,
-      registrationDeadline: args.data.registrationDeadline,
-      updatedAt: Date.now(),
-    });
+function validateSeasonDates(
+  startDate: number,
+  registrationDeadline: number,
+  endDate: number,
+): string | null {
+  if (
+    !Number.isInteger(startDate) ||
+    !Number.isInteger(registrationDeadline) ||
+    !Number.isInteger(endDate)
+  ) {
+    return "Season dates must be integer timestamps.";
+  }
+  if (startDate > registrationDeadline) {
+    return "Registration deadline must be on or after the season start date.";
+  }
+  if (registrationDeadline > endDate) {
+    return "Registration deadline must be on or before the season end date.";
+  }
 
-    await logAudit(ctx, {
-      entityType: "seasons",
-      entityId: seasonId,
-      action: "created",
-      metadata: {
-        year: args.data.year,
-        number: args.data.number,
-      },
-    });
+  const startYear = new Date(startDate).getFullYear();
+  const registrationYear = new Date(registrationDeadline).getFullYear();
+  const endYear = new Date(endDate).getFullYear();
 
-    const season = await ctx.db.get(seasonId);
-    if (!season) throw new Error("Failed to retrieve created season");
+  if (startYear !== registrationYear || registrationYear !== endYear) {
+    return "Season dates must all fall within the same calendar year.";
+  }
 
-    return season;
+  return null;
+}
+
+// GENERAL FETCH FUNCTIONS
+export const getCurrentSeason = query({
+  handler: async (ctx): Promise<SeasonReturnType> => {
+    const now = new Date().getFullYear();
+    const currentSeason = await ctx.db
+      .query("seasons")
+      .withIndex("by_year", (q) => q.eq("year", now))
+      .first();
+    if (!currentSeason) {
+      return { ok: false };
+    }
+    return { ok: true, season: currentSeason };
   },
 });
-
-/**
- * Fetches seasons.
- *
- * Modes:
- * - `options.id`: returns a single (optionally enhanced) season or `null`.
- * - `options.ids`: returns an array of seasons (missing IDs filtered out).
- * - Otherwise: returns a list using filtering/sorting/pagination; may return analytics.
- *
- * Notes:
- * - Enhancement is controlled by `options.enhance`.
- * - When `options.includeAnalytics` is true, returns `{ seasons, analytics, meta }`.
- */
+export const getSeasonByYear = query({
+  args: {
+    year: v.number(),
+  },
+  handler: async (ctx, args): Promise<SeasonReturnType> => {
+    const currentSeason = await ctx.db
+      .query("seasons")
+      .withIndex("by_year", (q) => q.eq("year", args.year))
+      .first();
+    if (!currentSeason) {
+      return { ok: false };
+    }
+    return { ok: true, season: currentSeason };
+  },
+});
+export const getSeasonById = query({
+  args: {
+    id: v.id("seasons"),
+  },
+  handler: async (ctx, args): Promise<SeasonReturnType> => {
+    const currentSeason = await ctx.db.get(args.id);
+    if (!currentSeason) {
+      return { ok: false };
+    }
+    return { ok: true, season: currentSeason };
+  },
+});
 export const getSeasons = query({
   args: {
-    options: v.optional(
-      v.object({
-        id: v.optional(v.id("seasons")),
-        ids: v.optional(v.array(v.id("seasons"))),
-        filter: v.optional(
-          v.object({
-            year: v.optional(v.number()),
-            minYear: v.optional(v.number()),
-            maxYear: v.optional(v.number()),
-            number: v.optional(v.number()),
-            name: v.optional(v.string()),
-            hasDescription: v.optional(v.boolean()),
-            startAfter: v.optional(v.number()),
-            startBefore: v.optional(v.number()),
-            endAfter: v.optional(v.number()),
-            endBefore: v.optional(v.number()),
-            searchTerm: v.optional(v.string()),
-            isUpcoming: v.optional(v.boolean()),
-            isCompleted: v.optional(v.boolean()),
-            createdAfter: v.optional(v.number()),
-            createdBefore: v.optional(v.number()),
-            updatedAfter: v.optional(v.number()),
-            updatedBefore: v.optional(v.number()),
-          }),
-        ),
-        sort: v.optional(
-          v.object({
-            sortBy: v.optional(
-              v.union(
-                v.literal("name"),
-                v.literal("year"),
-                v.literal("startDate"),
-                v.literal("endDate"),
-                v.literal("createdAt"),
-                v.literal("updatedAt"),
-              ),
-            ),
-            sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
-          }),
-        ),
-      }),
-    ),
+    sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
   },
-  handler: async (ctx, args) => {
-    const options = args.options || {};
-
-    if (options.id) {
-      const season = await ctx.db.get(options.id);
-      if (!season) return null;
-
-      return season;
-    }
-
-    if (options.ids) {
-      const seasons = await Promise.all(
-        options.ids.map(async (id) => {
-          const season = await ctx.db.get(id);
-          return season;
-        }),
-      );
-      return seasons.filter(Boolean);
-    }
-    let seasons = await ctx.db.query("seasons").collect();
-    seasons = applyFilters(seasons, options.filter || {});
-    const processedSeasons = processData(seasons, {
-      sort: getSortFunction(options.sort || {}),
-    });
-    return processedSeasons;
-  },
-});
-
-/**
- * Get the current season.
- *
- * "Current" is derived primarily from dates:
- * - Prefer a season where `startDate <= now <= endDate` (or no `endDate`).
- * - If none are active yet, return the next upcoming season by `startDate`.
- * - As a final fallback, return the most recent season by `(year, number, startDate)`.
- */
-export const getCurrentSeason = query({
-  args: {},
-  handler: async (ctx) => {
-    const currentYear = new Date().getFullYear();
+  handler: async (ctx, args): Promise<SeasonsReturnType> => {
     const seasons = await ctx.db.query("seasons").collect();
-    if (seasons.length === 0) return null;
-    const currentYearSeasons = seasons.find((s) => s.year === currentYear);
-    if (currentYearSeasons) {
-      return currentYearSeasons;
+    const sortOrder = args.sortOrder === "asc" ? 1 : -1;
+    if (!seasons || seasons.length === 0) {
+      return { ok: false };
     }
-    return null;
+    return {
+      ok: true,
+      seasons: [...seasons].sort((a, b) => {
+        return (a.year - b.year) * sortOrder;
+      }),
+    };
   },
 });
-export const getCurrentSeason_Internal = internalQuery({
-  handler: async (ctx) => {
-    const currentYear = new Date().getFullYear();
-    const seasons = await ctx.db
+
+// ADMIN CRUD FUNCTIONS
+export const createSeason = internalMutation({
+  args: {
+    year: v.number(),
+  },
+  handler: async (ctx, args): Promise<CreateSeasonReturnType> => {
+    await requireAdmin(ctx);
+    if (!Number.isInteger(args.year)) {
+      throw new Error("Season year must be an integer.");
+    }
+    const existingSeason = await ctx.db
       .query("seasons")
-      .withIndex("by_year", (q) => q.eq("year", currentYear))
-      .collect();
-
-    if (seasons.length === 0) {
-      return { ok: true, skipped: true, reason: "no_current_season" } as const;
+      .withIndex("by_year", (q) => q.eq("year", args.year))
+      .first();
+    if (existingSeason) {
+      throw new Error(`Season for year ${args.year} already exists.`);
     }
-    return { ok: true, skipped: false, season: seasons[0] } as const;
+    const startDate = new Date(args.year, 0, 1).getTime();
+    const endDate = new Date(args.year, 11, 31).getTime();
+    const registrationDeadline = new Date(args.year, 2, 1).getTime();
+    const dateValidationError = validateSeasonDates(
+      startDate,
+      registrationDeadline,
+      endDate,
+    );
+    if (dateValidationError) {
+      throw new Error(dateValidationError);
+    }
+    const newSeason = await ctx.db.insert("seasons", {
+      year: args.year,
+      startDate,
+      endDate,
+      registrationDeadline,
+      updatedAt: Date.now(),
+    });
+    const season = await ctx.db.get(newSeason);
+    if (!season) {
+      throw new Error("Error fetching newly created season");
+    }
+    return { ok: true, season };
   },
 });
-
-/**
- * Updates an existing season.
- *
- * Behavior:
- * - Requires admin.
- * - Optionally validates incoming changes unless `options.skipValidation`.
- * - Updates `updatedAt` unless `options.updateTimestamp === false`.
- * - Optionally returns an enhanced season view when `options.returnEnhanced`.
- */
-export const updateSeasons = mutation({
+export const updateSeason = internalMutation({
   args: {
     seasonId: v.id("seasons"),
-    data: v.object({
-      year: v.optional(v.number()),
-      number: v.optional(v.number()),
-      startDate: v.optional(v.number()),
-      endDate: v.optional(v.number()),
-      registrationDeadline: v.optional(v.number()),
-    }),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
+    registrationDeadline: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<UpdateSeasonReturnType> => {
+    await requireAdmin(ctx);
+    const existingSeason = await ctx.db.get(args.seasonId);
+    if (!existingSeason) {
+      throw new Error("Season not found.");
+    }
+    const startDate = args.startDate ?? existingSeason.startDate;
+    const endDate = args.endDate ?? existingSeason.endDate;
+    const registrationDeadline =
+      args.registrationDeadline ?? existingSeason.registrationDeadline;
+    const dateValidationError = validateSeasonDates(
+      startDate,
+      registrationDeadline,
+      endDate,
+    );
+    if (dateValidationError) {
+      throw new Error(dateValidationError);
+    }
+    const year = new Date(startDate).getFullYear();
+    const seasonWithSameYear = await ctx.db
+      .query("seasons")
+      .withIndex("by_year", (q) => q.eq("year", year))
+      .first();
+    if (seasonWithSameYear && seasonWithSameYear._id !== args.seasonId) {
+      throw new Error(`Season for year ${year} already exists.`);
+    }
+    await ctx.db.patch(args.seasonId, {
+      startDate,
+      endDate,
+      registrationDeadline,
+      year,
+      updatedAt: Date.now(),
+    });
+    const season = await ctx.db.get(args.seasonId);
+    if (!season) {
+      throw new Error("Error fetching updated season");
+    }
+    return { ok: true, season };
+  },
+});
+export const deleteSeason = internalMutation({
+  args: {
+    seasonId: v.id("seasons"),
+  },
+  handler: async (ctx, args): Promise<DeleteSeasonReturnType> => {
     await requireAdmin(ctx);
     const season = await ctx.db.get(args.seasonId);
     if (!season) {
-      throw new Error("Season not found");
+      throw new Error("Season not found.");
     }
-
-    const updateData: Partial<SeasonDoc> = { ...args.data };
-    updateData.updatedAt = Date.now();
-    await ctx.db.patch(args.seasonId, updateData);
-
-    const changes = computeChanges(season, updateData);
-    if (Object.keys(changes).length > 0) {
-      await logAudit(ctx, {
-        entityType: "seasons",
-        entityId: args.seasonId,
-        action: "updated",
-        changes,
-      });
+    const [tour, tier, tournament, tourCard, transaction] = await Promise.all([
+      ctx.db
+        .query("tours")
+        .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+        .first(),
+      ctx.db
+        .query("tiers")
+        .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+        .first(),
+      ctx.db
+        .query("tournaments")
+        .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+        .first(),
+      ctx.db
+        .query("tourCards")
+        .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+        .first(),
+      ctx.db
+        .query("transactions")
+        .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+        .first(),
+    ]);
+    if (tour || tier || tournament || tourCard || transaction) {
+      const relatedRecords = [
+        tour ? "tours" : null,
+        tier ? "tiers" : null,
+        tournament ? "tournaments" : null,
+        tourCard ? "tour cards" : null,
+        transaction ? "transactions" : null,
+      ].filter((value): value is string => value !== null);
+      throw new Error(
+        `Cannot delete season with existing ${relatedRecords.join(", ")}.`,
+      );
     }
-    const updatedSeason = await ctx.db.get(args.seasonId);
-    if (!updatedSeason) throw new Error("Failed to retrieve updated season");
-
-    return updatedSeason;
+    await ctx.db.delete(args.seasonId);
+    return { ok: true };
   },
 });
 
+// TODO: Delete this function. Ideally make it un needed
 export const getStandingsViewData = query({
   args: {
     seasonId: v.id("seasons"),
   },
-  handler: async (ctx, args) => {
-    const [tours, tiers, tournaments, tourCards] = await Promise.all([
-      ctx.db
-        .query("tours")
-        .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
-        .collect(),
-      ctx.db
-        .query("tiers")
-        .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
-        .collect(),
-      ctx.db
-        .query("tournaments")
-        .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
-        .collect(),
-      ctx.db
-        .query("tourCards")
-        .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
-        .collect(),
-    ]);
+  handler: async (ctx, args): Promise<StandingsViewDataReturnType> => {
+    const tours = await ctx.db
+      .query("tours")
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .collect();
 
-    const sortedTournaments = tournaments
-      .slice()
-      .sort((a, b) => a.startDate - b.startDate);
+    const tiers = await ctx.db
+      .query("tiers")
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .collect();
 
-    const teamsByTournament = await Promise.all(
-      sortedTournaments.map(async (t) => {
-        return await ctx.db
-          .query("teams")
-          .withIndex("by_tournament", (q) => q.eq("tournamentId", t._id))
-          .collect();
-      }),
-    );
+    const tournaments = await ctx.db
+      .query("tournaments")
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .collect();
 
-    const teams = teamsByTournament.flat();
+    const tourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .collect();
+
+    const teamsByTournamentId = new Map<Id<"tournaments">, Doc<"teams">[]>();
+    for (const tournament of tournaments) {
+      const teams = await ctx.db
+        .query("teams")
+        .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
+        .collect();
+      teamsByTournamentId.set(tournament._id, teams);
+    }
+
+    const teams = tournaments.flatMap((tournament) => {
+      const tableTeams = teamsByTournamentId.get(tournament._id);
+      return Array.isArray(tableTeams) ? tableTeams : [];
+    });
 
     return {
       tours,
       tiers,
-      tournaments: sortedTournaments,
+      tournaments,
       tourCards,
       teams,
     };

@@ -36,11 +36,12 @@ const schema = defineSchema({
       v.literal("regular"),
     ),
     account: v.number(), // Account balance in cents
-    friends: v.array(v.union(v.string(), v.id("members"))), // Support both formats during migration
+    friends: v.array(v.id("members")), // Support both formats during migration
     lastLoginAt: v.optional(v.number()), // Track user activity
     updatedAt: v.optional(v.number()),
   })
     .index("by_email", ["email"])
+    .index("by_lastname", ["lastname"])
     .index("by_clerk_id", ["clerkId"])
     .index("by_role", ["role"])
     .index("by_last_login", ["lastLoginAt"])
@@ -55,11 +56,11 @@ const schema = defineSchema({
    */
   seasons: defineTable({
     year: v.number(),
-    number: v.number(), // Season number within year (1, 2, etc.)
-    startDate: v.optional(v.number()), // Season start timestamp
-    endDate: v.optional(v.number()), // Season end timestamp
-    registrationDeadline: v.optional(v.number()),
-    updatedAt: v.optional(v.number()),
+    number: v.optional(v.number()), // TODO: Remove number field from season as it is not needed. number is just year minus 2020
+    startDate: v.number(),
+    endDate: v.number(),
+    registrationDeadline: v.number(),
+    updatedAt: v.number(),
   })
     .index("by_year", ["year"])
     .index("by_number", ["number"])
@@ -143,7 +144,7 @@ const schema = defineSchema({
     livePlay: v.optional(v.boolean()),
 
     // DataGolf sync markers (used to avoid unnecessary live-sync writes)
-    dataGolfInPlayLastUpdate: v.optional(v.string()),
+    dataGolfInPlayLastUpdate: v.optional(v.union(v.string(), v.number())), // Timestamp or version string of last DataGolf "in play" update
 
     // Timestamp for the last successful live leaderboard sync that applied updates.
     leaderboardLastUpdatedAt: v.optional(v.number()),
@@ -219,22 +220,24 @@ const schema = defineSchema({
     round: v.optional(v.number()),
 
     // Round-specific tee times and scores
-    roundOneTeeTime: v.optional(v.string()),
+    roundOneTeeTime: v.optional(v.union(v.number(), v.string())),
     roundOne: v.optional(v.number()),
-    roundTwoTeeTime: v.optional(v.string()),
+    roundTwoTeeTime: v.optional(v.union(v.number(), v.string())),
     roundTwo: v.optional(v.number()),
-    roundThreeTeeTime: v.optional(v.string()),
+    roundThreeTeeTime: v.optional(v.union(v.number(), v.string())),
     roundThree: v.optional(v.number()),
-    roundFourTeeTime: v.optional(v.string()),
+    roundFourTeeTime: v.optional(v.union(v.number(), v.string())),
     roundFour: v.optional(v.number()),
 
     updatedAt: v.optional(v.number()),
+    updatedRosterAt: v.optional(v.number()), // Timestamp for last roster change (golferIds update)
   })
     .index("by_tournament", ["tournamentId"])
     .index("by_tour_card", ["tourCardId"])
     .index("by_tournament_tour_card", ["tournamentId", "tourCardId"])
     .index("by_tournament_points", ["tournamentId", "points"])
-    .index("by_tournament_position", ["tournamentId", "position"]),
+    .index("by_tournament_position", ["tournamentId", "position"])
+    .index("by_tournament_updated_roster", ["tournamentId", "updatedRosterAt"]),
 
   // =========================================================================
   // GOLFER DATA
@@ -278,13 +281,13 @@ const schema = defineSchema({
     group: v.optional(v.number()),
 
     // Round-specific data
-    roundOneTeeTime: v.optional(v.string()),
+    roundOneTeeTime: v.optional(v.union(v.number(), v.string())),
     roundOne: v.optional(v.number()),
-    roundTwoTeeTime: v.optional(v.string()),
+    roundTwoTeeTime: v.optional(v.union(v.number(), v.string())),
     roundTwo: v.optional(v.number()),
-    roundThreeTeeTime: v.optional(v.string()),
+    roundThreeTeeTime: v.optional(v.union(v.number(), v.string())),
     roundThree: v.optional(v.number()),
-    roundFourTeeTime: v.optional(v.string()),
+    roundFourTeeTime: v.optional(v.union(v.number(), v.string())),
     roundFour: v.optional(v.number()),
 
     // Tournament-specific metadata

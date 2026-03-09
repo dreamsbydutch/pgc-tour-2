@@ -4,343 +4,205 @@
  * Functions for managing tour card registrations.
  */
 
-import { query, mutation } from "../_generated/server";
-import { requireAdmin, getCurrentMember } from "../utils/auth";
-import type { Id } from "../_generated/dataModel";
-import { tourCardsValidators } from "../validators/tourCards";
-import {
-  hasTourCardFeeForSeason,
-  isCompletedTourCardFee,
-  requireTourCardOwner,
-} from "../utils/tourCards";
-import { DEFAULT_MAX_PARTICIPANTS } from "./_constants";
+import { internalMutation, query, type MutationCtx } from "../_generated/server";
+import { isCompletedTourCardFee } from "../utils/tourCards";
+import type { Doc } from "../_generated/dataModel";
+import { v } from "convex/values";
+import { requireAdmin, requireAuth, requireTourCardOwner } from "./auth";
+import { internal } from "../_generated/api";
 
-export const createTourCards = mutation({
-  args: tourCardsValidators.args.createTourCards,
-  handler: async (ctx, args) => {
-    const currentMember = await getCurrentMember(ctx);
-    const memberId = args.data.memberId ?? currentMember._id;
+type TourCardReturnType = { ok: true; tourCard: Doc<"tourCards"> };
+type TourCardsReturnType = { ok: true; tourCards: Doc<"tourCards">[] };
+type DeleteTourCardReturnType = { ok: true };
 
-    const skipValidation = args.options?.skipValidation ?? false;
+async function getExistingTourCardForMemberTourSeason(
+  ctx: MutationCtx,
+  memberId: Doc<"tourCards">["memberId"] | Doc<"members">["_id"],
+  seasonId: Doc<"tourCards">["seasonId"],
+  tourId: Doc<"tourCards">["tourId"],
+  excludeTourCardId?: Doc<"tourCards">["_id"],
+): Promise<Doc<"tourCards"> | null> {
+  const memberSeasonTourCards = await ctx.db
+    .query("tourCards")
+    .withIndex("by_member_season", (q) =>
+      q.eq("memberId", memberId).eq("seasonId", seasonId),
+    )
+    .collect();
 
-    if (!skipValidation) {
-      const validation = tourCardsValidators.validateTourCardData({
-        displayName: args.data.displayName,
-        earnings: args.data.earnings,
-        points: args.data.points,
-        wins: args.data.wins,
-        topTen: args.data.topTen,
-        appearances: args.data.appearances,
-        madeCut: args.data.madeCut,
-      });
-      if (!validation.isValid) {
-        throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
-      }
-    }
+  return (
+    memberSeasonTourCards.find(
+      (tourCard) =>
+        tourCard.tourId === tourId &&
+        (excludeTourCardId === undefined || tourCard._id !== excludeTourCardId),
+    ) ?? null
+  );
+}
 
-    const tour = await ctx.db.get(args.data.tourId);
-    if (!tour) {
-      throw new Error("Tour not found");
-    }
-
-    if (tour.seasonId !== args.data.seasonId) {
-      throw new Error("Tour does not belong to provided season");
-    }
-
-    const shouldChargeBuyIn = tour.buyIn > 0;
-    const hasExistingTourCardFee = shouldChargeBuyIn
-      ? await hasTourCardFeeForSeason(ctx, {
-          member: currentMember,
-          seasonId: args.data.seasonId,
-        })
-      : false;
-
-    if (shouldChargeBuyIn && !hasExistingTourCardFee) {
-      const processedAt = Date.now();
-      const signedAmount = -Math.abs(Math.trunc(tour.buyIn));
-
-      await ctx.db.insert("transactions", {
-        memberId: currentMember._id,
-        seasonId: args.data.seasonId,
-        amount: signedAmount,
-        transactionType: "TourCardFee",
-        status: "completed",
-        processedAt,
-        updatedAt: processedAt,
-      });
-
-      await ctx.db.patch(currentMember._id, {
-        account: currentMember.account + signedAmount,
-        updatedAt: processedAt,
-      });
-    }
-
-    const id = await ctx.db.insert("tourCards", {
-      memberId,
-      displayName: args.data.displayName,
-      tourId: args.data.tourId,
-      seasonId: args.data.seasonId,
-      earnings: args.data.earnings,
-      points: args.data.points,
-      wins: args.data.wins,
-      topTen: args.data.topTen,
-      topFive: args.data.topFive,
-      madeCut: args.data.madeCut,
-      appearances: args.data.appearances,
-      playoff: args.data.playoff,
-      currentPosition: args.data.currentPosition,
-      updatedAt: Date.now(),
-    });
-
-    return await ctx.db.get(id);
+// GENERAL FETCH FUNCTIONS
+export const getTourCardById = query({
+  args: {
+    id: v.id("tourCards"),
   },
-});
-
-export const getTourCards = query({
-  args: tourCardsValidators.args.getTourCards,
-  handler: async (ctx, args) => {
-    const options = args.options;
-
-    if (options?.id) {
-      const doc = await ctx.db.get(options.id);
-      if (!doc) return [];
-      return [doc];
+  handler: async (ctx, args): Promise<TourCardReturnType> => {
+    const tourCard = await ctx.db.get(args.id);
+    if (!tourCard) {
+      throw new Error("Tour Card not found");
     }
-
-    if ((options?.memberId || options?.clerkId) && options?.seasonId) {
-      const memberId =
-        options?.memberId ??
-        (
-          await ctx.db
-            .query("members")
-            .withIndex("by_clerk_id", (q) => q.eq("clerkId", options!.clerkId!))
-            .first()
-        )?._id;
-      if (!memberId) return [];
-
-      const docs = await ctx.db
-        .query("tourCards")
-        .withIndex("by_member_season", (q) =>
-          q.eq("memberId", memberId).eq("seasonId", options.seasonId!),
-        )
-        .collect();
-      return docs;
-    }
-
-    if (options?.tourId && options?.seasonId) {
-      const docs = await ctx.db
-        .query("tourCards")
-        .withIndex("by_tour_season", (q) =>
-          q.eq("tourId", options.tourId!).eq("seasonId", options.seasonId!),
-        )
-        .collect();
-      return docs;
-    }
-
-    if (options?.memberId || options?.clerkId) {
-      const memberId =
-        options?.memberId ??
-        (
-          await ctx.db
-            .query("members")
-            .withIndex("by_clerk_id", (q) => q.eq("clerkId", options!.clerkId!))
-            .first()
-        )?._id;
-      if (!memberId) return [];
-
-      const docs = await ctx.db
-        .query("tourCards")
-        .withIndex("by_member", (q) => q.eq("memberId", memberId))
-        .collect();
-      return docs;
-    }
-
-    if (options?.seasonId) {
-      const docs = await ctx.db
-        .query("tourCards")
-        .withIndex("by_season", (q) => q.eq("seasonId", options.seasonId!))
-        .collect();
-      return docs;
-    }
-
-    if (options?.tourId) {
-      const docs = await ctx.db
-        .query("tourCards")
-        .withIndex("by_tour", (q) => q.eq("tourId", options.tourId!))
-        .collect();
-      return docs;
-    }
-
-    return await ctx.db.query("tourCards").collect();
-  },
-});
-
-export const getActiveMembersMissingTourCards = query({
-  args: tourCardsValidators.args.getActiveMembersMissingTourCards,
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx);
-
-    const members = await ctx.db.query("members").collect();
-    const activeMembers = members.filter((m) => m.isActive === true);
-
-    const currentSeasonCards = await ctx.db
-      .query("tourCards")
-      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
-      .collect();
-
-    const currentCountsByMember = new Map<Id<"members">, number>();
-    for (const card of currentSeasonCards) {
-      currentCountsByMember.set(
-        card.memberId,
-        (currentCountsByMember.get(card.memberId) ?? 0) + 1,
-      );
-    }
-
-    const previousCountsByMember = new Map<Id<"members">, number>();
-    if (args.previousSeasonId) {
-      const previousSeasonCards = await ctx.db
-        .query("tourCards")
-        .withIndex("by_season", (q) => q.eq("seasonId", args.previousSeasonId!))
-        .collect();
-
-      for (const card of previousSeasonCards) {
-        previousCountsByMember.set(
-          card.memberId,
-          (previousCountsByMember.get(card.memberId) ?? 0) + 1,
-        );
-      }
-    }
-
-    const missingMembers = activeMembers.filter((m) => {
-      const currentCount = currentCountsByMember.get(m._id) ?? 0;
-      return currentCount === 0;
-    });
-
-    const rows = missingMembers
-      .map((m) => {
-        const previousSeasonTourCardsCount =
-          previousCountsByMember.get(m._id) ?? 0;
-
-        return {
-          memberId: m._id,
-          email: m.email,
-          firstname: m.firstname ?? null,
-          lastname: m.lastname ?? null,
-          lastLoginAt: m.lastLoginAt ?? null,
-          previousSeasonTourCardsCount,
-        };
-      })
-      .sort((a, b) => {
-        if (a.previousSeasonTourCardsCount !== b.previousSeasonTourCardsCount) {
-          return (
-            b.previousSeasonTourCardsCount - a.previousSeasonTourCardsCount
-          );
-        }
-        const aName = `${a.lastname ?? ""} ${a.firstname ?? ""}`.trim();
-        const bName = `${b.lastname ?? ""} ${b.firstname ?? ""}`.trim();
-        if (aName !== bName) return aName.localeCompare(bName);
-        return a.email.localeCompare(b.email);
-      });
-
-    const returningMissingCount = rows.filter(
-      (r) => r.previousSeasonTourCardsCount > 0,
-    ).length;
-
     return {
-      activeMembersCount: activeMembers.length,
-      missingCount: rows.length,
-      returningMissingCount,
-      members: rows,
+      ok: true,
+      tourCard,
     };
   },
 });
-
-export const getCurrentYearTourCard = query({
-  args: tourCardsValidators.args.getCurrentYearTourCard,
-  handler: async (ctx, args) => {
-    const member = await ctx.db
-      .query("members")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.options.clerkId))
-      .first();
-
-    if (!member) return null;
-
-    const seasons = await ctx.db
-      .query("seasons")
-      .withIndex("by_year", (q) => q.eq("year", args.options.year))
-      .collect();
-
-    if (seasons.length === 0) return null;
-
-    const selectedSeason = seasons.reduce((best, candidate) => {
-      const bestNumber = best.number ?? 0;
-      const candidateNumber = candidate.number ?? 0;
-      if (candidateNumber !== bestNumber) {
-        return candidateNumber > bestNumber ? candidate : best;
-      }
-
-      const bestStart = best.startDate ?? 0;
-      const candidateStart = candidate.startDate ?? 0;
-      if (candidateStart !== bestStart) {
-        return candidateStart > bestStart ? candidate : best;
-      }
-
-      return candidate._creationTime > best._creationTime ? candidate : best;
-    }, seasons[0]);
-
-    const docs = await ctx.db
+export const getTourCardsByTourSeason = query({
+  args: {
+    seasonId: v.id("seasons"),
+    tourId: v.id("tours"),
+  },
+  handler: async (ctx, args): Promise<TourCardsReturnType> => {
+    const tourCards = await ctx.db
       .query("tourCards")
-      .withIndex("by_member_season", (q) =>
-        q.eq("memberId", member._id).eq("seasonId", selectedSeason._id),
+      .withIndex("by_tour_season", (q) =>
+        q.eq("tourId", args.tourId).eq("seasonId", args.seasonId),
       )
       .collect();
-
-    return docs[0] ?? null;
+    if (!tourCards || tourCards.length === 0) {
+      throw new Error("No tourCards found for this season");
+    }
+    return { ok: true, tourCards };
+  },
+});
+export const getTourCardsBySeason = query({
+  args: {
+    seasonId: v.id("seasons"),
+  },
+  handler: async (ctx, args): Promise<TourCardsReturnType> => {
+    const tourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .collect();
+    if (!tourCards || tourCards.length === 0) {
+      throw new Error("No tourCards found for this season");
+    }
+    return { ok: true, tourCards };
+  },
+});
+export const getTourCardsByMember = query({
+  args: {
+    memberId: v.id("members"),
+  },
+  handler: async (ctx, args): Promise<TourCardsReturnType> => {
+    const tourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_member", (q) => q.eq("memberId", args.memberId))
+      .collect();
+    if (!tourCards || tourCards.length === 0) {
+      throw new Error("No tourCards found for this member");
+    }
+    return { ok: true, tourCards };
+  },
+});
+export const getTourCardsByMemberSeason = query({
+  args: {
+    memberId: v.id("members"),
+    seasonId: v.id("seasons"),
+  },
+  handler: async (ctx, args): Promise<TourCardsReturnType> => {
+    const tourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_member_season", (q) =>
+        q.eq("memberId", args.memberId).eq("seasonId", args.seasonId),
+      )
+      .collect();
+    if (!tourCards || tourCards.length === 0) {
+      throw new Error("No tourCards found for this member in this season");
+    }
+    return { ok: true, tourCards };
   },
 });
 
-export const updateTourCards = mutation({
-  args: tourCardsValidators.args.updateTourCards,
-  handler: async (ctx, args) => {
-    const tourCard = await ctx.db.get(args.id);
-    if (!tourCard) {
-      throw new Error("Tour card not found");
+// ADMIN CRUD FUNCTIONS
+export const createTourCard = internalMutation({
+  args: {
+    seasonId: v.id("seasons"),
+    tourId: v.id("tours"),
+  },
+  handler: async (ctx, args): Promise<TourCardReturnType> => {
+    const member = await requireAuth(ctx);
+    const season = await ctx.db.get(args.seasonId);
+    if (!season) {
+      throw new Error("Season not found");
     }
-
-    await requireTourCardOwner(ctx, tourCard);
-
-    const skipValidation = args.options?.skipValidation ?? false;
-
-    if (!skipValidation) {
-      const validation = tourCardsValidators.validateTourCardData(args.data);
-      if (!validation.isValid) {
-        throw new Error(`Validation failed: ${validation.errors.join(", ")}`);
-      }
+    const tour = await ctx.db.get(args.tourId);
+    if (!tour) {
+      throw new Error("Tour not found");
     }
-
-    await ctx.db.patch(args.id, {
-      ...args.data,
+    if (tour.seasonId !== args.seasonId) {
+      throw new Error("Tour does not belong to the provided season");
+    }
+    const existingTourCard = await getExistingTourCardForMemberTourSeason(
+      ctx,
+      member.id,
+      args.seasonId,
+      args.tourId,
+    );
+    if (existingTourCard) {
+      throw new Error("Tour card already exists for this member, tour, and season");
+    }
+    const newTourCardId = await ctx.db.insert("tourCards", {
+      memberId: member.id,
+      seasonId: args.seasonId,
+      tourId: args.tourId,
+      displayName: member.firstname[0] + ". " + member.lastname,
+      appearances: 0,
+      points: 0,
+      earnings: 0,
+      madeCut: 0,
+      topTen: 0,
+      topFive: 0,
+      wins: 0,
+    });
+    const newTransactionId = await ctx.db.insert("transactions", {
+      memberId: member.id,
+      seasonId: args.seasonId,
+      amount: tour.buyIn,
+      transactionType: "TourCardFee",
+      status: "completed",
+      processedAt: Date.now(),
+    });
+    await ctx.db.patch(member.id, {
+      account: member.account - tour.buyIn,
       updatedAt: Date.now(),
     });
-
-    return await ctx.db.get(args.id);
+    await ctx.scheduler.runAfter(0, internal.functions.utils.captureEvent, {
+      event: "tourCard.created",
+      distinctId: "admin",
+      properties: {
+        tourCardId: String(newTourCardId),
+        displayName: member.firstname[0] + ". " + member.lastname,
+        seasonId: String(args.seasonId),
+        tourId: String(args.tourId),
+        transactionId: String(newTransactionId),
+      },
+    });
+    const newTourCard = await ctx.db.get(newTourCardId);
+    if (!newTourCard) {
+      throw new Error("Error fetching newly created tourCard");
+    }
+    return { ok: true, tourCard: newTourCard };
   },
 });
-
-// Used in TourCardForm to switch a tour card to a different tour within the same season, with validation and capacity checks.
-export const switchTourCards = mutation({
-  args: tourCardsValidators.args.switchTourCards,
-  handler: async (ctx, args) => {
-    const tourCard = await ctx.db.get(args.id);
+export const changeTourOnTourCard = internalMutation({
+  args: {
+    tourCardId: v.id("tourCards"),
+    tourId: v.id("tours"),
+  },
+  handler: async (ctx, args): Promise<TourCardReturnType> => {
+    const tourCard = await ctx.db.get(args.tourCardId);
     if (!tourCard) {
-      throw new Error("Tour card not found");
+      throw new Error("TourCard not found");
     }
-
     await requireTourCardOwner(ctx, tourCard);
-
-    if (tourCard.tourId === args.tourId) {
-      return tourCard;
-    }
 
     const tour = await ctx.db.get(args.tourId);
     if (!tour) {
@@ -350,203 +212,202 @@ export const switchTourCards = mutation({
     if (tour.seasonId !== tourCard.seasonId) {
       throw new Error("Tour does not belong to the tour card's season");
     }
-
-    const maxParticipants =
-      typeof tour.maxParticipants === "number" && tour.maxParticipants > 0
-        ? tour.maxParticipants
-        : DEFAULT_MAX_PARTICIPANTS;
-
-    const existing = await ctx.db
-      .query("tourCards")
-      .withIndex("by_tour_season", (q) =>
-        q.eq("tourId", args.tourId).eq("seasonId", tourCard.seasonId),
-      )
-      .collect();
-
-    if (existing.length >= maxParticipants) {
-      throw new Error("Selected tour is full");
+    const existingTourCard = await getExistingTourCardForMemberTourSeason(
+      ctx,
+      tourCard.memberId,
+      tourCard.seasonId,
+      args.tourId,
+      tourCard._id,
+    );
+    if (existingTourCard) {
+      throw new Error("Member already has a tour card for this tour and season");
     }
 
-    await ctx.db.patch(args.id, {
+    await ctx.db.patch(args.tourCardId, {
       tourId: args.tourId,
       updatedAt: Date.now(),
     });
 
-    return await ctx.db.get(args.id);
-  },
-});
-
-export const deleteTourCards = mutation({
-  args: tourCardsValidators.args.deleteTourCards,
-  handler: async (ctx, args) => {
-    const tourCard = await ctx.db.get(args.id);
-    if (!tourCard) {
-      throw new Error("Tour card not found");
+    const updated = await ctx.db.get(args.tourCardId);
+    if (!updated) {
+      throw new Error("Error fetching updated tourCard");
     }
-
-    await requireTourCardOwner(ctx, tourCard);
-
-    await ctx.db.delete(args.id);
-    return tourCard;
+    return { ok: true, tourCard: updated };
   },
 });
-
-export const recomputeTourCardsForSeasonAsAdmin = mutation({
-  args: tourCardsValidators.args.recomputeTourCardsForSeasonAsAdmin,
-  handler: async (ctx, args) => {
-    await requireAdmin(ctx);
-
-    const completedTournaments = await ctx.db
+export const updateTourCards = internalMutation({
+  args: { seasonId: v.id("seasons") },
+  handler: async (ctx, args): Promise<void> => {
+    const season = await ctx.db.get(args.seasonId);
+    if (!season) {
+      throw new Error("Season not found");
+    }
+    const now = Date.now();
+    const tournaments = await ctx.db
       .query("tournaments")
-      .withIndex("by_season_status", (q) =>
-        q.eq("seasonId", args.seasonId).eq("status", "completed"),
-      )
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .filter((q) => q.lte(q.field("endDate"), now))
       .collect();
-
-    const totalsByTourCard = new Map<
-      Id<"tourCards">,
-      {
-        points: number;
-        earnings: number;
-        appearances: number;
-        madeCut: number;
-        wins: number;
-        topTen: number;
-        topFive: number;
-      }
-    >();
-
-    for (const tournament of completedTournaments) {
-      const teams = await ctx.db
-        .query("teams")
-        .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
-        .collect();
-
-      for (const team of teams) {
-        const prev = totalsByTourCard.get(team.tourCardId) ?? {
-          points: 0,
-          earnings: 0,
-          appearances: 0,
-          madeCut: 0,
-          wins: 0,
-          topTen: 0,
-          topFive: 0,
-        };
-
-        totalsByTourCard.set(team.tourCardId, {
-          points: prev.points + (team.points ?? 0),
-          earnings: prev.earnings + (team.earnings ?? 0),
-          appearances: prev.appearances + 1,
-          madeCut: prev.madeCut + (team.makeCut ?? 0),
-          wins: prev.wins + (team.win ?? 0),
-          topTen: prev.topTen + (team.topTen ?? 0),
-          topFive: prev.topFive + (team.topFive ?? 0),
-        });
-      }
-    }
-
+    const tournamentIds = tournaments.map((t) => t._id);
+    const tournamentIdSet = new Set(tournamentIds);
     const tourCards = await ctx.db
       .query("tourCards")
       .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
       .collect();
-
-    const updatedAt = Date.now();
-    for (const card of tourCards) {
-      const totals = totalsByTourCard.get(card._id) ?? {
-        points: 0,
-        earnings: 0,
-        appearances: 0,
-        madeCut: 0,
-        wins: 0,
-        topTen: 0,
-        topFive: 0,
-      };
-
-      await ctx.db.patch(card._id, {
-        points: totals.points,
-        earnings: totals.earnings,
-        appearances: totals.appearances,
-        madeCut: totals.madeCut,
-        wins: totals.wins,
-        topTen: totals.topTen,
-        topFive: totals.topFive,
-        updatedAt,
+    const updatedTourCards = [];
+    for (const tourCard of tourCards) {
+      const allTeams = await ctx.db
+        .query("teams")
+        .withIndex("by_tour_card", (q) => q.eq("tourCardId", tourCard._id))
+        .collect();
+      const teams = allTeams.filter((team) =>
+        tournamentIdSet.has(team.tournamentId),
+      );
+      const tour = await ctx.db.get(tourCard.tourId);
+      if (!tour || !teams || teams.length === 0) {
+        continue;
+      }
+      const appearances = teams.length;
+      const points = teams.reduce((sum, team) => sum + (team.points || 0), 0);
+      const earnings = teams.reduce(
+        (sum, team) => sum + (team.earnings || 0),
+        0,
+      );
+      const madeCut = teams.reduce((sum, team) => sum + (team.makeCut || 0), 0);
+      const topTen = teams.reduce((sum, team) => sum + (team.topTen || 0), 0);
+      const topFive = teams.reduce((sum, team) => sum + (team.topFive || 0), 0);
+      const wins = teams.reduce((sum, team) => sum + (team.win || 0), 0);
+      updatedTourCards.push({
+        ...tourCard,
+        appearances,
+        points,
+        earnings,
+        madeCut,
+        topTen,
+        topFive,
+        wins,
+        updatedAt: Date.now(),
       });
     }
-
-    return {
-      tourCardsUpdated: tourCards.length,
-      completedTournamentCount: completedTournaments.length,
-    };
+    for (const tourCard of updatedTourCards) {
+      const tour = await ctx.db.get(tourCard.tourId);
+      if (!tour) {
+        continue;
+      }
+      const sameTourTourCards = updatedTourCards.filter(
+        (tc) => tc.tourId === tourCard.tourId,
+      );
+      const position = sameTourTourCards.filter(
+        (tc) => (tc.points ?? 0) < (tourCard.points ?? 0),
+      ).length;
+      const tiedTeams = sameTourTourCards.filter(
+        (tc) => (tc.points ?? 0) === (tourCard.points ?? 0),
+      ).length;
+      const currentPosition =
+        tiedTeams > 1 ? `T${position + 1}` : `${position + 1}`;
+      const playoff =
+        tour.playoffSpots.length > 0 && position < tour.playoffSpots[0]
+          ? 1
+          : tour.playoffSpots.length > 1 && position < tour.playoffSpots[1]
+            ? 2
+            : tour.playoffSpots.length > 2 && position < tour.playoffSpots[2]
+              ? 3
+              : 0;
+      const sameLastName = updatedTourCards.some(
+        (tc) => tourCard.displayName === tc.displayName && tourCard._id !== tc._id,
+      );
+      let displayName = tourCard.displayName
+      if (sameLastName) {
+        const tourCardMemberIds = updatedTourCards.map(tc => tc.memberId);
+        const member = await ctx.db.get(tourCard.memberId);
+        const familyMembers = await ctx.db
+          .query("members")
+          .withIndex("by_lastname", (q) =>
+            q.eq("lastname", member?.lastname ?? ""),
+          )
+          .collect();
+        const activeFamilyMembers = familyMembers.filter(fm => tourCardMemberIds.includes(fm._id))
+        const numberOfLetters = activeFamilyMembers.filter(fm => fm.firstname?.[0] === member?.firstname?.[0]).length === 1 ? 1 : activeFamilyMembers.filter(fm => fm.firstname?.slice(0,2) === member?.firstname?.slice(0,2)).length === 1 ? 2 : member?.firstname?.length ?? 3;
+        displayName = member?.firstname?.slice(0,numberOfLetters)+". "+member?.lastname || tourCard.displayName;
+      }
+      await ctx.db.patch(tourCard._id, {
+        ...tourCard,
+        currentPosition,
+        playoff,
+        displayName,
+        updatedAt: Date.now(),
+      });
+    }
   },
 });
-
-// Used in TourCardChangeButton to delete old tour card and associated fee transactions when switching tours, if the user has no other tour cards in the season.
-export const deleteTourCardAndFee = mutation({
-  args: tourCardsValidators.args.deleteTourCardAndFee,
-  handler: async (ctx, args) => {
-    const tourCard = await ctx.db.get(args.id);
+export const deleteTourCard = internalMutation({
+  args: {
+    tourCardId: v.id("tourCards"),
+  },
+  handler: async (ctx, args): Promise<DeleteTourCardReturnType> => {
+    const member = await requireAuth(ctx);
+    const tourCard = await ctx.db.get(args.tourCardId);
     if (!tourCard) {
-      throw new Error("Tour card not found");
+      throw new Error("TourCard not found");
     }
-
-    await requireTourCardOwner(ctx, tourCard);
-
-    const member = await ctx.db.get(tourCard.memberId);
-    if (!member) {
-      throw new Error("Member not found");
+    if (tourCard.memberId !== member.id) {
+      await requireAdmin(ctx);
     }
-
-    const tourCardsInSeason = await ctx.db
-      .query("tourCards")
-      .withIndex("by_member_season", (q) =>
-        q.eq("memberId", member._id).eq("seasonId", tourCard.seasonId),
+    const tour = await ctx.db.get(tourCard.tourId);
+    if (!tour) {
+      throw new Error("Associated tour not found");
+    }
+    const existingTeam = await ctx.db
+      .query("teams")
+      .withIndex("by_tour_card", (q) => q.eq("tourCardId", args.tourCardId))
+      .first();
+    if (existingTeam) {
+      throw new Error("Cannot delete tour card with existing teams");
+    }
+    const feeTransactions = await ctx.db
+      .query("transactions")
+      .withIndex("by_member_season_type", (q) =>
+        q
+          .eq("memberId", tourCard.memberId)
+          .eq("seasonId", tourCard.seasonId)
+          .eq("transactionType", "TourCardFee"),
       )
       .collect();
-
-    const hasOtherTourCardsInSeason = tourCardsInSeason.some(
-      (doc) => doc._id !== tourCard._id,
-    );
-
-    const teams = await ctx.db
-      .query("teams")
-      .withIndex("by_tour_card", (q) => q.eq("tourCardId", tourCard._id))
-      .collect();
-
-    for (const team of teams) {
-      await ctx.db.delete(team._id);
+    const feeTransaction =
+      feeTransactions
+        .filter((tx) => isCompletedTourCardFee(tx) && tx.amount === tour.buyIn)
+        .sort((left, right) => {
+          const leftTime = left.processedAt ?? left.updatedAt ?? left._creationTime;
+          const rightTime =
+            right.processedAt ?? right.updatedAt ?? right._creationTime;
+          return rightTime - leftTime;
+        })[0] ?? null;
+    if (!feeTransaction) {
+      throw new Error("Associated tour card fee transaction not found");
     }
-
-    await ctx.db.delete(tourCard._id);
-
-    if (!hasOtherTourCardsInSeason) {
-      const feeTransactions = await ctx.db
-        .query("transactions")
-        .withIndex("by_member_season_type", (q) =>
-          q
-            .eq("memberId", member._id)
-            .eq("seasonId", tourCard.seasonId)
-            .eq("transactionType", "TourCardFee"),
-        )
-        .collect();
-
-      const completedFeeTotal = feeTransactions
-        .filter(isCompletedTourCardFee)
-        .reduce((sum, tx) => sum + tx.amount, 0);
-
-      for (const tx of feeTransactions) {
-        await ctx.db.delete(tx._id);
-      }
-
-      if (completedFeeTotal !== 0) {
-        const updatedAt = Date.now();
+    await ctx.db.delete(feeTransaction._id);
+    if (feeTransaction.amount !== 0) {
+      const member = await ctx.db.get(tourCard.memberId);
+      if (member) {
         await ctx.db.patch(member._id, {
-          account: member.account - completedFeeTotal,
-          updatedAt,
+          account: member.account + feeTransaction.amount,
+          updatedAt: Date.now(),
         });
       }
     }
-
-    return tourCard;
+    await ctx.db.delete(args.tourCardId);
+    await ctx.scheduler.runAfter(0, internal.functions.utils.captureEvent, {
+      event: "tourCard.deleted",
+      distinctId: "admin",
+      properties: {
+        tourCardId: String(args.tourCardId),
+        displayName: tourCard.displayName,
+        seasonId: String(tourCard.seasonId),
+        tourId: String(tourCard.tourId),
+        transactionId: String(feeTransaction._id),
+        totalRefund: feeTransaction.amount,
+      },
+    });
+    return { ok: true };
   },
 });
