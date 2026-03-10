@@ -1,4 +1,9 @@
-import { action, internalAction, internalMutation, mutation } from "../_generated/server";
+import {
+  action,
+  internalAction,
+  internalMutation,
+  mutation,
+} from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type {
@@ -1358,16 +1363,18 @@ export const runTournamentSync_Public: ReturnType<typeof action> = action({
   },
 });
 
-
 export const updatePreviousTournament: ReturnType<typeof internalAction> =
   internalAction({
     args: { tournamentId: v.id("tournaments") },
-    handler: async (ctx) => {
+    handler: async (ctx, args) => {
       const now = new Date();
       if (now.getHours() <= 12 && now.getHours() >= 2) {
-        console.log("updatePreviousTournament: skipped (outside_of_time_window)", {
-          currentHour: now.getHours(),
-        });
+        console.log(
+          "updatePreviousTournament: skipped (outside_of_time_window)",
+          {
+            currentHour: now.getHours(),
+          },
+        );
         return {
           ok: true,
           skipped: true,
@@ -1376,7 +1383,8 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         } as const;
       }
       const activeTournamentData = await ctx.runQuery(
-        internal.functions.utils.getTournamentData,
+        internal.functions.utils.getTournamentDataById,
+        { tournamentId: args.tournamentId },
       );
       if (!activeTournamentData.ok) {
         console.log("updatePreviousTournament: skipped (no_active_tournament)");
@@ -2247,11 +2255,12 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
       };
     },
   });
-export const updatePreviousTournament_Public: ReturnType<typeof action> = action({
-  handler: async (ctx) => {
-    return await ctx.runAction(
-      internal.functions.cronJobs.updatePreviousTournament,
-      {},
-    );
-  },
-});
+export const updatePreviousTournament_Public: ReturnType<typeof action> =
+  action({
+    handler: async (ctx) => {
+      return await ctx.runAction(
+        internal.functions.cronJobs.updatePreviousTournament,
+        {},
+      );
+    },
+  });
