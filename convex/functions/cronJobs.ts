@@ -1368,20 +1368,6 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
     args: { tournamentId: v.id("tournaments") },
     handler: async (ctx, args) => {
       const now = new Date();
-      if (now.getHours() <= 12 && now.getHours() >= 2) {
-        console.log(
-          "updatePreviousTournament: skipped (outside_of_time_window)",
-          {
-            currentHour: now.getHours(),
-          },
-        );
-        return {
-          ok: true,
-          skipped: true,
-          reason: "outside_of_time_window",
-          currentHour: now.getHours(),
-        } as const;
-      }
       const activeTournamentData = await ctx.runQuery(
         internal.functions.utils.getTournamentDataById,
         { tournamentId: args.tournamentId },
@@ -2258,7 +2244,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
 export const updatePreviousTournament_Public: ReturnType<typeof action> =
   action({
     args: { tournamentId: v.id("tournaments") },
-    handler: async (ctx,args) => {
+    handler: async (ctx, args) => {
       return await ctx.runAction(
         internal.functions.cronJobs.updatePreviousTournament,
         { tournamentId: args.tournamentId },
