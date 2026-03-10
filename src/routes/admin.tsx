@@ -37,7 +37,7 @@ function AdminRoute() {
     api.functions.cronJobs.runTournamentSync_Public,
   );
   const runUpdateWorldRank = useAction(
-    api.functions.cronJobs.recomputeStandings_Public,
+    api.functions.cronJobs.updateGolfersWorldRankFromDataGolfInput_Public,
   );
   const sendWeeklyRecapEmailTest = useAction(
     api.functions.emails.sendWeeklyRecapEmailTest,
@@ -46,10 +46,10 @@ function AdminRoute() {
     api.functions.emails.adminSendWeeklyRecapEmailToActiveTourCards,
   );
   const runRepairTournament = useAction(
-    api.functions.tournaments.repairTournamentScoresAndStandings,
+    api.functions.cronJobs.updatePreviousTournament_Public,
   );
   const runRecomputeStandings = useMutation(
-    api.functions.cronJobs.recomputeStandingsForCurrentSeason_Public,
+    api.functions.cronJobs.recomputeStandings_Public,
   );
   const createTransaction = useMutation(
     api.functions.transactions.createTransactions,

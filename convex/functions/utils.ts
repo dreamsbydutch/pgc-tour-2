@@ -195,6 +195,188 @@ export const getActiveTournamentData = internalQuery({
     return { ok: false };
   },
 });
+export const getTournamentDataById = internalQuery({
+  args: { tournamentId: v.id("tournaments") },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<
+    | {
+        ok: true;
+        type: "active" | "next" | "recent";
+        tournament: Doc<"tournaments">;
+        course: Doc<"courses">;
+        tier: Doc<"tiers">;
+        tours: Doc<"tours">[];
+        seasonTournaments: Array<Doc<"tournaments">>;
+        playoffTournaments: Array<Doc<"tournaments">>;
+        eventIndex: 0 | 1 | 2 | 3;
+        isPlayoff: boolean;
+      }
+    | {
+        ok: false;
+      }
+  > => {
+    const now = new Date().getFullYear();
+    const currentSeason = await ctx.db
+      .query("seasons")
+      .withIndex("by_year", (q) => q.eq("year", now))
+      .first();
+    if (!currentSeason) {
+      return { ok: false };
+    }
+    const tournaments: Doc<"tournaments">[] = await ctx.db
+      .query("tournaments")
+      .withIndex("by_id", (q) => q.eq("_id", args.tournamentId))
+      .collect();
+    const tiers = await ctx.db
+      .query("tiers")
+      .withIndex("by_season", (q) => q.eq("seasonId", currentSeason._id))
+      .collect();
+    const tours = await ctx.db
+      .query("tours")
+      .withIndex("by_season", (q) => q.eq("seasonId", currentSeason._id))
+      .collect();
+    const playoffTournaments = tournaments
+      .filter(
+        (t) =>
+          t.tierId ===
+          tiers.find((tier) => tier.name.toLowerCase() === "playoff")?._id,
+      )
+      .sort((a, b) => a.startDate - b.startDate);
+    let tournament = tournaments.find((t) => t.status === "active");
+    if (tournament) {
+      const playoffIndex = playoffTournaments.findIndex(
+        (t) => t._id === tournament?._id,
+      );
+      const isPlayoff = playoffIndex !== -1;
+      const course = await ctx.db.get(tournament.courseId);
+      return {
+        ok: true,
+        type: "active",
+        tournament,
+        course: course as Doc<"courses">,
+        tier: tiers.find(
+          (tier) => tier._id === tournament?.tierId,
+        ) as Doc<"tiers">,
+        tours,
+        isPlayoff,
+        eventIndex:
+          playoffIndex !== -1 ? ((playoffIndex + 1) as 0 | 1 | 2 | 3) : 0,
+        playoffTournaments,
+        seasonTournaments: tournaments
+          .filter(
+            (t) =>
+              t.tierId !==
+              tiers.find((tier) => tier.name.toLowerCase() === "playoff")?._id,
+          )
+          .sort((a, b) => a.startDate - b.startDate),
+      };
+    }
+    tournament = tournaments.find(
+      (t) => t.startDate < Date.now() && t.endDate > Date.now(),
+    );
+    if (tournament) {
+      console.log(
+        "No active tournament found, defaulting to next tournament:",
+        tournament,
+      );
+      const playoffIndex = playoffTournaments.findIndex(
+        (t) => t._id === tournament?._id,
+      );
+      const isPlayoff = playoffIndex !== -1;
+      const course = await ctx.db.get(tournament.courseId);
+      return {
+        ok: true,
+        type: "active",
+        tournament,
+        course: course as Doc<"courses">,
+        tier: tiers.find(
+          (tier) => tier._id === tournament?.tierId,
+        ) as Doc<"tiers">,
+        tours,
+        isPlayoff,
+        eventIndex:
+          playoffIndex !== -1 ? ((playoffIndex + 1) as 0 | 1 | 2 | 3) : 0,
+        playoffTournaments,
+        seasonTournaments: tournaments
+          .filter(
+            (t) =>
+              t.tierId !==
+              tiers.find((tier) => tier.name.toLowerCase() === "playoff")?._id,
+          )
+          .sort((a, b) => a.startDate - b.startDate),
+      };
+    }
+    tournament = tournaments
+      .filter((t) => t.startDate > Date.now())
+      .sort((a, b) => a.startDate - b.startDate)[0];
+    console.log(
+      "No active tournament found, defaulting to next tournament:",
+      tournament,
+    );
+    if (tournament) {
+      const playoffIndex = playoffTournaments.findIndex(
+        (t) => t._id === tournament?._id,
+      );
+      const isPlayoff = playoffIndex !== -1;
+      const course = await ctx.db.get(tournament.courseId);
+      return {
+        ok: true,
+        type: "next",
+        tournament,
+        course: course as Doc<"courses">,
+        tier: tiers.find(
+          (tier) => tier._id === tournament?.tierId,
+        ) as Doc<"tiers">,
+        tours,
+        isPlayoff,
+        eventIndex:
+          playoffIndex !== -1 ? ((playoffIndex + 1) as 0 | 1 | 2 | 3) : 0,
+        playoffTournaments,
+        seasonTournaments: tournaments
+          .filter(
+            (t) =>
+              t.tierId !==
+              tiers.find((tier) => tier.name.toLowerCase() === "playoff")?._id,
+          )
+          .sort((a, b) => a.startDate - b.startDate),
+      };
+    }
+    tournament = tournaments
+      .filter((t) => t.endDate < Date.now())
+      .sort((a, b) => b.endDate - a.endDate)[0];
+    if (tournament) {
+      const playoffIndex = playoffTournaments.findIndex(
+        (t) => t._id === tournament?._id,
+      );
+      const isPlayoff = playoffIndex !== -1;
+      const course = await ctx.db.get(tournament.courseId);
+      return {
+        ok: true,
+        type: "recent",
+        tournament,
+        course: course as Doc<"courses">,
+        tier: tiers.find(
+          (tier) => tier._id === tournament?.tierId,
+        ) as Doc<"tiers">,
+        tours,
+        isPlayoff,
+        eventIndex:
+          playoffIndex !== -1 ? ((playoffIndex + 1) as 0 | 1 | 2 | 3) : 0,
+        playoffTournaments,
+        seasonTournaments: tournaments
+          .filter(
+            (t) =>
+              t.tierId !==
+              tiers.find((tier) => tier.name.toLowerCase() === "playoffs")?._id,
+          )
+          .sort((a, b) => a.startDate - b.startDate),
+      };
+    }
+    return { ok: false };
+  },
+});
 
 export const getCurrentSeason = internalQuery({
   handler: async (
