@@ -2257,10 +2257,11 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
   });
 export const updatePreviousTournament_Public: ReturnType<typeof action> =
   action({
-    handler: async (ctx) => {
+    args: { tournamentId: v.id("tournaments") },
+    handler: async (ctx,args) => {
       return await ctx.runAction(
         internal.functions.cronJobs.updatePreviousTournament,
-        {},
+        { tournamentId: args.tournamentId },
       );
     },
   });
