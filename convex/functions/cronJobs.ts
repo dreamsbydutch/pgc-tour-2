@@ -1411,19 +1411,6 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
       const { teams, golfers, fieldData, liveData, historicalData } =
         tournamentStats;
 
-      if (tournamentType === "recent") {
-        console.log("updatePreviousTournament: skipped (recent_tournament)", {
-          tournamentId: tournament._id,
-          tournamentName: tournament.name,
-        });
-        return {
-          ok: true,
-          skipped: true,
-          reason: "recent_tournament",
-          tournamentId: tournament._id,
-          tournamentName: tournament.name,
-        } as const;
-      }
       for (const t of teams) {
         if (t.golfers?.length < 10) {
           const groupCounts = [
