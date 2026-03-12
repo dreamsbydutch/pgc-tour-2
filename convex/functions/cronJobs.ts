@@ -676,7 +676,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
   internalAction({
     handler: async (ctx) => {
       const now = new Date();
-      if (now.getHours() <= 12 && now.getHours() >= 2) {
+      if (now.getHours() <= 10 && now.getHours() >= 2) {
         console.log("runTournamentSync: skipped (outside_of_time_window)", {
           currentHour: now.getHours(),
         });
