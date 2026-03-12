@@ -29,6 +29,211 @@ import { determineGroupIndex } from "../utils/golfers";
 import { EnhancedGolfer } from "../types/types";
 import { v } from "convex/values";
 
+type TournamentLifecycleStatus = "upcoming" | "active" | "completed";
+
+/**
+ * Returns the earliest round-one tee time available for a synced golfer.
+ */
+function getGolferRoundOneTeeTimeMs(
+  golfer: EnhancedGolfer,
+): number | undefined {
+  const fieldTeeTime = golfer.field?.teetimes.find(
+    (teetime) => teetime.round_num === 1,
+  )?.teetime;
+  if (typeof fieldTeeTime === "number") {
+    return fieldTeeTime;
+  }
+
+  const historicalTeeTime = golfer.historical?.round_1?.teetime;
+  if (typeof historicalTeeTime === "number") {
+    return historicalTeeTime;
+  }
+
+  const storedTeeTime = golfer.tournamentGolfer?.roundOneTeeTime;
+  if (typeof storedTeeTime === "number") {
+    return storedTeeTime;
+  }
+
+  return typeof storedTeeTime === "string"
+    ? parseDataGolfTeeTimeToMs(storedTeeTime)
+    : undefined;
+}
+
+/**
+ * Returns the first round-one tee time across a tournament field feed.
+ */
+function getFieldRoundOneTeeTimeMs(
+  field: DataGolfFieldPlayer[] | undefined,
+): number | undefined {
+  return earliestTimeStr(
+    (field ?? []).map(
+      (golfer) =>
+        golfer.teetimes.find((teetime) => teetime.round_num === 1)?.teetime,
+    ),
+  );
+}
+
+/**
+ * Normalizes live "thru" values into a hole count.
+ */
+function getHoleCount(
+  thru: string | number | null | undefined,
+): number | undefined {
+  if (typeof thru === "number" && Number.isFinite(thru)) {
+    return thru;
+  }
+
+  const raw = String(thru ?? "")
+    .trim()
+    .toUpperCase();
+  if (!raw) {
+    return undefined;
+  }
+  if (raw === "F") {
+    return 18;
+  }
+
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/**
+ * Treats terminal player states as completed for tournament lifecycle purposes.
+ */
+function isTerminalTournamentPosition(
+  position: string | null | undefined,
+): boolean {
+  return ["CUT", "MC", "MDF", "WD", "DQ", "DNS", "DNF"].includes(
+    String(position ?? "")
+      .trim()
+      .toUpperCase(),
+  );
+}
+
+/**
+ * Returns whether any synced golfer shows evidence that tournament play has started.
+ */
+function hasGolferStartedPlay(golfer: EnhancedGolfer): boolean {
+  const terminalPosition =
+    golfer.live?.current_pos ??
+    golfer.historical?.fin_text ??
+    golfer.tournamentGolfer?.position;
+  if (isTerminalTournamentPosition(terminalPosition)) {
+    return true;
+  }
+
+  const thru = getHoleCount(golfer.live?.thru);
+  if (typeof thru === "number" && thru > 0) {
+    return true;
+  }
+
+  return Boolean(
+    (golfer.live?.R1 ?? 0) > 0 ||
+      (golfer.live?.R2 ?? 0) > 0 ||
+      (golfer.live?.R3 ?? 0) > 0 ||
+      (golfer.live?.R4 ?? 0) > 0 ||
+      (golfer.historical?.round_1?.score ?? 0) > 0 ||
+      (golfer.historical?.round_2?.score ?? 0) > 0 ||
+      (golfer.historical?.round_3?.score ?? 0) > 0 ||
+      (golfer.historical?.round_4?.score ?? 0) > 0 ||
+      (golfer.tournamentGolfer?.roundOne ?? 0) > 0 ||
+      (golfer.tournamentGolfer?.roundTwo ?? 0) > 0 ||
+      (golfer.tournamentGolfer?.roundThree ?? 0) > 0 ||
+      (golfer.tournamentGolfer?.roundFour ?? 0) > 0 ||
+      (golfer.live?.current_score ?? 0) !== 0,
+  );
+}
+
+/**
+ * Returns whether a golfer has completed the tournament or reached a terminal state.
+ */
+function hasGolferCompletedTournament(golfer: EnhancedGolfer): boolean {
+  const terminalPosition =
+    golfer.live?.current_pos ??
+    golfer.historical?.fin_text ??
+    golfer.tournamentGolfer?.position;
+  if (isTerminalTournamentPosition(terminalPosition)) {
+    return true;
+  }
+
+  if (
+    (golfer.live?.R4 ?? 0) > 0 ||
+    (golfer.historical?.round_4?.score ?? 0) > 0 ||
+    (golfer.tournamentGolfer?.roundFour ?? 0) > 0
+  ) {
+    return true;
+  }
+
+  const thru = getHoleCount(golfer.live?.thru);
+  return thru === 18 && (golfer.live?.round ?? 0) >= 4;
+}
+
+/**
+ * Derives a monotonic tournament lifecycle status from tee times and synced scoring state.
+ */
+function deriveTournamentLifecycleStatus(args: {
+  golfers: EnhancedGolfer[];
+  nowMs: number;
+  existingStatus: Doc<"tournaments">["status"];
+  openingTeeTimeMs?: number;
+  eventCompleted?: boolean;
+}): TournamentLifecycleStatus {
+  if (args.existingStatus === "completed") {
+    return "completed";
+  }
+
+  const completed =
+    args.eventCompleted === true ||
+    (args.golfers.length > 0 &&
+      args.golfers.every((golfer) => hasGolferCompletedTournament(golfer)));
+  if (completed) {
+    return "completed";
+  }
+
+  if (args.existingStatus === "active") {
+    return "active";
+  }
+
+  const startedByClock =
+    typeof args.openingTeeTimeMs === "number" &&
+    args.nowMs >= args.openingTeeTimeMs;
+  const startedByPlay = args.golfers.some((golfer) =>
+    hasGolferStartedPlay(golfer),
+  );
+
+  return startedByClock || startedByPlay ? "active" : "upcoming";
+}
+
+/**
+ * Returns only the tournament lifecycle fields that have actually changed.
+ */
+function getChangedTournamentLifecycleFields(args: {
+  tournament: Doc<"tournaments">;
+  startDate?: number;
+  status?: TournamentLifecycleStatus;
+}): {
+  startDate?: number;
+  status?: TournamentLifecycleStatus;
+} | null {
+  const update: {
+    startDate?: number;
+    status?: TournamentLifecycleStatus;
+  } = {};
+
+  if (
+    typeof args.startDate === "number" &&
+    args.startDate !== args.tournament.startDate
+  ) {
+    update.startDate = args.startDate;
+  }
+
+  if (args.status && args.status !== args.tournament.status) {
+    update.status = args.status;
+  }
+
+  return Object.keys(update).length > 0 ? update : null;
+}
+
 /**
  * Fetches the latest DataGolf rankings and applies OWGR/country/name updates into `golfers`.
  *
@@ -613,8 +818,36 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         }
       }
       if (tournamentType === "next") {
+        const openingTeeTime =
+          getFieldRoundOneTeeTimeMs(fieldData.field) ??
+          earliestTimeStr(
+            golfers.map((golfer) => getGolferRoundOneTeeTimeMs(golfer)),
+          ) ??
+          tournament.startDate;
+        const nextTournamentStatus = deriveTournamentLifecycleStatus({
+          golfers,
+          nowMs: now.getTime(),
+          existingStatus: tournament.status,
+          openingTeeTimeMs: openingTeeTime,
+          eventCompleted:
+            historicalData?.event_completed === "true" ||
+            historicalData?.event_completed === "1",
+        });
+        const lifecycleUpdates = getChangedTournamentLifecycleFields({
+          tournament,
+          startDate: openingTeeTime,
+          status: nextTournamentStatus,
+        });
+        if (lifecycleUpdates) {
+          await ctx.runMutation(internal.functions.utils.updateTournamentInfo, {
+            tournament: {
+              _id: tournament._id,
+              ...lifecycleUpdates,
+            },
+          });
+        }
         if (
-          Math.abs(tournament.startDate - now.getTime()) >
+          Math.abs(openingTeeTime - now.getTime()) >
           1000 * 60 * 60 * 24 * 6
         ) {
           console.log(
@@ -622,7 +855,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             {
               tournamentId: tournament._id,
               tournamentName: tournament.name,
-              startDate: tournament.startDate,
+              startDate: openingTeeTime,
             },
           );
           return {
@@ -633,19 +866,20 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             tournamentName: tournament.name,
           } as const;
         }
-        if (tournament.startDate < now.getTime()) {
+        if (nextTournamentStatus === "active") {
           console.log(
             "runTournamentSync: skipped (next_tournament_toggled_to_active)",
             {
               tournamentId: tournament._id,
               tournamentName: tournament.name,
-              startDate: tournament.startDate,
+              startDate: openingTeeTime,
             },
           );
           await ctx.runMutation(internal.functions.utils.updateTournamentInfo, {
             tournament: {
               _id: tournament._id,
               status: "active",
+              startDate: openingTeeTime,
             },
           });
           return {
@@ -679,16 +913,6 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                   undefined,
               };
             });
-          const openingTeeTime = fieldData.field
-            .map((g) => g.teetimes.find((tt) => tt.round_num === 1)?.teetime)
-            .filter((t): t is number => typeof t === "number")
-            .sort((a, b) => a - b)[0];
-          await ctx.runMutation(internal.functions.utils.updateTournamentInfo, {
-            tournament: {
-              _id: tournament._id,
-              startDate: openingTeeTime,
-            },
-          });
           if (newGolfers.length > 0) {
             await ctx.runMutation(
               internal.functions.golfers.createMissingTournamentGolfers,
@@ -727,33 +951,30 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             })),
           )
         : false;
-      const firstTeeTime = earliestTimeStr(
-        golfers
-          .map((g: EnhancedGolfer) =>
-            g.field && !g.field.teetimes.find((tt) => tt.round_num === 1)
-              ? g.field.teetimes.find((tt) => tt.round_num === 1)?.teetime
-              : g.historical && g.historical.round_1
-                ? g.historical.round_1.teetime
-                : undefined,
-          )
-          .filter((t): t is number => typeof t === "number"),
-      );
+      const firstTeeTime =
+        earliestTimeStr(
+          golfers.map((golfer) => getGolferRoundOneTeeTimeMs(golfer)),
+        ) ?? tournament.startDate;
+      const tournamentStatus = deriveTournamentLifecycleStatus({
+        golfers,
+        nowMs: now.getTime(),
+        existingStatus: tournament.status,
+        openingTeeTimeMs: firstTeeTime,
+        eventCompleted:
+          historicalData?.event_completed === "true" ||
+          historicalData?.event_completed === "1",
+      });
+      const lifecycleUpdates = getChangedTournamentLifecycleFields({
+        tournament,
+        startDate: firstTeeTime,
+        status: tournamentStatus,
+      });
       await ctx.runMutation(internal.functions.utils.updateTournamentInfo, {
         tournament: {
           _id: tournament._id,
           currentRound: (!isRoundRunning ? 0.5 : 0) + currentRound,
           livePlay: isRoundRunning,
-          status:
-            (currentRound > 1 && currentRound < 4) ||
-            (currentRound === 1 && isRoundRunning) ||
-            (currentRound === 4 && isRoundRunning)
-              ? "active"
-              : currentRound >= 4 && !isRoundRunning
-                ? "completed"
-                : currentRound <= 1
-                  ? "active" // TODO: CHANGE BACK TO UPCOMING
-                  : undefined,
-          startDate: firstTeeTime,
+          ...lifecycleUpdates,
         },
       });
       const usageMap = buildUsageRateByGolferApiId({ teams });
@@ -1487,8 +1708,36 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         }
       }
       if (tournamentType === "next") {
+        const openingTeeTime =
+          getFieldRoundOneTeeTimeMs(fieldData.field) ??
+          earliestTimeStr(
+            golfers.map((golfer) => getGolferRoundOneTeeTimeMs(golfer)),
+          ) ??
+          tournament.startDate;
+        const nextTournamentStatus = deriveTournamentLifecycleStatus({
+          golfers,
+          nowMs: now.getTime(),
+          existingStatus: tournament.status,
+          openingTeeTimeMs: openingTeeTime,
+          eventCompleted:
+            historicalData?.event_completed === "true" ||
+            historicalData?.event_completed === "1",
+        });
+        const lifecycleUpdates = getChangedTournamentLifecycleFields({
+          tournament,
+          startDate: openingTeeTime,
+          status: nextTournamentStatus,
+        });
+        if (lifecycleUpdates) {
+          await ctx.runMutation(internal.functions.utils.updateTournamentInfo, {
+            tournament: {
+              _id: tournament._id,
+              ...lifecycleUpdates,
+            },
+          });
+        }
         if (
-          Math.abs(tournament.startDate - now.getTime()) >
+          Math.abs(openingTeeTime - now.getTime()) >
           1000 * 60 * 60 * 24 * 6
         ) {
           console.log(
@@ -1496,7 +1745,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             {
               tournamentId: tournament._id,
               tournamentName: tournament.name,
-              startDate: tournament.startDate,
+              startDate: openingTeeTime,
             },
           );
           return {
@@ -1507,19 +1756,20 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             tournamentName: tournament.name,
           } as const;
         }
-        if (tournament.startDate < now.getTime()) {
+        if (nextTournamentStatus === "active") {
           console.log(
             "runTournamentSync: skipped (next_tournament_toggled_to_active)",
             {
               tournamentId: tournament._id,
               tournamentName: tournament.name,
-              startDate: tournament.startDate,
+              startDate: openingTeeTime,
             },
           );
           await ctx.runMutation(internal.functions.utils.updateTournamentInfo, {
             tournament: {
               _id: tournament._id,
               status: "active",
+              startDate: openingTeeTime,
             },
           });
           return {
@@ -1553,16 +1803,6 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                   undefined,
               };
             });
-          const openingTeeTime = fieldData.field
-            .map((g) => g.teetimes.find((tt) => tt.round_num === 1)?.teetime)
-            .filter((t): t is number => typeof t === "number")
-            .sort((a, b) => a - b)[0];
-          await ctx.runMutation(internal.functions.utils.updateTournamentInfo, {
-            tournament: {
-              _id: tournament._id,
-              startDate: openingTeeTime,
-            },
-          });
           if (newGolfers.length > 0) {
             await ctx.runMutation(
               internal.functions.golfers.createMissingTournamentGolfers,
@@ -1601,33 +1841,30 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             })),
           )
         : false;
-      const firstTeeTime = earliestTimeStr(
-        golfers
-          .map((g: EnhancedGolfer) =>
-            g.field && !g.field.teetimes.find((tt) => tt.round_num === 1)
-              ? g.field.teetimes.find((tt) => tt.round_num === 1)?.teetime
-              : g.historical && g.historical.round_1
-                ? g.historical.round_1.teetime
-                : undefined,
-          )
-          .filter((t): t is number => typeof t === "number"),
-      );
+      const firstTeeTime =
+        earliestTimeStr(
+          golfers.map((golfer) => getGolferRoundOneTeeTimeMs(golfer)),
+        ) ?? tournament.startDate;
+      const tournamentStatus = deriveTournamentLifecycleStatus({
+        golfers,
+        nowMs: now.getTime(),
+        existingStatus: tournament.status,
+        openingTeeTimeMs: firstTeeTime,
+        eventCompleted:
+          historicalData?.event_completed === "true" ||
+          historicalData?.event_completed === "1",
+      });
+      const lifecycleUpdates = getChangedTournamentLifecycleFields({
+        tournament,
+        startDate: firstTeeTime,
+        status: tournamentStatus,
+      });
       await ctx.runMutation(internal.functions.utils.updateTournamentInfo, {
         tournament: {
           _id: tournament._id,
           currentRound: (!isRoundRunning ? 0.5 : 0) + currentRound,
           livePlay: isRoundRunning,
-          status:
-            (currentRound > 1 && currentRound < 4) ||
-            (currentRound === 1 && isRoundRunning) ||
-            (currentRound === 4 && isRoundRunning)
-              ? "active"
-              : currentRound >= 4 && !isRoundRunning
-                ? "completed"
-                : currentRound <= 1
-                  ? "active" // TODO: CHANGE BACK TO UPCOMING
-                  : undefined,
-          startDate: firstTeeTime,
+          ...lifecycleUpdates,
         },
       });
       const usageMap = buildUsageRateByGolferApiId({ teams });
