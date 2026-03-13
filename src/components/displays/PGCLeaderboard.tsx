@@ -188,10 +188,20 @@ function TeamGolfersTable(props: {
 
   const GolferScoreCells = ({
     golfer,
+    tournamentRound,
   }: {
     golfer: EnhancedTournamentGolferDoc;
+    tournamentRound?: number;
   }) => {
     if (isPlayerCut(golfer.position)) {
+      if (golfer.position === "WD" && (tournamentRound ?? 5) < 3) {
+        return (
+          <>
+            <td className="text-xs">{formatToPar(golfer.today)}</td>
+            <td className="text-xs">F</td>
+          </>
+        );
+      }
       return (
         <>
           <td className="text-xs">-</td>
@@ -269,7 +279,10 @@ function TeamGolfersTable(props: {
                 {golfer.playerName}
               </td>
               <td className="px-1 text-sm">{formatToPar(golfer.score)}</td>
-              <GolferScoreCells golfer={golfer} />
+              <GolferScoreCells
+                golfer={golfer}
+                tournamentRound={props.tournament.currentRound}
+              />
               <td className="hidden border-l border-gray-300 text-xs md:table-cell">
                 {golfer.roundOne ?? "-"}
               </td>
@@ -401,7 +414,7 @@ function ScoreDisplay(props: {
       />
       <ScoreCell
         value={
-          isPlayerCut(props.team.position) && (props.team.currentRound ?? 0) > 2
+          isPlayerCut(props.team.position)
             ? "-"
             : props.tournamentComplete
               ? (props.team.earnings ?? 0) > 0
