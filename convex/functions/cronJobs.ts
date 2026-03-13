@@ -111,6 +111,296 @@ function isTerminalTournamentPosition(
 }
 
 /**
+ * Returns the best available tournament position for sync decisions.
+ */
+function getEffectiveTournamentPosition(
+  golfer: EnhancedGolfer,
+): string | undefined {
+  const position =
+    golfer.live?.current_pos ??
+    golfer.historical?.fin_text ??
+    golfer.tournamentGolfer?.position;
+  const normalized = String(position ?? "")
+    .trim()
+    .toUpperCase();
+
+  return normalized || undefined;
+}
+
+/**
+ * Returns whether the position should be treated like a non-ranking terminal state.
+ */
+function isNonRankingTournamentPosition(position: string | undefined): boolean {
+  return ["CUT", "WD", "DQ", ""].includes(position ?? "");
+}
+
+/**
+ * Returns whether the golfer withdrew or was disqualified.
+ */
+function isWithdrawnOrDisqualifiedPosition(
+  position: string | undefined,
+): boolean {
+  return position === "WD" || position === "DQ";
+}
+
+/**
+ * Returns the stored score for a completed round when available.
+ */
+function getCompletedRoundScore(
+  golfer: EnhancedGolfer,
+  roundNumber: 1 | 2 | 3 | 4,
+): number | undefined {
+  switch (roundNumber) {
+    case 1:
+      return (golfer.live?.R1 ?? 0) > 0
+        ? golfer.live?.R1
+        : (golfer.historical?.round_1?.score ?? 0) > 0
+          ? golfer.historical?.round_1?.score
+          : (golfer.tournamentGolfer?.roundOne ?? 0) > 0
+            ? golfer.tournamentGolfer?.roundOne
+            : undefined;
+    case 2:
+      return (golfer.live?.R2 ?? 0) > 0
+        ? golfer.live?.R2
+        : (golfer.historical?.round_2?.score ?? 0) > 0
+          ? golfer.historical?.round_2?.score
+          : (golfer.tournamentGolfer?.roundTwo ?? 0) > 0
+            ? golfer.tournamentGolfer?.roundTwo
+            : undefined;
+    case 3:
+      return (golfer.live?.R3 ?? 0) > 0
+        ? golfer.live?.R3
+        : (golfer.historical?.round_3?.score ?? 0) > 0
+          ? golfer.historical?.round_3?.score
+          : (golfer.tournamentGolfer?.roundThree ?? 0) > 0
+            ? golfer.tournamentGolfer?.roundThree
+            : undefined;
+    case 4:
+      return (golfer.live?.R4 ?? 0) > 0
+        ? golfer.live?.R4
+        : (golfer.historical?.round_4?.score ?? 0) > 0
+          ? golfer.historical?.round_4?.score
+          : (golfer.tournamentGolfer?.roundFour ?? 0) > 0
+            ? golfer.tournamentGolfer?.roundFour
+            : undefined;
+  }
+}
+
+/**
+ * Returns the persisted round value used by tournament sync, including WD/DQ penalties.
+ */
+function getTournamentRoundScore(args: {
+  golfer: EnhancedGolfer;
+  roundNumber: 1 | 2 | 3 | 4;
+  currentRound: number;
+  isRoundRunning: boolean;
+  coursePar: number;
+}): number | undefined {
+  const position = getEffectiveTournamentPosition(args.golfer);
+  const completedScore = getCompletedRoundScore(args.golfer, args.roundNumber);
+
+  if (isWithdrawnOrDisqualifiedPosition(position)) {
+    if (args.roundNumber >= 3) {
+      return undefined;
+    }
+    if (typeof completedScore === "number") {
+      return completedScore;
+    }
+    return args.currentRound >= args.roundNumber
+      ? args.coursePar + 8
+      : undefined;
+  }
+
+  const roundIsAvailable =
+    args.currentRound > args.roundNumber ||
+    (args.currentRound === args.roundNumber && !args.isRoundRunning);
+  if (!roundIsAvailable) {
+    return undefined;
+  }
+  if (typeof completedScore === "number") {
+    return completedScore;
+  }
+
+  return args.roundNumber <= 2 ? args.coursePar + 8 : undefined;
+}
+
+/**
+ * Returns the WD/DQ penalty for the current round when it should be surfaced immediately.
+ */
+function getCurrentRoundPenaltyToday(args: {
+  golfer: EnhancedGolfer;
+  currentRound: number;
+  isRoundRunning: boolean;
+  coursePar: number;
+}): number | undefined {
+  if (args.currentRound !== 1 && args.currentRound !== 2) {
+    return undefined;
+  }
+
+  if (
+    !isWithdrawnOrDisqualifiedPosition(
+      getEffectiveTournamentPosition(args.golfer),
+    )
+  ) {
+    return undefined;
+  }
+
+  const roundScore = getTournamentRoundScore({
+    golfer: args.golfer,
+    roundNumber: args.currentRound,
+    currentRound: args.currentRound,
+    isRoundRunning: args.isRoundRunning,
+    coursePar: args.coursePar,
+  });
+
+  return roundScore === args.coursePar + 8 ? 8 : undefined;
+}
+
+/**
+ * Returns the live today value used during tournament sync, including WD/DQ current-round penalties.
+ */
+function getTournamentTodayValue(args: {
+  golfer: EnhancedGolfer;
+  currentRound: number;
+  isRoundRunning: boolean;
+  coursePar: number;
+}): number | undefined {
+  const penaltyToday = getCurrentRoundPenaltyToday(args);
+  if (typeof penaltyToday === "number") {
+    return penaltyToday;
+  }
+
+  const position = getEffectiveTournamentPosition(args.golfer);
+  if (isNonRankingTournamentPosition(position)) {
+    return undefined;
+  }
+
+  return (
+    args.golfer.live?.today ??
+    (args.currentRound === 4
+      ? (args.golfer.historical?.round_4?.score ?? 0) -
+        (args.golfer.historical?.round_4?.course_par ?? 0)
+      : (args.golfer.tournamentGolfer?.today ?? undefined))
+  );
+}
+
+/**
+ * Returns the live thru value used during tournament sync, including WD/DQ current-round penalties.
+ */
+function getTournamentThruValue(args: {
+  golfer: EnhancedGolfer;
+  currentRound: number;
+  isRoundRunning: boolean;
+  coursePar: number;
+}): number | undefined {
+  if (typeof getCurrentRoundPenaltyToday(args) === "number") {
+    return 18;
+  }
+
+  const position = getEffectiveTournamentPosition(args.golfer);
+  if (isNonRankingTournamentPosition(position)) {
+    return undefined;
+  }
+
+  return args.golfer.live?.thru
+    ? parseInt(args.golfer.live.thru)
+    : !args.isRoundRunning
+      ? 18
+      : 0;
+}
+
+/**
+ * Returns whether a golfer should participate in team live today/thru windows.
+ */
+function shouldIncludeGolferInTeamLiveWindow(args: {
+  golfer: EnhancedGolfer;
+  currentRound: number;
+  isRoundRunning: boolean;
+  coursePar: number;
+}): boolean {
+  const position = getEffectiveTournamentPosition(args.golfer);
+
+  if (position === "CUT" || position === "") {
+    return false;
+  }
+
+  if (isWithdrawnOrDisqualifiedPosition(position)) {
+    return typeof getCurrentRoundPenaltyToday(args) === "number";
+  }
+
+  return true;
+}
+
+/**
+ * Returns whether a team has finished a round strongly enough to publish its round score.
+ */
+function isTeamRoundComplete(args: {
+  golfers: EnhancedGolfer[];
+  roundNumber: 1 | 2 | 3 | 4;
+  currentRound: number;
+  isRoundRunning: boolean;
+  coursePar: number;
+}): boolean {
+  const roundScores = args.golfers.map((golfer) =>
+    getTournamentRoundScore({
+      golfer,
+      roundNumber: args.roundNumber,
+      currentRound: args.currentRound,
+      isRoundRunning: args.isRoundRunning,
+      coursePar: args.coursePar,
+    }),
+  );
+
+  if (args.roundNumber <= 2) {
+    return roundScores.every((score) => typeof score === "number");
+  }
+
+  return roundScores.filter((score) => typeof score === "number").length >= 5;
+}
+
+/**
+ * Returns the published team round average once that round is complete.
+ */
+function getTeamRoundScore(args: {
+  golfers: EnhancedGolfer[];
+  roundNumber: 1 | 2 | 3 | 4;
+  currentRound: number;
+  isRoundRunning: boolean;
+  coursePar: number;
+}): number | undefined {
+  if (!isTeamRoundComplete(args)) {
+    return undefined;
+  }
+
+  const roundScores = args.golfers
+    .map((golfer) =>
+      getTournamentRoundScore({
+        golfer,
+        roundNumber: args.roundNumber,
+        currentRound: args.currentRound,
+        isRoundRunning: args.isRoundRunning,
+        coursePar: args.coursePar,
+      }),
+    )
+    .filter((score): score is number => typeof score === "number");
+
+  if (args.roundNumber <= 2) {
+    return roundToDecimalPlace(
+      (roundScores.reduce((sum, score) => sum + score, 0) ?? 0) / 10,
+      1,
+    );
+  }
+
+  return roundToDecimalPlace(
+    (roundScores
+      .sort((a, b) => (a === 0 ? 500 : a) - (b === 0 ? 500 : b))
+      .slice(0, 5)
+      .reduce((sum, score) => sum + score, 0) ?? 0) / 5,
+    1,
+  );
+}
+
+/**
  * Returns whether any synced golfer shows evidence that tournament play has started.
  */
 function hasGolferStartedPlay(golfer: EnhancedGolfer): boolean {
@@ -520,7 +810,7 @@ export const runCreateGroupsForNextTournament_Public: ReturnType<
  *
  * What it does:
  * - Loads the current season.
- * - Aggregates completed team results into per-tour-card totals (points, earnings, wins, top tens, cuts).
+ * - Aggregates completed team results into per-tour-card totals (points, earnings, wins, top  tens, cuts).
  * - Assigns positions within each tour (with tie prefixes) and updates playoff qualification flags.
  */
 export const recomputeStandings: ReturnType<typeof internalMutation> =
@@ -981,33 +1271,68 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
 
       for (const g of golfers) {
         if (g.golfer?._id && g.tournamentGolfer?._id) {
-          const betterGolfers = golfers.filter(
-            (og) =>
-              (["CUT", "WD", "DQ", ""].includes(og.live?.current_pos ?? "")
+          const golferPosition = getEffectiveTournamentPosition(g);
+          const roundOneScore = getTournamentRoundScore({
+            golfer: g,
+            roundNumber: 1,
+            currentRound,
+            isRoundRunning,
+            coursePar: course.par,
+          });
+          const roundTwoScore = getTournamentRoundScore({
+            golfer: g,
+            roundNumber: 2,
+            currentRound,
+            isRoundRunning,
+            coursePar: course.par,
+          });
+          const roundThreeScore = getTournamentRoundScore({
+            golfer: g,
+            roundNumber: 3,
+            currentRound,
+            isRoundRunning,
+            coursePar: course.par,
+          });
+          const roundFourScore = getTournamentRoundScore({
+            golfer: g,
+            roundNumber: 4,
+            currentRound,
+            isRoundRunning,
+            coursePar: course.par,
+          });
+          const betterGolfers = golfers.filter((og) => {
+            const otherPosition = getEffectiveTournamentPosition(og);
+            return (
+              (isNonRankingTournamentPosition(otherPosition)
                 ? 999
                 : (og.live?.current_score ?? 0)) <
-              (["CUT", "WD", "DQ", ""].includes(g.live?.current_pos ?? "")
+              (isNonRankingTournamentPosition(golferPosition)
                 ? 999
-                : (g.live?.current_score ?? 0)),
-          ).length;
-          const betterGolfersPast = golfers.filter(
-            (og) =>
-              (["CUT", "WD", "DQ", ""].includes(og.live?.current_pos ?? "")
+                : (g.live?.current_score ?? 0))
+            );
+          }).length;
+          const betterGolfersPast = golfers.filter((og) => {
+            const otherPosition = getEffectiveTournamentPosition(og);
+            return (
+              (isNonRankingTournamentPosition(otherPosition)
                 ? 999
                 : (og.live?.current_score ?? 0) - (og.live?.today ?? 0)) <
-              (["CUT", "WD", "DQ", ""].includes(g.live?.current_pos ?? "")
+              (isNonRankingTournamentPosition(golferPosition)
                 ? 999
-                : (g.live?.current_score ?? 0) - (g.live?.today ?? 0)),
-          ).length;
-          const tiedGolfers = golfers.filter(
-            (og) =>
-              (["CUT", "WD", "DQ", ""].includes(og.live?.current_pos ?? "")
+                : (g.live?.current_score ?? 0) - (g.live?.today ?? 0))
+            );
+          }).length;
+          const tiedGolfers = golfers.filter((og) => {
+            const otherPosition = getEffectiveTournamentPosition(og);
+            return (
+              (isNonRankingTournamentPosition(otherPosition)
                 ? 999
                 : (og.live?.current_score ?? 0)) ===
-              (["CUT", "WD", "DQ", ""].includes(g.live?.current_pos ?? "")
+              (isNonRankingTournamentPosition(golferPosition)
                 ? 999
-                : (g.live?.current_score ?? 0)),
-          ).length;
+                : (g.live?.current_score ?? 0))
+            );
+          }).length;
           await ctx.runMutation(
             internal.functions.golfers.updateTournamentGolfer,
             {
@@ -1015,10 +1340,8 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                 _id: g.tournamentGolfer._id,
                 tournamentId: tournament._id,
                 golferId: g.golfer._id,
-                position: ["CUT", "WD", "DQ", ""].includes(
-                  g.live?.current_pos ?? "",
-                )
-                  ? g.live?.current_pos
+                position: isNonRankingTournamentPosition(golferPosition)
+                  ? golferPosition
                   : tiedGolfers > 1
                     ? `T${betterGolfers + 1}`
                     : `${betterGolfers + 1}`,
@@ -1046,78 +1369,22 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                 topTen:
                   g.live?.top_10 ?? g.tournamentGolfer?.topTen ?? undefined,
                 win: g.live?.win ?? g.tournamentGolfer?.win ?? undefined,
-                today: ["CUT", "WD", "DQ", ""].includes(
-                  g.live?.current_pos ??
-                    g.historical?.fin_text ??
-                    g.tournamentGolfer?.position ??
-                    "",
-                )
-                  ? undefined
-                  : (g.live?.today ??
-                    (currentRound === 4
-                      ? (g.historical?.round_4?.score ?? 0) -
-                        (g.historical?.round_4?.course_par ?? 0)
-                      : (g.tournamentGolfer?.today ?? undefined))),
-                thru: ["CUT", "WD", "DQ", ""].includes(
-                  g.live?.current_pos ??
-                    g.historical?.fin_text ??
-                    g.tournamentGolfer?.position ??
-                    "",
-                )
-                  ? undefined
-                  : g.live?.thru
-                    ? parseInt(g.live?.thru)
-                    : !isRoundRunning
-                      ? 18
-                      : 0,
-                roundOne:
-                  currentRound > 1 || (currentRound === 1 && !isRoundRunning)
-                    ? g.live?.R1 && g.live.R1 > 0
-                      ? g.live.R1
-                      : g.historical?.round_1?.score &&
-                          g.historical.round_1.score > 0
-                        ? g.historical.round_1.score
-                        : g.tournamentGolfer?.roundOne &&
-                            g.tournamentGolfer.roundOne > 0
-                          ? g.tournamentGolfer.roundOne
-                          : course.par + 8
-                    : undefined,
-                roundTwo:
-                  currentRound > 2 || (currentRound === 2 && !isRoundRunning)
-                    ? g.live?.R2 && g.live.R2 > 0
-                      ? g.live.R2
-                      : g.historical?.round_2?.score &&
-                          g.historical.round_2.score > 0
-                        ? g.historical.round_2.score
-                        : g.tournamentGolfer?.roundTwo &&
-                            g.tournamentGolfer.roundTwo > 0
-                          ? g.tournamentGolfer.roundTwo
-                          : course.par + 8
-                    : undefined,
-                roundThree:
-                  currentRound > 3 || (currentRound === 3 && !isRoundRunning)
-                    ? g.live?.R3 && g.live.R3 > 0
-                      ? g.live.R3
-                      : g.historical?.round_3?.score &&
-                          g.historical.round_3.score > 0
-                        ? g.historical.round_3.score
-                        : g.tournamentGolfer?.roundThree &&
-                            g.tournamentGolfer.roundThree > 0
-                          ? g.tournamentGolfer.roundThree
-                          : undefined
-                    : undefined,
-                roundFour:
-                  currentRound > 4 || (currentRound === 4 && !isRoundRunning)
-                    ? g.live?.R4 && g.live.R4 > 0
-                      ? g.live.R4
-                      : g.historical?.round_4?.score &&
-                          g.historical.round_4.score > 0
-                        ? g.historical.round_4.score
-                        : g.tournamentGolfer?.roundFour &&
-                            g.tournamentGolfer.roundFour > 0
-                          ? g.tournamentGolfer.roundFour
-                          : undefined
-                    : undefined,
+                today: getTournamentTodayValue({
+                  golfer: g,
+                  currentRound,
+                  isRoundRunning,
+                  coursePar: course.par,
+                }),
+                thru: getTournamentThruValue({
+                  golfer: g,
+                  currentRound,
+                  isRoundRunning,
+                  coursePar: course.par,
+                }),
+                roundOne: roundOneScore,
+                roundTwo: roundTwoScore,
+                roundThree: roundThreeScore,
+                roundFour: roundFourScore,
                 roundOneTeeTime:
                   g.field?.teetimes.find(
                     (tt: {
@@ -1253,74 +1520,34 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                 g.live?.thru === "0"
               ),
           ).length > 0;
-        const roundOne =
-          currentRound > 1 || (currentRound === 1 && !isRoundRunning)
-            ? roundToDecimalPlace(
-                (t.golfers
-                  .map(
-                    (x) =>
-                      x.live?.R1 ??
-                      x.historical?.round_1?.score ??
-                      x.tournamentGolfer?.roundOne,
-                  )
-                  .reduce((sum, val) => (sum ?? 0) + (val ?? 0), 0) ?? 0) / 10,
-                1,
-              )
-            : undefined;
-        const roundTwo =
-          currentRound > 2 || (currentRound === 2 && !isRoundRunning)
-            ? roundToDecimalPlace(
-                (t.golfers
-                  .map(
-                    (x) =>
-                      x.live?.R2 ??
-                      x.historical?.round_2?.score ??
-                      x.tournamentGolfer?.roundTwo,
-                  )
-                  .reduce((sum, val) => (sum ?? 0) + (val ?? 0), 0) ?? 0) / 10,
-                1,
-              )
-            : undefined;
-        const roundThree =
-          currentRound > 3 || (currentRound === 3 && !isRoundRunning)
-            ? roundToDecimalPlace(
-                (t.golfers
-                  .map(
-                    (x) =>
-                      x.live?.R3 ??
-                      x.historical?.round_3?.score ??
-                      x.tournamentGolfer?.roundThree,
-                  )
-                  .sort(
-                    (a, b) =>
-                      (a === 0 ? 500 : (a ?? 500)) -
-                      (b === 0 ? 500 : (b ?? 500)),
-                  )
-                  .slice(0, 5)
-                  .reduce((sum, val) => (sum ?? 0) + (val ?? 0), 0) ?? 0) / 5,
-                1,
-              )
-            : undefined;
-        const roundFour =
-          currentRound > 4 || (currentRound === 4 && !isRoundRunning)
-            ? roundToDecimalPlace(
-                (t.golfers
-                  .map(
-                    (x) =>
-                      x.live?.R4 ??
-                      x.historical?.round_4?.score ??
-                      x.tournamentGolfer?.roundFour,
-                  )
-                  .sort(
-                    (a, b) =>
-                      (a === 0 ? 500 : (a ?? 500)) -
-                      (b === 0 ? 500 : (b ?? 500)),
-                  )
-                  .slice(0, 5)
-                  .reduce((sum, val) => (sum ?? 0) + (val ?? 0), 0) ?? 0) / 5,
-                1,
-              )
-            : undefined;
+        const roundOne = getTeamRoundScore({
+          golfers: t.golfers,
+          roundNumber: 1,
+          currentRound,
+          isRoundRunning,
+          coursePar: course.par,
+        });
+        const roundTwo = getTeamRoundScore({
+          golfers: t.golfers,
+          roundNumber: 2,
+          currentRound,
+          isRoundRunning,
+          coursePar: course.par,
+        });
+        const roundThree = getTeamRoundScore({
+          golfers: t.golfers,
+          roundNumber: 3,
+          currentRound,
+          isRoundRunning,
+          coursePar: course.par,
+        });
+        const roundFour = getTeamRoundScore({
+          golfers: t.golfers,
+          roundNumber: 4,
+          currentRound,
+          isRoundRunning,
+          coursePar: course.par,
+        });
 
         updatedTeams.push({
           ...t,
@@ -1331,12 +1558,39 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
               (roundFour && roundFour > 0 ? roundFour - course.par : 0) +
               (isRoundRunning
                 ? (t.golfers
+                    .filter((g) =>
+                      shouldIncludeGolferInTeamLiveWindow({
+                        golfer: g,
+                        currentRound,
+                        isRoundRunning,
+                        coursePar: course.par,
+                      }),
+                    )
                     .sort(
-                      (a, b) => (a.live?.today ?? 500) - (b.live?.today ?? 500),
+                      (a, b) =>
+                        (getTournamentTodayValue({
+                          golfer: a,
+                          currentRound,
+                          isRoundRunning,
+                          coursePar: course.par,
+                        }) ?? 500) -
+                        (getTournamentTodayValue({
+                          golfer: b,
+                          currentRound,
+                          isRoundRunning,
+                          coursePar: course.par,
+                        }) ?? 500),
                     )
                     .slice(0, currentRound >= 3 ? 5 : 10)
                     .reduce(
-                      (sum, val) => (sum ?? 0) + (val.live?.today ?? 0),
+                      (sum, val) =>
+                        (sum ?? 0) +
+                        (getTournamentTodayValue({
+                          golfer: val,
+                          currentRound,
+                          isRoundRunning,
+                          coursePar: course.par,
+                        }) ?? 0),
                       0,
                     ) ?? 0) / (currentRound >= 3 ? 5 : 10)
                 : 0),
@@ -1344,56 +1598,80 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           ),
           today: roundToDecimalPlace(
             (t.golfers
-              .filter(
-                (g) =>
-                  !["CUT", "WD", "DQ", ""].includes(
-                    g.tournamentGolfer?.position ?? "",
-                  ),
+              .filter((g) =>
+                shouldIncludeGolferInTeamLiveWindow({
+                  golfer: g,
+                  currentRound,
+                  isRoundRunning,
+                  coursePar: course.par,
+                }),
               )
               .sort((a, b) => {
                 const aToday =
-                  a.live?.today ??
-                  (a.historical?.round_4
-                    ? (a.historical.round_4.score ?? 0) -
-                      (a.historical.round_4.course_par ?? 0)
-                    : 500);
+                  getTournamentTodayValue({
+                    golfer: a,
+                    currentRound,
+                    isRoundRunning,
+                    coursePar: course.par,
+                  }) ?? 500;
                 const bToday =
-                  b.live?.today ??
-                  (b.historical?.round_4
-                    ? (b.historical.round_4.score ?? 0) -
-                      (b.historical.round_4.course_par ?? 0)
-                    : 500);
+                  getTournamentTodayValue({
+                    golfer: b,
+                    currentRound,
+                    isRoundRunning,
+                    coursePar: course.par,
+                  }) ?? 500;
                 return aToday - bToday;
               })
               .slice(0, currentRound >= 3 ? 5 : 10)
               .reduce(
                 (sum, val) =>
                   (sum ?? 0) +
-                  (val.live?.today ??
-                    (val.historical?.round_4
-                      ? (val.historical.round_4.score ?? 0) -
-                        (val.historical.round_4.course_par ?? 0)
-                      : 0)),
+                  (getTournamentTodayValue({
+                    golfer: val,
+                    currentRound,
+                    isRoundRunning,
+                    coursePar: course.par,
+                  }) ?? 0),
                 0,
               ) ?? 0) / (currentRound >= 3 ? 5 : 10),
             1,
           ),
           thru: roundToDecimalPlace(
             (t.golfers
-              .filter(
-                (g) =>
-                  !["CUT", "WD", "DQ", ""].includes(
-                    g.tournamentGolfer?.position ?? "",
-                  ),
+              .filter((g) =>
+                shouldIncludeGolferInTeamLiveWindow({
+                  golfer: g,
+                  currentRound,
+                  isRoundRunning,
+                  coursePar: course.par,
+                }),
               )
-              .sort((a, b) => (a.live?.today ?? 500) - (b.live?.today ?? 500))
+              .sort(
+                (a, b) =>
+                  (getTournamentTodayValue({
+                    golfer: a,
+                    currentRound,
+                    isRoundRunning,
+                    coursePar: course.par,
+                  }) ?? 500) -
+                  (getTournamentTodayValue({
+                    golfer: b,
+                    currentRound,
+                    isRoundRunning,
+                    coursePar: course.par,
+                  }) ?? 500),
+              )
               .slice(0, currentRound >= 3 ? 5 : 10)
               .reduce(
                 (sum, val) =>
                   (sum ?? 0) +
-                  ((val.live?.thru === "F"
-                    ? 18
-                    : parseInt(val.live?.thru ?? "0")) ?? 0),
+                  (getTournamentThruValue({
+                    golfer: val,
+                    currentRound,
+                    isRoundRunning,
+                    coursePar: course.par,
+                  }) ?? 0),
                 0,
               ) ?? 0) / (currentRound >= 3 ? 5 : 10),
             1,
@@ -1871,33 +2149,68 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
 
       for (const g of golfers) {
         if (g.golfer?._id && g.tournamentGolfer?._id) {
-          const betterGolfers = golfers.filter(
-            (og) =>
-              (["CUT", "WD", "DQ", ""].includes(og.live?.current_pos ?? "")
+          const golferPosition = getEffectiveTournamentPosition(g);
+          const roundOneScore = getTournamentRoundScore({
+            golfer: g,
+            roundNumber: 1,
+            currentRound,
+            isRoundRunning,
+            coursePar: course.par,
+          });
+          const roundTwoScore = getTournamentRoundScore({
+            golfer: g,
+            roundNumber: 2,
+            currentRound,
+            isRoundRunning,
+            coursePar: course.par,
+          });
+          const roundThreeScore = getTournamentRoundScore({
+            golfer: g,
+            roundNumber: 3,
+            currentRound,
+            isRoundRunning,
+            coursePar: course.par,
+          });
+          const roundFourScore = getTournamentRoundScore({
+            golfer: g,
+            roundNumber: 4,
+            currentRound,
+            isRoundRunning,
+            coursePar: course.par,
+          });
+          const betterGolfers = golfers.filter((og) => {
+            const otherPosition = getEffectiveTournamentPosition(og);
+            return (
+              (isNonRankingTournamentPosition(otherPosition)
                 ? 999
                 : (og.live?.current_score ?? 0)) <
-              (["CUT", "WD", "DQ", ""].includes(g.live?.current_pos ?? "")
+              (isNonRankingTournamentPosition(golferPosition)
                 ? 999
-                : (g.live?.current_score ?? 0)),
-          ).length;
-          const betterGolfersPast = golfers.filter(
-            (og) =>
-              (["CUT", "WD", "DQ", ""].includes(og.live?.current_pos ?? "")
+                : (g.live?.current_score ?? 0))
+            );
+          }).length;
+          const betterGolfersPast = golfers.filter((og) => {
+            const otherPosition = getEffectiveTournamentPosition(og);
+            return (
+              (isNonRankingTournamentPosition(otherPosition)
                 ? 999
                 : (og.live?.current_score ?? 0) - (og.live?.today ?? 0)) <
-              (["CUT", "WD", "DQ", ""].includes(g.live?.current_pos ?? "")
+              (isNonRankingTournamentPosition(golferPosition)
                 ? 999
-                : (g.live?.current_score ?? 0) - (g.live?.today ?? 0)),
-          ).length;
-          const tiedGolfers = golfers.filter(
-            (og) =>
-              (["CUT", "WD", "DQ", ""].includes(og.live?.current_pos ?? "")
+                : (g.live?.current_score ?? 0) - (g.live?.today ?? 0))
+            );
+          }).length;
+          const tiedGolfers = golfers.filter((og) => {
+            const otherPosition = getEffectiveTournamentPosition(og);
+            return (
+              (isNonRankingTournamentPosition(otherPosition)
                 ? 999
                 : (og.live?.current_score ?? 0)) ===
-              (["CUT", "WD", "DQ", ""].includes(g.live?.current_pos ?? "")
+              (isNonRankingTournamentPosition(golferPosition)
                 ? 999
-                : (g.live?.current_score ?? 0)),
-          ).length;
+                : (g.live?.current_score ?? 0))
+            );
+          }).length;
           await ctx.runMutation(
             internal.functions.golfers.updateTournamentGolfer,
             {
@@ -1905,10 +2218,8 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                 _id: g.tournamentGolfer._id,
                 tournamentId: tournament._id,
                 golferId: g.golfer._id,
-                position: ["CUT", "WD", "DQ", ""].includes(
-                  g.live?.current_pos ?? "",
-                )
-                  ? g.live?.current_pos
+                position: isNonRankingTournamentPosition(golferPosition)
+                  ? golferPosition
                   : tiedGolfers > 1
                     ? `T${betterGolfers + 1}`
                     : `${betterGolfers + 1}`,
@@ -1936,78 +2247,22 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                 topTen:
                   g.live?.top_10 ?? g.tournamentGolfer?.topTen ?? undefined,
                 win: g.live?.win ?? g.tournamentGolfer?.win ?? undefined,
-                today: ["CUT", "WD", "DQ", ""].includes(
-                  g.live?.current_pos ??
-                    g.historical?.fin_text ??
-                    g.tournamentGolfer?.position ??
-                    "",
-                )
-                  ? undefined
-                  : (g.live?.today ??
-                    (currentRound === 4
-                      ? (g.historical?.round_4?.score ?? 0) -
-                        (g.historical?.round_4?.course_par ?? 0)
-                      : (g.tournamentGolfer?.today ?? undefined))),
-                thru: ["CUT", "WD", "DQ", ""].includes(
-                  g.live?.current_pos ??
-                    g.historical?.fin_text ??
-                    g.tournamentGolfer?.position ??
-                    "",
-                )
-                  ? undefined
-                  : g.live?.thru
-                    ? parseInt(g.live?.thru)
-                    : !isRoundRunning
-                      ? 18
-                      : 0,
-                roundOne:
-                  currentRound > 1 || (currentRound === 1 && !isRoundRunning)
-                    ? g.live?.R1 && g.live.R1 > 0
-                      ? g.live.R1
-                      : g.historical?.round_1?.score &&
-                          g.historical.round_1.score > 0
-                        ? g.historical.round_1.score
-                        : g.tournamentGolfer?.roundOne &&
-                            g.tournamentGolfer.roundOne > 0
-                          ? g.tournamentGolfer.roundOne
-                          : course.par + 8
-                    : undefined,
-                roundTwo:
-                  currentRound > 2 || (currentRound === 2 && !isRoundRunning)
-                    ? g.live?.R2 && g.live.R2 > 0
-                      ? g.live.R2
-                      : g.historical?.round_2?.score &&
-                          g.historical.round_2.score > 0
-                        ? g.historical.round_2.score
-                        : g.tournamentGolfer?.roundTwo &&
-                            g.tournamentGolfer.roundTwo > 0
-                          ? g.tournamentGolfer.roundTwo
-                          : course.par + 8
-                    : undefined,
-                roundThree:
-                  currentRound > 3 || (currentRound === 3 && !isRoundRunning)
-                    ? g.live?.R3 && g.live.R3 > 0
-                      ? g.live.R3
-                      : g.historical?.round_3?.score &&
-                          g.historical.round_3.score > 0
-                        ? g.historical.round_3.score
-                        : g.tournamentGolfer?.roundThree &&
-                            g.tournamentGolfer.roundThree > 0
-                          ? g.tournamentGolfer.roundThree
-                          : undefined
-                    : undefined,
-                roundFour:
-                  currentRound > 4 || (currentRound === 4 && !isRoundRunning)
-                    ? g.live?.R4 && g.live.R4 > 0
-                      ? g.live.R4
-                      : g.historical?.round_4?.score &&
-                          g.historical.round_4.score > 0
-                        ? g.historical.round_4.score
-                        : g.tournamentGolfer?.roundFour &&
-                            g.tournamentGolfer.roundFour > 0
-                          ? g.tournamentGolfer.roundFour
-                          : undefined
-                    : undefined,
+                today: getTournamentTodayValue({
+                  golfer: g,
+                  currentRound,
+                  isRoundRunning,
+                  coursePar: course.par,
+                }),
+                thru: getTournamentThruValue({
+                  golfer: g,
+                  currentRound,
+                  isRoundRunning,
+                  coursePar: course.par,
+                }),
+                roundOne: roundOneScore,
+                roundTwo: roundTwoScore,
+                roundThree: roundThreeScore,
+                roundFour: roundFourScore,
                 roundOneTeeTime:
                   g.field?.teetimes.find(
                     (tt: {
@@ -2143,74 +2398,34 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                 g.live?.thru === "0"
               ),
           ).length > 0;
-        const roundOne =
-          currentRound > 1 || (currentRound === 1 && !isRoundRunning)
-            ? roundToDecimalPlace(
-                (t.golfers
-                  .map(
-                    (x) =>
-                      x.live?.R1 ??
-                      x.historical?.round_1?.score ??
-                      x.tournamentGolfer?.roundOne,
-                  )
-                  .reduce((sum, val) => (sum ?? 0) + (val ?? 0), 0) ?? 0) / 10,
-                1,
-              )
-            : undefined;
-        const roundTwo =
-          currentRound > 2 || (currentRound === 2 && !isRoundRunning)
-            ? roundToDecimalPlace(
-                (t.golfers
-                  .map(
-                    (x) =>
-                      x.live?.R2 ??
-                      x.historical?.round_2?.score ??
-                      x.tournamentGolfer?.roundTwo,
-                  )
-                  .reduce((sum, val) => (sum ?? 0) + (val ?? 0), 0) ?? 0) / 10,
-                1,
-              )
-            : undefined;
-        const roundThree =
-          currentRound > 3 || (currentRound === 3 && !isRoundRunning)
-            ? roundToDecimalPlace(
-                (t.golfers
-                  .map(
-                    (x) =>
-                      x.live?.R3 ??
-                      x.historical?.round_3?.score ??
-                      x.tournamentGolfer?.roundThree,
-                  )
-                  .sort(
-                    (a, b) =>
-                      (a === 0 ? 500 : (a ?? 500)) -
-                      (b === 0 ? 500 : (b ?? 500)),
-                  )
-                  .slice(0, 5)
-                  .reduce((sum, val) => (sum ?? 0) + (val ?? 0), 0) ?? 0) / 5,
-                1,
-              )
-            : undefined;
-        const roundFour =
-          currentRound > 4 || (currentRound === 4 && !isRoundRunning)
-            ? roundToDecimalPlace(
-                (t.golfers
-                  .map(
-                    (x) =>
-                      x.live?.R4 ??
-                      x.historical?.round_4?.score ??
-                      x.tournamentGolfer?.roundFour,
-                  )
-                  .sort(
-                    (a, b) =>
-                      (a === 0 ? 500 : (a ?? 500)) -
-                      (b === 0 ? 500 : (b ?? 500)),
-                  )
-                  .slice(0, 5)
-                  .reduce((sum, val) => (sum ?? 0) + (val ?? 0), 0) ?? 0) / 5,
-                1,
-              )
-            : undefined;
+        const roundOne = getTeamRoundScore({
+          golfers: t.golfers,
+          roundNumber: 1,
+          currentRound,
+          isRoundRunning,
+          coursePar: course.par,
+        });
+        const roundTwo = getTeamRoundScore({
+          golfers: t.golfers,
+          roundNumber: 2,
+          currentRound,
+          isRoundRunning,
+          coursePar: course.par,
+        });
+        const roundThree = getTeamRoundScore({
+          golfers: t.golfers,
+          roundNumber: 3,
+          currentRound,
+          isRoundRunning,
+          coursePar: course.par,
+        });
+        const roundFour = getTeamRoundScore({
+          golfers: t.golfers,
+          roundNumber: 4,
+          currentRound,
+          isRoundRunning,
+          coursePar: course.par,
+        });
 
         updatedTeams.push({
           ...t,
@@ -2221,12 +2436,39 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
               (roundFour && roundFour > 0 ? roundFour - course.par : 0) +
               (isRoundRunning
                 ? (t.golfers
+                    .filter((g) =>
+                      shouldIncludeGolferInTeamLiveWindow({
+                        golfer: g,
+                        currentRound,
+                        isRoundRunning,
+                        coursePar: course.par,
+                      }),
+                    )
                     .sort(
-                      (a, b) => (a.live?.today ?? 500) - (b.live?.today ?? 500),
+                      (a, b) =>
+                        (getTournamentTodayValue({
+                          golfer: a,
+                          currentRound,
+                          isRoundRunning,
+                          coursePar: course.par,
+                        }) ?? 500) -
+                        (getTournamentTodayValue({
+                          golfer: b,
+                          currentRound,
+                          isRoundRunning,
+                          coursePar: course.par,
+                        }) ?? 500),
                     )
                     .slice(0, currentRound >= 3 ? 5 : 10)
                     .reduce(
-                      (sum, val) => (sum ?? 0) + (val.live?.today ?? 0),
+                      (sum, val) =>
+                        (sum ?? 0) +
+                        (getTournamentTodayValue({
+                          golfer: val,
+                          currentRound,
+                          isRoundRunning,
+                          coursePar: course.par,
+                        }) ?? 0),
                       0,
                     ) ?? 0) / (currentRound >= 3 ? 5 : 10)
                 : 0),
@@ -2234,56 +2476,80 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           ),
           today: roundToDecimalPlace(
             (t.golfers
-              .filter(
-                (g) =>
-                  !["CUT", "WD", "DQ", ""].includes(
-                    g.tournamentGolfer?.position ?? "",
-                  ),
+              .filter((g) =>
+                shouldIncludeGolferInTeamLiveWindow({
+                  golfer: g,
+                  currentRound,
+                  isRoundRunning,
+                  coursePar: course.par,
+                }),
               )
               .sort((a, b) => {
                 const aToday =
-                  a.live?.today ??
-                  (a.historical?.round_4
-                    ? (a.historical.round_4.score ?? 0) -
-                      (a.historical.round_4.course_par ?? 0)
-                    : 500);
+                  getTournamentTodayValue({
+                    golfer: a,
+                    currentRound,
+                    isRoundRunning,
+                    coursePar: course.par,
+                  }) ?? 500;
                 const bToday =
-                  b.live?.today ??
-                  (b.historical?.round_4
-                    ? (b.historical.round_4.score ?? 0) -
-                      (b.historical.round_4.course_par ?? 0)
-                    : 500);
+                  getTournamentTodayValue({
+                    golfer: b,
+                    currentRound,
+                    isRoundRunning,
+                    coursePar: course.par,
+                  }) ?? 500;
                 return aToday - bToday;
               })
               .slice(0, currentRound >= 3 ? 5 : 10)
               .reduce(
                 (sum, val) =>
                   (sum ?? 0) +
-                  (val.live?.today ??
-                    (val.historical?.round_4
-                      ? (val.historical.round_4.score ?? 0) -
-                        (val.historical.round_4.course_par ?? 0)
-                      : 0)),
+                  (getTournamentTodayValue({
+                    golfer: val,
+                    currentRound,
+                    isRoundRunning,
+                    coursePar: course.par,
+                  }) ?? 0),
                 0,
               ) ?? 0) / (currentRound >= 3 ? 5 : 10),
             1,
           ),
           thru: roundToDecimalPlace(
             (t.golfers
-              .filter(
-                (g) =>
-                  !["CUT", "WD", "DQ", ""].includes(
-                    g.tournamentGolfer?.position ?? "",
-                  ),
+              .filter((g) =>
+                shouldIncludeGolferInTeamLiveWindow({
+                  golfer: g,
+                  currentRound,
+                  isRoundRunning,
+                  coursePar: course.par,
+                }),
               )
-              .sort((a, b) => (a.live?.today ?? 500) - (b.live?.today ?? 500))
+              .sort(
+                (a, b) =>
+                  (getTournamentTodayValue({
+                    golfer: a,
+                    currentRound,
+                    isRoundRunning,
+                    coursePar: course.par,
+                  }) ?? 500) -
+                  (getTournamentTodayValue({
+                    golfer: b,
+                    currentRound,
+                    isRoundRunning,
+                    coursePar: course.par,
+                  }) ?? 500),
+              )
               .slice(0, currentRound >= 3 ? 5 : 10)
               .reduce(
                 (sum, val) =>
                   (sum ?? 0) +
-                  ((val.live?.thru === "F"
-                    ? 18
-                    : parseInt(val.live?.thru ?? "0")) ?? 0),
+                  (getTournamentThruValue({
+                    golfer: val,
+                    currentRound,
+                    isRoundRunning,
+                    coursePar: course.par,
+                  }) ?? 0),
                 0,
               ) ?? 0) / (currentRound >= 3 ? 5 : 10),
             1,

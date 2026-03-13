@@ -379,6 +379,7 @@ function ScoreDisplay(props: {
     roundTwo?: number | undefined;
     roundThree?: number | undefined;
     roundFour?: number | undefined;
+    currentRound?: number | undefined;
   };
   tournamentComplete: boolean;
 }) {
@@ -400,7 +401,7 @@ function ScoreDisplay(props: {
       />
       <ScoreCell
         value={
-          isPlayerCut(props.team.position)
+          isPlayerCut(props.team.position) && (props.team.currentRound ?? 0) > 2
             ? "-"
             : props.tournamentComplete
               ? (props.team.earnings ?? 0) > 0
