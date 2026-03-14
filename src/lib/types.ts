@@ -345,7 +345,7 @@ export type LeaderboardPgaRow = {
   worldRank: number | null;
 
   country: string | null;
-  teeTimeDisplay?: string | null;
+  teeTimeDisplay?: string | number | null;
 };
 
 export type LeaderboardTourCardLite = {
@@ -384,7 +384,7 @@ export type LeaderboardTeamRow = {
   tourCard: LeaderboardTourCardLite;
 
   championsCount?: number | null;
-  teeTimeDisplay?: string | null;
+  teeTimeDisplay?: string | number | null;
 };
 
 export type LeaderboardViewModelReady = {

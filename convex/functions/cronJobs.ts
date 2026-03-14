@@ -2434,44 +2434,6 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
               (roundTwo && roundTwo > 0 ? roundTwo - course.par : 0) +
               (roundThree && roundThree > 0 ? roundThree - course.par : 0) +
               (roundFour && roundFour > 0 ? roundFour - course.par : 0) +
-              (isRoundRunning
-                ? (t.golfers
-                    .filter((g) =>
-                      shouldIncludeGolferInTeamLiveWindow({
-                        golfer: g,
-                        currentRound,
-                        isRoundRunning,
-                        coursePar: course.par,
-                      }),
-                    )
-                    .sort(
-                      (a, b) =>
-                        (getTournamentTodayValue({
-                          golfer: a,
-                          currentRound,
-                          isRoundRunning,
-                          coursePar: course.par,
-                        }) ?? 500) -
-                        (getTournamentTodayValue({
-                          golfer: b,
-                          currentRound,
-                          isRoundRunning,
-                          coursePar: course.par,
-                        }) ?? 500),
-                    )
-                    .slice(0, currentRound >= 3 ? 5 : 10)
-                    .reduce(
-                      (sum, val) =>
-                        (sum ?? 0) +
-                        (getTournamentTodayValue({
-                          golfer: val,
-                          currentRound,
-                          isRoundRunning,
-                          coursePar: course.par,
-                        }) ?? 0),
-                      0,
-                    ) ?? 0) / (currentRound >= 3 ? 5 : 10)
-                : 0),
             1,
           ),
           today: roundToDecimalPlace(

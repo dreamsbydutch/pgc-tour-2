@@ -171,6 +171,87 @@ export function formatDateTime(ms: number | undefined): string {
   }).format(ms);
 }
 
+function normalizeEpochTimestamp(value: number): number | null {
+  const normalized = Math.trunc(value);
+
+  if (normalized >= 1_000_000_000 && normalized < 100_000_000_000) {
+    return normalized * 1000;
+  }
+
+  if (normalized >= 100_000_000_000 && normalized < 10_000_000_000_000) {
+    return normalized;
+  }
+
+  return null;
+}
+
+/**
+ * Parses mixed tee-time values into a comparable epoch-like millisecond value.
+ *
+ * Supports numeric epochs, numeric epoch strings, ISO/SQL datetimes, and time-only strings.
+ */
+export function parseTeeTimeValueToMs(
+  value: string | number | null | undefined,
+): number | null {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? normalizeEpochTimestamp(value) : null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/^\d+$/.test(trimmed)) {
+    const parsedNumber = Number(trimmed);
+    if (Number.isFinite(parsedNumber)) {
+      const normalizedEpoch = normalizeEpochTimestamp(parsedNumber);
+      if (normalizedEpoch !== null) {
+        return normalizedEpoch;
+      }
+    }
+  }
+
+  const ampmMatch = trimmed.match(/^\s*(\d{1,2}):(\d{2})\s*([AP]M)\s*$/i);
+  if (ampmMatch) {
+    const hour12 = Number(ampmMatch[1]);
+    const minute = Number(ampmMatch[2]);
+    const suffix = ampmMatch[3].toUpperCase();
+
+    if (
+      Number.isInteger(hour12) &&
+      hour12 >= 1 &&
+      hour12 <= 12 &&
+      Number.isInteger(minute) &&
+      minute >= 0 &&
+      minute <= 59
+    ) {
+      const hour24 = suffix === "PM" ? (hour12 % 12) + 12 : hour12 % 12;
+      return Date.UTC(2000, 0, 1, hour24, minute, 0, 0);
+    }
+  }
+
+  const timeOnlyMatch = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (timeOnlyMatch) {
+    const hour24 = Number(timeOnlyMatch[1]);
+    const minute = Number(timeOnlyMatch[2]);
+
+    if (
+      Number.isInteger(hour24) &&
+      hour24 >= 0 &&
+      hour24 <= 23 &&
+      Number.isInteger(minute) &&
+      minute >= 0 &&
+      minute <= 59
+    ) {
+      return Date.UTC(2000, 0, 1, hour24, minute, 0, 0);
+    }
+  }
+
+  const parsed = Date.parse(trimmed);
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+}
+
 /**
  * Formats a tee time string (ISO, 24h, or already AM/PM) into a compact `h:mm AM/PM` display.
  *
@@ -180,9 +261,20 @@ export function formatDateTime(ms: number | undefined): string {
  * formatTeeTimeTimeOfDay("09:40") // "9:40 AM"
  */
 export function formatTeeTimeTimeOfDay(
-  value: string | null | undefined,
+  value: string | number | null | undefined,
 ): string | null {
   if (!value) return null;
+
+  if (typeof value === "number") {
+    const numericTimestamp = parseTeeTimeValueToMs(value);
+    if (numericTimestamp === null) return null;
+
+    return new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(numericTimestamp);
+  }
 
   const trimmed = value ? value.trim() : "";
   if (!trimmed) return null;
@@ -209,14 +301,14 @@ export function formatTeeTimeTimeOfDay(
     return `${hour12}:${minute} ${suffix}`;
   }
 
-  const parsed = new Date(trimmed);
-  if (Number.isNaN(parsed.getTime())) return trimmed;
+  const numericTimestamp = parseTeeTimeValueToMs(trimmed);
+  if (numericTimestamp === null) return trimmed;
 
   return new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
-  }).format(parsed);
+  }).format(numericTimestamp);
 }
 
 /**
@@ -1363,7 +1455,7 @@ export function sortItems<T>(
 
 export function formatLeaderboardThruDisplay(args: {
   thru: number | null | undefined;
-  teeTimeDisplay?: string | null | undefined;
+  teeTimeDisplay?: string | number | null | undefined;
 }): string {
   if (args.thru === 18) return "F";
   if (args.thru == null || args.thru === 0) {
