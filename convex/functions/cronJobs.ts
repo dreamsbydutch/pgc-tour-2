@@ -459,6 +459,259 @@ function hasGolferCompletedTournament(golfer: EnhancedGolfer): boolean {
 }
 
 /**
+ * Derives the persisted golfer round as a monotonic state machine.
+ */
+export function getTournamentGolferSyncRound(golfer: EnhancedGolfer): number {
+  const storedRound = Number.isFinite(golfer.tournamentGolfer?.round)
+    ? Math.max(0, Math.min(5, Math.trunc(golfer.tournamentGolfer?.round ?? 0)))
+    : 0;
+  if (storedRound >= 5) {
+    return 5;
+  }
+
+  const position = getEffectiveTournamentPosition(golfer);
+  if (isTerminalTournamentPosition(position)) {
+    return 5;
+  }
+
+  const liveRound =
+    typeof golfer.live?.round === "number" && Number.isFinite(golfer.live.round)
+      ? golfer.live.round
+      : 0;
+  const thru = getHoleCount(golfer.live?.thru);
+  const roundFourCompleted =
+    typeof getCompletedRoundScore(golfer, 4) === "number" ||
+    (liveRound >= 4 && thru === 18);
+
+  let derivedRound = 0;
+  if (roundFourCompleted) {
+    derivedRound = 5;
+  } else if (liveRound >= 4) {
+    derivedRound = 4;
+  } else if (
+    liveRound >= 3 ||
+    typeof getCompletedRoundScore(golfer, 3) === "number"
+  ) {
+    derivedRound = 3;
+  } else if (
+    liveRound >= 2 ||
+    typeof getCompletedRoundScore(golfer, 2) === "number"
+  ) {
+    derivedRound = 2;
+  } else if (
+    liveRound >= 1 ||
+    typeof getCompletedRoundScore(golfer, 1) === "number"
+  ) {
+    derivedRound = 1;
+  }
+
+  return Math.max(storedRound, derivedRound);
+}
+
+/**
+ * Returns whether a golfer has completed the specified tournament round.
+ */
+export function hasGolferCompletedTournamentRound(args: {
+  golfer: EnhancedGolfer;
+  roundNumber: 1 | 2 | 3 | 4;
+}): boolean {
+  const syncRound = getTournamentGolferSyncRound(args.golfer);
+  if (syncRound >= 5 || syncRound > args.roundNumber) {
+    return true;
+  }
+
+  if (
+    typeof getCompletedRoundScore(args.golfer, args.roundNumber) === "number"
+  ) {
+    return true;
+  }
+
+  const liveRound =
+    typeof args.golfer.live?.round === "number" &&
+    Number.isFinite(args.golfer.live.round)
+      ? args.golfer.live.round
+      : 0;
+  const thru = getHoleCount(args.golfer.live?.thru);
+
+  return liveRound === args.roundNumber && thru === 18;
+}
+
+/**
+ * Derives the persisted team round from the furthest-progressed team golfer.
+ */
+export function getTournamentTeamSyncRound(args: {
+  golfers: EnhancedGolfer[];
+  existingRound?: number;
+}): number {
+  const storedRound = Number.isFinite(args.existingRound)
+    ? Math.max(0, Math.min(5, Math.trunc(args.existingRound ?? 0)))
+    : 0;
+  if (storedRound >= 5) {
+    return 5;
+  }
+
+  const golferRounds = args.golfers.map((golfer) =>
+    getTournamentGolferSyncRound(golfer),
+  );
+  if (golferRounds.length === 0) {
+    return storedRound;
+  }
+
+  if (golferRounds.every((round) => round >= 5)) {
+    return 5;
+  }
+
+  let derivedRound = golferRounds.some((round) => round >= 1) ? 1 : 0;
+
+  if (
+    golferRounds.some((round) => round >= 2) &&
+    args.golfers.every((golfer) =>
+      hasGolferCompletedTournamentRound({ golfer, roundNumber: 1 }),
+    )
+  ) {
+    derivedRound = 2;
+  }
+
+  if (
+    golferRounds.some((round) => round >= 3) &&
+    args.golfers.every((golfer) =>
+      hasGolferCompletedTournamentRound({ golfer, roundNumber: 2 }),
+    )
+  ) {
+    derivedRound = 3;
+  }
+
+  if (
+    golferRounds.some((round) => round >= 4) &&
+    args.golfers.every((golfer) =>
+      hasGolferCompletedTournamentRound({ golfer, roundNumber: 3 }),
+    )
+  ) {
+    derivedRound = 4;
+  }
+
+  return Math.max(storedRound, derivedRound);
+}
+
+/**
+ * Returns whether a team has completed the specified tournament round.
+ */
+function hasTeamCompletedTournamentRound(args: {
+  golfers: EnhancedGolfer[];
+  roundNumber: 1 | 2 | 3 | 4;
+}): boolean {
+  return args.golfers.every((golfer) =>
+    hasGolferCompletedTournamentRound({
+      golfer,
+      roundNumber: args.roundNumber,
+    }),
+  );
+}
+
+/**
+ * Derives the persisted tournament currentRound from team progression.
+ */
+export function getTournamentSyncCurrentRound(args: {
+  teams: Array<{
+    golfers: EnhancedGolfer[];
+    round?: number;
+  }>;
+  existingRound?: number;
+}): number {
+  const storedRound = Number.isFinite(args.existingRound)
+    ? Math.max(0, Math.min(5, Math.ceil(args.existingRound ?? 0)))
+    : 0;
+  if (storedRound >= 5) {
+    return 5;
+  }
+
+  const teamRounds = args.teams.map((team) =>
+    getTournamentTeamSyncRound({
+      golfers: team.golfers,
+      existingRound: team.round,
+    }),
+  );
+  if (teamRounds.length === 0) {
+    return storedRound;
+  }
+
+  if (teamRounds.every((round) => round >= 5)) {
+    return 5;
+  }
+
+  let derivedRound = teamRounds.some((round) => round >= 1) ? 1 : 0;
+
+  if (
+    teamRounds.some((round) => round >= 2) &&
+    args.teams.every((team) =>
+      hasTeamCompletedTournamentRound({
+        golfers: team.golfers,
+        roundNumber: 1,
+      }),
+    )
+  ) {
+    derivedRound = 2;
+  }
+
+  if (
+    teamRounds.some((round) => round >= 3) &&
+    args.teams.every((team) =>
+      hasTeamCompletedTournamentRound({
+        golfers: team.golfers,
+        roundNumber: 2,
+      }),
+    )
+  ) {
+    derivedRound = 3;
+  }
+
+  if (
+    teamRounds.some((round) => round >= 4) &&
+    args.teams.every((team) =>
+      hasTeamCompletedTournamentRound({
+        golfers: team.golfers,
+        roundNumber: 3,
+      }),
+    )
+  ) {
+    derivedRound = 4;
+  }
+
+  return Math.max(storedRound, derivedRound);
+}
+
+/**
+ * Returns whether any team still has golfers actively playing under thru 18.
+ */
+export function getTournamentSyncLivePlay(args: {
+  teams: Array<{
+    golfers: EnhancedGolfer[];
+  }>;
+  datagolfLivePlay: boolean;
+}): boolean {
+  if (args.datagolfLivePlay) {
+    return true;
+  }
+
+  return args.teams.some((team) =>
+    team.golfers.some((golfer) => {
+      if (getTournamentGolferSyncRound(golfer) >= 5) {
+        return false;
+      }
+
+      const liveRound =
+        typeof golfer.live?.round === "number" &&
+        Number.isFinite(golfer.live.round)
+          ? golfer.live.round
+          : 0;
+      const thru = getHoleCount(golfer.live?.thru);
+
+      return liveRound > 0 && typeof thru === "number" && thru > 0 && thru < 18;
+    }),
+  );
+}
+
+/**
  * Derives a monotonic tournament lifecycle status from tee times and synced scoring state.
  */
 function deriveTournamentLifecycleStatus(args: {
@@ -1259,11 +1512,19 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         startDate: firstTeeTime,
         status: tournamentStatus,
       });
+      const tournamentCurrentRound = getTournamentSyncCurrentRound({
+        teams,
+        existingRound: tournament.currentRound,
+      });
+      const tournamentLivePlay = getTournamentSyncLivePlay({
+        teams,
+        datagolfLivePlay: isRoundRunning,
+      });
       await ctx.runMutation(internal.functions.utils.updateTournamentInfo, {
         tournament: {
           _id: tournament._id,
-          currentRound: (!isRoundRunning ? 0.5 : 0) + currentRound,
-          livePlay: isRoundRunning,
+          currentRound: tournamentCurrentRound,
+          livePlay: tournamentLivePlay,
           ...lifecycleUpdates,
         },
       });
@@ -1462,41 +1723,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                           g.tournamentGolfer?.roundFourTeeTime as string,
                         ) ?? undefined)),
                 usage: usageMap.get(g.golfer?.apiId ?? -1) ?? 0,
-                round:
-                  (!isRoundRunning ? 0.5 : 0) +
-                  (((g.live?.R1 ?? g.historical?.round_1?.score ?? 0) > 0 &&
-                    (g.live?.R2 ?? g.historical?.round_2?.score ?? 0) > 0 &&
-                    (g.live?.R3 ?? g.historical?.round_3?.score ?? 0) > 0 &&
-                    (g.live?.R4 ?? g.historical?.round_4?.score ?? 0) > 0) ||
-                  ["CUT", "WD", "DQ"].includes(
-                    g.live?.current_pos ?? g.historical?.fin_text ?? "",
-                  )
-                    ? 5
-                    : (g.live?.R1 ?? g.historical?.round_1?.score ?? 0) > 0 &&
-                        (g.live?.R2 ?? g.historical?.round_2?.score ?? 0) > 0 &&
-                        (g.live?.R3 ?? g.historical?.round_3?.score ?? 0) > 0 &&
-                        (g.live?.thru === "F"
-                          ? 18
-                          : parseInt(g.live?.thru ?? "0")) > 0
-                      ? 4
-                      : (g.live?.R1 ?? g.historical?.round_1?.score ?? 0) > 0 &&
-                          (g.live?.R2 ?? g.historical?.round_2?.score ?? 0) >
-                            0 &&
-                          (g.live?.thru === "F"
-                            ? 18
-                            : parseInt(g.live?.thru ?? "0")) > 0
-                        ? 3
-                        : (g.live?.R1 ?? g.historical?.round_1?.score ?? 0) >
-                              0 &&
-                            (g.live?.thru === "F"
-                              ? 18
-                              : parseInt(g.live?.thru ?? "0")) > 0
-                          ? 2
-                          : (g.live?.thru === "F"
-                                ? 18
-                                : parseInt(g.live?.thru ?? "0")) > 0
-                            ? 1
-                            : 0),
+                round: getTournamentGolferSyncRound(g),
               },
             },
           );
@@ -1507,10 +1734,10 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         tourCard?: Doc<"tourCards">;
       })[] = [];
       for (const t of teams) {
-        currentRound = Math.max(
-          ...t.golfers.map((g) => g.live?.round ?? (g.historical ? 5 : 0)),
-          0,
-        );
+        currentRound = getTournamentTeamSyncRound({
+          golfers: t.golfers,
+          existingRound: t.round,
+        });
         isRoundRunning =
           t.golfers.filter(
             (g) =>
@@ -2137,11 +2364,19 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         startDate: firstTeeTime,
         status: tournamentStatus,
       });
+      const tournamentCurrentRound = getTournamentSyncCurrentRound({
+        teams,
+        existingRound: tournament.currentRound,
+      });
+      const tournamentLivePlay = getTournamentSyncLivePlay({
+        teams,
+        datagolfLivePlay: isRoundRunning,
+      });
       await ctx.runMutation(internal.functions.utils.updateTournamentInfo, {
         tournament: {
           _id: tournament._id,
-          currentRound: (!isRoundRunning ? 0.5 : 0) + currentRound,
-          livePlay: isRoundRunning,
+          currentRound: tournamentCurrentRound,
+          livePlay: tournamentLivePlay,
           ...lifecycleUpdates,
         },
       });
@@ -2340,41 +2575,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                           g.tournamentGolfer?.roundFourTeeTime as string,
                         ) ?? undefined)),
                 usage: usageMap.get(g.golfer?.apiId ?? -1) ?? 0,
-                round:
-                  (!isRoundRunning ? 0.5 : 0) +
-                  (((g.live?.R1 ?? g.historical?.round_1?.score ?? 0) > 0 &&
-                    (g.live?.R2 ?? g.historical?.round_2?.score ?? 0) > 0 &&
-                    (g.live?.R3 ?? g.historical?.round_3?.score ?? 0) > 0 &&
-                    (g.live?.R4 ?? g.historical?.round_4?.score ?? 0) > 0) ||
-                  ["CUT", "WD", "DQ"].includes(
-                    g.live?.current_pos ?? g.historical?.fin_text ?? "",
-                  )
-                    ? 5
-                    : (g.live?.R1 ?? g.historical?.round_1?.score ?? 0) > 0 &&
-                        (g.live?.R2 ?? g.historical?.round_2?.score ?? 0) > 0 &&
-                        (g.live?.R3 ?? g.historical?.round_3?.score ?? 0) > 0 &&
-                        (g.live?.thru === "F"
-                          ? 18
-                          : parseInt(g.live?.thru ?? "0")) > 0
-                      ? 4
-                      : (g.live?.R1 ?? g.historical?.round_1?.score ?? 0) > 0 &&
-                          (g.live?.R2 ?? g.historical?.round_2?.score ?? 0) >
-                            0 &&
-                          (g.live?.thru === "F"
-                            ? 18
-                            : parseInt(g.live?.thru ?? "0")) > 0
-                        ? 3
-                        : (g.live?.R1 ?? g.historical?.round_1?.score ?? 0) >
-                              0 &&
-                            (g.live?.thru === "F"
-                              ? 18
-                              : parseInt(g.live?.thru ?? "0")) > 0
-                          ? 2
-                          : (g.live?.thru === "F"
-                                ? 18
-                                : parseInt(g.live?.thru ?? "0")) > 0
-                            ? 1
-                            : 0),
+                round: getTournamentGolferSyncRound(g),
               },
             },
           );
@@ -2385,10 +2586,10 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         tourCard?: Doc<"tourCards">;
       })[] = [];
       for (const t of teams) {
-        currentRound = Math.max(
-          ...t.golfers.map((g) => g.live?.round ?? (g.historical ? 5 : 0)),
-          0,
-        );
+        currentRound = getTournamentTeamSyncRound({
+          golfers: t.golfers,
+          existingRound: t.round,
+        });
         isRoundRunning =
           t.golfers.filter(
             (g) =>
@@ -2434,7 +2635,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
               (roundTwo && roundTwo > 0 ? roundTwo - course.par : 0) +
               (roundThree && roundThree > 0 ? roundThree - course.par : 0) +
               (roundFour && roundFour > 0 ? roundFour - course.par : 0) +
-            1,
+              1,
           ),
           today: roundToDecimalPlace(
             (t.golfers
