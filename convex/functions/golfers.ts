@@ -168,12 +168,16 @@ async function getGolfersForTournamentScope(
     tournamentIds,
   );
 
-  const uniqueGolferIds = [...new Set(tournamentGolfers.map((item) => item.golferId))];
+  const uniqueGolferIds = [
+    ...new Set(tournamentGolfers.map((item) => item.golferId)),
+  ];
   const golfers = await Promise.all(
     uniqueGolferIds.map((golferId) => ctx.db.get(golferId)),
   );
 
-  return golfers.filter((golfer): golfer is NonNullable<typeof golfer> => golfer !== null);
+  return golfers.filter(
+    (golfer): golfer is NonNullable<typeof golfer> => golfer !== null,
+  );
 }
 
 async function createGolferRecord(
@@ -260,7 +264,9 @@ async function deleteGolferRecord(ctx: MutationCtx, golferId: Id<"golfers">) {
     .collect();
 
   await Promise.all(
-    tournamentGolfers.map((tournamentGolfer) => ctx.db.delete(tournamentGolfer._id)),
+    tournamentGolfers.map((tournamentGolfer) =>
+      ctx.db.delete(tournamentGolfer._id),
+    ),
   );
   await ctx.db.delete(golferId);
 
@@ -322,7 +328,9 @@ async function createTournamentGolferRecord(
     .first();
 
   if (existing) {
-    throw new Error("Tournament golfer already exists for golfer and tournament");
+    throw new Error(
+      "Tournament golfer already exists for golfer and tournament",
+    );
   }
 
   const { golferId, tournamentId, ...optionalData } = data;
