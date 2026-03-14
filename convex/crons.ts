@@ -17,7 +17,7 @@ crons.interval(
 crons.cron(
   "recompute_standings",
   "0 4 * * *",
-  internal.functions.cronJobs.recomputeStandings,
+  internal.crons.standings.recomputeStandings,
   {},
 );
 
@@ -25,21 +25,21 @@ crons.cron(
 crons.cron(
   "create_groups_for_next_tournament_12pm",
   "0 17 * * 1",
-  internal.functions.cronJobs.runCreateGroupsForNextTournament,
+  internal.crons.groups.runCreateGroupsForNextTournament,
   {},
 );
 
 crons.cron(
   "create_groups_for_next_tournament_1pm",
   "0 18 * * 1",
-  internal.functions.cronJobs.runCreateGroupsForNextTournament,
+  internal.crons.groups.runCreateGroupsForNextTournament,
   {},
 );
 
 crons.cron(
   "create_groups_for_next_tournament_2pm",
   "0 19 * * 1",
-  internal.functions.cronJobs.runCreateGroupsForNextTournament,
+  internal.crons.groups.runCreateGroupsForNextTournament,
   {},
 );
 
@@ -49,7 +49,7 @@ crons.cron(
 crons.cron(
   "update_golfers_world_rank_11am",
   "0 16 * * 1",
-  internal.functions.cronJobs.updateGolfersWorldRankFromDataGolfInput,
+  internal.crons.golfers.updateGolfersWorldRankFromDataGolfInput,
   {},
 );
 

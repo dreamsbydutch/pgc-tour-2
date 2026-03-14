@@ -13,6 +13,9 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as crons_golfers from "../crons/golfers.js";
+import type * as crons_groups from "../crons/groups.js";
+import type * as crons_standings from "../crons/standings.js";
 import type * as crons from "../crons.js";
 import type * as functions__constants from "../functions/_constants.js";
 import type * as functions_cronJobs from "../functions/cronJobs.js";
@@ -52,6 +55,9 @@ import type * as validators_datagolf from "../validators/datagolf.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  "crons/golfers": typeof crons_golfers;
+  "crons/groups": typeof crons_groups;
+  "crons/standings": typeof crons_standings;
   crons: typeof crons;
   "functions/_constants": typeof functions__constants;
   "functions/cronJobs": typeof functions_cronJobs;

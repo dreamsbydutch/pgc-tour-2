@@ -1,10 +1,11 @@
 import { v } from "convex/values";
 import { Doc } from "../_generated/dataModel";
-import { internalMutation } from "../_generated/server";
+import { internalMutation, mutation, query } from "../_generated/server";
 import {
   normalizeDgSkillEstimateToPgcRating,
   normalizePlayerNameFromDataGolf,
 } from "../utils/datagolf";
+import { api } from "../_generated/api";
 
 /**
  * Applies country + OWGR (and normalized player name) updates to `golfers` from an input ranking array.
@@ -15,62 +16,7 @@ import {
  * @param args.rankings Ranking rows from DataGolf (dg_id/owgr_rank/player_name/country).
  * @returns Summary counts of matched/updated golfers.
  */
-export const applyGolfersWorldRankFromDataGolfInput = internalMutation({
-  args: {
-    rankings: v.array(
-      v.object({
-        dg_id: v.number(),
-        owgr_rank: v.number(),
-        player_name: v.string(),
-        country: v.string(),
-      }),
-    ),
-  },
-  handler: async (ctx, args) => {
-    let golfersMatched = 0;
-    let golfersUpdated = 0;
 
-    for (const r of args.rankings) {
-      if (!Number.isFinite(r.dg_id) || !Number.isFinite(r.owgr_rank)) continue;
-      const golfer = await ctx.db
-        .query("golfers")
-        .withIndex("by_api_id", (q) => q.eq("apiId", r.dg_id))
-        .first();
-      if (!golfer) continue;
-      golfersMatched += 1;
-
-      const normalizedName = normalizePlayerNameFromDataGolf(r.player_name);
-      const patch: Partial<Doc<"golfers">> & { updatedAt: number } = {
-        updatedAt: Date.now(),
-      };
-      if (normalizedName && normalizedName !== golfer.playerName) {
-        patch.playerName = normalizedName;
-      }
-      if (r.owgr_rank && r.owgr_rank !== golfer.worldRank) {
-        patch.worldRank = r.owgr_rank;
-      }
-
-      const nextCountry = r.country.trim();
-      if (nextCountry.length > 0 && nextCountry !== golfer.country) {
-        patch.country = nextCountry;
-      }
-
-      const keys = Object.keys(patch);
-      if (keys.length > 1) {
-        await ctx.db.patch(golfer._id, patch);
-        golfersUpdated += 1;
-      }
-    }
-
-    return {
-      ok: true,
-      skipped: false,
-      golfersMatched,
-      golfersUpdated,
-      rankingsProcessed: args.rankings.length,
-    } as const;
-  },
-});
 /**
  * Creates the full set of `tournamentGolfers` for a tournament from grouped DataGolf inputs.
  *
@@ -274,5 +220,42 @@ export const updateTournamentGolfer = internalMutation({
       ...args.tournamentGolfer,
       updatedAt: Date.now(),
     });
+  },
+});
+
+export const getGolferByApiId = query({
+  args: {
+    apiId: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const golfer = await ctx.db
+      .query("golfers")
+      .withIndex("by_api_id", (q) => q.eq("apiId", args.apiId))
+      .first();
+    return golfer;
+  },
+});
+
+export const updateGolfer = mutation({
+  args: {
+    golferId: v.id("golfers"),
+    ranking: v.object({
+      apiId: v.optional(v.number()),
+      playerName: v.optional(v.string()),
+      country: v.optional(v.string()),
+      worldRank: v.optional(v.number()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const { golferId, ranking } = args;
+
+    await ctx.db.patch(golferId, ranking);
+
+    return {
+      ok: true,
+      skipped: false,
+      golferId,
+      rankingProcessed: 1,
+    } as const;
   },
 });
