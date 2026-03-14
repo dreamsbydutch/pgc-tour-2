@@ -185,6 +185,94 @@ function normalizeEpochTimestamp(value: number): number | null {
   return null;
 }
 
+const DEFAULT_TEE_TIME_TIME_ZONE = "America/New_York";
+
+function getViewerTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return DEFAULT_TEE_TIME_TIME_ZONE;
+  }
+}
+
+function getTimeZoneOffsetMsAt(
+  epochMs: number,
+  timeZone: string,
+): number | null {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    timeZoneName: "shortOffset",
+    hour: "2-digit",
+  }).formatToParts(epochMs);
+  const offsetLabel = parts.find((part) => part.type === "timeZoneName")?.value;
+  const match = /^GMT([+-])(\d{1,2})(?::?(\d{2}))?$/.exec(offsetLabel ?? "");
+
+  if (!match) return null;
+
+  const sign = match[1] === "-" ? -1 : 1;
+  const hours = Number(match[2]);
+  const minutes = Number(match[3] ?? "0");
+
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+
+  return sign * (hours * 60 + minutes) * 60 * 1000;
+}
+
+function wallClockInTimeZoneToUtcMs(args: {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+  timeZone: string;
+}): number | null {
+  const utcGuess = Date.UTC(
+    args.year,
+    args.month - 1,
+    args.day,
+    args.hour,
+    args.minute,
+    args.second,
+    0,
+  );
+  const firstOffset = getTimeZoneOffsetMsAt(utcGuess, args.timeZone);
+  if (firstOffset === null) return null;
+
+  const firstPass = utcGuess - firstOffset;
+  const secondOffset = getTimeZoneOffsetMsAt(firstPass, args.timeZone);
+  if (secondOffset === null) return firstPass;
+
+  return utcGuess - secondOffset;
+}
+
+function reinterpretNumericTeeTimeEpoch(value: number): number | null {
+  const normalizedEpoch = normalizeEpochTimestamp(value);
+  if (normalizedEpoch === null) return null;
+
+  const date = new Date(normalizedEpoch);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return wallClockInTimeZoneToUtcMs({
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+    hour: date.getUTCHours(),
+    minute: date.getUTCMinutes(),
+    second: date.getUTCSeconds(),
+    timeZone: DEFAULT_TEE_TIME_TIME_ZONE,
+  });
+}
+
+function formatTeeTimeEpochInViewerTimeZone(epochMs: number): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: getViewerTimeZone(),
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(epochMs);
+}
+
 /**
  * Parses mixed tee-time values into a comparable epoch-like millisecond value.
  *
@@ -196,7 +284,9 @@ export function parseTeeTimeValueToMs(
   if (value === null || value === undefined) return null;
 
   if (typeof value === "number") {
-    return Number.isFinite(value) ? normalizeEpochTimestamp(value) : null;
+    return Number.isFinite(value)
+      ? reinterpretNumericTeeTimeEpoch(value)
+      : null;
   }
 
   const trimmed = value.trim();
@@ -205,9 +295,9 @@ export function parseTeeTimeValueToMs(
   if (/^\d+$/.test(trimmed)) {
     const parsedNumber = Number(trimmed);
     if (Number.isFinite(parsedNumber)) {
-      const normalizedEpoch = normalizeEpochTimestamp(parsedNumber);
-      if (normalizedEpoch !== null) {
-        return normalizedEpoch;
+      const reinterpretedEpoch = reinterpretNumericTeeTimeEpoch(parsedNumber);
+      if (reinterpretedEpoch !== null) {
+        return reinterpretedEpoch;
       }
     }
   }
@@ -269,11 +359,7 @@ export function formatTeeTimeTimeOfDay(
     const numericTimestamp = parseTeeTimeValueToMs(value);
     if (numericTimestamp === null) return null;
 
-    return new Intl.DateTimeFormat("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    }).format(numericTimestamp);
+    return formatTeeTimeEpochInViewerTimeZone(numericTimestamp);
   }
 
   const trimmed = value ? value.trim() : "";
@@ -288,10 +374,12 @@ export function formatTeeTimeTimeOfDay(
     return `${hour}:${minute} ${suffix}`;
   }
 
-  const isoTimeMatch = trimmed.match(/T(\d{2}):(\d{2})(?::\d{2})?(?:\.\d+)?/);
+  const timeOnlyMatch = trimmed.match(/^(?:\d{1,2}):(\d{2})(?:\s*[AP]M)?$/i);
+  const isoLikeMatch = trimmed.match(/^\d{4}-\d{2}-\d{2}[ T]/);
   const timeMatch =
-    isoTimeMatch ??
-    trimmed.match(/\b([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?\b/);
+    !isoLikeMatch && timeOnlyMatch
+      ? trimmed.match(/\b([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?\b/)
+      : null;
   if (timeMatch) {
     const hour24 = Number(timeMatch[1]);
     const minute = timeMatch[2];
@@ -304,11 +392,7 @@ export function formatTeeTimeTimeOfDay(
   const numericTimestamp = parseTeeTimeValueToMs(trimmed);
   if (numericTimestamp === null) return trimmed;
 
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(numericTimestamp);
+  return formatTeeTimeEpochInViewerTimeZone(numericTimestamp);
 }
 
 /**
