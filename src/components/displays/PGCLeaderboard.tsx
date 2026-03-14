@@ -151,7 +151,7 @@ function LeaderboardListing({
         <ScoreDisplay
           team={team}
           tournamentComplete={
-            (tournament.currentRound ?? 0) >= 4 && !tournament.livePlay
+            (tournament.currentRound ?? 0) > 4 && !tournament.livePlay
           }
         />
       </div>

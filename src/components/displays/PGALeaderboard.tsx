@@ -221,7 +221,7 @@ function LeaderboardListing({
         <ScoreDisplay
           golfer={golfer}
           tournamentComplete={
-            (tournament.currentRound ?? 0) >= 4 && !tournament.livePlay
+            (tournament.currentRound ?? 0) > 4 && !tournament.livePlay
           }
         />
       </div>
