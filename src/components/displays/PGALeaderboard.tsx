@@ -105,7 +105,7 @@ export function PGALeaderboard(props: {
                 topTen: golfer.topTen ?? 0,
                 win: golfer.win ?? 0,
                 usage: golfer.usage ?? 0,
-                teeTimeDisplay: teeTimeDisplay?.toString() ?? "-",
+                teeTimeDisplay,
               }}
             />
           </Fragment>
@@ -186,7 +186,7 @@ function LeaderboardListing({
     topTen: number;
     win: number;
     usage: number;
-    teeTimeDisplay: string;
+    teeTimeDisplay: string | number | null | undefined;
   };
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -346,7 +346,7 @@ function ScoreDisplay(props: {
     roundFour: number;
     thru: number;
     today: number;
-    teeTimeDisplay: string;
+    teeTimeDisplay: string | number | null | undefined;
   };
   tournamentComplete: boolean;
 }) {

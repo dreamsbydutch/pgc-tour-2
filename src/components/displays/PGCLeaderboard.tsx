@@ -8,6 +8,7 @@ import {
   formatTeeTimeTimeOfDay,
   formatToPar,
   isPlayerCut,
+  parseTeeTimeValueToMs,
 } from "@/lib";
 import { MoveDown, MoveHorizontal, MoveUp } from "lucide-react";
 import { Table, TableBody, TableHeader, TableRow } from "@/components/ui";
@@ -221,7 +222,7 @@ function TeamGolfersTable(props: {
               : golfer.roundFourTeeTime;
       return (
         <td className="text-xs" colSpan={2}>
-          {formatTeeTimeTimeOfDay(teeTimeDisplay?.toString()) ?? "-"}
+          {formatTeeTimeTimeOfDay(teeTimeDisplay) ?? "-"}
         </td>
       );
     }
@@ -324,15 +325,14 @@ function useTeamGolfersTable(teamGolfers: EnhancedTournamentGolferDoc[]) {
     const nonCut = teamGolfers.filter((g) => !isPlayerCut(g.position));
     const cut = teamGolfers.filter((g) => isPlayerCut(g.position));
 
-    const toTimeMs = (teeTime?: string | null) => {
-      if (!teeTime) return Number.POSITIVE_INFINITY;
-      const ms = new Date(teeTime).getTime();
-      return Number.isNaN(ms) ? Number.POSITIVE_INFINITY : ms;
+    const toTimeMs = (teeTime?: string | number | null) => {
+      const ms = parseTeeTimeValueToMs(teeTime);
+      return ms === null ? Number.POSITIVE_INFINITY : ms;
     };
     const sortByLive = (
       rows: {
         thru?: number;
-        teeTimeDisplay?: string | null;
+        teeTimeDisplay?: string | number | null;
         playerName?: string;
         today?: number;
         score?: number;
