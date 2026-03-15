@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { sortOrderValidator } from "./_shared";
 
 const tournamentStatus = v.union(
   v.literal("upcoming"),
@@ -7,6 +8,11 @@ const tournamentStatus = v.union(
   v.literal("cancelled"),
 );
 
+const tournamentReferenceFields = {
+  tournamentId: v.id("tournaments"),
+};
+
+const tournamentReference = v.object(tournamentReferenceFields);
 const tournamentSortBy = v.union(
   v.literal("name"),
   v.literal("startDate"),
@@ -57,7 +63,7 @@ const getTournamentsOptions = v.optional(
     sort: v.optional(
       v.object({
         sortBy: v.optional(tournamentSortBy),
-        sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+        sortOrder: v.optional(sortOrderValidator),
       }),
     ),
     enhance: v.optional(
@@ -76,40 +82,18 @@ export const tournamentsValidators = {
     tournamentUpdateData,
   },
   args: {
-    getTournament: {
-      tournamentId: v.id("tournaments"),
-    },
-    getAllTournaments: {
-      seasonId: v.optional(v.id("seasons")),
-    },
+    getTournament: tournamentReference,
     getTournaments: {
       options: getTournamentsOptions,
     },
-    getCurrentTournament: {
-      seasonId: v.optional(v.id("seasons")),
-    },
-    getLastTournament: {
-      seasonId: v.optional(v.id("seasons")),
-    },
-    getNextTournament: {
-      seasonId: v.optional(v.id("seasons")),
-    },
-    getTournamentLeaderboardView: {
-      tournamentId: v.optional(v.id("tournaments")),
-      memberId: v.optional(v.id("members")),
-    },
-    getTournamentPickPool: {
-      tournamentId: v.id("tournaments"),
-    },
+    getTournamentGroups: tournamentReference,
     createTournament: {
       data: tournamentCreateData,
     },
     updateTournament: {
-      tournamentId: v.id("tournaments"),
+      ...tournamentReferenceFields,
       data: tournamentUpdateData,
     },
-    deleteTournament: {
-      tournamentId: v.id("tournaments"),
-    },
+    deleteTournament: tournamentReference,
   },
 } as const;

@@ -1,4 +1,14 @@
-import { FetchResult, FetchWithRetryConfig } from "../types/types";
+type FetchWithRetryConfig = {
+  timeout?: number;
+  retries?: number;
+  retryDelay?: number;
+  logPrefix?: string;
+  validateResponse?: (json: unknown) => boolean;
+};
+
+type FetchResult<T> =
+  | { ok: true; data: T; attempts: number }
+  | { ok: false; error: string; attempts: number };
 
 const DEFAULT_CONFIG: Required<Omit<FetchWithRetryConfig, "validateResponse">> =
   {

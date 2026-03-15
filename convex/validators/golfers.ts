@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { teeTimeValueValidator } from "./_shared";
 
 const golferOptionalFields = {
   country: v.optional(v.string()),
@@ -18,13 +19,13 @@ const tournamentGolferOptionalFields = {
   round: v.optional(v.number()),
   endHole: v.optional(v.number()),
   group: v.optional(v.number()),
-  roundOneTeeTime: v.optional(v.union(v.number(), v.string())),
+  roundOneTeeTime: v.optional(teeTimeValueValidator),
   roundOne: v.optional(v.number()),
-  roundTwoTeeTime: v.optional(v.union(v.number(), v.string())),
+  roundTwoTeeTime: v.optional(teeTimeValueValidator),
   roundTwo: v.optional(v.number()),
-  roundThreeTeeTime: v.optional(v.union(v.number(), v.string())),
+  roundThreeTeeTime: v.optional(teeTimeValueValidator),
   roundThree: v.optional(v.number()),
-  roundFourTeeTime: v.optional(v.union(v.number(), v.string())),
+  roundFourTeeTime: v.optional(teeTimeValueValidator),
   roundFour: v.optional(v.number()),
   rating: v.optional(v.number()),
   worldRank: v.optional(v.number()),
@@ -144,8 +145,8 @@ export const golfersValidators = {
           country: v.optional(v.string()),
           worldRank: v.optional(v.number()),
           dg_skill_estimate: v.optional(v.number()),
-          r1_teetime: v.optional(v.union(v.number(), v.string())),
-          r2_teetime: v.optional(v.union(v.number(), v.string())),
+          r1_teetime: v.optional(teeTimeValueValidator),
+          r2_teetime: v.optional(teeTimeValueValidator),
         }),
       ),
     },

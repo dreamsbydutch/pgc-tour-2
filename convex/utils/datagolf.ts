@@ -1,10 +1,4 @@
-import { fetchWithRetry } from "./externalFetch";
-import type {
-  DataGolfFieldPlayer,
-  DataGolfLiveTournamentStat,
-  DataGolfRankedPlayer,
-} from "../types/datagolf";
-import { Doc } from "../_generated/dataModel";
+import { fetchWithRetry } from "./_shared/fetch";
 
 const BASE_URL = "https://feeds.datagolf.com";
 
@@ -61,105 +55,6 @@ export async function fetchFromDataGolf<T = Record<string, never>>(
   }
 
   return result.data;
-}
-
-export function isLiveTournamentStat(
-  value: DataGolfLiveTournamentStat,
-): value is DataGolfLiveTournamentStat {
-  return (
-    [
-      "sg_putt",
-      "sg_arg",
-      "sg_app",
-      "sg_ott",
-      "sg_t2g",
-      "sg_bs",
-      "sg_total",
-      "distance",
-      "accuracy",
-      "gir",
-      "prox_fw",
-      "prox_rgh",
-      "scrambling",
-      "great_shots",
-      "poor_shots",
-    ] as const satisfies readonly DataGolfLiveTournamentStat[]
-  ).includes(value);
-}
-
-export function buildQueryParams(
-  params: Record<string, string | number | boolean | undefined>,
-): string {
-  const searchParams = new URLSearchParams();
-  Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined) {
-      searchParams.append(key, String(value));
-    }
-  });
-  return searchParams.toString();
-}
-
-function isPlayerFinishedFromLiveStats(player: {
-  current_pos?: string | null;
-  thru?: number | undefined;
-}): boolean {
-  const pos = String(player.current_pos ?? "")
-    .trim()
-    .toUpperCase();
-  if (
-    pos === "WD" ||
-    pos === "DQ" ||
-    pos === "CUT" ||
-    pos === "MC" ||
-    pos === "MDF" ||
-    pos === "DNS" ||
-    pos === "DNF"
-  ) {
-    return true;
-  }
-
-  const raw = String(player.thru ?? "")
-    .trim()
-    .toUpperCase();
-  if (!raw) return false;
-  if (
-    raw === "WD" ||
-    raw === "DQ" ||
-    raw === "CUT" ||
-    raw === "MC" ||
-    raw === "MDF" ||
-    raw === "DNS" ||
-    raw === "DNF"
-  ) {
-    return true;
-  }
-  if (raw === "F") return true;
-
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed >= 18;
-}
-
-export function isRoundRunningFromLiveStats(
-  liveStats: { current_pos?: string | null; thru?: number | undefined }[],
-): boolean {
-  return liveStats.some((p) => {
-    if (isPlayerFinishedFromLiveStats(p)) return false;
-
-    const raw = String(p.thru).trim().toUpperCase();
-    if (!raw) return false;
-    if (raw === "F") return false;
-
-    const parsed = Number.parseInt(raw, 10);
-    return Number.isFinite(parsed) && parsed >= 0 && parsed < 18;
-  });
-}
-
-export function parseThruFromLiveModel(thru: unknown): number | undefined {
-  const raw = String(thru).trim().toUpperCase();
-  if (!raw) return undefined;
-  if (raw === "F") return 18;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 export function normalizeDgSkillEstimateToPgcRating(
@@ -356,49 +251,4 @@ export function parseDataGolfTeeTimeToMs(
 
   const utc = Date.UTC(year, month - 1, day, hour, minute, second);
   return Number.isNaN(utc) ? undefined : utc;
-}
-export function isFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-export function computeHasTournamentStarted(
-  tournament: Pick<
-    Doc<"tournaments">,
-    "_id" | "status" | "startDate" | "livePlay"
-  >,
-): boolean {
-  return (
-    tournament.status === "active" ||
-    tournament.status === "completed" ||
-    tournament.livePlay === true ||
-    (tournament.status !== "upcoming" &&
-      isFiniteNumber(tournament.startDate) &&
-      tournament.startDate > 0 &&
-      Date.now() >= tournament.startDate)
-  );
-}
-
-export function computeActiveApiIds(args: {
-  field: { dg_id: number }[];
-  liveStats: { dg_id: number }[];
-}): Set<number> {
-  const liveFieldApiIds = new Set(args.liveStats.map((p) => p.dg_id));
-  if (liveFieldApiIds.size > 0) return liveFieldApiIds;
-  return new Set(args.field.map((f) => f.dg_id));
-}
-
-export function buildFieldById(
-  field: DataGolfFieldPlayer[],
-): Map<number, DataGolfFieldPlayer> {
-  const fieldById = new Map<number, DataGolfFieldPlayer>();
-  for (const f of field) fieldById.set(f.dg_id, f);
-  return fieldById;
-}
-
-export function buildRankingById(
-  rankings: DataGolfRankedPlayer[],
-): Map<number, DataGolfRankedPlayer> {
-  const rankingById = new Map<number, DataGolfRankedPlayer>();
-  for (const r of rankings) rankingById.set(r.dg_id, r);
-  return rankingById;
 }

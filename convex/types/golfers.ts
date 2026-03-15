@@ -1,9 +1,33 @@
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 
 export type TournamentScopeFilter = {
   tournamentId?: Id<"tournaments">;
   seasonId?: Id<"seasons">;
   activeOnly?: boolean;
+};
+
+export type GolferQueryFilter = TournamentScopeFilter & {
+  apiId?: number;
+};
+
+export type GolferQueryOptions = {
+  filter?: GolferQueryFilter;
+};
+
+export type TournamentGolferQueryFilter = TournamentScopeFilter & {
+  golferId?: Id<"golfers">;
+};
+
+export type HydratedTournamentGolfer = Doc<"tournamentGolfers"> & {
+  golfer: Doc<"golfers">;
+  tournament: Doc<"tournaments">;
+  season: Doc<"seasons">;
+};
+
+export type HydratedGolfer = Doc<"golfers"> & {
+  tournamentGolfers: HydratedTournamentGolfer[];
+  tournaments: Doc<"tournaments">[];
+  seasons: Doc<"seasons">[];
 };
 
 export type GolferCreatePayload = {
@@ -20,7 +44,7 @@ export type GolferUpdatePayload = {
   worldRank?: number;
 };
 
-export type TournamentGolferOptionalPayload = {
+type TournamentGolferOptionalPayload = {
   position?: string;
   posChange?: number;
   score?: number;
@@ -54,4 +78,10 @@ export type TournamentGolferCreatePayload = TournamentGolferOptionalPayload & {
 export type TournamentGolferUpdatePayload = TournamentGolferOptionalPayload & {
   golferId?: Id<"golfers">;
   tournamentId?: Id<"tournaments">;
+};
+
+export type EnhancedTournamentGolferDoc = HydratedTournamentGolfer & {
+  apiId?: number;
+  playerName?: string;
+  country?: string;
 };

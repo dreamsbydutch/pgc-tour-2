@@ -1,4 +1,7 @@
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
+import type { SortOptions } from "./common";
+import type { EnhancedTournamentGolferDoc } from "./golfers";
+import type { EnhancedTournamentTeamDoc } from "./teams";
 
 export type TournamentStatus =
   | "upcoming"
@@ -6,25 +9,14 @@ export type TournamentStatus =
   | "completed"
   | "cancelled";
 
-export type TournamentSortBy = "name" | "startDate" | "endDate" | "status";
-
-export type TournamentSortOrder = "asc" | "desc";
-
-export type TournamentFilterOptions = {
+type TournamentFilterOptions = {
   seasonId?: Id<"seasons">;
   status?: TournamentStatus;
 };
 
-export type TournamentSortOptions = {
-  sortBy?: TournamentSortBy;
-  sortOrder?: TournamentSortOrder;
-};
-
-export type TournamentEnhanceOptions = {
-  includeCourse?: boolean;
-  includeTier?: boolean;
-  includeSeason?: boolean;
-};
+export type TournamentSortOptions = SortOptions<
+  "name" | "startDate" | "endDate" | "status"
+>;
 
 export type TournamentPlayoffState = {
   isPlayoff: boolean;
@@ -37,7 +29,6 @@ export type TournamentPlayoffState = {
 export type TournamentQueryOptions = {
   filter?: TournamentFilterOptions;
   sort?: TournamentSortOptions;
-  enhance?: TournamentEnhanceOptions;
 };
 
 export type TournamentCreatePayload = {
@@ -74,4 +65,24 @@ export type TournamentUpdatePayload = {
   livePlay?: boolean;
   dataGolfInPlayLastUpdate?: string | number;
   leaderboardLastUpdatedAt?: number;
+};
+
+export type TournamentFetchResult = Doc<"tournaments"> & {
+  course: Doc<"courses">;
+  tier: Doc<"tiers">;
+  season: Doc<"seasons">;
+};
+
+export type EnhancedTournamentDoc = TournamentFetchResult & {
+  dateRange?: string;
+  duration?: number;
+  calculatedStatus?: TournamentStatus;
+  tours?: Doc<"tours">[];
+  teams?: EnhancedTournamentTeamDoc[];
+  tourCards?: Doc<"tourCards">[];
+  teamCount?: number;
+  golfers?: EnhancedTournamentGolferDoc[];
+  isPlayoff?: boolean;
+  eventIndex?: number;
+  playoffEvents?: Id<"tournaments">[] | null;
 };

@@ -55,7 +55,7 @@ export type BuildTournamentUrlArgs = {
   tournamentId: string;
 };
 
-export type SendBrevoTemplateEmailBatchRecipient = {
+type SendBrevoTemplateEmailBatchRecipient = {
   email: string;
   name?: string;
   params: Record<string, unknown>;
@@ -75,11 +75,6 @@ export type SendBrevoTemplateEmailBatchResult = {
   failed: number;
   messageIds?: string[];
   errorReasons?: string[];
-};
-
-export type RequireAdminForActionCtx = {
-  auth: ActionCtx["auth"];
-  runQuery: ActionCtx["runQuery"];
 };
 
 export type SendGroupsEmailImplArgs = {

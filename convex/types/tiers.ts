@@ -1,43 +1,24 @@
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
+import type {
+  PaginationOptions,
+  SortOptions,
+  TimestampRangeFilter,
+} from "./common";
 
-export type TierSortBy =
-  | "name"
-  | "createdAt"
-  | "updatedAt"
-  | "totalPayouts"
-  | "totalPoints"
-  | "payoutCount"
-  | "pointCount";
-
-export type TierSortOrder = "asc" | "desc";
-
-export type TierFilterOptions = {
+export type TierFilterOptions = TimestampRangeFilter & {
   seasonId?: Id<"seasons">;
-  name?: string;
   searchTerm?: string;
-  minTotalPayouts?: number;
-  maxTotalPayouts?: number;
-  minTotalPoints?: number;
-  maxTotalPoints?: number;
-  minPayoutCount?: number;
-  maxPayoutCount?: number;
-  minPointCount?: number;
-  maxPointCount?: number;
-  createdAfter?: number;
-  createdBefore?: number;
-  updatedAfter?: number;
-  updatedBefore?: number;
+  payoutsMin?: number;
+  payoutsMax?: number;
+  pointsMin?: number;
+  pointsMax?: number;
 };
 
-export type TierSortOptions = {
-  sortBy?: TierSortBy;
-  sortOrder?: TierSortOrder;
-};
+export type TierSortOptions = SortOptions<
+  "name" | "createdAt" | "updatedAt" | "payouts" | "points"
+>;
 
-export type TierPaginationOptions = {
-  limit?: number;
-  offset?: number;
-};
+export type TierPaginationOptions = PaginationOptions;
 
 export type TierQueryOptions = {
   id?: Id<"tiers">;
@@ -45,6 +26,10 @@ export type TierQueryOptions = {
   filter?: TierFilterOptions;
   sort?: TierSortOptions;
   pagination?: TierPaginationOptions;
+};
+
+export type TierWithSeason = Doc<"tiers"> & {
+  season: Doc<"seasons">;
 };
 
 export type TierCreatePayload = {

@@ -1,17 +1,11 @@
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
+import type {
+  PaginationOptions,
+  SortOptions,
+  TimestampRangeFilter,
+} from "./common";
 
-export type TourSortBy =
-  | "name"
-  | "shortForm"
-  | "buyIn"
-  | "maxParticipants"
-  | "createdAt"
-  | "updatedAt"
-  | "playoffSpots";
-
-export type TourSortOrder = "asc" | "desc";
-
-export type TourFilterOptions = {
+export type TourFilterOptions = TimestampRangeFilter & {
   seasonId?: Id<"seasons">;
   shortForm?: string;
   minBuyIn?: number;
@@ -21,21 +15,19 @@ export type TourFilterOptions = {
   searchTerm?: string;
   playoffSpotsMin?: number;
   playoffSpotsMax?: number;
-  createdAfter?: number;
-  createdBefore?: number;
-  updatedAfter?: number;
-  updatedBefore?: number;
 };
 
-export type TourSortOptions = {
-  sortBy?: TourSortBy;
-  sortOrder?: TourSortOrder;
-};
+export type TourSortOptions = SortOptions<
+  | "name"
+  | "shortForm"
+  | "buyIn"
+  | "maxParticipants"
+  | "createdAt"
+  | "updatedAt"
+  | "playoffSpots"
+>;
 
-export type TourPaginationOptions = {
-  limit?: number;
-  offset?: number;
-};
+export type TourPaginationOptions = PaginationOptions;
 
 export type TourEnhanceOptions = {
   includeSeason?: boolean;
@@ -43,6 +35,10 @@ export type TourEnhanceOptions = {
   includeParticipants?: boolean;
   includeStatistics?: boolean;
   includeTourCards?: boolean;
+};
+
+export type TourWithSeason = Doc<"tours"> & {
+  season: Doc<"seasons">;
 };
 
 export type TourQueryOptions = {

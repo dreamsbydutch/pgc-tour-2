@@ -1,13 +1,12 @@
 import { v } from "convex/values";
+import { paginationValidator, sortOrderValidator } from "./_shared";
 
 const tierSortBy = v.union(
   v.literal("name"),
   v.literal("createdAt"),
   v.literal("updatedAt"),
-  v.literal("totalPayouts"),
-  v.literal("totalPoints"),
-  v.literal("payoutCount"),
-  v.literal("pointCount"),
+  v.literal("payouts"),
+  v.literal("points"),
 );
 
 const tierCreateData = v.object({
@@ -31,16 +30,11 @@ const getTiersOptions = v.optional(
     filter: v.optional(
       v.object({
         seasonId: v.optional(v.id("seasons")),
-        name: v.optional(v.string()),
         searchTerm: v.optional(v.string()),
-        minTotalPayouts: v.optional(v.number()),
-        maxTotalPayouts: v.optional(v.number()),
-        minTotalPoints: v.optional(v.number()),
-        maxTotalPoints: v.optional(v.number()),
-        minPayoutCount: v.optional(v.number()),
-        maxPayoutCount: v.optional(v.number()),
-        minPointCount: v.optional(v.number()),
-        maxPointCount: v.optional(v.number()),
+        payoutsMin: v.optional(v.number()),
+        payoutsMax: v.optional(v.number()),
+        pointsMin: v.optional(v.number()),
+        pointsMax: v.optional(v.number()),
         createdAfter: v.optional(v.number()),
         createdBefore: v.optional(v.number()),
         updatedAfter: v.optional(v.number()),
@@ -50,15 +44,10 @@ const getTiersOptions = v.optional(
     sort: v.optional(
       v.object({
         sortBy: v.optional(tierSortBy),
-        sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+        sortOrder: v.optional(sortOrderValidator),
       }),
     ),
-    pagination: v.optional(
-      v.object({
-        limit: v.optional(v.number()),
-        offset: v.optional(v.number()),
-      }),
-    ),
+    pagination: v.optional(paginationValidator),
   }),
 );
 

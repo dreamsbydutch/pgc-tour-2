@@ -8,8 +8,6 @@
  * with Convex table document types.
  */
 
-import { Doc } from "../_generated/dataModel";
-
 // ========================================
 // BASE TYPES
 // ========================================
@@ -80,38 +78,6 @@ export interface DataGolfRankingsResponse {
   rankings: DataGolfRankedPlayer[];
 }
 
-export type DataGolfLiveStrokesGainedView = "raw" | "relative";
-
-type DataGolfLiveStrokesGainedRoundKey = `R${1 | 2 | 3 | 4}`;
-
-type DataGolfLiveStrokesGainedBreakdown = {
-  app: number;
-  arg: number;
-  ott: number;
-  putt: number;
-  t2g: number;
-  total: number;
-};
-
-type DataGolfLiveStrokesGainedPlayer = {
-  dg_id: number;
-  player_name: string;
-  pos: string;
-  score: number;
-  thru: number;
-  today: number;
-} & Partial<
-  Record<DataGolfLiveStrokesGainedRoundKey, DataGolfLiveStrokesGainedBreakdown>
->;
-
-export interface DataGolfLiveStrokesGainedResponse {
-  current_round: number;
-  event_name: string;
-  last_update: string;
-  strokes_gained_values: string;
-  data: DataGolfLiveStrokesGainedPlayer[];
-}
-
 // ========================================
 // LIVE MODEL TYPES
 // ========================================
@@ -165,24 +131,6 @@ export type DataGolfLiveTournamentStat =
   | "scrambling"
   | "great_shots"
   | "poor_shots";
-
-export type DataGolfLiveStatsPlayer = {
-  player_name: string;
-  dg_id: number;
-  position: string;
-  thru: number;
-  today: number;
-  total: number;
-} & Partial<Record<DataGolfLiveTournamentStat, number>>;
-
-export interface DataGolfLiveTournamentStatsResponse {
-  course_name: string;
-  event_name: string;
-  last_updated: string;
-  stat_display: string;
-  stat_round: string;
-  live_stats: DataGolfLiveStatsPlayer[];
-}
 
 // ========================================
 // HISTORICAL DATA TYPES
@@ -277,22 +225,3 @@ export interface DataGolfHistoricalEventDataResponse {
 }
 
 // ========================================
-// END
-
-export type dataGolfToDataBaseTranslatorResult =
-  | {
-      ok: true;
-      skipped: false;
-      tournamentId: Doc<"tournaments">["_id"];
-      eventName: string | undefined;
-      currentRound: number | undefined;
-      tournamentStatus: Doc<"tournaments">["status"];
-      tournamentCompleted: boolean;
-      golfersInserted: number;
-      golfersUpdated: number;
-      tournamentGolfersInserted: number;
-      tournamentGolfersPatchedFromField: number;
-      tournamentGolfersUpdated: number;
-      livePlayers: number;
-    }
-  | undefined;

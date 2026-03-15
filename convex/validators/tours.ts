@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationValidator, sortOrderValidator } from "./_shared";
 
 const tourSortBy = v.union(
   v.literal("name"),
@@ -58,15 +59,10 @@ const getToursOptions = v.optional(
     sort: v.optional(
       v.object({
         sortBy: v.optional(tourSortBy),
-        sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+        sortOrder: v.optional(sortOrderValidator),
       }),
     ),
-    pagination: v.optional(
-      v.object({
-        limit: v.optional(v.number()),
-        offset: v.optional(v.number()),
-      }),
-    ),
+    pagination: v.optional(paginationValidator),
     enhance: v.optional(
       v.object({
         includeSeason: v.optional(v.boolean()),

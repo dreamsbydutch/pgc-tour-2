@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { sortOrderValidator } from "./_shared";
 
 const seasonOptionalFields = {
   startDate: v.optional(v.number()),
@@ -23,7 +24,7 @@ const getSeasonsOptions = v.optional(
     sort: v.optional(
       v.object({
         sortBy: v.optional(v.union(v.literal("year"), v.literal("number"))),
-        sortOrder: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+        sortOrder: v.optional(sortOrderValidator),
       }),
     ),
   }),
@@ -41,9 +42,6 @@ export const seasonsValidators = {
     getCurrentSeason: {},
     getSeasons: {
       options: getSeasonsOptions,
-    },
-    getStandingsViewData: {
-      seasonId: v.id("seasons"),
     },
     createSeason: {
       data: seasonCreateData,

@@ -1,11 +1,6 @@
-export type SeasonSortBy = "year" | "number";
+import type { SortOptions } from "./common";
 
-export type SeasonSortOrder = "asc" | "desc";
-
-export type SeasonSortOptions = {
-  sortBy?: SeasonSortBy;
-  sortOrder?: SeasonSortOrder;
-};
+export type SeasonSortOptions = SortOptions<"year" | "number">;
 
 export type SeasonQueryOptions = {
   sort?: SeasonSortOptions;

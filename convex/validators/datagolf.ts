@@ -12,7 +12,6 @@ import {
   parseDataGolfTeeTimeToMs,
 } from "../utils/datagolf";
 import { Doc, Id } from "../_generated/dataModel";
-import { EnhancedGolfer } from "../types/types";
 
 const vFileFormat = v.union(v.literal("json"), v.literal("csv"));
 const vOddsFormat = v.union(
@@ -26,15 +25,72 @@ const vTour = v.literal("pga");
 const vHistoricalEventDataTour = v.literal("pga");
 const vLiveStrokesGainedView = v.union(v.literal("raw"), v.literal("relative"));
 
+const vTournamentReference = v.object({
+  _id: v.id("tournaments"),
+  name: v.string(),
+  apiId: v.optional(v.string()),
+  seasonId: v.id("seasons"),
+});
+
+const vLiveTournamentStat = v.union(
+  v.literal("sg_putt"),
+  v.literal("sg_arg"),
+  v.literal("sg_app"),
+  v.literal("sg_ott"),
+  v.literal("sg_t2g"),
+  v.literal("sg_bs"),
+  v.literal("sg_total"),
+  v.literal("distance"),
+  v.literal("accuracy"),
+  v.literal("gir"),
+  v.literal("prox_fw"),
+  v.literal("prox_rgh"),
+  v.literal("scrambling"),
+  v.literal("great_shots"),
+  v.literal("poor_shots"),
+);
+
+const vStatThreshold = v.object({
+  stat: vLiveTournamentStat,
+  value: v.number(),
+});
+
+type EnhancedGolfer = {
+  field?: DataGolfFieldPlayer;
+  ranking?: DataGolfRankedPlayer;
+  live?: DataGolfLiveModelPlayer;
+  historical?: DataGolfHistoricalPlayer;
+  tournamentGolfer?: Doc<"tournamentGolfers">;
+  golfer?: Doc<"golfers">;
+};
+
+function getHistoricalRelativeToParScore(
+  historicalPlayer: DataGolfHistoricalPlayer | undefined,
+): number | undefined {
+  if (!historicalPlayer) {
+    return undefined;
+  }
+
+  return (
+    (historicalPlayer.round_1
+      ? historicalPlayer.round_1.score - historicalPlayer.round_1.course_par
+      : 0) +
+    (historicalPlayer.round_2
+      ? historicalPlayer.round_2.score - historicalPlayer.round_2.course_par
+      : 0) +
+    (historicalPlayer.round_3
+      ? historicalPlayer.round_3.score - historicalPlayer.round_3.course_par
+      : 0) +
+    (historicalPlayer.round_4
+      ? historicalPlayer.round_4.score - historicalPlayer.round_4.course_par
+      : 0)
+  );
+}
+
 export const datagolfValidators = {
   args: {
     fetchFieldUpdates: {
-      tournament: v.object({
-        _id: v.id("tournaments"),
-        name: v.string(),
-        apiId: v.optional(v.string()),
-        seasonId: v.id("seasons"),
-      }),
+      tournament: vTournamentReference,
       options: v.optional(
         v.object({
           tour: v.optional(vTour),
@@ -65,12 +121,7 @@ export const datagolfValidators = {
       ),
     },
     fetchLiveModelPredictions: {
-      tournament: v.object({
-        _id: v.id("tournaments"),
-        name: v.string(),
-        apiId: v.optional(v.string()),
-        seasonId: v.id("seasons"),
-      }),
+      tournament: vTournamentReference,
       options: v.optional(
         v.object({
           tour: v.optional(vTour),
@@ -99,50 +150,8 @@ export const datagolfValidators = {
           display: v.optional(vDisplay),
           format: v.optional(vFileFormat),
           filterByPosition: v.optional(v.number()),
-          sortByStat: v.optional(
-            v.object({
-              stat: v.union(
-                v.literal("sg_putt"),
-                v.literal("sg_arg"),
-                v.literal("sg_app"),
-                v.literal("sg_ott"),
-                v.literal("sg_t2g"),
-                v.literal("sg_bs"),
-                v.literal("sg_total"),
-                v.literal("distance"),
-                v.literal("accuracy"),
-                v.literal("gir"),
-                v.literal("prox_fw"),
-                v.literal("prox_rgh"),
-                v.literal("scrambling"),
-                v.literal("great_shots"),
-                v.literal("poor_shots"),
-              ),
-              value: v.number(),
-            }),
-          ),
-          minValue: v.optional(
-            v.object({
-              stat: v.union(
-                v.literal("sg_putt"),
-                v.literal("sg_arg"),
-                v.literal("sg_app"),
-                v.literal("sg_ott"),
-                v.literal("sg_t2g"),
-                v.literal("sg_bs"),
-                v.literal("sg_total"),
-                v.literal("distance"),
-                v.literal("accuracy"),
-                v.literal("gir"),
-                v.literal("prox_fw"),
-                v.literal("prox_rgh"),
-                v.literal("scrambling"),
-                v.literal("great_shots"),
-                v.literal("poor_shots"),
-              ),
-              value: v.number(),
-            }),
-          ),
+          sortByStat: v.optional(vStatThreshold),
+          minValue: v.optional(vStatThreshold),
           onlyCompleteRounds: v.optional(v.boolean()),
           limit: v.optional(v.number()),
           skip: v.optional(v.number()),
@@ -150,12 +159,7 @@ export const datagolfValidators = {
       ),
     },
     fetchHistoricalRoundData: {
-      tournament: v.object({
-        _id: v.id("tournaments"),
-        name: v.string(),
-        apiId: v.optional(v.string()),
-        seasonId: v.id("seasons"),
-      }),
+      tournament: vTournamentReference,
       options: v.object({
         tzOffset: v.optional(v.number()),
         tour: v.string(),
@@ -171,12 +175,7 @@ export const datagolfValidators = {
       }),
     },
     fetchHistoricalEventDataEvents: {
-      tournament: v.object({
-        _id: v.id("tournaments"),
-        name: v.string(),
-        apiId: v.optional(v.string()),
-        seasonId: v.id("seasons"),
-      }),
+      tournament: vTournamentReference,
       options: v.object({
         tour: vHistoricalEventDataTour,
         year: v.number(),
@@ -375,16 +374,9 @@ export function convertEnhancedGolferToTournamentGolferDoc(
     posChange: undefined,
     score:
       golfer.live?.current_score ??
-      (golfer.historical
-        ? (golfer.historical?.round_1?.score ?? 0) -
-          (golfer.historical?.round_1?.course_par ?? 0) +
-          (golfer.historical?.round_2?.score ??
-            0 - (golfer.historical?.round_2?.course_par ?? 0)) +
-          (golfer.historical?.round_3?.score ??
-            0 - (golfer.historical?.round_3?.course_par ?? 0)) +
-          (golfer.historical?.round_4?.score ??
-            0 - (golfer.historical?.round_4?.course_par ?? 0))
-        : (golfer.tournamentGolfer?.score ?? undefined)),
+      getHistoricalRelativeToParScore(golfer.historical) ??
+      golfer.tournamentGolfer?.score ??
+      undefined,
     makeCut:
       golfer.live?.make_cut ?? golfer.tournamentGolfer?.makeCut ?? undefined,
     topTen: golfer.live?.top_10 ?? golfer.tournamentGolfer?.topTen ?? undefined,
@@ -399,10 +391,26 @@ export function convertEnhancedGolferToTournamentGolferDoc(
       undefined,
     endHole: undefined,
     group,
-    roundOne: 0,
-    roundTwo: 0,
-    roundThree: 0,
-    roundFour: 0,
+    roundOne:
+      golfer.live?.R1 ??
+      golfer.historical?.round_1?.score ??
+      golfer.tournamentGolfer?.roundOne ??
+      undefined,
+    roundTwo:
+      golfer.live?.R2 ??
+      golfer.historical?.round_2?.score ??
+      golfer.tournamentGolfer?.roundTwo ??
+      undefined,
+    roundThree:
+      golfer.live?.R3 ??
+      golfer.historical?.round_3?.score ??
+      golfer.tournamentGolfer?.roundThree ??
+      undefined,
+    roundFour:
+      golfer.live?.R4 ??
+      golfer.historical?.round_4?.score ??
+      golfer.tournamentGolfer?.roundFour ??
+      undefined,
     roundOneTeeTime:
       golfer.field?.teetimes.find((tt) => tt.round_num === 1)?.teetime ??
       (golfer.historical?.round_1?.teetime
@@ -464,15 +472,7 @@ export function convertDataGolfHistoricalPlayerToTournamentGolferDoc(
     roundTwo: historicalPlayer.round_2?.score,
     roundThree: historicalPlayer.round_3?.score,
     roundFour: historicalPlayer.round_4?.score,
-    score:
-      ((historicalPlayer.round_1?.score ?? 0) &&
-        (historicalPlayer.round_1?.course_par ?? 0)) +
-      ((historicalPlayer.round_2?.score ?? 0) &&
-        (historicalPlayer.round_2?.course_par ?? 0)) +
-      ((historicalPlayer.round_3?.score ?? 0) &&
-        (historicalPlayer.round_3?.course_par ?? 0)) +
-      ((historicalPlayer.round_4?.score ?? 0) &&
-        (historicalPlayer.round_4?.course_par ?? 0)),
+    score: getHistoricalRelativeToParScore(historicalPlayer),
     thru: 18,
     position: historicalPlayer.fin_text,
   };
