@@ -332,6 +332,89 @@ function shouldIncludeGolferInTeamLiveWindow(args: {
 }
 
 /**
+ * Returns whether a golfer is still eligible to contribute to a team's weekend score.
+ */
+function isWeekendEligibleTeamPosition(position: string | undefined): boolean {
+  return !["CUT", "WD", "DQ"].includes(position ?? "");
+}
+
+/**
+ * Returns whether a team is cut from weekend scoring for rounds three and four.
+ */
+function isTeamWeekendCut(args: {
+  golfers: EnhancedGolfer[];
+  currentRound: number;
+}): boolean {
+  if (args.currentRound < 3) {
+    return false;
+  }
+
+  return (
+    args.golfers.filter((golfer) =>
+      isWeekendEligibleTeamPosition(getEffectiveTournamentPosition(golfer)),
+    ).length < 5
+  );
+}
+
+/**
+ * Returns the golfers that should contribute to a team's live today/thru window.
+ */
+function getTeamLiveWindowGolfers(args: {
+  golfers: EnhancedGolfer[];
+  currentRound: number;
+  isRoundRunning: boolean;
+  coursePar: number;
+}): EnhancedGolfer[] {
+  if (
+    isTeamWeekendCut({
+      golfers: args.golfers,
+      currentRound: args.currentRound,
+    })
+  ) {
+    return [];
+  }
+
+  const selectionSize = args.currentRound >= 3 ? 5 : 10;
+
+  return args.golfers
+    .filter((golfer) =>
+      shouldIncludeGolferInTeamLiveWindow({ ...args, golfer }),
+    )
+    .sort(
+      (a, b) =>
+        (getTournamentTodayValue({ ...args, golfer: a }) ?? 500) -
+        (getTournamentTodayValue({ ...args, golfer: b }) ?? 500),
+    )
+    .slice(0, selectionSize);
+}
+
+/**
+ * Returns the raw team live window mean used for score/today/thru calculations.
+ */
+function getTeamLiveWindowMean(args: {
+  golfers: EnhancedGolfer[];
+  currentRound: number;
+  isRoundRunning: boolean;
+  coursePar: number;
+  metric: "today" | "thru";
+}): number | undefined {
+  if (args.golfers.length === 0) {
+    return undefined;
+  }
+
+  const selectionSize = args.currentRound >= 3 ? 5 : 10;
+  const total = args.golfers.reduce((sum, golfer) => {
+    const value =
+      args.metric === "today"
+        ? getTournamentTodayValue({ ...args, golfer })
+        : getTournamentThruValue({ ...args, golfer });
+    return sum + (value ?? 0);
+  }, 0);
+
+  return total / selectionSize;
+}
+
+/**
  * Returns whether a team has finished a round strongly enough to publish its round score.
  */
 function isTeamRoundComplete(args: {
@@ -353,6 +436,15 @@ function isTeamRoundComplete(args: {
 
   if (args.roundNumber <= 2) {
     return roundScores.every((score) => typeof score === "number");
+  }
+
+  if (
+    isTeamWeekendCut({
+      golfers: args.golfers,
+      currentRound: args.currentRound,
+    })
+  ) {
+    return false;
   }
 
   return roundScores.filter((score) => typeof score === "number").length >= 5;
@@ -1775,134 +1867,50 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           isRoundRunning,
           coursePar: course.par,
         });
+        const teamWeekendCut = isTeamWeekendCut({
+          golfers: t.golfers,
+          currentRound,
+        });
+        const teamLiveWindowGolfers = getTeamLiveWindowGolfers({
+          golfers: t.golfers,
+          currentRound,
+          isRoundRunning,
+          coursePar: course.par,
+        });
+        const teamLiveTodayMean = getTeamLiveWindowMean({
+          golfers: teamLiveWindowGolfers,
+          currentRound,
+          isRoundRunning,
+          coursePar: course.par,
+          metric: "today",
+        });
+        const teamLiveThruMean = getTeamLiveWindowMean({
+          golfers: teamLiveWindowGolfers,
+          currentRound,
+          isRoundRunning,
+          coursePar: course.par,
+          metric: "thru",
+        });
 
         updatedTeams.push({
           ...t,
+          position: teamWeekendCut ? "CUT" : t.position,
           score: roundToDecimalPlace(
             (roundOne && roundOne > 0 ? roundOne - course.par : 0) +
               (roundTwo && roundTwo > 0 ? roundTwo - course.par : 0) +
               (roundThree && roundThree > 0 ? roundThree - course.par : 0) +
               (roundFour && roundFour > 0 ? roundFour - course.par : 0) +
-              (isRoundRunning
-                ? (t.golfers
-                    .filter((g) =>
-                      shouldIncludeGolferInTeamLiveWindow({
-                        golfer: g,
-                        currentRound,
-                        isRoundRunning,
-                        coursePar: course.par,
-                      }),
-                    )
-                    .sort(
-                      (a, b) =>
-                        (getTournamentTodayValue({
-                          golfer: a,
-                          currentRound,
-                          isRoundRunning,
-                          coursePar: course.par,
-                        }) ?? 500) -
-                        (getTournamentTodayValue({
-                          golfer: b,
-                          currentRound,
-                          isRoundRunning,
-                          coursePar: course.par,
-                        }) ?? 500),
-                    )
-                    .slice(0, currentRound >= 3 ? 5 : 10)
-                    .reduce(
-                      (sum, val) =>
-                        (sum ?? 0) +
-                        (getTournamentTodayValue({
-                          golfer: val,
-                          currentRound,
-                          isRoundRunning,
-                          coursePar: course.par,
-                        }) ?? 0),
-                      0,
-                    ) ?? 0) / (currentRound >= 3 ? 5 : 10)
-                : 0),
+              (isRoundRunning ? (teamLiveTodayMean ?? 0) : 0),
             1,
           ),
-          today: roundToDecimalPlace(
-            (t.golfers
-              .filter((g) =>
-                shouldIncludeGolferInTeamLiveWindow({
-                  golfer: g,
-                  currentRound,
-                  isRoundRunning,
-                  coursePar: course.par,
-                }),
-              )
-              .sort((a, b) => {
-                const aToday =
-                  getTournamentTodayValue({
-                    golfer: a,
-                    currentRound,
-                    isRoundRunning,
-                    coursePar: course.par,
-                  }) ?? 500;
-                const bToday =
-                  getTournamentTodayValue({
-                    golfer: b,
-                    currentRound,
-                    isRoundRunning,
-                    coursePar: course.par,
-                  }) ?? 500;
-                return aToday - bToday;
-              })
-              .slice(0, currentRound >= 3 ? 5 : 10)
-              .reduce(
-                (sum, val) =>
-                  (sum ?? 0) +
-                  (getTournamentTodayValue({
-                    golfer: val,
-                    currentRound,
-                    isRoundRunning,
-                    coursePar: course.par,
-                  }) ?? 0),
-                0,
-              ) ?? 0) / (currentRound >= 3 ? 5 : 10),
-            1,
-          ),
-          thru: roundToDecimalPlace(
-            (t.golfers
-              .filter((g) =>
-                shouldIncludeGolferInTeamLiveWindow({
-                  golfer: g,
-                  currentRound,
-                  isRoundRunning,
-                  coursePar: course.par,
-                }),
-              )
-              .sort(
-                (a, b) =>
-                  (getTournamentTodayValue({
-                    golfer: a,
-                    currentRound,
-                    isRoundRunning,
-                    coursePar: course.par,
-                  }) ?? 500) -
-                  (getTournamentTodayValue({
-                    golfer: b,
-                    currentRound,
-                    isRoundRunning,
-                    coursePar: course.par,
-                  }) ?? 500),
-              )
-              .slice(0, currentRound >= 3 ? 5 : 10)
-              .reduce(
-                (sum, val) =>
-                  (sum ?? 0) +
-                  (getTournamentThruValue({
-                    golfer: val,
-                    currentRound,
-                    isRoundRunning,
-                    coursePar: course.par,
-                  }) ?? 0),
-                0,
-              ) ?? 0) / (currentRound >= 3 ? 5 : 10),
-            1,
-          ),
+          today:
+            typeof teamLiveTodayMean === "number"
+              ? roundToDecimalPlace(teamLiveTodayMean, 1)
+              : undefined,
+          thru:
+            typeof teamLiveThruMean === "number"
+              ? roundToDecimalPlace(teamLiveThruMean, 1)
+              : undefined,
           round: currentRound,
           roundOneTeeTime: earliestTimeStr(
             t.golfers.map(
@@ -1952,60 +1960,65 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             ),
           ),
           roundTwo,
-          roundThreeTeeTime: earliestTimeStr(
-            t.golfers
-              .map(
-                (g) =>
-                  g.field?.teetimes.find(
-                    (tt: {
-                      course_code: string;
-                      course_name: string;
-                      course_num: number;
-                      round_num: number;
-                      start_hole: number;
-                      teetime: number | undefined;
-                      wave: "early" | "late";
-                    }) => tt.round_num === 3,
-                  )?.teetime ??
-                  (g.historical?.round_3?.teetime
-                    ? g.historical?.round_3?.teetime
-                    : ((typeof g.tournamentGolfer?.roundThreeTeeTime ===
-                      "number"
-                        ? g.tournamentGolfer.roundThreeTeeTime
-                        : parseDataGolfTeeTimeToMs(
-                            g.tournamentGolfer?.roundThreeTeeTime as string,
-                          )) ?? undefined)),
-              )
-              .sort((a, b) => (a ?? 0) - (b ?? 0))
-              .slice(-5),
-          ),
+          roundThreeTeeTime: teamWeekendCut
+            ? undefined
+            : earliestTimeStr(
+                t.golfers
+                  .map(
+                    (g) =>
+                      g.field?.teetimes.find(
+                        (tt: {
+                          course_code: string;
+                          course_name: string;
+                          course_num: number;
+                          round_num: number;
+                          start_hole: number;
+                          teetime: number | undefined;
+                          wave: "early" | "late";
+                        }) => tt.round_num === 3,
+                      )?.teetime ??
+                      (g.historical?.round_3?.teetime
+                        ? g.historical?.round_3?.teetime
+                        : ((typeof g.tournamentGolfer?.roundThreeTeeTime ===
+                          "number"
+                            ? g.tournamentGolfer.roundThreeTeeTime
+                            : parseDataGolfTeeTimeToMs(
+                                g.tournamentGolfer?.roundThreeTeeTime as string,
+                              )) ?? undefined)),
+                  )
+                  .sort((a, b) => (a ?? 0) - (b ?? 0))
+                  .slice(-5),
+              ),
           roundThree,
-          roundFourTeeTime: earliestTimeStr(
-            t.golfers
-              .map(
-                (g) =>
-                  g.field?.teetimes.find(
-                    (tt: {
-                      course_code: string;
-                      course_name: string;
-                      course_num: number;
-                      round_num: number;
-                      start_hole: number;
-                      teetime: number | undefined;
-                      wave: "early" | "late";
-                    }) => tt.round_num === 4,
-                  )?.teetime ??
-                  (g.historical?.round_4?.teetime
-                    ? g.historical?.round_4?.teetime
-                    : ((typeof g.tournamentGolfer?.roundFourTeeTime === "number"
-                        ? g.tournamentGolfer.roundFourTeeTime
-                        : parseDataGolfTeeTimeToMs(
-                            g.tournamentGolfer?.roundFourTeeTime as string,
-                          )) ?? undefined)),
-              )
-              .sort((a, b) => (a ?? 0) - (b ?? 0))
-              .slice(-5),
-          ),
+          roundFourTeeTime: teamWeekendCut
+            ? undefined
+            : earliestTimeStr(
+                t.golfers
+                  .map(
+                    (g) =>
+                      g.field?.teetimes.find(
+                        (tt: {
+                          course_code: string;
+                          course_name: string;
+                          course_num: number;
+                          round_num: number;
+                          start_hole: number;
+                          teetime: number | undefined;
+                          wave: "early" | "late";
+                        }) => tt.round_num === 4,
+                      )?.teetime ??
+                      (g.historical?.round_4?.teetime
+                        ? g.historical?.round_4?.teetime
+                        : ((typeof g.tournamentGolfer?.roundFourTeeTime ===
+                          "number"
+                            ? g.tournamentGolfer.roundFourTeeTime
+                            : parseDataGolfTeeTimeToMs(
+                                g.tournamentGolfer?.roundFourTeeTime as string,
+                              )) ?? undefined)),
+                  )
+                  .sort((a, b) => (a ?? 0) - (b ?? 0))
+                  .slice(-5),
+              ),
           roundFour,
         });
       }
@@ -2058,7 +2071,11 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
               earnings: awardTeamEarnings(tier, teamsAhead, teamsTied),
               points: awardTeamPlayoffPoints(tier, teamsAhead, teamsTied),
               position:
-                teamsTied > 1 ? `T${teamsAhead + 1}` : `${teamsAhead + 1}`,
+                t.position === "CUT"
+                  ? "CUT"
+                  : teamsTied > 1
+                    ? `T${teamsAhead + 1}`
+                    : `${teamsAhead + 1}`,
               pastPosition:
                 teamsTiedPast > 1
                   ? `T${teamsAheadPast + 1}`
@@ -2627,9 +2644,34 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           isRoundRunning,
           coursePar: course.par,
         });
+        const teamWeekendCut = isTeamWeekendCut({
+          golfers: t.golfers,
+          currentRound,
+        });
+        const teamLiveWindowGolfers = getTeamLiveWindowGolfers({
+          golfers: t.golfers,
+          currentRound,
+          isRoundRunning,
+          coursePar: course.par,
+        });
+        const teamLiveTodayMean = getTeamLiveWindowMean({
+          golfers: teamLiveWindowGolfers,
+          currentRound,
+          isRoundRunning,
+          coursePar: course.par,
+          metric: "today",
+        });
+        const teamLiveThruMean = getTeamLiveWindowMean({
+          golfers: teamLiveWindowGolfers,
+          currentRound,
+          isRoundRunning,
+          coursePar: course.par,
+          metric: "thru",
+        });
 
         updatedTeams.push({
           ...t,
+          position: teamWeekendCut ? "CUT" : t.position,
           score: roundToDecimalPlace(
             (roundOne && roundOne > 0 ? roundOne - course.par : 0) +
               (roundTwo && roundTwo > 0 ? roundTwo - course.par : 0) +
@@ -2637,86 +2679,14 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
               (roundFour && roundFour > 0 ? roundFour - course.par : 0) +
               1,
           ),
-          today: roundToDecimalPlace(
-            (t.golfers
-              .filter((g) =>
-                shouldIncludeGolferInTeamLiveWindow({
-                  golfer: g,
-                  currentRound,
-                  isRoundRunning,
-                  coursePar: course.par,
-                }),
-              )
-              .sort((a, b) => {
-                const aToday =
-                  getTournamentTodayValue({
-                    golfer: a,
-                    currentRound,
-                    isRoundRunning,
-                    coursePar: course.par,
-                  }) ?? 500;
-                const bToday =
-                  getTournamentTodayValue({
-                    golfer: b,
-                    currentRound,
-                    isRoundRunning,
-                    coursePar: course.par,
-                  }) ?? 500;
-                return aToday - bToday;
-              })
-              .slice(0, currentRound >= 3 ? 5 : 10)
-              .reduce(
-                (sum, val) =>
-                  (sum ?? 0) +
-                  (getTournamentTodayValue({
-                    golfer: val,
-                    currentRound,
-                    isRoundRunning,
-                    coursePar: course.par,
-                  }) ?? 0),
-                0,
-              ) ?? 0) / (currentRound >= 3 ? 5 : 10),
-            1,
-          ),
-          thru: roundToDecimalPlace(
-            (t.golfers
-              .filter((g) =>
-                shouldIncludeGolferInTeamLiveWindow({
-                  golfer: g,
-                  currentRound,
-                  isRoundRunning,
-                  coursePar: course.par,
-                }),
-              )
-              .sort(
-                (a, b) =>
-                  (getTournamentTodayValue({
-                    golfer: a,
-                    currentRound,
-                    isRoundRunning,
-                    coursePar: course.par,
-                  }) ?? 500) -
-                  (getTournamentTodayValue({
-                    golfer: b,
-                    currentRound,
-                    isRoundRunning,
-                    coursePar: course.par,
-                  }) ?? 500),
-              )
-              .slice(0, currentRound >= 3 ? 5 : 10)
-              .reduce(
-                (sum, val) =>
-                  (sum ?? 0) +
-                  (getTournamentThruValue({
-                    golfer: val,
-                    currentRound,
-                    isRoundRunning,
-                    coursePar: course.par,
-                  }) ?? 0),
-                0,
-              ) ?? 0) / (currentRound >= 3 ? 5 : 10),
-            1,
-          ),
+          today:
+            typeof teamLiveTodayMean === "number"
+              ? roundToDecimalPlace(teamLiveTodayMean, 1)
+              : undefined,
+          thru:
+            typeof teamLiveThruMean === "number"
+              ? roundToDecimalPlace(teamLiveThruMean, 1)
+              : undefined,
           round: currentRound,
           roundOneTeeTime: earliestTimeStr(
             t.golfers.map(
@@ -2766,60 +2736,65 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             ),
           ),
           roundTwo,
-          roundThreeTeeTime: earliestTimeStr(
-            t.golfers
-              .map(
-                (g) =>
-                  g.field?.teetimes.find(
-                    (tt: {
-                      course_code: string;
-                      course_name: string;
-                      course_num: number;
-                      round_num: number;
-                      start_hole: number;
-                      teetime: number | undefined;
-                      wave: "early" | "late";
-                    }) => tt.round_num === 3,
-                  )?.teetime ??
-                  (g.historical?.round_3?.teetime
-                    ? g.historical?.round_3?.teetime
-                    : ((typeof g.tournamentGolfer?.roundThreeTeeTime ===
-                      "number"
-                        ? g.tournamentGolfer.roundThreeTeeTime
-                        : parseDataGolfTeeTimeToMs(
-                            g.tournamentGolfer?.roundThreeTeeTime as string,
-                          )) ?? undefined)),
-              )
-              .sort((a, b) => (a ?? 0) - (b ?? 0))
-              .slice(-5),
-          ),
+          roundThreeTeeTime: teamWeekendCut
+            ? undefined
+            : earliestTimeStr(
+                t.golfers
+                  .map(
+                    (g) =>
+                      g.field?.teetimes.find(
+                        (tt: {
+                          course_code: string;
+                          course_name: string;
+                          course_num: number;
+                          round_num: number;
+                          start_hole: number;
+                          teetime: number | undefined;
+                          wave: "early" | "late";
+                        }) => tt.round_num === 3,
+                      )?.teetime ??
+                      (g.historical?.round_3?.teetime
+                        ? g.historical?.round_3?.teetime
+                        : ((typeof g.tournamentGolfer?.roundThreeTeeTime ===
+                          "number"
+                            ? g.tournamentGolfer.roundThreeTeeTime
+                            : parseDataGolfTeeTimeToMs(
+                                g.tournamentGolfer?.roundThreeTeeTime as string,
+                              )) ?? undefined)),
+                  )
+                  .sort((a, b) => (a ?? 0) - (b ?? 0))
+                  .slice(-5),
+              ),
           roundThree,
-          roundFourTeeTime: earliestTimeStr(
-            t.golfers
-              .map(
-                (g) =>
-                  g.field?.teetimes.find(
-                    (tt: {
-                      course_code: string;
-                      course_name: string;
-                      course_num: number;
-                      round_num: number;
-                      start_hole: number;
-                      teetime: number | undefined;
-                      wave: "early" | "late";
-                    }) => tt.round_num === 4,
-                  )?.teetime ??
-                  (g.historical?.round_4?.teetime
-                    ? g.historical?.round_4?.teetime
-                    : ((typeof g.tournamentGolfer?.roundFourTeeTime === "number"
-                        ? g.tournamentGolfer.roundFourTeeTime
-                        : parseDataGolfTeeTimeToMs(
-                            g.tournamentGolfer?.roundFourTeeTime as string,
-                          )) ?? undefined)),
-              )
-              .sort((a, b) => (a ?? 0) - (b ?? 0))
-              .slice(-5),
-          ),
+          roundFourTeeTime: teamWeekendCut
+            ? undefined
+            : earliestTimeStr(
+                t.golfers
+                  .map(
+                    (g) =>
+                      g.field?.teetimes.find(
+                        (tt: {
+                          course_code: string;
+                          course_name: string;
+                          course_num: number;
+                          round_num: number;
+                          start_hole: number;
+                          teetime: number | undefined;
+                          wave: "early" | "late";
+                        }) => tt.round_num === 4,
+                      )?.teetime ??
+                      (g.historical?.round_4?.teetime
+                        ? g.historical?.round_4?.teetime
+                        : ((typeof g.tournamentGolfer?.roundFourTeeTime ===
+                          "number"
+                            ? g.tournamentGolfer.roundFourTeeTime
+                            : parseDataGolfTeeTimeToMs(
+                                g.tournamentGolfer?.roundFourTeeTime as string,
+                              )) ?? undefined)),
+                  )
+                  .sort((a, b) => (a ?? 0) - (b ?? 0))
+                  .slice(-5),
+              ),
           roundFour,
         });
       }
@@ -2872,7 +2847,11 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
               earnings: awardTeamEarnings(tier, teamsAhead, teamsTied),
               points: awardTeamPlayoffPoints(tier, teamsAhead, teamsTied),
               position:
-                teamsTied > 1 ? `T${teamsAhead + 1}` : `${teamsAhead + 1}`,
+                t.position === "CUT"
+                  ? "CUT"
+                  : teamsTied > 1
+                    ? `T${teamsAhead + 1}`
+                    : `${teamsAhead + 1}`,
               pastPosition:
                 teamsTiedPast > 1
                   ? `T${teamsAheadPast + 1}`

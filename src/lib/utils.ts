@@ -1232,10 +1232,12 @@ export function getPositionChangeForTeam(team: {
   position: string | null;
 }): number {
   if (!team.pastPosition || !team.position) return 0;
-  return (
-    Number(team.pastPosition.replace("T", "")) -
-    Number(team.position.replace("T", ""))
-  );
+  const previousPosition = Number(team.pastPosition.replace("T", ""));
+  const currentPosition = Number(team.position.replace("T", ""));
+  if (!Number.isFinite(previousPosition) || !Number.isFinite(currentPosition)) {
+    return 0;
+  }
+  return previousPosition - currentPosition;
 }
 
 export function sortTeamRows(rows: LeaderboardTeamRow[]): LeaderboardTeamRow[] {
