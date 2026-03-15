@@ -7,18 +7,31 @@ import {
 import type { Id } from "../_generated/dataModel";
 import type {
   TierCreatePayload,
+  TierFilterOptions,
+  TierPaginationOptions,
   TierQueryOptions,
+  TierSortOptions,
   TierUpdatePayload,
+  TierWithSeason,
 } from "../types/tiers";
-import { omitUndefined } from "../utils/misc";
+import { requireAdmin } from "../utils/auth";
+import { omitUndefined } from "../utils/_shared/object";
+import {
+  findCurrentSeason,
+  getCurrentSeasonId,
+  listSeasons,
+} from "../utils/seasons";
 import {
   filterTiers,
-  listTiers,
+  hydrateTiersWithSeason,
   paginateTiers,
   sortTiers,
 } from "../utils/tiers";
-import { requireAdmin } from "../utils/auth";
 import { tiersValidators } from "../validators/tiers";
+
+// Level 0: shared context types
+
+type TierFunctionContext = MutationCtx | QueryCtx;
 
 /**
  * Validates tier arrays before create or update writes.
@@ -33,6 +46,66 @@ function validateTierData(data: { payouts?: number[]; points?: number[] }) {
   if (data.points && data.points.some((value) => value < 0)) {
     throw new Error("Tier points cannot contain negative values");
   }
+}
+
+/** Returns whether the current caller is authenticated. */
+async function isSignedIn(ctx: QueryCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  return Boolean(identity?.subject);
+}
+
+/** Loads tiers based on id, ids, season, or full-table fallback. */
+async function listTiers(
+  ctx: QueryCtx,
+  options: {
+    id?: Id<"tiers">;
+    ids?: Id<"tiers">[];
+    seasonId?: Id<"seasons">;
+  },
+) {
+  if (options.id) {
+    const tier = await ctx.db.get(options.id);
+    return tier ? [tier] : [];
+  }
+
+  if (options.ids && options.ids.length > 0) {
+    const docs = await Promise.all(options.ids.map((id) => ctx.db.get(id)));
+    return docs.filter(
+      (tier): tier is NonNullable<typeof tier> => tier !== null,
+    );
+  }
+
+  if (options.seasonId) {
+    return await ctx.db
+      .query("tiers")
+      .withIndex("by_season", (q) => q.eq("seasonId", options.seasonId!))
+      .collect();
+  }
+
+  return await ctx.db.query("tiers").collect();
+}
+
+/** Hydrates one tier with its required season payload. */
+async function hydrateTierResponse(
+  ctx: TierFunctionContext,
+  tierId: Id<"tiers">,
+): Promise<TierWithSeason> {
+  const tier = await ctx.db.get(tierId);
+
+  if (!tier) {
+    throw new Error("Tier not found");
+  }
+
+  const season = await ctx.db.get(tier.seasonId);
+
+  if (!season) {
+    throw new Error("Season not found");
+  }
+
+  return {
+    ...tier,
+    season,
+  };
 }
 
 /**
@@ -88,7 +161,7 @@ async function createTierRecord(ctx: MutationCtx, data: TierCreatePayload) {
     updatedAt: Date.now(),
   });
 
-  return await ctx.db.get(tierId);
+  return await hydrateTierResponse(ctx, tierId);
 }
 
 /**
@@ -132,7 +205,7 @@ async function updateTierRecord(
     }),
   );
 
-  return await ctx.db.get(tierId);
+  return await hydrateTierResponse(ctx, tierId);
 }
 
 /**
@@ -148,6 +221,8 @@ async function deleteTierRecord(ctx: MutationCtx, tierId: Id<"tiers">) {
   if (!existing) {
     throw new Error("Tier not found");
   }
+
+  const deletedTier = await hydrateTierResponse(ctx, tierId);
 
   const tournaments = await ctx.db
     .query("tournaments")
@@ -187,6 +262,7 @@ async function deleteTierRecord(ctx: MutationCtx, tierId: Id<"tiers">) {
 
   return {
     ok: true,
+    tier: deletedTier,
     tierId,
     deletedTournaments: tournaments.length,
     deletedTeams: teams.length,
@@ -194,43 +270,72 @@ async function deleteTierRecord(ctx: MutationCtx, tierId: Id<"tiers">) {
   } as const;
 }
 
-/**
- * Resolves tier lists from query options using logical filtering, sorting, and
- * pagination.
- *
- * @param ctx Convex query context.
- * @param options Tier query options.
- * @returns Matching tier rows.
- */
+/** Returns whether a hydrated tier is readable by the current caller. */
+async function canReadTier(ctx: QueryCtx, tierId: Id<"tiers">) {
+  if (await isSignedIn(ctx)) {
+    return true;
+  }
+
+  const currentSeasonId = await getCurrentSeasonId(ctx);
+  if (!currentSeasonId) {
+    return false;
+  }
+
+  const tier = await ctx.db.get(tierId);
+  return tier?.seasonId === currentSeasonId;
+}
+
+/** Resolves tier lists from query options for the current caller. */
 async function getTiersForOptions(ctx: QueryCtx, options: TierQueryOptions) {
   const filter = options.filter ?? {};
   const sort = options.sort ?? {};
   const pagination = options.pagination ?? {};
+  const signedIn = await isSignedIn(ctx);
+  const requestedSeasonId = filter.seasonId;
+  const currentSeasonId = signedIn ? null : await getCurrentSeasonId(ctx);
+
+  if (!signedIn && !currentSeasonId) {
+    return [];
+  }
+
+  if (!signedIn && requestedSeasonId && requestedSeasonId !== currentSeasonId) {
+    return [];
+  }
+
+  const effectiveSeasonId = signedIn
+    ? requestedSeasonId
+    : (currentSeasonId ?? undefined);
 
   const tiers = await listTiers(ctx, {
     id: options.id,
     ids: options.ids,
-    seasonId: filter.seasonId,
+    seasonId: options.id || options.ids?.length ? undefined : effectiveSeasonId,
   });
 
-  const filtered = filterTiers(tiers, filter);
+  const gatedTiers = signedIn
+    ? tiers
+    : tiers.filter((tier) => tier.seasonId === currentSeasonId);
+
+  const filtered = filterTiers(gatedTiers, filter);
   const sorted = sortTiers(filtered, sort);
-  return paginateTiers(sorted, pagination);
+  const paginated = paginateTiers(sorted, pagination);
+
+  return await hydrateTiersWithSeason(ctx, paginated);
 }
 
-/**
- * Returns a tier by its document id.
- *
- * @param tierId Tier document id.
- * @returns The matching tier document, or null when missing.
- */
+/** Returns a hydrated tier by its document id when the caller can read it. */
 export const getTier = query({
   args: tiersValidators.args.getTier,
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.tierId);
+    if (!(await canReadTier(ctx, args.tierId))) {
+      return null;
+    }
+
+    return await hydrateTierResponse(ctx, args.tierId);
   },
 });
 
+/** Returns hydrated tiers by id, ids, season, or full collection. */
 export const getTiers = query({
   args: tiersValidators.args.getTiers,
   handler: async (ctx, args) => {

@@ -20,25 +20,3 @@ export async function requireTourCardOwner(
   }
   await requireOwnResource(ctx, clerkId);
 }
-
-export async function hasTourCardFeeForSeason(
-  ctx: MutationCtx,
-  args: {
-    member: Doc<"members">;
-    seasonId: Id<"seasons">;
-  },
-): Promise<boolean> {
-  const { member, seasonId } = args;
-
-  const existing = await ctx.db
-    .query("transactions")
-    .withIndex("by_member_season_type", (q) =>
-      q
-        .eq("memberId", member._id)
-        .eq("seasonId", seasonId)
-        .eq("transactionType", "TourCardFee"),
-    )
-    .first();
-
-  return isCompletedTourCardFee(existing);
-}

@@ -10,21 +10,18 @@ import type {
   SeasonQueryOptions,
   SeasonUpdatePayload,
 } from "../types/seasons";
-import { omitUndefined } from "../utils/misc";
-import {
-  findCurrentSeason,
-  getStandingsViewDataForSeason,
-  listSeasons,
-  sortSeasons,
-} from "../utils/seasons";
 import { requireAdmin } from "../utils/auth";
+import { omitUndefined } from "../utils/_shared/object";
+import { findCurrentSeason, listSeasons, sortSeasons } from "../utils/seasons";
 import { seasonsValidators } from "../validators/seasons";
 
-/**
- * Validates season date relationships before create or update writes.
- *
- * @param data Season payload to validate.
- */
+// Level 0: shared context types
+
+type SeasonFunctionContext = MutationCtx | QueryCtx;
+
+// Level 1: mutation validation and record helpers
+
+/** Validates season date relationships before create or update writes. */
 function validateSeasonDates(data: {
   startDate?: number;
   endDate?: number;
@@ -49,14 +46,7 @@ function validateSeasonDates(data: {
   }
 }
 
-/**
- * Ensures there is not already another season with the same year and number.
- *
- * @param ctx Convex mutation context.
- * @param year Season year.
- * @param number Season number.
- * @param excludeSeasonId Optional season id to exclude during updates.
- */
+/** Ensures there is not already another season with the same year and number. */
 async function assertUniqueSeasonYearAndNumber(
   ctx: MutationCtx,
   year: number,
@@ -77,14 +67,7 @@ async function assertUniqueSeasonYearAndNumber(
   }
 }
 
-/**
- * Creates a season after validating date relationships and year/number
- * uniqueness.
- *
- * @param ctx Convex mutation context.
- * @param data New season payload.
- * @returns The inserted season document.
- */
+/** Creates a season after validating date relationships and year/number uniqueness. */
 async function createSeasonRecord(ctx: MutationCtx, data: SeasonCreatePayload) {
   validateSeasonDates(data);
   await assertUniqueSeasonYearAndNumber(ctx, data.year, data.number);
@@ -97,15 +80,7 @@ async function createSeasonRecord(ctx: MutationCtx, data: SeasonCreatePayload) {
   return await ctx.db.get(seasonId);
 }
 
-/**
- * Updates a season after validating date relationships and year/number
- * uniqueness.
- *
- * @param ctx Convex mutation context.
- * @param seasonId Season document id.
- * @param data Partial season fields to update.
- * @returns The updated season document.
- */
+/** Updates a season after validating date relationships and year/number uniqueness. */
 async function updateSeasonRecord(
   ctx: MutationCtx,
   seasonId: Id<"seasons">,
@@ -139,13 +114,7 @@ async function updateSeasonRecord(
   return await ctx.db.get(seasonId);
 }
 
-/**
- * Deletes a season and cascades the removal to season-scoped child records.
- *
- * @param ctx Convex mutation context.
- * @param seasonId Season document id.
- * @returns Confirmation with cascade delete counts.
- */
+/** Deletes a season and cascades the removal to season-scoped child records. */
 async function deleteSeasonRecord(ctx: MutationCtx, seasonId: Id<"seasons">) {
   const existing = await ctx.db.get(seasonId);
   if (!existing) {
@@ -224,12 +193,17 @@ async function deleteSeasonRecord(ctx: MutationCtx, seasonId: Id<"seasons">) {
   } as const;
 }
 
-/**
- * Resolves season lists from query options.
- *
- * @param options Season query options.
- * @returns Matching season rows.
- */
+// Level 2: query composition helpers
+
+/** Returns one season by id or null when it does not exist. */
+async function getSeasonById(
+  ctx: SeasonFunctionContext,
+  seasonId: Id<"seasons">,
+) {
+  return await ctx.db.get(seasonId);
+}
+
+/** Resolves season lists from query options into a sorted collection. */
 async function getSeasonsForOptions(
   ctx: QueryCtx,
   options: SeasonQueryOptions,
@@ -238,19 +212,17 @@ async function getSeasonsForOptions(
   return sortSeasons(seasons, options.sort);
 }
 
-/**
- * Returns a season by its document id.
- *
- * @param seasonId Season document id.
- * @returns The matching season document, or null when missing.
- */
+// Level 3: public and authenticated read queries
+
+/** Returns a season by its document id. */
 export const getSeason = query({
   args: seasonsValidators.args.getSeason,
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.seasonId);
+    return await getSeasonById(ctx, args.seasonId);
   },
 });
 
+/** Returns the current season using the current calendar year fallback rules. */
 export const getCurrentSeason = query({
   args: seasonsValidators.args.getCurrentSeason,
   handler: async (ctx) => {
@@ -259,12 +231,7 @@ export const getCurrentSeason = query({
   },
 });
 
-/**
- * Returns seasons with optional sort settings.
- *
- * @param options Season query options.
- * @returns Matching season rows.
- */
+/** Returns seasons with optional sort settings. */
 export const getSeasons = query({
   args: seasonsValidators.args.getSeasons,
   handler: async (ctx, args) => {
@@ -272,25 +239,9 @@ export const getSeasons = query({
   },
 });
 
-/**
- * Returns the season-scoped data needed by the standings view.
- *
- * @param seasonId Season document id.
- * @returns Tours, tiers, tournaments, tour cards, teams, and transactions.
- */
-export const getStandingsViewData = query({
-  args: seasonsValidators.args.getStandingsViewData,
-  handler: async (ctx, args) => {
-    return await getStandingsViewDataForSeason(ctx, args.seasonId);
-  },
-});
+// Level 4: admin write mutations
 
-/**
- * Admin-only mutation that creates a season.
- *
- * @param data New season payload.
- * @returns The inserted season document.
- */
+/** Admin-only mutation that creates a season. */
 export const createSeason = mutation({
   args: seasonsValidators.args.createSeason,
   handler: async (ctx, args) => {
@@ -299,13 +250,7 @@ export const createSeason = mutation({
   },
 });
 
-/**
- * Admin-only mutation that updates a season.
- *
- * @param seasonId Season document id.
- * @param data Partial season fields to update.
- * @returns The updated season document.
- */
+/** Admin-only mutation that updates a season. */
 export const updateSeason = mutation({
   args: seasonsValidators.args.updateSeason,
   handler: async (ctx, args) => {
@@ -314,12 +259,7 @@ export const updateSeason = mutation({
   },
 });
 
-/**
- * Admin-only mutation that deletes a season and its season-scoped child data.
- *
- * @param seasonId Season document id.
- * @returns Confirmation with cascade delete counts.
- */
+/** Admin-only mutation that deletes a season and its season-scoped child data. */
 export const deleteSeason = mutation({
   args: seasonsValidators.args.deleteSeason,
   handler: async (ctx, args) => {

@@ -1,4 +1,4 @@
-import type { Doc, Id } from "../_generated/dataModel";
+import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import type { SeasonSortOptions } from "../types/seasons";
 
@@ -74,56 +74,8 @@ export function findCurrentSeason(
   );
 }
 
-/**
- * Loads the season-scoped standings view dependencies in one place.
- *
- * @param ctx Convex query context.
- * @param seasonId Season document id.
- * @returns Tours, tiers, tournaments, tour cards, and teams for the season.
- */
-export async function getStandingsViewDataForSeason(
-  ctx: QueryCtx,
-  seasonId: Id<"seasons">,
-) {
-  const [tours, tiers, tournaments, tourCards, transactions] =
-    await Promise.all([
-      ctx.db
-        .query("tours")
-        .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
-        .collect(),
-      ctx.db
-        .query("tiers")
-        .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
-        .collect(),
-      ctx.db
-        .query("tournaments")
-        .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
-        .collect(),
-      ctx.db
-        .query("tourCards")
-        .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
-        .collect(),
-      ctx.db
-        .query("transactions")
-        .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
-        .collect(),
-    ]);
-
-  const teamsByTournament = await Promise.all(
-    tournaments.map((tournament) =>
-      ctx.db
-        .query("teams")
-        .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
-        .collect(),
-    ),
-  );
-
-  return {
-    tours,
-    tiers,
-    tournaments,
-    tourCards,
-    teams: teamsByTournament.flat(),
-    transactions,
-  };
+/** Loads the current season id when one can be resolved. */
+export async function getCurrentSeasonId(ctx: QueryCtx) {
+  const seasons = await listSeasons(ctx);
+  return findCurrentSeason(seasons)?._id ?? null;
 }

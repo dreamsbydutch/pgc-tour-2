@@ -7,15 +7,16 @@ import {
 import type { Id } from "../_generated/dataModel";
 import type {
   TournamentCreatePayload,
+  TournamentFetchResult,
   TournamentQueryOptions,
   TournamentUpdatePayload,
 } from "../types/tournaments";
-import { omitUndefined } from "../utils/misc";
+import { omitUndefined } from "../utils/_shared/object";
 import {
-  enhanceTournaments,
   findCurrentTournament,
   findLastTournament,
   findNextTournament,
+  getTournamentById,
   getTournamentPlayoffState,
   isWithinNextTournamentWindow,
   listTournaments,
@@ -23,15 +24,52 @@ import {
 } from "../utils/tournaments";
 import { requireAdmin } from "../utils/auth";
 import { tournamentsValidators } from "../validators/tournaments";
+import { v } from "convex/values";
 
-/**
- * Creates a tournament after validating that its related season, tier, and
- * course records exist.
- *
- * @param ctx Convex mutation context.
- * @param data New tournament payload.
- * @returns The inserted tournament document.
- */
+// Level 0: shared context types
+
+type TournamentFunctionContext = MutationCtx | QueryCtx;
+
+// Level 1: mutation record and hydration helpers
+
+/** Hydrates one tournament doc with the standard course, tier, and season data used by function responses. */
+async function hydrateTournamentResponse(
+  ctx: TournamentFunctionContext,
+  tournamentId: Id<"tournaments">,
+): Promise<TournamentFetchResult> {
+  const tournament = await ctx.db.get(tournamentId);
+
+  if (!tournament) {
+    throw new Error("Tournament not found");
+  }
+
+  const [course, tier, season] = await Promise.all([
+    ctx.db.get(tournament.courseId),
+    ctx.db.get(tournament.tierId),
+    ctx.db.get(tournament.seasonId),
+  ]);
+
+  if (!course) {
+    throw new Error("Course not found");
+  }
+
+  if (!tier) {
+    throw new Error("Tier not found");
+  }
+
+  if (!season) {
+    throw new Error("Season not found");
+  }
+
+  return {
+    ...tournament,
+    course,
+    tier,
+    season,
+  };
+}
+
+/** Creates a tournament after validating linked records and returns the hydrated tournament response. */
 async function createTournamentRecord(
   ctx: MutationCtx,
   data: TournamentCreatePayload,
@@ -59,18 +97,10 @@ async function createTournamentRecord(
     updatedAt: Date.now(),
   });
 
-  return await ctx.db.get(tournamentId);
+  return await hydrateTournamentResponse(ctx, tournamentId);
 }
 
-/**
- * Updates a tournament and validates any changed related ids before writing the
- * patch.
- *
- * @param ctx Convex mutation context.
- * @param tournamentId Tournament document id.
- * @param data Partial tournament fields to update.
- * @returns The updated tournament document.
- */
+/** Updates a tournament after validating linked ids and returns the hydrated tournament response. */
 async function updateTournamentRecord(
   ctx: MutationCtx,
   tournamentId: Id<"tournaments">,
@@ -111,16 +141,10 @@ async function updateTournamentRecord(
     }),
   );
 
-  return await ctx.db.get(tournamentId);
+  return await hydrateTournamentResponse(ctx, tournamentId);
 }
 
-/**
- * Deletes a tournament and its directly linked teams and tournamentGolfer rows.
- *
- * @param ctx Convex mutation context.
- * @param tournamentId Tournament document id.
- * @returns Confirmation with cascade delete counts.
- */
+/** Deletes a tournament and related rows while returning the hydrated deleted tournament and delete counts. */
 async function deleteTournamentRecord(
   ctx: MutationCtx,
   tournamentId: Id<"tournaments">,
@@ -129,6 +153,8 @@ async function deleteTournamentRecord(
   if (!existing) {
     throw new Error("Tournament not found");
   }
+
+  const deletedTournament = await hydrateTournamentResponse(ctx, tournamentId);
 
   const [teams, tournamentGolfers] = await Promise.all([
     ctx.db
@@ -152,27 +178,22 @@ async function deleteTournamentRecord(
 
   return {
     ok: true,
+    tournament: deletedTournament,
     tournamentId,
     deletedTeams: teams.length,
     deletedTournamentGolfers: tournamentGolfers.length,
   } as const;
 }
 
-/**
- * Resolves tournaments from query options, including optional season/status
- * filtering, sorting, and related-doc enhancement.
- *
- * @param ctx Convex query context.
- * @param options Tournament query options.
- * @returns Matching tournament rows.
- */
+// Level 2: query composition helpers
+
+/** Resolves tournament query options into a filtered and sorted hydrated tournament collection. */
 async function getTournamentsForOptions(
   ctx: QueryCtx,
   options: TournamentQueryOptions,
 ) {
   const filter = options.filter ?? {};
   const sort = options.sort ?? {};
-  const enhance = options.enhance ?? {};
 
   let tournaments = await listTournaments(ctx, filter.seasonId);
 
@@ -182,43 +203,30 @@ async function getTournamentsForOptions(
     );
   }
 
-  const sorted = sortTournaments(tournaments, sort);
-  return await enhanceTournaments(ctx, sorted, enhance);
+  return sortTournaments(tournaments, sort);
 }
 
-/**
- * Returns a tournament by its document id.
- *
- * @param tournamentId Tournament document id.
- * @returns The matching tournament document, or null when missing.
- */
+// Level 3: public read queries
+
+/** Returns one tournament with its default course, tier, and season payload. */
 export const getTournament = query({
   args: tournamentsValidators.args.getTournament,
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.tournamentId);
+    return await getTournamentById(ctx, args.tournamentId);
   },
 });
 
-/**
- * Returns all tournaments, optionally limited to a single season.
- *
- * @param seasonId Optional season scope.
- * @returns Matching tournament documents.
- */
+/** Returns hydrated tournaments for a season or the caller-visible season set. */
 export const getAllTournaments = query({
-  args: tournamentsValidators.args.getAllTournaments,
+  args: {
+    seasonId: v.optional(v.id("seasons")),
+  },
   handler: async (ctx, args) => {
     return await listTournaments(ctx, args.seasonId);
   },
 });
 
-/**
- * Returns tournaments with optional season and status filtering, sorting, and
- * related-doc enhancement.
- *
- * @param options Tournament query options.
- * @returns Matching tournament rows.
- */
+/** Returns hydrated tournaments after applying the requested season, status, and sort options. */
 export const getTournaments = query({
   args: tournamentsValidators.args.getTournaments,
   handler: async (ctx, args) => {
@@ -226,45 +234,33 @@ export const getTournaments = query({
   },
 });
 
-/**
- * Returns the current tournament, defined as a tournament explicitly marked
- * active or one whose current time falls between its start and end dates.
- *
- * @param seasonId Optional season scope.
- * @returns The current tournament, or null when none qualifies.
- */
+/** Returns the current hydrated tournament by status or active date window. */
 export const getCurrentTournament = query({
-  args: tournamentsValidators.args.getCurrentTournament,
+  args: {
+    seasonId: v.optional(v.id("seasons")),
+  },
   handler: async (ctx, args) => {
     const tournaments = await listTournaments(ctx, args.seasonId);
     return findCurrentTournament(tournaments);
   },
 });
 
-/**
- * Returns the most recently ended tournament when it ended within the last four
- * days.
- *
- * @param seasonId Optional season scope.
- * @returns The recent tournament, or null when none qualifies.
- */
+/** Returns the most recent hydrated tournament that ended inside the recent lookback window. */
 export const getLastTournament = query({
-  args: tournamentsValidators.args.getLastTournament,
+  args: {
+    seasonId: v.optional(v.id("seasons")),
+  },
   handler: async (ctx, args) => {
     const tournaments = await listTournaments(ctx, args.seasonId);
     return findLastTournament(tournaments);
   },
 });
 
-/**
- * Returns the next upcoming tournament and whether it starts within the six-day
- * cron window.
- *
- * @param seasonId Optional season scope.
- * @returns The next tournament plus its cron-window flag.
- */
+/** Returns the next hydrated tournament plus the six-day upcoming-window and playoff metadata flags. */
 export const getNextTournament = query({
-  args: tournamentsValidators.args.getNextTournament,
+  args: {
+    seasonId: v.optional(v.id("seasons")),
+  },
   handler: async (ctx, args) => {
     const tournaments = await listTournaments(ctx, args.seasonId);
     const tournament = findNextTournament(tournaments);
@@ -282,137 +278,22 @@ export const getNextTournament = query({
   },
 });
 
-/**
- * Returns the combined leaderboard view for a tournament, defaulting to the
- * current tournament, then next upcoming, then recent past tournament.
- *
- * @param tournamentId Optional explicit tournament id.
- * @param memberId Optional member id used to load the viewer's season tour card.
- * @returns Tournament, related tours, teams, golfers, and season context.
- */
-export const getTournamentLeaderboardView = query({
-  args: tournamentsValidators.args.getTournamentLeaderboardView,
+/** Returns the tournament pick pool sorted by group, world rank, and player name. */
+export const getTournamentGroups = query({
+  args: tournamentsValidators.args.getTournamentGroups,
   handler: async (ctx, args) => {
-    const allTournaments = await listTournaments(ctx);
-
-    let tournament = args.tournamentId
-      ? await ctx.db.get(args.tournamentId)
-      : null;
+    const tournament = await getTournamentById(ctx, args.tournamentId);
 
     if (!tournament) {
-      tournament =
-        findCurrentTournament(allTournaments) ??
-        findNextTournament(allTournaments) ??
-        findLastTournament(allTournaments);
+      throw new Error("Tournament not found");
     }
 
-    if (!tournament) {
-      return {
-        tournament: null,
-        tours: [],
-        teams: [],
-        golfers: [],
-        allTournaments: [],
-        userTourCard: null,
-      };
-    }
-
-    const playoffState = await getTournamentPlayoffState(ctx, tournament);
-
-    const seasonTournaments = sortTournaments(
-      allTournaments.filter((item) => item.seasonId === tournament.seasonId),
-      { sortBy: "startDate", sortOrder: "desc" },
-    );
-
-    const [tours, teams, tournamentGolfers] = await Promise.all([
-      ctx.db
-        .query("tours")
-        .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-        .collect(),
-      ctx.db
-        .query("teams")
-        .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
-        .collect(),
-      ctx.db
-        .query("tournamentGolfers")
-        .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
-        .collect(),
-    ]);
-
-    const teamTourCards = await Promise.all(
-      teams.map((team) => ctx.db.get(team.tourCardId)),
-    );
-
-    const enhancedTeams = teams.map((team, index) => {
-      const card = teamTourCards[index];
-      return {
-        ...team,
-        tourId: card?.tourId,
-        displayName: card?.displayName,
-        memberId: card?.memberId,
-        playoff: card?.playoff,
-      };
-    });
-
-    const golferDocs = await Promise.all(
-      tournamentGolfers.map((tournamentGolfer) =>
-        ctx.db.get(tournamentGolfer.golferId),
-      ),
-    );
-
-    const enhancedGolfers = tournamentGolfers.map((tournamentGolfer, index) => {
-      const golfer = golferDocs[index];
-      return {
-        ...tournamentGolfer,
-        apiId: golfer?.apiId,
-        playerName: golfer?.playerName,
-        country: golfer?.country,
-        worldRank: tournamentGolfer.worldRank ?? golfer?.worldRank,
-      };
-    });
-
-    let userTourCard = null;
-    if (args.memberId) {
-      userTourCard = await ctx.db
-        .query("tourCards")
-        .withIndex("by_member_season", (q) =>
-          q.eq("memberId", args.memberId!).eq("seasonId", tournament.seasonId),
-        )
-        .first();
-    }
-
-    return {
-      tournament: {
-        ...tournament,
-        playoffEventIndex: playoffState.playoffEventIndex,
-      },
-      tours,
-      teams: enhancedTeams,
-      golfers: enhancedGolfers,
-      allTournaments: seasonTournaments,
-      userTourCard,
-    };
-  },
-});
-
-/**
- * Returns the tournament pick pool sorted by group, world rank, and player
- * name.
- *
- * @param tournamentId Tournament document id.
- * @returns Pick-pool rows for the tournament.
- */
-export const getTournamentPickPool = query({
-  args: tournamentsValidators.args.getTournamentPickPool,
-  handler: async (ctx, args) => {
     const tournamentGolfers = await ctx.db
       .query("tournamentGolfers")
-      .withIndex("by_tournament", (q) =>
-        q.eq("tournamentId", args.tournamentId),
-      )
+      .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
       .collect();
 
-    const pickPool = await Promise.all(
+    const groups = await Promise.all(
       tournamentGolfers.map(async (tournamentGolfer) => {
         const golfer = await ctx.db.get(tournamentGolfer.golferId);
         if (!golfer) {
@@ -429,7 +310,7 @@ export const getTournamentPickPool = query({
       }),
     );
 
-    return pickPool
+    return groups
       .filter((row) => row !== null)
       .sort((a, b) => {
         const groupA = a.group ?? Number.MAX_SAFE_INTEGER;
@@ -451,12 +332,9 @@ export const getTournamentPickPool = query({
   },
 });
 
-/**
- * Admin-only mutation that creates a tournament.
- *
- * @param data New tournament payload.
- * @returns The inserted tournament document.
- */
+// Level 4: admin-only write mutations
+
+/** Admin-only mutation that creates a tournament and returns the hydrated tournament response. */
 export const createTournament = mutation({
   args: tournamentsValidators.args.createTournament,
   handler: async (ctx, args) => {
@@ -465,13 +343,7 @@ export const createTournament = mutation({
   },
 });
 
-/**
- * Admin-only mutation that updates a tournament.
- *
- * @param tournamentId Tournament document id.
- * @param data Partial tournament fields to update.
- * @returns The updated tournament document.
- */
+/** Admin-only mutation that updates a tournament and returns the hydrated tournament response. */
 export const updateTournament = mutation({
   args: tournamentsValidators.args.updateTournament,
   handler: async (ctx, args) => {
@@ -480,12 +352,7 @@ export const updateTournament = mutation({
   },
 });
 
-/**
- * Admin-only mutation that deletes a tournament and its directly attached data.
- *
- * @param tournamentId Tournament document id.
- * @returns Confirmation with cascade delete counts.
- */
+/** Admin-only mutation that deletes a tournament and returns the hydrated deleted tournament plus cascade counts. */
 export const deleteTournament = mutation({
   args: tournamentsValidators.args.deleteTournament,
   handler: async (ctx, args) => {

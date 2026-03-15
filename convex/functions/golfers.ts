@@ -1,36 +1,347 @@
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import {
-  internalMutation,
   mutation,
   query,
   type MutationCtx,
+  type QueryCtx,
 } from "../_generated/server";
+import { normalizePlayerNameFromDataGolf } from "../utils/datagolf";
 import {
-  normalizeDgSkillEstimateToPgcRating,
-  normalizePlayerNameFromDataGolf,
-} from "../utils/datagolf";
-import {
-  getGolfersForTournamentScope,
   getTournamentIdsForFilter,
   listTournamentGolfersByTournamentIds,
 } from "../utils/golfers";
-import { omitUndefined } from "../utils/misc";
+import { omitUndefined } from "../utils/_shared/object";
 import { requireAdmin } from "../utils/auth";
+import {
+  findCurrentSeason,
+  getCurrentSeasonId,
+  listSeasons,
+} from "../utils/seasons";
 import type {
   GolferCreatePayload,
+  GolferQueryOptions,
   GolferUpdatePayload,
+  HydratedGolfer,
+  HydratedTournamentGolfer,
   TournamentGolferCreatePayload,
+  TournamentGolferQueryFilter,
   TournamentGolferUpdatePayload,
 } from "../types/golfers";
 import { golfersValidators } from "../validators/golfers";
 
-/**
- * Removes keys whose values are undefined so Convex patches only include fields
- * that should be persisted.
- *
- * @param data Source object that may contain undefined values.
- * @returns A shallow copy containing only defined entries.
- */
+// Level 0: shared context types
+
+type GolferFunctionContext = MutationCtx | QueryCtx;
+
+// Level 1: access and hydration helpers
+
+/** Returns whether the current caller is authenticated. */
+async function isSignedIn(ctx: QueryCtx) {
+  const identity = await ctx.auth.getUserIdentity();
+  return Boolean(identity?.subject);
+}
+
+/** Resolves the read scope allowed for the current caller. */
+async function getReadableTournamentScope(
+  ctx: QueryCtx,
+  filter: {
+    tournamentId?: Id<"tournaments">;
+    seasonId?: Id<"seasons">;
+    activeOnly?: boolean;
+  },
+) {
+  if (await isSignedIn(ctx)) {
+    return filter;
+  }
+
+  const currentSeasonId = await getCurrentSeasonId(ctx);
+  if (!currentSeasonId) {
+    return null;
+  }
+
+  if (filter.seasonId && filter.seasonId !== currentSeasonId) {
+    return null;
+  }
+
+  if (filter.tournamentId) {
+    const tournament = await ctx.db.get(filter.tournamentId);
+    if (!tournament || tournament.seasonId !== currentSeasonId) {
+      return null;
+    }
+  }
+
+  return {
+    ...filter,
+    seasonId: currentSeasonId,
+  };
+}
+
+/** Hydrates tournament golfer docs with golfer, tournament, and season data. */
+async function hydrateTournamentGolferDocs(
+  ctx: GolferFunctionContext,
+  tournamentGolfers: Doc<"tournamentGolfers">[],
+): Promise<HydratedTournamentGolfer[]> {
+  return await Promise.all(
+    tournamentGolfers.map(async (tournamentGolfer) => {
+      const [golfer, tournament] = await Promise.all([
+        ctx.db.get(tournamentGolfer.golferId),
+        ctx.db.get(tournamentGolfer.tournamentId),
+      ]);
+
+      if (!golfer) {
+        throw new Error("Golfer not found");
+      }
+
+      if (!tournament) {
+        throw new Error("Tournament not found");
+      }
+
+      const season = await ctx.db.get(tournament.seasonId);
+
+      if (!season) {
+        throw new Error("Season not found");
+      }
+
+      return {
+        ...tournamentGolfer,
+        golfer,
+        tournament,
+        season,
+      };
+    }),
+  );
+}
+
+/** Hydrates one tournament golfer doc by id. */
+async function hydrateTournamentGolferResponse(
+  ctx: GolferFunctionContext,
+  tournamentGolferId: Id<"tournamentGolfers">,
+): Promise<HydratedTournamentGolfer> {
+  const tournamentGolfer = await ctx.db.get(tournamentGolferId);
+
+  if (!tournamentGolfer) {
+    throw new Error("Tournament golfer not found");
+  }
+
+  return (await hydrateTournamentGolferDocs(ctx, [tournamentGolfer]))[0];
+}
+
+/** Builds hydrated golfer responses from golfer and tournament golfer rows. */
+async function buildHydratedGolfers(
+  ctx: GolferFunctionContext,
+  golfers: Doc<"golfers">[],
+  tournamentGolfers: Doc<"tournamentGolfers">[],
+): Promise<HydratedGolfer[]> {
+  const hydratedTournamentGolfers = await hydrateTournamentGolferDocs(
+    ctx,
+    tournamentGolfers,
+  );
+
+  const tournamentGolfersByGolferId = new Map<
+    Id<"golfers">,
+    HydratedTournamentGolfer[]
+  >();
+
+  for (const tournamentGolfer of hydratedTournamentGolfers) {
+    const existingTournamentGolfers =
+      tournamentGolfersByGolferId.get(tournamentGolfer.golferId) ?? [];
+    existingTournamentGolfers.push(tournamentGolfer);
+    tournamentGolfersByGolferId.set(
+      tournamentGolfer.golferId,
+      existingTournamentGolfers,
+    );
+  }
+
+  return golfers.map((golfer) => {
+    const golferTournamentGolfers =
+      tournamentGolfersByGolferId.get(golfer._id) ?? [];
+    const tournaments = [
+      ...new Map(
+        golferTournamentGolfers.map((tournamentGolfer) => [
+          tournamentGolfer.tournament._id,
+          tournamentGolfer.tournament,
+        ]),
+      ).values(),
+    ];
+    const seasons = [
+      ...new Map(
+        golferTournamentGolfers.map((tournamentGolfer) => [
+          tournamentGolfer.season._id,
+          tournamentGolfer.season,
+        ]),
+      ).values(),
+    ];
+
+    return {
+      ...golfer,
+      tournamentGolfers: golferTournamentGolfers,
+      tournaments,
+      seasons,
+    };
+  });
+}
+
+/** Hydrates one golfer doc by id with its accessible tournament context. */
+async function hydrateGolferResponse(
+  ctx: GolferFunctionContext,
+  golferId: Id<"golfers">,
+  tournamentGolfers: Doc<"tournamentGolfers">[],
+): Promise<HydratedGolfer> {
+  const golfer = await ctx.db.get(golferId);
+
+  if (!golfer) {
+    throw new Error("Golfer not found");
+  }
+
+  return (await buildHydratedGolfers(ctx, [golfer], tournamentGolfers))[0];
+}
+
+/** Returns tournament golfers filtered to the current caller's allowed scope. */
+async function getTournamentGolfersForRead(
+  ctx: QueryCtx,
+  filter: TournamentGolferQueryFilter = {},
+) {
+  const signedIn = await isSignedIn(ctx);
+  const readableScope = await getReadableTournamentScope(ctx, {
+    tournamentId: filter.tournamentId,
+    seasonId: filter.seasonId,
+    activeOnly: filter.activeOnly,
+  });
+
+  if (!signedIn && !readableScope) {
+    return [];
+  }
+
+  if (readableScope?.tournamentId) {
+    let tournamentGolfers = await ctx.db
+      .query("tournamentGolfers")
+      .withIndex("by_tournament", (q) =>
+        q.eq("tournamentId", readableScope.tournamentId!),
+      )
+      .collect();
+
+    if (filter.golferId) {
+      tournamentGolfers = tournamentGolfers.filter(
+        (tournamentGolfer) => tournamentGolfer.golferId === filter.golferId,
+      );
+    }
+
+    return tournamentGolfers;
+  }
+
+  if (
+    filter.golferId &&
+    signedIn &&
+    !readableScope?.seasonId &&
+    !readableScope?.activeOnly
+  ) {
+    return await ctx.db
+      .query("tournamentGolfers")
+      .withIndex("by_golfer", (q) => q.eq("golferId", filter.golferId!))
+      .collect();
+  }
+
+  if (readableScope?.seasonId || readableScope?.activeOnly || !signedIn) {
+    const tournamentIds = await getTournamentIdsForFilter(ctx, {
+      seasonId: readableScope?.seasonId,
+      activeOnly: readableScope?.activeOnly,
+    });
+
+    let tournamentGolfers = await listTournamentGolfersByTournamentIds(
+      ctx,
+      tournamentIds,
+    );
+
+    if (filter.golferId) {
+      tournamentGolfers = tournamentGolfers.filter(
+        (tournamentGolfer) => tournamentGolfer.golferId === filter.golferId,
+      );
+    }
+
+    return tournamentGolfers;
+  }
+
+  if (filter.golferId) {
+    const golferId = filter.golferId;
+
+    return await ctx.db
+      .query("tournamentGolfers")
+      .withIndex("by_golfer", (q) => q.eq("golferId", golferId))
+      .collect();
+  }
+
+  return await ctx.db.query("tournamentGolfers").collect();
+}
+
+/** Returns golfers filtered to the current caller's allowed scope. */
+async function getGolfersForRead(
+  ctx: QueryCtx,
+  options: GolferQueryOptions = {},
+) {
+  const filter = options.filter ?? {};
+  const signedIn = await isSignedIn(ctx);
+
+  if (filter.apiId !== undefined) {
+    const golfer = await ctx.db
+      .query("golfers")
+      .withIndex("by_api_id", (q) => q.eq("apiId", filter.apiId!))
+      .first();
+
+    if (!golfer) {
+      return [];
+    }
+
+    const tournamentGolfers = await getTournamentGolfersForRead(ctx, {
+      tournamentId: filter.tournamentId,
+      seasonId: filter.seasonId,
+      activeOnly: filter.activeOnly,
+      golferId: golfer._id,
+    });
+
+    if (!signedIn && tournamentGolfers.length === 0) {
+      return [];
+    }
+
+    return await buildHydratedGolfers(ctx, [golfer], tournamentGolfers);
+  }
+
+  if (
+    filter.tournamentId ||
+    filter.seasonId ||
+    filter.activeOnly ||
+    !signedIn
+  ) {
+    const tournamentGolfers = await getTournamentGolfersForRead(ctx, {
+      tournamentId: filter.tournamentId,
+      seasonId: filter.seasonId,
+      activeOnly: filter.activeOnly,
+    });
+
+    const uniqueGolferIds = [
+      ...new Set(tournamentGolfers.map((item) => item.golferId)),
+    ];
+    const golfers = await Promise.all(
+      uniqueGolferIds.map((golferId) => ctx.db.get(golferId)),
+    );
+
+    return await buildHydratedGolfers(
+      ctx,
+      golfers.filter(
+        (golfer): golfer is NonNullable<typeof golfer> => golfer !== null,
+      ),
+      tournamentGolfers,
+    );
+  }
+
+  const [golfers, tournamentGolfers] = await Promise.all([
+    ctx.db.query("golfers").collect(),
+    ctx.db.query("tournamentGolfers").collect(),
+  ]);
+
+  return await buildHydratedGolfers(ctx, golfers, tournamentGolfers);
+}
+
+// Level 2: mutation record helpers
 
 /**
  * Creates a golfer record after enforcing apiId uniqueness and normalizing the
@@ -60,7 +371,7 @@ async function createGolferRecord(ctx: MutationCtx, data: GolferCreatePayload) {
     updatedAt: Date.now(),
   });
 
-  return await ctx.db.get(golferId);
+  return await hydrateGolferResponse(ctx, golferId, []);
 }
 
 /**
@@ -105,7 +416,12 @@ async function updateGolferRecord(
     }),
   );
 
-  return await ctx.db.get(golferId);
+  const tournamentGolfers = await ctx.db
+    .query("tournamentGolfers")
+    .withIndex("by_golfer", (q) => q.eq("golferId", golferId))
+    .collect();
+
+  return await hydrateGolferResponse(ctx, golferId, tournamentGolfers);
 }
 
 /**
@@ -127,6 +443,12 @@ async function deleteGolferRecord(ctx: MutationCtx, golferId: Id<"golfers">) {
     .withIndex("by_golfer", (q) => q.eq("golferId", golferId))
     .collect();
 
+  const deletedGolfer = await hydrateGolferResponse(
+    ctx,
+    golferId,
+    tournamentGolfers,
+  );
+
   await Promise.all(
     tournamentGolfers.map((tournamentGolfer) =>
       ctx.db.delete(tournamentGolfer._id),
@@ -136,6 +458,7 @@ async function deleteGolferRecord(ctx: MutationCtx, golferId: Id<"golfers">) {
 
   return {
     ok: true,
+    golfer: deletedGolfer,
     golferId,
     deletedTournamentGolfers: tournamentGolfers.length,
   } as const;
@@ -188,7 +511,7 @@ async function createTournamentGolferRecord(
     updatedAt: Date.now(),
   });
 
-  return await ctx.db.get(tournamentGolferId);
+  return await hydrateTournamentGolferResponse(ctx, tournamentGolferId);
 }
 
 /**
@@ -244,6 +567,15 @@ async function updateTournamentGolferRecord(
     }
   }
 
+  const changedData = omitUndefined(data);
+  const hasChanges = Object.entries(changedData).some(
+    ([key, value]) => existing[key as keyof typeof existing] !== value,
+  );
+
+  if (!hasChanges) {
+    return await hydrateTournamentGolferResponse(ctx, tournamentGolferId);
+  }
+
   await ctx.db.patch(
     tournamentGolferId,
     omitUndefined({
@@ -252,7 +584,7 @@ async function updateTournamentGolferRecord(
     }),
   );
 
-  return await ctx.db.get(tournamentGolferId);
+  return await hydrateTournamentGolferResponse(ctx, tournamentGolferId);
 }
 
 /**
@@ -271,152 +603,113 @@ async function deleteTournamentGolferRecord(
     throw new Error("Tournament golfer not found");
   }
 
+  const deletedTournamentGolfer = await hydrateTournamentGolferResponse(
+    ctx,
+    tournamentGolferId,
+  );
+
   await ctx.db.delete(tournamentGolferId);
 
   return {
     ok: true,
+    tournamentGolfer: deletedTournamentGolfer,
     tournamentGolferId,
   } as const;
 }
 
-/**
- * Returns a golfer by its document id.
- *
- * @param golferId Golfer document id.
- * @returns The matching golfer document, or null when missing.
- */
+// Level 3: public read queries
+
+/** Returns a hydrated golfer by its document id when the caller can read it. */
 export const getGolfer = query({
   args: golfersValidators.args.getGolfer,
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.golferId);
+    const golfer = await ctx.db.get(args.golferId);
+
+    if (!golfer) {
+      return null;
+    }
+
+    const tournamentGolfers = await getTournamentGolfersForRead(ctx, {
+      golferId: args.golferId,
+    });
+
+    if (!(await isSignedIn(ctx)) && tournamentGolfers.length === 0) {
+      return null;
+    }
+
+    return await hydrateGolferResponse(ctx, golfer._id, tournamentGolfers);
   },
 });
 
-/**
- * Returns a golfer by its upstream DataGolf api id.
- *
- * @param apiId DataGolf golfer id.
- * @returns The matching golfer document, or null when missing.
- */
+/** Returns a hydrated golfer by its upstream DataGolf api id. */
 export const getGolferByApiId = query({
   args: golfersValidators.args.getGolferByApiId,
   handler: async (ctx, args) => {
-    return await ctx.db
+    const golfer = await ctx.db
       .query("golfers")
       .withIndex("by_api_id", (q) => q.eq("apiId", args.apiId))
       .first();
+
+    if (!golfer) {
+      return null;
+    }
+
+    const tournamentGolfers = await getTournamentGolfersForRead(ctx, {
+      golferId: golfer._id,
+    });
+
+    if (!(await isSignedIn(ctx)) && tournamentGolfers.length === 0) {
+      return null;
+    }
+
+    return await hydrateGolferResponse(ctx, golfer._id, tournamentGolfers);
   },
 });
 
-/**
- * Lists golfers, optionally narrowed by api id or tournament scope.
- *
- * @param options Optional filter object.
- * @returns Matching golfer documents.
- */
+/** Returns hydrated golfers filtered by api id, tournament scope, or full collection. */
 export const getGolfers = query({
   args: golfersValidators.args.getGolfers,
   handler: async (ctx, args) => {
-    const filter = args.options?.filter ?? {};
-
-    if (filter.apiId !== undefined) {
-      const apiId = filter.apiId;
-      const golfer = await ctx.db
-        .query("golfers")
-        .withIndex("by_api_id", (q) => q.eq("apiId", apiId))
-        .first();
-
-      return golfer ? [golfer] : [];
-    }
-
-    if (filter.tournamentId || filter.seasonId || filter.activeOnly) {
-      return await getGolfersForTournamentScope(ctx, filter);
-    }
-
-    return await ctx.db.query("golfers").collect();
+    return await getGolfersForRead(ctx, args.options ?? {});
   },
 });
 
-/**
- * Returns a tournamentGolfer row by its document id.
- *
- * @param tournamentGolferId Tournament golfer document id.
- * @returns The matching tournamentGolfer document, or null when missing.
- */
+/** Returns a hydrated tournamentGolfer row by id when the caller can read it. */
 export const getTournamentGolfer = query({
   args: golfersValidators.args.getTournamentGolfer,
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.tournamentGolferId);
+    const tournamentGolfer = await ctx.db.get(args.tournamentGolferId);
+
+    if (!tournamentGolfer) {
+      return null;
+    }
+
+    const readableScope = await getReadableTournamentScope(ctx, {
+      tournamentId: tournamentGolfer.tournamentId,
+    });
+
+    if (!(await isSignedIn(ctx)) && !readableScope) {
+      return null;
+    }
+
+    return await hydrateTournamentGolferResponse(ctx, args.tournamentGolferId);
   },
 });
 
-/**
- * Lists tournamentGolfer rows with optional golfer, tournament, season, and
- * active-tournament filtering.
- *
- * @param options Optional filter object.
- * @returns Matching tournamentGolfer documents.
- */
+/** Returns hydrated tournamentGolfer rows with caller-aware season scoping. */
 export const getTournamentGolfers = query({
   args: golfersValidators.args.getTournamentGolfers,
   handler: async (ctx, args) => {
-    const filter = args.options?.filter ?? {};
+    const tournamentGolfers = await getTournamentGolfersForRead(
+      ctx,
+      args.options?.filter ?? {},
+    );
 
-    if (filter.tournamentId) {
-      const tournamentId = filter.tournamentId;
-      let tournamentGolfers = await ctx.db
-        .query("tournamentGolfers")
-        .withIndex("by_tournament", (q) => q.eq("tournamentId", tournamentId))
-        .collect();
-
-      if (filter.golferId) {
-        tournamentGolfers = tournamentGolfers.filter(
-          (tournamentGolfer) => tournamentGolfer.golferId === filter.golferId,
-        );
-      }
-
-      return tournamentGolfers;
-    }
-
-    if (filter.golferId && !filter.seasonId && !filter.activeOnly) {
-      const golferId = filter.golferId;
-      return await ctx.db
-        .query("tournamentGolfers")
-        .withIndex("by_golfer", (q) => q.eq("golferId", golferId))
-        .collect();
-    }
-
-    if (filter.seasonId || filter.activeOnly) {
-      const tournamentIds = await getTournamentIdsForFilter(ctx, {
-        seasonId: filter.seasonId,
-        activeOnly: filter.activeOnly,
-      });
-
-      let tournamentGolfers = await listTournamentGolfersByTournamentIds(
-        ctx,
-        tournamentIds,
-      );
-
-      if (filter.golferId) {
-        tournamentGolfers = tournamentGolfers.filter(
-          (tournamentGolfer) => tournamentGolfer.golferId === filter.golferId,
-        );
-      }
-
-      return tournamentGolfers;
-    }
-
-    if (filter.golferId) {
-      const golferId = filter.golferId;
-      return await ctx.db
-        .query("tournamentGolfers")
-        .withIndex("by_golfer", (q) => q.eq("golferId", golferId))
-        .collect();
-    }
-
-    return await ctx.db.query("tournamentGolfers").collect();
+    return await hydrateTournamentGolferDocs(ctx, tournamentGolfers);
   },
 });
+
+// Level 4: admin write mutations
 
 /**
  * Admin-only mutation that creates a golfer record.
@@ -428,20 +721,6 @@ export const createGolfer = mutation({
   args: golfersValidators.args.createGolfer,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
-    return await createGolferRecord(ctx, args.data);
-  },
-});
-
-/**
- * Internal mutation that creates a golfer without the admin gate for trusted
- * backend jobs.
- *
- * @param data New golfer payload.
- * @returns The inserted golfer document.
- */
-export const createGolferInternal = internalMutation({
-  args: golfersValidators.args.createGolfer,
-  handler: async (ctx, args) => {
     return await createGolferRecord(ctx, args.data);
   },
 });
@@ -462,20 +741,6 @@ export const updateGolfer = mutation({
 });
 
 /**
- * Internal mutation that updates a golfer for trusted backend workflows.
- *
- * @param golferId Golfer document id.
- * @param data Partial golfer fields to update.
- * @returns The updated golfer document.
- */
-export const updateGolferInternal = internalMutation({
-  args: golfersValidators.args.updateGolfer,
-  handler: async (ctx, args) => {
-    return await updateGolferRecord(ctx, args.golferId, args.data);
-  },
-});
-
-/**
  * Admin-only mutation that deletes a golfer and its linked tournament rows.
  *
  * @param golferId Golfer document id.
@@ -490,19 +755,6 @@ export const deleteGolfer = mutation({
 });
 
 /**
- * Internal mutation that deletes a golfer for trusted backend workflows.
- *
- * @param golferId Golfer document id.
- * @returns Confirmation with cascade delete counts.
- */
-export const deleteGolferInternal = internalMutation({
-  args: golfersValidators.args.deleteGolfer,
-  handler: async (ctx, args) => {
-    return await deleteGolferRecord(ctx, args.golferId);
-  },
-});
-
-/**
  * Admin-only mutation that creates a tournamentGolfer row.
  *
  * @param data New tournamentGolfer payload.
@@ -512,20 +764,6 @@ export const createTournamentGolfer = mutation({
   args: golfersValidators.args.createTournamentGolfer,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
-    return await createTournamentGolferRecord(ctx, args.data);
-  },
-});
-
-/**
- * Internal mutation that creates a tournamentGolfer row for trusted backend
- * workflows.
- *
- * @param data New tournamentGolfer payload.
- * @returns The inserted tournamentGolfer document.
- */
-export const createTournamentGolferInternal = internalMutation({
-  args: golfersValidators.args.createTournamentGolfer,
-  handler: async (ctx, args) => {
     return await createTournamentGolferRecord(ctx, args.data);
   },
 });
@@ -550,21 +788,6 @@ export const updateTournamentGolferAdmin = mutation({
 });
 
 /**
- * Internal mutation used by cron jobs and other trusted backend flows to update
- * a tournamentGolfer row from a payload that includes the document id.
- *
- * @param tournamentGolfer Tournament golfer payload including its document id.
- * @returns The updated tournamentGolfer document.
- */
-export const updateTournamentGolfer = internalMutation({
-  args: golfersValidators.args.updateTournamentGolfer,
-  handler: async (ctx, args) => {
-    const { _id, ...data } = args.tournamentGolfer;
-    return await updateTournamentGolferRecord(ctx, _id, data);
-  },
-});
-
-/**
  * Admin-only mutation that deletes a tournamentGolfer row.
  *
  * @param tournamentGolferId Tournament golfer document id.
@@ -575,87 +798,5 @@ export const deleteTournamentGolfer = mutation({
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
     return await deleteTournamentGolferRecord(ctx, args.tournamentGolferId);
-  },
-});
-
-/**
- * Internal mutation that deletes a tournamentGolfer row for trusted backend
- * workflows.
- *
- * @param tournamentGolferId Tournament golfer document id.
- * @returns Confirmation of the deleted id.
- */
-export const deleteTournamentGolferInternal = internalMutation({
-  args: golfersValidators.args.deleteTournamentGolfer,
-  handler: async (ctx, args) => {
-    return await deleteTournamentGolferRecord(ctx, args.tournamentGolferId);
-  },
-});
-
-/**
- * Internal compatibility mutation used by cron ingestion to ensure each incoming
- * DataGolf player exists as both a golfer and tournamentGolfer for a tournament.
- *
- * @param tournamentId Tournament document id.
- * @param golfers Incoming DataGolf golfer payloads.
- * @returns Summary of how many missing tournament golfers were inserted.
- */
-export const createMissingTournamentGolfers = internalMutation({
-  args: golfersValidators.args.createMissingTournamentGolfers,
-  handler: async (ctx, args) => {
-    let inserted = 0;
-
-    for (const golferInput of args.golfers) {
-      const existingGolfer = await ctx.db
-        .query("golfers")
-        .withIndex("by_api_id", (q) => q.eq("apiId", golferInput.dg_id))
-        .first();
-
-      const golfer =
-        existingGolfer ??
-        (await createGolferRecord(ctx, {
-          apiId: golferInput.dg_id,
-          playerName: golferInput.player_name,
-          country: golferInput.country,
-          worldRank: golferInput.worldRank,
-        }));
-
-      if (!golfer) {
-        throw new Error("Golfer not found after create");
-      }
-
-      const existingTournamentGolfer = await ctx.db
-        .query("tournamentGolfers")
-        .withIndex("by_golfer_tournament", (q) =>
-          q.eq("golferId", golfer._id).eq("tournamentId", args.tournamentId),
-        )
-        .first();
-
-      if (existingTournamentGolfer) {
-        continue;
-      }
-
-      await createTournamentGolferRecord(ctx, {
-        golferId: golfer._id,
-        tournamentId: args.tournamentId,
-        worldRank: golferInput.worldRank ?? 501,
-        group: 0,
-        usage: 0,
-        round: 0,
-        rating: normalizeDgSkillEstimateToPgcRating(
-          golferInput.dg_skill_estimate ?? -1.875,
-        ),
-        roundOneTeeTime: golferInput.r1_teetime,
-        roundTwoTeeTime: golferInput.r2_teetime,
-      });
-      inserted += 1;
-    }
-
-    return {
-      ok: true,
-      skipped: false,
-      tournamentId: args.tournamentId,
-      golfersProcessed: inserted,
-    } as const;
   },
 });

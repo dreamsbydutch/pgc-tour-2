@@ -1,46 +1,217 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import type {
-  TournamentEnhanceOptions,
+  TournamentFetchResult,
   TournamentPlayoffState,
   TournamentSortOptions,
 } from "../types/tournaments";
+import { getCurrentMember } from "./auth";
+
+// Level 0: tournament utility constants
 
 const LAST_TOURNAMENT_LOOKBACK_MS = 4 * 24 * 60 * 60 * 1000;
 const NEXT_TOURNAMENT_WINDOW_MS = 6 * 24 * 60 * 60 * 1000;
 
+// Level 1: local classification helpers
+
+/** Normalizes a tier name and returns whether it represents a playoff tier. */
 function isPlayoffTierName(name: string) {
   const normalized = name.trim().toLowerCase();
   return normalized === "playoff" || normalized === "playoffs";
 }
 
-/**
- * Loads tournaments globally or for a single season.
- *
- * @param ctx Convex query context.
- * @param seasonId Optional season scope.
- * @returns Matching tournament documents.
- */
-export async function listTournaments(ctx: QueryCtx, seasonId?: Id<"seasons">) {
+// Level 2: access and hydration helpers
+
+/** Loads a season by id and throws when the linked season record does not exist. */
+async function getSeasonOrThrow(ctx: QueryCtx, seasonId: Id<"seasons">) {
+  const season = await ctx.db.get(seasonId);
+
+  if (!season) {
+    throw new Error("Season not found");
+  }
+
+  return season;
+}
+
+/** Allows current-year access publicly and requires an authenticated member for other seasons. */
+async function assertTournamentSeasonAccess(
+  ctx: QueryCtx,
+  season: Doc<"seasons">,
+  currentYear: number = new Date().getFullYear(),
+) {
+  if (season.year === currentYear) {
+    return;
+  }
+
+  await getCurrentMember(ctx);
+}
+
+/** Returns whether the current viewer resolves to an authenticated member record. */
+async function isAuthenticatedMember(ctx: QueryCtx) {
+  try {
+    await getCurrentMember(ctx);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Attaches required course and tier records plus an optional season record to each tournament row. */
+async function hydrateTournamentRelations(
+  ctx: QueryCtx,
+  tournaments: Doc<"tournaments">[],
+): Promise<TournamentFetchResult[]> {
+  if (tournaments.length === 0) {
+    return [];
+  }
+
+  const courseIds = Array.from(
+    new Set(tournaments.map((tournament) => tournament.courseId)),
+  );
+  const tierIds = Array.from(
+    new Set(tournaments.map((tournament) => tournament.tierId)),
+  );
+  const seasonIds = Array.from(
+    new Set(tournaments.map((tournament) => tournament.seasonId)),
+  );
+
+  const [courseDocs, tierDocs, seasonDocs] = await Promise.all([
+    Promise.all(courseIds.map((courseId) => ctx.db.get(courseId))),
+    Promise.all(tierIds.map((tierId) => ctx.db.get(tierId))),
+    Promise.all(seasonIds.map((seasonId) => ctx.db.get(seasonId))),
+  ]);
+
+  const courseById = new Map<Id<"courses">, Doc<"courses">>();
+  courseIds.forEach((courseId, index) => {
+    const course = courseDocs[index];
+
+    if (!course) {
+      throw new Error("Course not found");
+    }
+
+    courseById.set(courseId, course);
+  });
+
+  const tierById = new Map<Id<"tiers">, Doc<"tiers">>();
+  tierIds.forEach((tierId, index) => {
+    const tier = tierDocs[index];
+
+    if (!tier) {
+      throw new Error("Tier not found");
+    }
+
+    tierById.set(tierId, tier);
+  });
+
+  const seasonById = new Map<Id<"seasons">, Doc<"seasons">>();
+  seasonIds.forEach((seasonId, index) => {
+    const season = seasonDocs[index];
+
+    if (!season) {
+      throw new Error("Season not found");
+    }
+
+    seasonById.set(seasonId, season);
+  });
+
+  return tournaments.map((tournament) => {
+    const course = courseById.get(tournament.courseId);
+    const tier = tierById.get(tournament.tierId);
+    const season = seasonById.get(tournament.seasonId);
+
+    if (!course) {
+      throw new Error("Course not found");
+    }
+
+    if (!tier) {
+      throw new Error("Tier not found");
+    }
+    if (!season) {
+      throw new Error("Season not found");
+    }
+
+    return {
+      ...tournament,
+      course,
+      tier,
+      season,
+    };
+  });
+}
+
+// Level 3: frontend fetch and rehydration helpers
+
+/** Fetches one tournament with season access checks and the default course and tier payload. */
+export async function getTournamentById(
+  ctx: QueryCtx,
+  tournamentId: Id<"tournaments">,
+): Promise<TournamentFetchResult | null> {
+  const tournament = await ctx.db.get(tournamentId);
+
+  if (!tournament) {
+    return null;
+  }
+
+  const season = await getSeasonOrThrow(ctx, tournament.seasonId);
+  await assertTournamentSeasonAccess(ctx, season);
+
+  const [hydratedTournament] = await hydrateTournamentRelations(
+    ctx,
+    [tournament],
+  );
+
+  return hydratedTournament ?? null;
+}
+
+/** Fetches tournament collections with season access checks and the default course and tier payload. */
+export async function listTournaments(
+  ctx: QueryCtx,
+  seasonId?: Id<"seasons">,
+) {
+  const currentYear = new Date().getFullYear();
+
   if (seasonId) {
-    return await ctx.db
+    const season = await getSeasonOrThrow(ctx, seasonId);
+    await assertTournamentSeasonAccess(ctx, season, currentYear);
+
+    const tournaments = await ctx.db
       .query("tournaments")
       .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
       .collect();
+
+    return await hydrateTournamentRelations(ctx, tournaments);
   }
 
-  return await ctx.db.query("tournaments").collect();
+  const currentYearSeasons = await ctx.db
+    .query("seasons")
+    .withIndex("by_year", (q) => q.eq("year", currentYear))
+    .collect();
+
+  if (await isAuthenticatedMember(ctx)) {
+    const tournaments = await ctx.db.query("tournaments").collect();
+    return await hydrateTournamentRelations(ctx, tournaments);
+  }
+
+  const tournamentsBySeason = await Promise.all(
+    currentYearSeasons.map((season) =>
+      ctx.db
+        .query("tournaments")
+        .withIndex("by_season", (q) => q.eq("seasonId", season._id))
+        .collect(),
+    ),
+  );
+
+  return await hydrateTournamentRelations(
+    ctx,
+    tournamentsBySeason.flat(),
+  );
 }
 
-/**
- * Sorts tournaments using the query module's supported sort options.
- *
- * @param tournaments Tournament documents to sort.
- * @param sort Requested sort settings.
- * @returns A sorted tournament array.
- */
-export function sortTournaments(
-  tournaments: Doc<"tournaments">[],
+// Level 4: pure sorting and time-window helpers
+
+/** Sorts tournament rows using the supported query sort options without reading the database. */
+export function sortTournaments<TTournament extends Doc<"tournaments">>(
+  tournaments: TTournament[],
   sort: TournamentSortOptions = {},
 ) {
   const sortOrder = sort.sortOrder === "asc" ? 1 : -1;
@@ -64,15 +235,8 @@ export function sortTournaments(
   });
 }
 
-/**
- * Determines whether a tournament should be considered current based on either
- * explicit active status or its start/end date window.
- *
- * @param tournament Tournament document to inspect.
- * @param now Timestamp used for comparisons.
- * @returns True when the tournament is current.
- */
-export function isCurrentTournament(
+/** Returns whether a tournament should be treated as current from status or schedule. */
+function isCurrentTournament(
   tournament: Doc<"tournaments">,
   now: number = Date.now(),
 ) {
@@ -82,15 +246,23 @@ export function isCurrentTournament(
   );
 }
 
-/**
- * Picks the current tournament from a list.
- *
- * @param tournaments Candidate tournaments.
- * @param now Timestamp used for comparisons.
- * @returns The current tournament, or null when none qualifies.
- */
-export function findCurrentTournament(
-  tournaments: Doc<"tournaments">[],
+/** Returns whether a tournament begins within the short pre-cron upcoming window. */
+export function isWithinNextTournamentWindow(
+  tournament: Doc<"tournaments"> | null,
+  now: number = Date.now(),
+) {
+  if (!tournament) {
+    return false;
+  }
+
+  return tournament.startDate - now <= NEXT_TOURNAMENT_WINDOW_MS;
+}
+
+// Level 5: collection selectors and derived tournament metadata
+
+/** Picks the most relevant current tournament by filtering current candidates and preferring the latest. */
+export function findCurrentTournament<TTournament extends Doc<"tournaments">>(
+  tournaments: TTournament[],
   now: number = Date.now(),
 ) {
   const current = tournaments.filter((tournament) =>
@@ -100,16 +272,9 @@ export function findCurrentTournament(
   return current.sort((a, b) => b.startDate - a.startDate)[0] ?? null;
 }
 
-/**
- * Picks the most recently ended tournament when it finished within the recent
- * lookback window.
- *
- * @param tournaments Candidate tournaments.
- * @param now Timestamp used for comparisons.
- * @returns The most recent eligible tournament, or null.
- */
-export function findLastTournament(
-  tournaments: Doc<"tournaments">[],
+/** Picks the most recently completed tournament when it falls inside the recent lookback window. */
+export function findLastTournament<TTournament extends Doc<"tournaments">>(
+  tournaments: TTournament[],
   now: number = Date.now(),
 ) {
   return (
@@ -123,15 +288,9 @@ export function findLastTournament(
   );
 }
 
-/**
- * Picks the next upcoming tournament by earliest start date.
- *
- * @param tournaments Candidate tournaments.
- * @param now Timestamp used for comparisons.
- * @returns The next upcoming tournament, or null.
- */
-export function findNextTournament(
-  tournaments: Doc<"tournaments">[],
+/** Picks the next upcoming tournament by earliest future start date. */
+export function findNextTournament<TTournament extends Doc<"tournaments">>(
+  tournaments: TTournament[],
   now: number = Date.now(),
 ) {
   return (
@@ -141,33 +300,7 @@ export function findNextTournament(
   );
 }
 
-/**
- * Indicates whether a tournament starts within the six-day pre-cron window.
- *
- * @param tournament Tournament to inspect.
- * @param now Timestamp used for comparisons.
- * @returns True when the tournament starts within six days.
- */
-export function isWithinNextTournamentWindow(
-  tournament: Doc<"tournaments"> | null,
-  now: number = Date.now(),
-) {
-  if (!tournament) {
-    return false;
-  }
-
-  return tournament.startDate - now <= NEXT_TOURNAMENT_WINDOW_MS;
-}
-
-/**
- * Resolves playoff metadata for a tournament within its season, including
- * whether it is a playoff event and whether it occurs after the first playoff
- * tournament.
- *
- * @param ctx Convex query context.
- * @param tournament Tournament to inspect.
- * @returns Playoff state flags and the 1-based playoff event index.
- */
+/** Computes playoff metadata for a tournament, including its playoff sequence position within the season. */
 export async function getTournamentPlayoffState(
   ctx: QueryCtx,
   tournament: Doc<"tournaments"> | null,
@@ -218,42 +351,4 @@ export async function getTournamentPlayoffState(
         ? (playoffTournaments[playoffIndex - 1]?._id ?? null)
         : null,
   };
-}
-
-/**
- * Optionally enriches tournament rows with related course, tier, and season
- * records for UI-facing queries.
- *
- * @param ctx Convex query context.
- * @param tournaments Tournament documents to enhance.
- * @param enhance Requested related entities.
- * @returns Tournament rows with requested related docs attached.
- */
-export async function enhanceTournaments(
-  ctx: QueryCtx,
-  tournaments: Doc<"tournaments">[],
-  enhance: TournamentEnhanceOptions = {},
-) {
-  if (
-    !enhance.includeCourse &&
-    !enhance.includeTier &&
-    !enhance.includeSeason
-  ) {
-    return tournaments;
-  }
-
-  return await Promise.all(
-    tournaments.map(async (tournament) => ({
-      ...tournament,
-      course: enhance.includeCourse
-        ? ((await ctx.db.get(tournament.courseId)) ?? undefined)
-        : undefined,
-      tier: enhance.includeTier
-        ? ((await ctx.db.get(tournament.tierId)) ?? undefined)
-        : undefined,
-      season: enhance.includeSeason
-        ? ((await ctx.db.get(tournament.seasonId)) ?? undefined)
-        : undefined,
-    })),
-  );
 }

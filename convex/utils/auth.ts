@@ -5,22 +5,46 @@
  * Uses Clerk authentication with role-based access control.
  */
 
-import { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
+import {
+  internalQuery,
+  type ActionCtx,
+  type MutationCtx,
+  type QueryCtx,
+} from "../_generated/server";
+import { sharedArgs } from "../validators/_shared";
 
 type AuthContext = QueryCtx | MutationCtx;
 
-export async function requireAdminForAction(ctx: ActionCtx): Promise<void> {
-  const identity = await ctx.auth.getUserIdentity();
-  const passedClerkId = undefined;
-  const effectiveClerkId = (identity?.subject ?? passedClerkId ?? "").trim();
+/**
+ * Internal admin lookup used by action-based auth helpers that cannot access
+ * the database directly.
+ */
+export const getIsAdminByClerkId = internalQuery({
+  args: sharedArgs.clerkId,
+  handler: async (ctx, args) => {
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
+      .first();
 
+    return {
+      ok: true,
+      isAdmin: Boolean(member && member.role === "admin"),
+    } as const;
+  },
+});
+
+async function assertAdminForActionByClerkId(
+  ctx: ActionCtx,
+  effectiveClerkId: string,
+): Promise<void> {
   if (!effectiveClerkId) {
     throw new Error("Unauthorized: You must be signed in");
   }
 
   const adminCheck = await ctx.runQuery(
-    internal.functions.utils.getIsAdminByClerkId_Internal,
+    internal.utils.auth.getIsAdminByClerkId,
     { clerkId: effectiveClerkId },
   );
 
@@ -29,30 +53,9 @@ export async function requireAdminForAction(ctx: ActionCtx): Promise<void> {
   }
 }
 
-export async function requireAdminForActionWithClerkId(
-  ctx: ActionCtx,
-  args: { clerkId?: string },
-): Promise<void> {
+export async function requireAdminForAction(ctx: ActionCtx): Promise<void> {
   const identity = await ctx.auth.getUserIdentity();
-  const passedClerkId = args.clerkId?.trim();
-
-  if (identity && passedClerkId && identity.subject !== passedClerkId) {
-    throw new Error("Unauthorized: Clerk ID mismatch");
-  }
-
-  const effectiveClerkId = (identity?.subject ?? passedClerkId ?? "").trim();
-  if (!effectiveClerkId) {
-    throw new Error("Unauthorized: You must be signed in");
-  }
-
-  const adminCheck = await ctx.runQuery(
-    internal.functions.utils.getIsAdminByClerkId_Internal,
-    { clerkId: effectiveClerkId },
-  );
-
-  if (!adminCheck.isAdmin) {
-    throw new Error("Forbidden: Admin access required");
-  }
+  await assertAdminForActionByClerkId(ctx, (identity?.subject ?? "").trim());
 }
 
 /**
@@ -101,36 +104,17 @@ export async function requireAdmin(ctx: AuthContext): Promise<void> {
 }
 
 /**
- * Check if the current user is an admin or moderator
- * Throws if user is not authenticated or lacks permissions
+ * Check if the current query user is an admin.
+ * Throws if user is not authenticated or not an admin.
  */
-export async function requireModerator(ctx: AuthContext): Promise<void> {
-  const member = await getCurrentMember(ctx);
-
-  if (member.role !== "admin" && member.role !== "moderator") {
-    throw new Error("Forbidden: Moderator or admin access required");
-  }
+export async function requireAdminForQuery(ctx: QueryCtx): Promise<void> {
+  await requireAdmin(ctx);
 }
 
 /**
- * Check if the current user is accessing their own resource
- * Returns true if user is admin (bypass), or if clerkId matches
+ * Check if the current user is an admin or moderator
+ * Throws if user is not authenticated or lacks permissions
  */
-export async function canAccessResource(
-  ctx: AuthContext,
-  resourceClerkId: string | undefined,
-): Promise<boolean> {
-  const member = await getCurrentMember(ctx);
-
-  // Admins can access anything
-  if (member.role === "admin") {
-    return true;
-  }
-
-  // Check if accessing own resource
-  return member.clerkId === resourceClerkId;
-}
-
 /**
  * Require that user is accessing their own resource (or is admin)
  * Throws if user lacks permission
@@ -139,46 +123,9 @@ export async function requireOwnResource(
   ctx: AuthContext,
   resourceClerkId: string | undefined,
 ): Promise<void> {
-  const hasAccess = await canAccessResource(ctx, resourceClerkId);
-  if (!hasAccess) {
+  const member = await getCurrentMember(ctx);
+
+  if (member.role !== "admin" && member.clerkId !== resourceClerkId) {
     throw new Error("Forbidden: You can only access your own resources");
-  }
-}
-
-/**
- * Check if current user is an admin (without throwing)
- */
-export async function isAdmin(ctx: AuthContext): Promise<boolean> {
-  try {
-    const member = await getCurrentMember(ctx);
-    return member.role === "admin";
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Check if current user is a moderator or admin (without throwing)
- */
-export async function isModerator(ctx: AuthContext): Promise<boolean> {
-  try {
-    const member = await getCurrentMember(ctx);
-    return member.role === "admin" || member.role === "moderator";
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Get current user's Clerk ID (returns undefined if not authenticated)
- */
-export async function getAuthClerkId(
-  ctx: AuthContext,
-): Promise<string | undefined> {
-  try {
-    const identity = await ctx.auth.getUserIdentity();
-    return identity?.subject;
-  } catch {
-    return undefined;
   }
 }
