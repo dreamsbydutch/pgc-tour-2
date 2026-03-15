@@ -62,7 +62,6 @@ export function PreTournamentContent(props: {
     points: number;
     earnings: number;
   } | null;
-  allTournaments: EnhancedTournamentDoc[];
   existingTeam?: EnhancedTournamentTeamDoc;
   teamGolfers: {
     apiId?: number | undefined;
@@ -82,7 +81,6 @@ export function PreTournamentContent(props: {
       <>
         <LeaderboardHeader
           tournament={props.tournament}
-          allTournaments={props.allTournaments}
           onTournamentChange={props.onTournamentChange}
         />
         <TournamentCountdown {...props.tournament} />
@@ -97,7 +95,6 @@ export function PreTournamentContent(props: {
       <>
         <LeaderboardHeader
           tournament={props.tournament}
-          allTournaments={props.allTournaments}
           onTournamentChange={props.onTournamentChange}
         />
         as
@@ -112,7 +109,6 @@ export function PreTournamentContent(props: {
       <>
         <LeaderboardHeader
           tournament={props.tournament}
-          allTournaments={props.allTournaments}
           onTournamentChange={props.onTournamentChange}
         />
         <TournamentCountdown {...props.tournament} />
@@ -124,7 +120,6 @@ export function PreTournamentContent(props: {
     <>
       <LeaderboardHeader
         tournament={props.tournament}
-        allTournaments={props.allTournaments}
         onTournamentChange={props.onTournamentChange}
       />
       <TeamPickCard
@@ -609,13 +604,22 @@ function TournamentTeamPickerDialog(props: {
         const tournamentIdValue = tournamentId as unknown as Id<"tournaments">;
         const tourCardIdValue = tourCardId as unknown as Id<"tourCards">;
 
-        await createTeam({
-          data: {
-            tournamentId: tournamentIdValue,
-            tourCardId: tourCardIdValue,
-            golferIds: selectedApiIds,
-          },
-        });
+        if (existingTeam?._id) {
+          await updateTeam({
+            team: {
+              _id: existingTeam._id as Id<"teams">,
+              golferIds: selectedApiIds,
+            },
+          });
+        } else {
+          await createTeam({
+            data: {
+              tournamentId: tournamentIdValue,
+              tourCardId: tourCardIdValue,
+              golferIds: selectedApiIds,
+            },
+          });
+        }
 
         onOpenChange(false);
       } catch (e) {

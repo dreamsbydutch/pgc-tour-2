@@ -33,7 +33,6 @@ export function LeaderboardView(props: {
   tours: TourDoc[];
   teams: EnhancedTournamentTeamDoc[];
   golfers: EnhancedTournamentGolferDoc[];
-  allTournaments: TournamentDoc[];
   userTourCard?: TourCardDoc | null;
   onTournamentChange: (tournamentId: string) => void;
   activeTourId: string;
@@ -64,7 +63,6 @@ export function LeaderboardView(props: {
     <div className="container mx-auto px-4 py-8">
       <LeaderboardHeader
         tournament={props.tournament}
-        allTournaments={props.allTournaments}
         onTournamentChange={props.onTournamentChange}
       />
       <div className="mx-auto mt-2 w-full max-w-4xl md:w-11/12 lg:w-8/12">

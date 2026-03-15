@@ -43,7 +43,6 @@ export type AdminDataTableColumn<T> = {
   cellClassName?: string;
 };
 
-
 /**
  * Props for `TourCardChangeButton`.
  */
@@ -87,8 +86,6 @@ export type TourCardFormButtonProps =
   | TourCardFormButtonLoadedProps
   | { loading: true };
 
-
-
 export interface LittleFuckerSkeletonProps {
   showSeasonText?: boolean;
   className?: string;
@@ -96,7 +93,6 @@ export interface LittleFuckerSkeletonProps {
 
 type LeaderboardHeaderLoadedProps = {
   focusTourney: EnhancedTournamentDoc;
-  tournaments: EnhancedTournamentDoc[];
   onTournamentChange?: (tournamentId: string) => void;
   loading?: false;
 };
@@ -108,10 +104,8 @@ export type LeaderboardHeaderProps =
   | LeaderboardHeaderLoadedProps
   | { loading: true };
 
-
 type LeaderboardHeaderDropdownLoadedProps = {
   activeTourney: EnhancedTournamentDoc;
-  tournaments: EnhancedTournamentDoc[];
   onSelect?: (tournamentId: string) => void;
   className?: string;
   loading?: false;
@@ -123,7 +117,6 @@ type LeaderboardHeaderDropdownLoadedProps = {
 export type LeaderboardHeaderDropdownProps =
   | LeaderboardHeaderDropdownLoadedProps
   | { loading: true; className?: string };
-
 
 /**
  * View options for `HomePageListingsContainer`.
@@ -294,8 +287,6 @@ export interface FriendManagementHook {
     removeFriend: (memberId: string) => Promise<void>;
   };
 }
-
-
 
 export type LeaderboardTourToggle = {
   id: string;

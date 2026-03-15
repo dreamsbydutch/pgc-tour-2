@@ -1,10 +1,32 @@
 "use client";
 
+import { api, Id, useQuery } from "@/convex";
+import type { Doc } from "@/convex";
 import { Dropdown } from "@/components/ui";
-import { cn, DropdownItem, DropdownSection, formatMoney, formatTournamentDateRange } from "@/lib";
-import { EnhancedTournamentDoc } from "convex/types/types";
+import {
+  cn,
+  DropdownItem,
+  DropdownSection,
+  formatMoney,
+  formatTournamentDateRange,
+} from "@/lib";
 import { ChevronDown, RefreshCwIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+type LeaderboardHeaderTournament = Doc<"tournaments"> & {
+  course: {
+    name: string;
+    location: string;
+    front: number;
+    back: number;
+    par: number;
+  };
+  tier: {
+    name: string;
+    payouts: number[];
+    points: number[];
+  };
+};
 
 /**
  * LeaderboardHeader Component
@@ -15,7 +37,7 @@ import { useMemo, useState } from "react";
  *
  * Data sources:
  * - Tournament data is provided by the parent (typically from Convex-enhanced tournament docs).
- * - Tournament selection UI is delegated to `LeaderboardHeaderDropdown`.
+ * - Tournament selection data is fetched lazily by `LeaderboardHeaderDropdown` after the switcher is opened.
  *
  * Render states:
  * - When `loading` is true, renders the internal skeleton to preserve layout.
@@ -25,14 +47,12 @@ import { useMemo, useState } from "react";
  *
  * @example
  * <LeaderboardHeader
- *   focusTourney={focusTourney}
- *   tournaments={tournaments}
+ *   tournament={focusTourney}
  *   onTournamentChange={(id) => setTournamentId(id)}
  * />
  */
 export function LeaderboardHeader(props: {
-  tournament: EnhancedTournamentDoc;
-  allTournaments: EnhancedTournamentDoc[];
+  tournament: LeaderboardHeaderTournament;
   onTournamentChange: (tournamentId: string) => void;
 }) {
   return (
@@ -60,7 +80,6 @@ export function LeaderboardHeader(props: {
         <div className="col-span-2 row-span-1 place-self-center text-center text-xs xs:text-sm sm:text-base md:text-lg">
           <LeaderboardHeaderDropdown
             tournament={props.tournament}
-            allTournaments={props.allTournaments}
             onTournamentChange={props.onTournamentChange}
           />
         </div>
@@ -73,27 +92,21 @@ export function LeaderboardHeader(props: {
         </div>
 
         <div className="col-span-3 row-span-1 text-center text-xs xs:text-sm sm:text-base md:text-lg">
-          {props.tournament.course?.name ?? "-"}
+          {props.tournament.course.name}
         </div>
 
         <div className="col-span-2 row-span-1 text-center text-xs xs:text-sm sm:text-base md:text-lg">
-          {props.tournament.course?.location ?? "-"}
+          {props.tournament.course.location}
         </div>
 
         <div className="col-span-2 row-span-1 text-center text-xs xs:text-sm sm:text-base md:text-lg">
-          {props.tournament.course?.front &&
-          props.tournament.course?.back &&
-          props.tournament.course?.par
-            ? `${props.tournament.course.front} - ${props.tournament.course.back} - ${props.tournament.course.par}`
-            : "-"}
+          {`${props.tournament.course.front} - ${props.tournament.course.back} - ${props.tournament.course.par}`}
         </div>
 
         <div className="col-span-7 row-span-1 text-center text-xs xs:text-sm sm:text-base md:text-lg">
-          {props.tournament.tier
-            ? props.tournament.tier.name.toLowerCase() === "playoff"
-              ? `${props.tournament.tier.name} Tournament - 1st Place: ${formatMoney(props.tournament.tier.payouts[0] ?? 0, false)}`
-              : `${props.tournament.tier.name} Tournament - 1st Place: ${props.tournament.tier.points[0] ?? 0} pts, ${formatMoney(props.tournament.tier.payouts[0] ?? 0, false)}`
-            : ""}
+          {props.tournament.tier.name.toLowerCase() === "playoff"
+            ? `${props.tournament.tier.name} Tournament - 1st Place: ${formatMoney(props.tournament.tier.payouts[0] ?? 0, false)}`
+            : `${props.tournament.tier.name} Tournament - 1st Place: ${props.tournament.tier.points[0] ?? 0} pts, ${formatMoney(props.tournament.tier.payouts[0] ?? 0, false)}`}
         </div>
       </div>
     </div>
@@ -105,35 +118,37 @@ export function LeaderboardHeader(props: {
  *
  * Tournament switcher used by `LeaderboardHeader`.
  * Supports:
- * - Year filtering
+ * - Season filtering
  * - Grouping by schedule order or by tier
  *
  * Render states:
- * - When `loading` is true, renders the internal skeleton.
- * - When loaded, renders a tournament switcher with year filtering and grouping controls.
+ * - Closed: does not fetch season or tournament options.
+ * - Open/loading: fetches seasons plus tournaments for the selected season.
+ * - Open/loaded: renders a tournament switcher with season filtering and grouping controls.
  *
  * @param props - `LeaderboardHeaderDropdownProps`.
  */
 function LeaderboardHeaderDropdown(props: {
-  tournament: EnhancedTournamentDoc;
-  allTournaments: EnhancedTournamentDoc[];
+  tournament: LeaderboardHeaderTournament;
   onTournamentChange: (tournamentId: string) => void;
 }) {
   const {
+    isLoading,
     isOpen,
-    setIsOpen,
+    handleOpenChange,
     groupMode,
     setGroupMode,
-    availableYears,
-    selectedYear,
-    setSelectedYear,
-    tournamentsForYear,
+    availableSeasons,
+    selectedSeasonId,
+    setSelectedSeasonId,
+    selectedSeasonLabel,
+    tournamentsForSeason,
     tierGroups,
     handleTournamentSelect,
   } = useLeaderboardHeaderDropdown(props);
 
   const scheduleItems: DropdownItem[] = useMemo(() => {
-    return tournamentsForYear.map((tournament) => ({
+    return tournamentsForSeason.map((tournament) => ({
       key: tournament._id,
       title: tournament.name,
       subtitle: formatTournamentDateRange(
@@ -144,7 +159,7 @@ function LeaderboardHeaderDropdown(props: {
       isActive: tournament._id === props.tournament._id,
       onSelect: () => handleTournamentSelect(tournament._id),
     }));
-  }, [handleTournamentSelect, props.tournament._id, tournamentsForYear]);
+  }, [handleTournamentSelect, props.tournament._id, tournamentsForSeason]);
 
   const tierSections: DropdownSection[] = useMemo(() => {
     return tierGroups.map(([tierName, tierTournaments]) => ({
@@ -167,7 +182,7 @@ function LeaderboardHeaderDropdown(props: {
   return (
     <Dropdown
       open={isOpen}
-      onOpenChange={setIsOpen}
+      onOpenChange={handleOpenChange}
       triggerContent={
         <>
           <RefreshCwIcon className="h-4 w-4 sm:h-5 sm:w-5 md:hidden" />
@@ -180,18 +195,19 @@ function LeaderboardHeaderDropdown(props: {
         <div className="border-b border-gray-200 px-3 py-2 text-xs uppercase tracking-wide text-gray-500">
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1 text-[11px] font-semibold">
-              <span>Year:</span>
+              <span>Season:</span>
               <select
                 className="rounded border border-gray-300 bg-white px-2 py-1 text-xs lowercase text-gray-700"
-                value={selectedYear?.toString() ?? ""}
+                value={selectedSeasonId ?? ""}
+                disabled={availableSeasons.length === 0}
                 onChange={(event) => {
                   const value = event.target.value;
-                  setSelectedYear(Number(value));
+                  setSelectedSeasonId(value as Id<"seasons">);
                 }}
               >
-                {availableYears.map((year) => (
-                  <option key={year} value={year}>
-                    {year}
+                {availableSeasons.map((season) => (
+                  <option key={season._id} value={season._id}>
+                    {formatSeasonLabel(season)}
                   </option>
                 ))}
               </select>
@@ -225,69 +241,115 @@ function LeaderboardHeaderDropdown(props: {
           </div>
         </div>
       }
-      items={groupMode === "schedule" ? scheduleItems : undefined}
-      sections={groupMode === "tier" ? tierSections : undefined}
-      emptyState={
-        <div className="px-4 py-3 text-sm text-gray-500">
-          {groupMode === "schedule"
-            ? `No tournaments for ${selectedYear ?? "the selected year"}.`
-            : "No tournaments available for this selection."}
-        </div>
+      items={
+        !isLoading &&
+        tournamentsForSeason.length > 0 &&
+        groupMode === "schedule"
+          ? scheduleItems
+          : undefined
       }
-    ></Dropdown>
+      sections={
+        !isLoading && tournamentsForSeason.length > 0 && groupMode === "tier"
+          ? tierSections
+          : undefined
+      }
+    >
+      <div className="px-4 py-3 text-sm text-gray-500">
+        {isLoading
+          ? "Loading tournaments..."
+          : `No tournaments for ${selectedSeasonLabel}.`}
+      </div>
+    </Dropdown>
   );
 }
 
 /**
- * Handles state and derived lists for `LeaderboardHeaderDropdown`.
+ * Handles lazy dropdown fetching and derived lists for `LeaderboardHeaderDropdown`.
  *
  * @param props - Loaded dropdown props.
- * @returns Dropdown state (open, year, grouping) plus derived lists and handlers.
+ * @returns Dropdown state (open, season, grouping) plus derived lists and handlers.
  */
 function useLeaderboardHeaderDropdown(props: {
-  tournament: EnhancedTournamentDoc;
-  allTournaments: EnhancedTournamentDoc[];
+  tournament: LeaderboardHeaderTournament;
   onTournamentChange: (tournamentId: string) => void;
 }) {
+  const [hasRequestedOptions, setHasRequestedOptions] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [groupMode, setGroupMode] = useState<"schedule" | "tier">("schedule");
+  const [selectedSeasonId, setSelectedSeasonId] =
+    useState<Id<"seasons"> | null>(props.tournament.seasonId);
 
-  const availableYears = useMemo(() => {
-    const yearSet = new Set<number>();
-    props.allTournaments.forEach((tournament) => {
-      const year =
-        tournament.season?.year ?? new Date(tournament.startDate).getFullYear();
-      if (Number.isFinite(year)) {
-        yearSet.add(year);
-      }
-    });
-    return Array.from(yearSet).sort((a, b) => b - a);
-  }, [props.allTournaments]);
-  const activeYear = useMemo(() => {
-    const focusYear =
-      props.tournament.season?.year ??
-      new Date(props.tournament.startDate).getFullYear();
-    if (availableYears.includes(focusYear)) {
-      return focusYear;
+  const seasons = useQuery(
+    api.functions.seasons.getSeasons,
+    hasRequestedOptions
+      ? {
+          options: {
+            sort: {
+              sortBy: "year",
+              sortOrder: "desc",
+            },
+          },
+        }
+      : "skip",
+  );
+
+  const tournamentsForSeasonQuery = useQuery(
+    api.functions.tournaments.getTournaments,
+    hasRequestedOptions && selectedSeasonId
+      ? {
+          options: {
+            filter: {
+              seasonId: selectedSeasonId,
+            },
+            sort: {
+              sortBy: "startDate",
+              sortOrder: "asc",
+            },
+            enhance: {
+              includeTier: true,
+            },
+          },
+        }
+      : "skip",
+  );
+
+  useEffect(() => {
+    setSelectedSeasonId(props.tournament.seasonId);
+  }, [props.tournament._id, props.tournament.seasonId]);
+
+  useEffect(() => {
+    if (!seasons || seasons.length === 0) return;
+    if (
+      selectedSeasonId &&
+      seasons.some((season) => season._id === selectedSeasonId)
+    ) {
+      return;
     }
-    return availableYears[0] ?? focusYear;
-  }, [props.tournament, availableYears]);
+    setSelectedSeasonId(seasons[0]?._id ?? null);
+  }, [seasons, selectedSeasonId]);
 
-  const [selectedYear, setSelectedYear] = useState<number>(activeYear);
-
-  const tournamentsForYear = useMemo(() => {
-    if (!selectedYear) return [...props.allTournaments];
-    return props.allTournaments
-      .filter((tournament) => tournament.season?.year ?? new Date(tournament.startDate).getFullYear() === selectedYear)
-      .sort((a, b) => a.startDate - b.startDate);
-  }, [selectedYear, props.allTournaments]);
+  const availableSeasons = useMemo(() => seasons ?? [], [seasons]);
+  const selectedSeason = useMemo(() => {
+    return availableSeasons.find((season) => season._id === selectedSeasonId);
+  }, [availableSeasons, selectedSeasonId]);
+  const selectedSeasonLabel = useMemo(() => {
+    return formatSeasonLabel(selectedSeason);
+  }, [selectedSeason]);
+  const tournamentsForSeason = useMemo<LeaderboardHeaderTournament[]>(() => {
+    return (
+      (tournamentsForSeasonQuery as
+        | LeaderboardHeaderTournament[]
+        | undefined) ?? []
+    );
+  }, [tournamentsForSeasonQuery]);
+  const isLoading =
+    hasRequestedOptions &&
+    (seasons === undefined ||
+      (selectedSeasonId !== null && tournamentsForSeasonQuery === undefined));
 
   const tierGroups = useMemo(() => {
-    const groups = new Map<
-      string,
-      EnhancedTournamentDoc[]
-    >();
-    tournamentsForYear.forEach((tournament) => {
+    const groups = new Map<string, LeaderboardHeaderTournament[]>();
+    tournamentsForSeason.forEach((tournament) => {
       const tierName = tournament.tier?.name ?? "Uncategorized";
       const list = groups.get(tierName) ?? [];
       list.push(tournament);
@@ -298,7 +360,14 @@ function useLeaderboardHeaderDropdown(props: {
       const payoutB = tournsB[0]?.tier?.payouts[0] ?? 0;
       return payoutA - payoutB;
     });
-  }, [tournamentsForYear]);
+  }, [tournamentsForSeason]);
+
+  const handleOpenChange = (open: boolean) => {
+    if (open) {
+      setHasRequestedOptions(true);
+    }
+    setIsOpen(open);
+  };
 
   const handleTournamentSelect = (tournamentId: string) => {
     setIsOpen(false);
@@ -306,15 +375,23 @@ function useLeaderboardHeaderDropdown(props: {
   };
 
   return {
+    isLoading,
     isOpen,
-    setIsOpen,
+    handleOpenChange,
     groupMode,
     setGroupMode,
-    availableYears,
-    selectedYear,
-    setSelectedYear,
-    tournamentsForYear,
+    availableSeasons,
+    selectedSeasonId,
+    setSelectedSeasonId,
+    selectedSeasonLabel,
+    tournamentsForSeason,
     tierGroups,
     handleTournamentSelect,
   };
+}
+
+/** Returns the display label for the selected season in the dropdown popup. */
+function formatSeasonLabel(season?: Doc<"seasons"> | null): string {
+  if (!season) return "the selected season";
+  return season.year.toString();
 }

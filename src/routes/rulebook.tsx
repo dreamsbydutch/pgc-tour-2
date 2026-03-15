@@ -6,7 +6,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn, ruleList, TierPayoutsRow, TierPointsRow } from "@/lib";
 import { useMemo, useState } from "react";
 import { api, useQuery } from "@/convex";
-import { EnhancedTournamentDoc, TierDoc } from "convex/types/types";
+import { EnhancedTournamentDoc } from "convex/types/types";
 
 export const Route = createFileRoute("/rulebook")({
   component: Rulebook,
@@ -126,10 +126,6 @@ function useRulebookPage():
     }
   | { kind: "loading" } {
   const season = useQuery(api.functions.seasons.getCurrentSeason);
-  const tiers = useQuery(
-    api.functions.tiers.getTiers,
-    season ? { options: { filter: { seasonId: season._id } } } : "skip",
-  ) as TierDoc[] | undefined;
   const seasonTournaments = useQuery(
     api.functions.tournaments.getTournaments,
     season
@@ -148,6 +144,38 @@ function useRulebookPage():
   const toggleIndex = (index: number) => {
     setExpandedIndex((prev) => (prev === index ? null : index));
   };
+
+  const tiers = useMemo(() => {
+    if (!seasonTournaments || seasonTournaments.length === 0) return [];
+
+    const tierMap = new Map<
+      string,
+      {
+        key: string;
+        name: string;
+        points: number[];
+        payouts: number[];
+      }
+    >();
+
+    for (const tournament of seasonTournaments) {
+      if (!tournament.tier) {
+        continue;
+      }
+
+      const key = String(tournament.tier._id);
+      if (!tierMap.has(key)) {
+        tierMap.set(key, {
+          key,
+          name: tournament.tier.name,
+          points: tournament.tier.points,
+          payouts: tournament.tier.payouts,
+        });
+      }
+    }
+
+    return [...tierMap.values()];
+  }, [seasonTournaments]);
 
   const pointsTiers = useMemo((): TierPointsRow[] => {
     if (!tiers || tiers.length === 0) return [];
@@ -204,7 +232,7 @@ function useRulebookPage():
     seasonTournaments,
     pointsTiers,
     payoutsTiers,
-    isLoading: tiers === undefined,
+    isLoading: seasonTournaments === undefined,
   };
 }
 
