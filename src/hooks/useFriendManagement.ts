@@ -10,7 +10,6 @@ function getFriendIds(member: StandingsMember | null | undefined): string[] {
 
 export function useFriendManagement(
   currentMember: StandingsMember | null | undefined,
-  currentMemberClerkId: string | undefined,
 ): FriendManagementHook {
   const [friendChangingIds, setFriendChangingIds] = useState<Set<string>>(
     () => new Set(),
@@ -37,7 +36,7 @@ export function useFriendManagement(
 
   const addFriend = useCallback(
     async (memberIdToAdd: string) => {
-      if (!currentMember || !currentMemberClerkId) return;
+      if (!currentMember) return;
       if (memberIdToAdd === String(currentMember._id)) return;
       if (friendChangingIds.has(memberIdToAdd)) return;
 
@@ -49,7 +48,6 @@ export function useFriendManagement(
         );
 
         await updateMember({
-          clerkId: currentMemberClerkId,
           memberId: currentMember._id,
           data: { friends: nextFriends },
         });
@@ -61,7 +59,6 @@ export function useFriendManagement(
       addToChangingSet,
       currentFriends,
       currentMember,
-      currentMemberClerkId,
       friendChangingIds,
       removeFromChangingSet,
       updateMember,
@@ -70,7 +67,7 @@ export function useFriendManagement(
 
   const removeFriend = useCallback(
     async (memberIdToRemove: string) => {
-      if (!currentMember || !currentMemberClerkId) return;
+      if (!currentMember) return;
       if (friendChangingIds.has(memberIdToRemove)) return;
 
       addToChangingSet(memberIdToRemove);
@@ -81,7 +78,6 @@ export function useFriendManagement(
         );
 
         await updateMember({
-          clerkId: currentMemberClerkId,
           memberId: currentMember._id,
           data: { friends: nextFriends },
         });
@@ -93,7 +89,6 @@ export function useFriendManagement(
       addToChangingSet,
       currentFriends,
       currentMember,
-      currentMemberClerkId,
       friendChangingIds,
       removeFromChangingSet,
       updateMember,

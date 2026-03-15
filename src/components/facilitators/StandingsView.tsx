@@ -503,18 +503,10 @@ function useStandingsView(props: StandingsViewProps) {
       tournaments,
       currentSeason: currentSeason ?? null,
     };
-  }, [
-    currentMemberDoc,
-    currentSeason,
-    isLoading,
-    standingsData,
-  ]);
+  }, [currentMemberDoc, currentSeason, isLoading, standingsData]);
 
   const [friendsOnly, setFriendsOnly] = useState(false);
-  const friendManagement = useFriendManagement(
-    data?.currentMember ?? null,
-    clerkId,
-  );
+  const friendManagement = useFriendManagement(data?.currentMember ?? null);
 
   const tours = useMemo(() => data?.tours ?? [], [data?.tours]);
   const tiers = useMemo(() => data?.tiers ?? [], [data?.tiers]);

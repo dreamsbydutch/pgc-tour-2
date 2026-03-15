@@ -24,12 +24,14 @@ import {
  * This page handles:
  * - Sign-in/sign-out entry points (Clerk)
  * - Editing the member profile (first/last name)
+ * - Deleting the signed-in member profile
  * - Showing the current account balance
  * - Listing and filtering the signed-in member’s tournament history
  *
  * Data sources:
  * - `api.functions.members.getMembers` (member record by Clerk id)
  * - `api.functions.members.updateMembers` (profile updates)
+ * - `api.functions.members.deleteMembers` (profile deletion)
  * - `api.functions.seasons.getSeasons` (season labels)
  * - `api.functions.membersViews.getMyTournamentHistory` (history rows)
  *
@@ -102,9 +104,17 @@ export function AccountPage() {
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <Button
                   onClick={vm.onSaveProfile}
-                  disabled={vm.saving || !vm.memberRaw}
+                  disabled={vm.saving || vm.deleting || !vm.memberRaw}
                 >
                   {vm.saving ? "Saving…" : "Save"}
+                </Button>
+
+                <Button
+                  variant="destructive"
+                  onClick={vm.onDeleteAccount}
+                  disabled={vm.saving || vm.deleting || !vm.memberRaw}
+                >
+                  {vm.deleting ? "Deleting…" : "Delete account"}
                 </Button>
 
                 {vm.memberAccountCents !== undefined ? (
@@ -118,6 +128,9 @@ export function AccountPage() {
 
                 {vm.saveError ? (
                   <div className="text-sm text-red-600">{vm.saveError}</div>
+                ) : null}
+                {vm.deleteError ? (
+                  <div className="text-sm text-red-600">{vm.deleteError}</div>
                 ) : null}
                 {vm.saveSuccess ? (
                   <div className="text-sm text-green-700">{vm.saveSuccess}</div>
@@ -164,6 +177,7 @@ function useAccountPage() {
   );
 
   const updateMember = useMutation(api.functions.members.updateMembers);
+  const deleteMember = useMutation(api.functions.members.deleteMembers);
 
   const memberForAccount = useMemo<MemberForAccount | null>(() => {
     return isMemberForAccount(memberRaw) ? memberRaw : null;
@@ -172,7 +186,9 @@ function useAccountPage() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
   useEffect(() => {
@@ -215,6 +231,7 @@ function useAccountPage() {
 
     setSaving(true);
     setSaveError(null);
+    setDeleteError(null);
     setSaveSuccess(null);
 
     try {
@@ -236,6 +253,34 @@ function useAccountPage() {
     }
   }
 
+  async function onDeleteAccount() {
+    if (!memberForAccount) return;
+
+    const confirmed = globalThis.confirm(
+      "Delete your account? This removes your member profile and related league data.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeleting(true);
+    setDeleteError(null);
+    setSaveError(null);
+    setSaveSuccess(null);
+
+    try {
+      await deleteMember({ memberId: memberForAccount._id });
+      await signOut({ redirectUrl: "/" });
+    } catch (e) {
+      setDeleteError(
+        e instanceof Error ? e.message : "Failed to delete account",
+      );
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return {
     openSignIn,
     signOut,
@@ -245,7 +290,9 @@ function useAccountPage() {
     lastName,
     setLastName,
     saving,
+    deleting,
     saveError,
+    deleteError,
     saveSuccess,
     memberAccountCents,
     seasonLabelById,
@@ -257,6 +304,7 @@ function useAccountPage() {
     setTSort,
     toggleSort,
     onSaveProfile,
+    onDeleteAccount,
     formatDateTime,
   };
 }
