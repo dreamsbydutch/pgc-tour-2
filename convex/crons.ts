@@ -13,7 +13,7 @@ if (shouldRegisterCrons) {
   crons.interval(
     "live_tournament_sync",
     { minutes: 4 },
-    internal.functions.cronJobs.runTournamentSync,
+    internal.crons.sync.runTournamentSync,
     {},
   );
 
@@ -49,10 +49,10 @@ if (shouldRegisterCrons) {
 
   // Weekly golfer OWGR/country refresh (DataGolf -> golfers)
   // NOTE: Convex cron schedules are interpreted in UTC.
-  // 11am ET during standard time corresponds to 16:00 UTC.
+  // Noon UTC = 7am ET, which is early enough to update golfer info before the weekly tournament sync on Monday at 8am ET.
   crons.cron(
     "update_golfers_world_rank_11am",
-    "0 16 * * 1",
+    "0 12 * * 1",
     internal.crons.golfers.updateGolfersWorldRankFromDataGolfInput,
     {},
   );
