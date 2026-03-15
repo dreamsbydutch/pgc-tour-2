@@ -19,7 +19,7 @@ import type * as crons_standings from "../crons/standings.js";
 import type * as crons_sync from "../crons/sync.js";
 import type * as crons from "../crons.js";
 import type * as functions__constants from "../functions/_constants.js";
-import type * as functions_cronJobs from "../functions/cronJobs.js";
+import type * as functions_cronJobs from "../functions/crons.js";
 import type * as functions_datagolf from "../functions/datagolf.js";
 import type * as functions_emails from "../functions/emails.js";
 import type * as functions_golfers from "../functions/golfers.js";

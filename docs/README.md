@@ -29,6 +29,7 @@ This folder is the canonical, maintained documentation for the PGC full-stack ap
 - Schema, validators, and indexes: [backend/schema-and-indexes.md](backend/schema-and-indexes.md)
 - Auth and identity (Clerk + current conventions): [backend/auth-and-identity.md](backend/auth-and-identity.md)
 - Cron jobs and scheduled work: [backend/cron-and-jobs.md](backend/cron-and-jobs.md)
+- Tournament sync write flow: [backend/tournament-sync-data-flow.md](backend/tournament-sync-data-flow.md)
 - External integrations (DataGolf, email, analytics): [backend/external-integrations.md](backend/external-integrations.md)
 
 ## Deployment

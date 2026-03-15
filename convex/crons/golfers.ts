@@ -3,6 +3,8 @@ import type { Id } from "../_generated/dataModel";
 import { internalAction, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
 import { DataGolfRankedPlayer } from "../types/datagolf";
+import { normalizePlayerNameFromDataGolf } from "../utils/datagolf";
+import { normalizeCountry } from "../utils/golfers";
 
 const DATAGOLF_BASE_URL = "https://feeds.datagolf.com";
 const FETCH_TIMEOUT_MS = 30000;
@@ -18,26 +20,6 @@ type WorldRankSyncInput = {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function normalizePlayerNameFromDataGolf(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed.includes(",")) {
-    return trimmed.replace(/\s+/g, " ").trim();
-  }
-
-  const parts = trimmed
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  if (parts.length < 2) {
-    return trimmed.replace(/\s+/g, " ").trim();
-  }
-
-  const last = parts[0] ?? trimmed;
-  const first = parts.slice(1).join(", ").trim();
-  return `${first} ${last}`.replace(/\s+/g, " ").trim();
 }
 
 function isDataGolfRankedPlayer(value: unknown): value is DataGolfRankedPlayer {
@@ -316,12 +298,4 @@ function buildGolferWorldRankPatch(
   }
 
   return changed ? patch : null;
-}
-
-/**
- * Normalizes optional country values before persistence.
- */
-function normalizeCountry(country: string) {
-  const trimmed = country.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
 }

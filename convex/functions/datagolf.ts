@@ -21,7 +21,7 @@ import {
   validateDataGolfRankedPlayer,
   validateDataGolfWinningsPlayer,
 } from "../validators/datagolf";
-import { processData } from "../utils/batchProcess";
+import { processData } from "../utils/_shared/collections";
 import {
   checkCompatabilityOfEventNames,
   fetchFromDataGolf,

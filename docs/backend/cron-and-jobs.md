@@ -33,4 +33,5 @@ If a cron job behaves unexpectedly:
 See also:
 
 - [external-integrations.md](external-integrations.md)
+- [tournament-sync-data-flow.md](tournament-sync-data-flow.md)
 - [../operations/troubleshooting.md](../operations/troubleshooting.md)

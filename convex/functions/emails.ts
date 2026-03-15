@@ -1,4 +1,4 @@
-import { emailsValidators } from "../validators/common";
+import { emailsValidators } from "../validators/emails";
 
 import {
   action,
@@ -10,6 +10,7 @@ import {
 import type { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import type { GroupsEmailContext } from "../types/emails";
+import { requireAdminForAction, requireAdminForQuery } from "../utils/auth";
 import {
   formatMemberName,
   getChampionsStringForTournamentId,
@@ -22,12 +23,12 @@ import {
   parseNumericEnv,
   parseNumericEnvOptional,
   buildTournamentUrl,
-  requireAdminForAction,
-  requireAdminForQuery,
   buildGroupsEmailLeaderboardTemplateParams,
   sendBrevoTemplateEmailBatch,
   sendGroupsEmailImpl,
 } from "../utils/emails";
+
+// Level 1: recipient queries and context loaders
 
 /**
  * Lists unique email recipients for the tournament based on “active” tour cards.
@@ -255,6 +256,9 @@ export const getMissingTeamReminderRecipientsForUpcomingTournament =
     },
   });
 
+// Level 2: delivery tracking mutations
+
+/** Marks a tournament as having sent its groups email. */
 export const markGroupsEmailSent = internalMutation({
   args: emailsValidators.args.markGroupsEmailSent,
   handler: async (ctx, args) => {
@@ -297,6 +301,7 @@ export const getActiveMemberEmailRecipients = internalQuery({
   },
 });
 
+/** Returns the next upcoming tournament id for downstream email actions. */
 export const getUpcomingTournamentId = internalQuery({
   args: emailsValidators.args.getUpcomingTournamentId,
   handler: async (ctx) => {
@@ -308,6 +313,7 @@ export const getUpcomingTournamentId = internalQuery({
   },
 });
 
+/** Marks a tournament as having sent its missing-team reminder email. */
 export const markReminderEmailSent = internalMutation({
   args: emailsValidators.args.markReminderEmailSent,
   handler: async (ctx, args) => {
@@ -317,20 +323,7 @@ export const markReminderEmailSent = internalMutation({
   },
 });
 
-export const getIsAdminByClerkId = internalQuery({
-  args: emailsValidators.args.getIsAdminByClerkId,
-  handler: async (ctx, args) => {
-    const member = await ctx.db
-      .query("members")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-
-    return {
-      ok: true,
-      isAdmin: Boolean(member && member.role === "admin"),
-    } as const;
-  },
-});
+// Level 3: admin previews and bulk sends
 
 /**
  * Admin-only preview for the “groups are set” email.
@@ -549,6 +542,8 @@ export const adminSendWeeklyRecapEmailToActiveTourCards = action({
   },
 });
 
+// Level 4: recap and reminder sends
+
 /**
  * Sends a single weekly recap test email to `BREVO_TEST_TO`.
  * This never emails your full league list.
@@ -753,6 +748,8 @@ export const sendMissingTeamReminderForUpcomingTournament: ReturnType<
     } as const;
   },
 });
+
+// Level 5: season opener sends
 
 /**
  * Sends a single “groups are set” test email to `BREVO_TEST_TO`.

@@ -13,6 +13,9 @@ import type {
   DataGolfRankedPlayer,
   DataGolfRankingsResponse,
 } from "../types/datagolf";
+import { getTournamentPlayoffState, isWithinNextTournamentWindow } from "../utils/tournaments";
+import { checkCompatabilityOfEventNames, fetchFromDataGolf, normalizeDgSkillEstimateToPgcRating, normalizePlayerNameFromDataGolf } from "../utils/datagolf";
+import { normalizeCountry } from "../utils/golfers";
 
 const BASE_URL = "https://feeds.datagolf.com";
 const NEXT_TOURNAMENT_WINDOW_MS = 6 * 24 * 60 * 60 * 1000;
@@ -50,6 +53,23 @@ type GroupAssignmentInput = {
   roundOneTeeTime?: number;
   roundTwoTeeTime?: number;
 };
+
+function getChangedFields<T extends Record<string, unknown>>(
+  current: Record<string, unknown>,
+  next: T,
+): Partial<T> {
+  const changed: Partial<T> = {};
+
+  for (const [key, value] of Object.entries(next) as Array<
+    [keyof T, T[keyof T]]
+  >) {
+    if (current[key as string] !== value) {
+      changed[key] = value;
+    }
+  }
+
+  return changed;
+}
 
 /**
  * Resolves the next upcoming tournament together with the playoff metadata the
@@ -248,13 +268,22 @@ export const upsertTournamentGroups = internalMutation({
         continue;
       }
 
+      const changedTournamentGolferData = getChangedFields(
+        existingTournamentGolfer as unknown as Record<string, unknown>,
+        nextTournamentGolferData,
+      );
+
+      if (Object.keys(changedTournamentGolferData).length === 0) {
+        continue;
+      }
+
       await ctx.db.patch(
         existingTournamentGolfer._id,
-        nextTournamentGolferData,
+        changedTournamentGolferData,
       );
       tournamentGolferByGolferId.set(golfer._id, {
         ...existingTournamentGolfer,
-        ...nextTournamentGolferData,
+        ...changedTournamentGolferData,
       });
       tournamentGolfersUpdated += 1;
     }
@@ -545,74 +574,6 @@ async function findNextTournament(ctx: QueryCtx) {
 }
 
 /**
- * Computes playoff sequencing for a tournament within its season.
- */
-async function getTournamentPlayoffState(
-  ctx: QueryCtx,
-  tournament: Doc<"tournaments"> | null,
-) {
-  if (!tournament) {
-    return {
-      isPlayoff: false,
-      playoffEventIndex: 0,
-      isNonFirstPlayoffTournament: false,
-      firstPlayoffEventId: null,
-      previousPlayoffEventId: null,
-    } as const;
-  }
-
-  const [seasonTournaments, seasonTiers] = await Promise.all([
-    ctx.db
-      .query("tournaments")
-      .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-      .collect(),
-    ctx.db
-      .query("tiers")
-      .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-      .collect(),
-  ]);
-
-  const playoffTierIds = new Set(
-    seasonTiers
-      .filter((tier) => isPlayoffTierName(tier.name))
-      .map((tier) => tier._id),
-  );
-  const playoffTournaments = seasonTournaments
-    .filter((seasonTournament) => playoffTierIds.has(seasonTournament.tierId))
-    .sort((a, b) => a.startDate - b.startDate);
-  const playoffIndex = playoffTournaments.findIndex(
-    (playoffTournament) => playoffTournament._id === tournament._id,
-  );
-  const playoffEventIndex = playoffIndex === -1 ? 0 : playoffIndex + 1;
-
-  return {
-    isPlayoff: playoffIndex !== -1,
-    playoffEventIndex,
-    isNonFirstPlayoffTournament: playoffEventIndex > 1,
-    firstPlayoffEventId: playoffTournaments[0]?._id ?? null,
-    previousPlayoffEventId:
-      playoffIndex > 0
-        ? (playoffTournaments[playoffIndex - 1]?._id ?? null)
-        : null,
-  } as const;
-}
-
-/**
- * Indicates whether a tournament begins inside the six-day pre-grouping
- * window.
- */
-function isWithinNextTournamentWindow(
-  tournament: Doc<"tournaments"> | null,
-  now: number = Date.now(),
-) {
-  if (!tournament) {
-    return false;
-  }
-
-  return tournament.startDate - now <= NEXT_TOURNAMENT_WINDOW_MS;
-}
-
-/**
  * Loads DataGolf field updates directly from the upstream API.
  */
 async function fetchFieldUpdatesForTournament(): Promise<DataGolfFieldUpdatesResponse> {
@@ -659,130 +620,6 @@ async function fetchDataGolfRankings(): Promise<
     notes: String(data.notes ?? ""),
     rankings,
   };
-}
-
-/**
- * Performs an authenticated DataGolf request with retry handling.
- */
-async function fetchFromDataGolf<T>(endpoint: string): Promise<T> {
-  const apiKey = process.env.DATAGOLF_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "DataGolf API key not found. Please set DATAGOLF_API_KEY in Convex environment variables.",
-    );
-  }
-
-  const joiner = endpoint.includes("?") ? "&" : "?";
-  const url = `${BASE_URL}${endpoint}${joiner}key=${apiKey}`;
-  const result = await fetchJsonWithRetry<T>(url, {
-    timeout: 30000,
-    retries: 3,
-    retryDelay: 1000,
-  });
-
-  if (!result.ok) {
-    if (result.error.includes("401") || result.error.includes("403")) {
-      throw new Error(
-        "DataGolf API authentication failed. Please verify DATAGOLF_API_KEY is correct and active.",
-      );
-    }
-
-    throw new Error(`DataGolf API error: ${result.error}`);
-  }
-
-  return result.data;
-}
-
-/**
- * Retries JSON fetches for transient upstream failures.
- */
-async function fetchJsonWithRetry<T>(
-  url: string,
-  config: { timeout: number; retries: number; retryDelay: number },
-) {
-  let lastError = "";
-  let attempts = 0;
-
-  for (let attempt = 0; attempt <= config.retries; attempt++) {
-    attempts += 1;
-
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), config.timeout);
-
-      try {
-        const response = await fetch(url, { signal: controller.signal });
-        clearTimeout(timeoutId);
-
-        if (response.status === 429) {
-          const retryAfter = response.headers.get("Retry-After");
-          const waitMs = retryAfter
-            ? Number.parseInt(retryAfter, 10) * 1000
-            : config.retryDelay * 2 ** attempt * 2;
-
-          if (attempt < config.retries) {
-            await sleep(waitMs);
-            continue;
-          }
-
-          lastError = `Rate limited (429) after ${attempts} attempts`;
-          continue;
-        }
-
-        if (response.status >= 500) {
-          const errorText = await response.text().catch(() => "");
-          lastError = `Server error (${response.status}): ${response.statusText}${errorText ? ` - ${errorText}` : ""}`;
-
-          if (attempt < config.retries) {
-            await sleep(config.retryDelay * 2 ** attempt);
-            continue;
-          }
-
-          continue;
-        }
-
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => "");
-          return {
-            ok: false,
-            error: `HTTP error (${response.status}): ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
-            attempts,
-          } as const;
-        }
-
-        const data = (await response.json()) as T;
-        return {
-          ok: true,
-          data,
-          attempts,
-        } as const;
-      } catch (error) {
-        clearTimeout(timeoutId);
-        lastError =
-          error instanceof Error && error.name === "AbortError"
-            ? `Request timeout after ${config.timeout}ms`
-            : `Network error: ${error instanceof Error ? error.message : String(error)}`;
-
-        if (attempt < config.retries) {
-          await sleep(config.retryDelay * 2 ** attempt);
-          continue;
-        }
-      }
-    } catch (error) {
-      lastError = `Unexpected error: ${error instanceof Error ? error.message : String(error)}`;
-
-      if (attempt < config.retries) {
-        await sleep(config.retryDelay * 2 ** attempt);
-        continue;
-      }
-    }
-  }
-
-  return {
-    ok: false,
-    error: lastError || "Request failed after all retries",
-    attempts,
-  } as const;
 }
 
 /**
@@ -893,96 +730,6 @@ function determineGroupIndex<T>(
   return currentIndex % 2 ? 3 : 4;
 }
 
-/**
- * Normalizes DataGolf player names from "Last, First" to "First Last".
- */
-function normalizePlayerNameFromDataGolf(raw: string) {
-  const trimmed = raw.trim();
-  if (!trimmed.includes(",")) {
-    return trimmed.replace(/\s+/g, " ").trim();
-  }
-
-  const parts = trimmed
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (parts.length < 2) {
-    return trimmed.replace(/\s+/g, " ").trim();
-  }
-
-  const last = parts[0] ?? trimmed;
-  const first = parts.slice(1).join(", ").trim();
-  return `${first} ${last}`.replace(/\s+/g, " ").trim();
-}
-
-/**
- * Converts DataGolf skill estimates into the app's rating scale.
- */
-function normalizeDgSkillEstimateToPgcRating(dgSkillEstimate: number) {
-  if (!Number.isFinite(dgSkillEstimate)) {
-    return 0;
-  }
-
-  if (dgSkillEstimate < -1.5) {
-    const raw = 5 + ((dgSkillEstimate + 1.5) / 1.5) * 5;
-    return Math.max(0, Math.min(5, Math.round(raw * 100) / 100));
-  }
-
-  if (dgSkillEstimate <= 2) {
-    const raw = 5 + ((dgSkillEstimate + 1.5) / 3.5) * 95;
-    return Math.max(0, Math.round(raw * 100) / 100);
-  }
-
-  const extra = 20 * Math.sqrt((dgSkillEstimate - 2) / 1.5);
-  const raw = 100 + extra;
-  return Math.min(150, Math.round(raw * 100) / 100);
-}
-
-/**
- * Checks whether the upstream event name matches the intended tournament.
- */
-function checkCompatabilityOfEventNames(
-  expectedTournamentName: string,
-  dataGolfEventName: string,
-) {
-  let comparableEventName = dataGolfEventName;
-  if (comparableEventName.startsWith("WM")) {
-    comparableEventName = `Waste Management ${comparableEventName}`;
-  }
-
-  const expectedTokens = normalizeEventTokens(expectedTournamentName);
-  const actualTokens = normalizeEventTokens(comparableEventName);
-  const expectedNorm = normalizeNameForComparison(expectedTournamentName);
-  const actualNorm = normalizeNameForComparison(comparableEventName);
-
-  if (expectedNorm && actualNorm) {
-    if (
-      expectedNorm.includes(actualNorm) ||
-      actualNorm.includes(expectedNorm)
-    ) {
-      return {
-        ok: true,
-        score: 1,
-        intersection: [],
-        expectedTokens,
-        actualTokens,
-      } as const;
-    }
-  }
-
-  const actualSet = new Set(actualTokens);
-  const intersection = expectedTokens.filter((token) => actualSet.has(token));
-  const denominator = Math.max(expectedTokens.length, actualTokens.length, 1);
-  const score = intersection.length / denominator;
-
-  return {
-    ok: score >= 0.5,
-    score,
-    intersection,
-    expectedTokens,
-    actualTokens,
-  } as const;
-}
 
 /**
  * Extracts a numeric tee time for a specific round when available.
@@ -996,30 +743,10 @@ function getTeeTimeForRound(player: DataGolfFieldPlayer, roundNumber: number) {
 }
 
 /**
- * Normalizes optional country values before persistence.
- */
-function normalizeCountry(country?: string) {
-  const trimmed = country?.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  return trimmed.toLowerCase() === "unknown" ? undefined : trimmed;
-}
-
-/**
  * Converts optional numeric-or-string tee times into numbers.
  */
 function numberOrUndefined(value: number | string | undefined) {
   return typeof value === "number" ? value : undefined;
-}
-
-/**
- * Identifies playoff tier names.
- */
-function isPlayoffTierName(name: string) {
-  const normalized = name.trim().toLowerCase();
-  return normalized === "playoff" || normalized === "playoffs";
 }
 
 /**

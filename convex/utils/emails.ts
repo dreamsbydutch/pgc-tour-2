@@ -9,12 +9,20 @@ import type {
   GetPreviousCompletedTournamentNameArgs,
   GroupsEmailContext,
   LeaderboardTopRow,
-  RequireAdminForActionCtx,
   SendBrevoTemplateEmailBatchArgs,
   SendBrevoTemplateEmailBatchResult,
   SendGroupsEmailImplArgs,
 } from "../types/emails";
-import { calculateScoreForSorting } from "./misc";
+
+function calculateScoreForSorting(
+  position: string | null | undefined,
+  score: number | null | undefined,
+): number {
+  if (position === "DQ") return 999 + (score ?? 999);
+  if (position === "WD") return 888 + (score ?? 999);
+  if (position === "CUT") return 444 + (score ?? 999);
+  return score ?? 999;
+}
 
 export function formatMemberName(member: Doc<"members">): string {
   const first = (member.firstname ?? "").trim();
@@ -23,13 +31,13 @@ export function formatMemberName(member: Doc<"members">): string {
   return full.length > 0 ? full : "";
 }
 
-export function formatScoreToPar(score: number | undefined): string {
+function formatScoreToPar(score: number | undefined): string {
   if (typeof score !== "number" || !Number.isFinite(score)) return "";
   if (score === 0) return "E";
   return score > 0 ? `+${score}` : `${score}`;
 }
 
-export function escapeEmailText(value: string): string {
+function escapeEmailText(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -38,7 +46,7 @@ export function escapeEmailText(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-export function formatNameListWithAnd(values: string[]): string {
+function formatNameListWithAnd(values: string[]): string {
   if (values.length === 0) return "";
   if (values.length === 1) return values[0] ?? "";
   if (values.length === 2) return `${values[0]} and ${values[1]}`;
@@ -421,38 +429,6 @@ export async function sendBrevoTemplateEmailBatch(
   };
 }
 
-export async function requireAdminForAction(ctx: RequireAdminForActionCtx) {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) {
-    throw new Error("Unauthorized: You must be signed in");
-  }
-
-  const isAdminResult = await ctx.runQuery(
-    internal.functions.emails.getIsAdminByClerkId,
-    { clerkId: identity.subject },
-  );
-
-  if (!isAdminResult?.isAdmin) {
-    throw new Error("Forbidden: Admin access required");
-  }
-}
-
-export async function requireAdminForQuery(ctx: QueryCtx) {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) {
-    throw new Error("Unauthorized: You must be signed in");
-  }
-
-  const member = await ctx.db
-    .query("members")
-    .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
-    .first();
-
-  if (!member || member.role !== "admin") {
-    throw new Error("Forbidden: Admin access required");
-  }
-}
-
 export async function sendGroupsEmailImpl(args: SendGroupsEmailImplArgs) {
   const tournamentContext = (await args.ctx.runQuery(
     internal.functions.emails.getActiveTourCardRecipientsForTournament,
@@ -493,58 +469,7 @@ export async function sendGroupsEmailImpl(args: SendGroupsEmailImplArgs) {
 
   const leaderboardRows = tournamentContext.leaderboardRows;
 
-  const top10 = leaderboardRows.slice(0, 10);
-
   const recipients = tournamentContext.recipients.map((r) => {
-    const recipientTourCardId = r.tourCardId ? String(r.tourCardId) : "";
-    const meIndex = recipientTourCardId
-      ? leaderboardRows.findIndex(
-          (row) => String(row.tourCardId) === recipientTourCardId,
-        )
-      : -1;
-
-    const meRow = meIndex >= 10 ? leaderboardRows[meIndex] : null;
-    const meRowDisplay = meRow ? "table-row" : "none";
-
-    const meRowBg = "#dbeafe";
-    const meRowBorderLeft = "3px solid #2563eb";
-
-    const leaderboardParams = Object.fromEntries(
-      Array.from({ length: 10 }, (_, idx) => {
-        const row = top10[idx] ?? {};
-        const n = idx + 1;
-
-        const isChampion = row.isChampion === true;
-        const isMe =
-          recipientTourCardId &&
-          typeof row.tourCardId !== "undefined" &&
-          String(row.tourCardId) === recipientTourCardId;
-
-        const baseBg = idx % 2 === 0 ? "#ffffff" : "#f8fafc";
-        let bg = baseBg;
-        let borderLeft = "0px solid transparent";
-
-        if (isChampion) {
-          bg = "#fef3c7";
-          borderLeft = "3px solid #f59e0b";
-        }
-
-        if (isMe) {
-          bg = isChampion ? "#fef3c7" : "#dbeafe";
-          borderLeft = "3px solid #2563eb";
-        }
-
-        return [
-          [`leaderboardTop${n}Pos`, row.position ?? ""],
-          [`leaderboardTop${n}Name`, row.displayName ?? ""],
-          [`leaderboardTop${n}Tour`, row.tourShortForm ?? ""],
-          [`leaderboardTop${n}Score`, row.scoreText ?? ""],
-          [`leaderboardTop${n}Bg`, bg],
-          [`leaderboardTop${n}BorderLeft`, borderLeft],
-        ];
-      }).flat(),
-    );
-
     return {
       email: r.email,
       name: r.name,
@@ -560,14 +485,10 @@ export async function sendGroupsEmailImpl(args: SendGroupsEmailImplArgs) {
         nextUpUrl,
         nextUpLogoUrl,
         nextUpLogoDisplay,
-        leaderboardMeRowDisplay: meRowDisplay,
-        leaderboardMePos: meRow?.position ?? "",
-        leaderboardMeName: meRow?.displayName ?? "",
-        leaderboardMeTour: meRow?.tourShortForm ?? "",
-        leaderboardMeScore: meRow?.scoreText ?? "",
-        leaderboardMeBg: meRowBg,
-        leaderboardMeBorderLeft: meRowBorderLeft,
-        ...leaderboardParams,
+        ...buildGroupsEmailLeaderboardTemplateParams({
+          leaderboardRows,
+          recipientTourCardId: r.tourCardId ? String(r.tourCardId) : "",
+        }),
         customBlurb,
       },
     };
