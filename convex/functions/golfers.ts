@@ -1,194 +1,46 @@
-import { v } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import {
   internalMutation,
   mutation,
   query,
   type MutationCtx,
-  type QueryCtx,
 } from "../_generated/server";
 import {
   normalizeDgSkillEstimateToPgcRating,
   normalizePlayerNameFromDataGolf,
 } from "../utils/datagolf";
+import {
+  getGolfersForTournamentScope,
+  getTournamentIdsForFilter,
+  listTournamentGolfersByTournamentIds,
+} from "../utils/golfers";
+import { omitUndefined } from "../utils/misc";
 import { requireAdmin } from "../utils/auth";
+import type {
+  GolferCreatePayload,
+  GolferUpdatePayload,
+  TournamentGolferCreatePayload,
+  TournamentGolferUpdatePayload,
+} from "../types/golfers";
+import { golfersValidators } from "../validators/golfers";
 
-const golferCreateData = v.object({
-  apiId: v.number(),
-  playerName: v.string(),
-  country: v.optional(v.string()),
-  worldRank: v.optional(v.number()),
-});
+/**
+ * Removes keys whose values are undefined so Convex patches only include fields
+ * that should be persisted.
+ *
+ * @param data Source object that may contain undefined values.
+ * @returns A shallow copy containing only defined entries.
+ */
 
-const golferUpdateData = v.object({
-  apiId: v.optional(v.number()),
-  playerName: v.optional(v.string()),
-  country: v.optional(v.string()),
-  worldRank: v.optional(v.number()),
-});
-
-const tournamentGolferCreateData = v.object({
-  golferId: v.id("golfers"),
-  tournamentId: v.id("tournaments"),
-  position: v.optional(v.string()),
-  posChange: v.optional(v.number()),
-  score: v.optional(v.number()),
-  makeCut: v.optional(v.number()),
-  topTen: v.optional(v.number()),
-  win: v.optional(v.number()),
-  earnings: v.optional(v.number()),
-  today: v.optional(v.number()),
-  thru: v.optional(v.number()),
-  round: v.optional(v.number()),
-  endHole: v.optional(v.number()),
-  group: v.optional(v.number()),
-  roundOneTeeTime: v.optional(v.union(v.number(), v.string())),
-  roundOne: v.optional(v.number()),
-  roundTwoTeeTime: v.optional(v.union(v.number(), v.string())),
-  roundTwo: v.optional(v.number()),
-  roundThreeTeeTime: v.optional(v.union(v.number(), v.string())),
-  roundThree: v.optional(v.number()),
-  roundFourTeeTime: v.optional(v.union(v.number(), v.string())),
-  roundFour: v.optional(v.number()),
-  rating: v.optional(v.number()),
-  worldRank: v.optional(v.number()),
-  usage: v.optional(v.number()),
-});
-
-const tournamentGolferUpdateData = v.object({
-  golferId: v.optional(v.id("golfers")),
-  tournamentId: v.optional(v.id("tournaments")),
-  position: v.optional(v.string()),
-  posChange: v.optional(v.number()),
-  score: v.optional(v.number()),
-  makeCut: v.optional(v.number()),
-  topTen: v.optional(v.number()),
-  win: v.optional(v.number()),
-  earnings: v.optional(v.number()),
-  today: v.optional(v.number()),
-  thru: v.optional(v.number()),
-  round: v.optional(v.number()),
-  endHole: v.optional(v.number()),
-  group: v.optional(v.number()),
-  roundOneTeeTime: v.optional(v.union(v.number(), v.string())),
-  roundOne: v.optional(v.number()),
-  roundTwoTeeTime: v.optional(v.union(v.number(), v.string())),
-  roundTwo: v.optional(v.number()),
-  roundThreeTeeTime: v.optional(v.union(v.number(), v.string())),
-  roundThree: v.optional(v.number()),
-  roundFourTeeTime: v.optional(v.union(v.number(), v.string())),
-  roundFour: v.optional(v.number()),
-  rating: v.optional(v.number()),
-  worldRank: v.optional(v.number()),
-  usage: v.optional(v.number()),
-});
-
-function omitUndefined<T extends Record<string, unknown>>(data: T) {
-  return Object.fromEntries(
-    Object.entries(data).filter(([, value]) => value !== undefined),
-  ) as Partial<T>;
-}
-
-async function getTournamentIdsForFilter(
-  ctx: QueryCtx,
-  filter: {
-    tournamentId?: Id<"tournaments">;
-    seasonId?: Id<"seasons">;
-    activeOnly?: boolean;
-  },
-) {
-  if (filter.tournamentId) {
-    const tournament = await ctx.db.get(filter.tournamentId);
-    if (!tournament) {
-      return [];
-    }
-
-    if (!filter.activeOnly) {
-      return [tournament._id];
-    }
-
-    const now = Date.now();
-    const isActive =
-      tournament.status === "active" ||
-      (tournament.startDate <= now && tournament.endDate >= now);
-
-    return isActive ? [tournament._id] : [];
-  }
-
-  let tournaments = filter.seasonId
-    ? await ctx.db
-        .query("tournaments")
-        .withIndex("by_season", (q) => q.eq("seasonId", filter.seasonId!))
-        .collect()
-    : await ctx.db.query("tournaments").collect();
-
-  if (filter.activeOnly) {
-    const now = Date.now();
-    tournaments = tournaments.filter(
-      (tournament) =>
-        tournament.status === "active" ||
-        (tournament.startDate <= now && tournament.endDate >= now),
-    );
-  }
-
-  return tournaments.map((tournament) => tournament._id);
-}
-
-async function listTournamentGolfersByTournamentIds(
-  ctx: QueryCtx,
-  tournamentIds: Id<"tournaments">[],
-) {
-  const tournamentGolfers = await Promise.all(
-    tournamentIds.map((tournamentId) =>
-      ctx.db
-        .query("tournamentGolfers")
-        .withIndex("by_tournament", (q) => q.eq("tournamentId", tournamentId))
-        .collect(),
-    ),
-  );
-
-  return tournamentGolfers.flat();
-}
-
-async function getGolfersForTournamentScope(
-  ctx: QueryCtx,
-  filter: {
-    tournamentId?: Id<"tournaments">;
-    seasonId?: Id<"seasons">;
-    activeOnly?: boolean;
-  },
-) {
-  const tournamentIds = await getTournamentIdsForFilter(ctx, filter);
-  if (tournamentIds.length === 0) {
-    return [];
-  }
-
-  const tournamentGolfers = await listTournamentGolfersByTournamentIds(
-    ctx,
-    tournamentIds,
-  );
-
-  const uniqueGolferIds = [
-    ...new Set(tournamentGolfers.map((item) => item.golferId)),
-  ];
-  const golfers = await Promise.all(
-    uniqueGolferIds.map((golferId) => ctx.db.get(golferId)),
-  );
-
-  return golfers.filter(
-    (golfer): golfer is NonNullable<typeof golfer> => golfer !== null,
-  );
-}
-
-async function createGolferRecord(
-  ctx: MutationCtx,
-  data: {
-    apiId: number;
-    playerName: string;
-    country?: string;
-    worldRank?: number;
-  },
-) {
+/**
+ * Creates a golfer record after enforcing apiId uniqueness and normalizing the
+ * stored player name.
+ *
+ * @param ctx Convex mutation context.
+ * @param data New golfer payload.
+ * @returns The inserted golfer document.
+ */
+async function createGolferRecord(ctx: MutationCtx, data: GolferCreatePayload) {
   const existing = await ctx.db
     .query("golfers")
     .withIndex("by_api_id", (q) => q.eq("apiId", data.apiId))
@@ -211,15 +63,19 @@ async function createGolferRecord(
   return await ctx.db.get(golferId);
 }
 
+/**
+ * Updates a golfer record, preserving apiId uniqueness and re-normalizing the
+ * player name when it changes.
+ *
+ * @param ctx Convex mutation context.
+ * @param golferId Golfer document id.
+ * @param data Partial golfer fields to update.
+ * @returns The updated golfer document.
+ */
 async function updateGolferRecord(
   ctx: MutationCtx,
   golferId: Id<"golfers">,
-  data: {
-    apiId?: number;
-    playerName?: string;
-    country?: string;
-    worldRank?: number;
-  },
+  data: GolferUpdatePayload,
 ) {
   const existing = await ctx.db.get(golferId);
   if (!existing) {
@@ -252,6 +108,14 @@ async function updateGolferRecord(
   return await ctx.db.get(golferId);
 }
 
+/**
+ * Deletes a golfer and removes all linked tournamentGolfer rows so the module
+ * does not leave orphaned tournament associations behind.
+ *
+ * @param ctx Convex mutation context.
+ * @param golferId Golfer document id.
+ * @returns Confirmation with the number of linked rows removed.
+ */
 async function deleteGolferRecord(ctx: MutationCtx, golferId: Id<"golfers">) {
   const existing = await ctx.db.get(golferId);
   if (!existing) {
@@ -277,35 +141,17 @@ async function deleteGolferRecord(ctx: MutationCtx, golferId: Id<"golfers">) {
   } as const;
 }
 
+/**
+ * Creates a tournamentGolfer row after validating both parent records and the
+ * golfer/tournament uniqueness constraint.
+ *
+ * @param ctx Convex mutation context.
+ * @param data New tournamentGolfer payload.
+ * @returns The inserted tournamentGolfer document.
+ */
 async function createTournamentGolferRecord(
   ctx: MutationCtx,
-  data: {
-    golferId: Id<"golfers">;
-    tournamentId: Id<"tournaments">;
-    position?: string;
-    posChange?: number;
-    score?: number;
-    makeCut?: number;
-    topTen?: number;
-    win?: number;
-    earnings?: number;
-    today?: number;
-    thru?: number;
-    round?: number;
-    endHole?: number;
-    group?: number;
-    roundOneTeeTime?: number | string;
-    roundOne?: number;
-    roundTwoTeeTime?: number | string;
-    roundTwo?: number;
-    roundThreeTeeTime?: number | string;
-    roundThree?: number;
-    roundFourTeeTime?: number | string;
-    roundFour?: number;
-    rating?: number;
-    worldRank?: number;
-    usage?: number;
-  },
+  data: TournamentGolferCreatePayload,
 ) {
   const [golfer, tournament] = await Promise.all([
     ctx.db.get(data.golferId),
@@ -345,36 +191,19 @@ async function createTournamentGolferRecord(
   return await ctx.db.get(tournamentGolferId);
 }
 
+/**
+ * Updates a tournamentGolfer row, validating any changed parent ids and
+ * preserving the unique golfer/tournament pairing.
+ *
+ * @param ctx Convex mutation context.
+ * @param tournamentGolferId Tournament golfer document id.
+ * @param data Partial tournamentGolfer fields to update.
+ * @returns The updated tournamentGolfer document.
+ */
 async function updateTournamentGolferRecord(
   ctx: MutationCtx,
   tournamentGolferId: Id<"tournamentGolfers">,
-  data: {
-    golferId?: Id<"golfers">;
-    tournamentId?: Id<"tournaments">;
-    position?: string;
-    posChange?: number;
-    score?: number;
-    makeCut?: number;
-    topTen?: number;
-    win?: number;
-    earnings?: number;
-    today?: number;
-    thru?: number;
-    round?: number;
-    endHole?: number;
-    group?: number;
-    roundOneTeeTime?: number | string;
-    roundOne?: number;
-    roundTwoTeeTime?: number | string;
-    roundTwo?: number;
-    roundThreeTeeTime?: number | string;
-    roundThree?: number;
-    roundFourTeeTime?: number | string;
-    roundFour?: number;
-    rating?: number;
-    worldRank?: number;
-    usage?: number;
-  },
+  data: TournamentGolferUpdatePayload,
 ) {
   const existing = await ctx.db.get(tournamentGolferId);
   if (!existing) {
@@ -426,6 +255,13 @@ async function updateTournamentGolferRecord(
   return await ctx.db.get(tournamentGolferId);
 }
 
+/**
+ * Deletes a single tournamentGolfer row after confirming it exists.
+ *
+ * @param ctx Convex mutation context.
+ * @param tournamentGolferId Tournament golfer document id.
+ * @returns Confirmation of the deleted id.
+ */
 async function deleteTournamentGolferRecord(
   ctx: MutationCtx,
   tournamentGolferId: Id<"tournamentGolfers">,
@@ -443,19 +279,27 @@ async function deleteTournamentGolferRecord(
   } as const;
 }
 
+/**
+ * Returns a golfer by its document id.
+ *
+ * @param golferId Golfer document id.
+ * @returns The matching golfer document, or null when missing.
+ */
 export const getGolfer = query({
-  args: {
-    golferId: v.id("golfers"),
-  },
+  args: golfersValidators.args.getGolfer,
   handler: async (ctx, args) => {
     return await ctx.db.get(args.golferId);
   },
 });
 
+/**
+ * Returns a golfer by its upstream DataGolf api id.
+ *
+ * @param apiId DataGolf golfer id.
+ * @returns The matching golfer document, or null when missing.
+ */
 export const getGolferByApiId = query({
-  args: {
-    apiId: v.number(),
-  },
+  args: golfersValidators.args.getGolferByApiId,
   handler: async (ctx, args) => {
     return await ctx.db
       .query("golfers")
@@ -464,21 +308,14 @@ export const getGolferByApiId = query({
   },
 });
 
+/**
+ * Lists golfers, optionally narrowed by api id or tournament scope.
+ *
+ * @param options Optional filter object.
+ * @returns Matching golfer documents.
+ */
 export const getGolfers = query({
-  args: {
-    options: v.optional(
-      v.object({
-        filter: v.optional(
-          v.object({
-            apiId: v.optional(v.number()),
-            tournamentId: v.optional(v.id("tournaments")),
-            seasonId: v.optional(v.id("seasons")),
-            activeOnly: v.optional(v.boolean()),
-          }),
-        ),
-      }),
-    ),
-  },
+  args: golfersValidators.args.getGolfers,
   handler: async (ctx, args) => {
     const filter = args.options?.filter ?? {};
 
@@ -500,30 +337,28 @@ export const getGolfers = query({
   },
 });
 
+/**
+ * Returns a tournamentGolfer row by its document id.
+ *
+ * @param tournamentGolferId Tournament golfer document id.
+ * @returns The matching tournamentGolfer document, or null when missing.
+ */
 export const getTournamentGolfer = query({
-  args: {
-    tournamentGolferId: v.id("tournamentGolfers"),
-  },
+  args: golfersValidators.args.getTournamentGolfer,
   handler: async (ctx, args) => {
     return await ctx.db.get(args.tournamentGolferId);
   },
 });
 
+/**
+ * Lists tournamentGolfer rows with optional golfer, tournament, season, and
+ * active-tournament filtering.
+ *
+ * @param options Optional filter object.
+ * @returns Matching tournamentGolfer documents.
+ */
 export const getTournamentGolfers = query({
-  args: {
-    options: v.optional(
-      v.object({
-        filter: v.optional(
-          v.object({
-            golferId: v.optional(v.id("golfers")),
-            tournamentId: v.optional(v.id("tournaments")),
-            seasonId: v.optional(v.id("seasons")),
-            activeOnly: v.optional(v.boolean()),
-          }),
-        ),
-      }),
-    ),
-  },
+  args: golfersValidators.args.getTournamentGolfers,
   handler: async (ctx, args) => {
     const filter = args.options?.filter ?? {};
 
@@ -583,89 +418,127 @@ export const getTournamentGolfers = query({
   },
 });
 
+/**
+ * Admin-only mutation that creates a golfer record.
+ *
+ * @param data New golfer payload.
+ * @returns The inserted golfer document.
+ */
 export const createGolfer = mutation({
-  args: {
-    data: golferCreateData,
-  },
+  args: golfersValidators.args.createGolfer,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
     return await createGolferRecord(ctx, args.data);
   },
 });
 
+/**
+ * Internal mutation that creates a golfer without the admin gate for trusted
+ * backend jobs.
+ *
+ * @param data New golfer payload.
+ * @returns The inserted golfer document.
+ */
 export const createGolferInternal = internalMutation({
-  args: {
-    data: golferCreateData,
-  },
+  args: golfersValidators.args.createGolfer,
   handler: async (ctx, args) => {
     return await createGolferRecord(ctx, args.data);
   },
 });
 
+/**
+ * Admin-only mutation that updates a golfer record.
+ *
+ * @param golferId Golfer document id.
+ * @param data Partial golfer fields to update.
+ * @returns The updated golfer document.
+ */
 export const updateGolfer = mutation({
-  args: {
-    golferId: v.id("golfers"),
-    data: golferUpdateData,
-  },
+  args: golfersValidators.args.updateGolfer,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
     return await updateGolferRecord(ctx, args.golferId, args.data);
   },
 });
 
+/**
+ * Internal mutation that updates a golfer for trusted backend workflows.
+ *
+ * @param golferId Golfer document id.
+ * @param data Partial golfer fields to update.
+ * @returns The updated golfer document.
+ */
 export const updateGolferInternal = internalMutation({
-  args: {
-    golferId: v.id("golfers"),
-    data: golferUpdateData,
-  },
+  args: golfersValidators.args.updateGolfer,
   handler: async (ctx, args) => {
     return await updateGolferRecord(ctx, args.golferId, args.data);
   },
 });
 
+/**
+ * Admin-only mutation that deletes a golfer and its linked tournament rows.
+ *
+ * @param golferId Golfer document id.
+ * @returns Confirmation with cascade delete counts.
+ */
 export const deleteGolfer = mutation({
-  args: {
-    golferId: v.id("golfers"),
-  },
+  args: golfersValidators.args.deleteGolfer,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
     return await deleteGolferRecord(ctx, args.golferId);
   },
 });
 
+/**
+ * Internal mutation that deletes a golfer for trusted backend workflows.
+ *
+ * @param golferId Golfer document id.
+ * @returns Confirmation with cascade delete counts.
+ */
 export const deleteGolferInternal = internalMutation({
-  args: {
-    golferId: v.id("golfers"),
-  },
+  args: golfersValidators.args.deleteGolfer,
   handler: async (ctx, args) => {
     return await deleteGolferRecord(ctx, args.golferId);
   },
 });
 
+/**
+ * Admin-only mutation that creates a tournamentGolfer row.
+ *
+ * @param data New tournamentGolfer payload.
+ * @returns The inserted tournamentGolfer document.
+ */
 export const createTournamentGolfer = mutation({
-  args: {
-    data: tournamentGolferCreateData,
-  },
+  args: golfersValidators.args.createTournamentGolfer,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
     return await createTournamentGolferRecord(ctx, args.data);
   },
 });
 
+/**
+ * Internal mutation that creates a tournamentGolfer row for trusted backend
+ * workflows.
+ *
+ * @param data New tournamentGolfer payload.
+ * @returns The inserted tournamentGolfer document.
+ */
 export const createTournamentGolferInternal = internalMutation({
-  args: {
-    data: tournamentGolferCreateData,
-  },
+  args: golfersValidators.args.createTournamentGolfer,
   handler: async (ctx, args) => {
     return await createTournamentGolferRecord(ctx, args.data);
   },
 });
 
+/**
+ * Admin-only mutation that updates a tournamentGolfer row.
+ *
+ * @param tournamentGolferId Tournament golfer document id.
+ * @param data Partial tournamentGolfer fields to update.
+ * @returns The updated tournamentGolfer document.
+ */
 export const updateTournamentGolferAdmin = mutation({
-  args: {
-    tournamentGolferId: v.id("tournamentGolfers"),
-    data: tournamentGolferUpdateData,
-  },
+  args: golfersValidators.args.updateTournamentGolferAdmin,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
     return await updateTournamentGolferRecord(
@@ -676,77 +549,59 @@ export const updateTournamentGolferAdmin = mutation({
   },
 });
 
+/**
+ * Internal mutation used by cron jobs and other trusted backend flows to update
+ * a tournamentGolfer row from a payload that includes the document id.
+ *
+ * @param tournamentGolfer Tournament golfer payload including its document id.
+ * @returns The updated tournamentGolfer document.
+ */
 export const updateTournamentGolfer = internalMutation({
-  args: {
-    tournamentGolfer: v.object({
-      _id: v.id("tournamentGolfers"),
-      golferId: v.optional(v.id("golfers")),
-      tournamentId: v.optional(v.id("tournaments")),
-      position: v.optional(v.string()),
-      posChange: v.optional(v.number()),
-      score: v.optional(v.number()),
-      makeCut: v.optional(v.number()),
-      topTen: v.optional(v.number()),
-      win: v.optional(v.number()),
-      earnings: v.optional(v.number()),
-      today: v.optional(v.number()),
-      thru: v.optional(v.number()),
-      round: v.optional(v.number()),
-      endHole: v.optional(v.number()),
-      group: v.optional(v.number()),
-      roundOneTeeTime: v.optional(v.union(v.number(), v.string())),
-      roundOne: v.optional(v.number()),
-      roundTwoTeeTime: v.optional(v.union(v.number(), v.string())),
-      roundTwo: v.optional(v.number()),
-      roundThreeTeeTime: v.optional(v.union(v.number(), v.string())),
-      roundThree: v.optional(v.number()),
-      roundFourTeeTime: v.optional(v.union(v.number(), v.string())),
-      roundFour: v.optional(v.number()),
-      rating: v.optional(v.number()),
-      worldRank: v.optional(v.number()),
-      usage: v.optional(v.number()),
-    }),
-  },
+  args: golfersValidators.args.updateTournamentGolfer,
   handler: async (ctx, args) => {
     const { _id, ...data } = args.tournamentGolfer;
     return await updateTournamentGolferRecord(ctx, _id, data);
   },
 });
 
+/**
+ * Admin-only mutation that deletes a tournamentGolfer row.
+ *
+ * @param tournamentGolferId Tournament golfer document id.
+ * @returns Confirmation of the deleted id.
+ */
 export const deleteTournamentGolfer = mutation({
-  args: {
-    tournamentGolferId: v.id("tournamentGolfers"),
-  },
+  args: golfersValidators.args.deleteTournamentGolfer,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
     return await deleteTournamentGolferRecord(ctx, args.tournamentGolferId);
   },
 });
 
+/**
+ * Internal mutation that deletes a tournamentGolfer row for trusted backend
+ * workflows.
+ *
+ * @param tournamentGolferId Tournament golfer document id.
+ * @returns Confirmation of the deleted id.
+ */
 export const deleteTournamentGolferInternal = internalMutation({
-  args: {
-    tournamentGolferId: v.id("tournamentGolfers"),
-  },
+  args: golfersValidators.args.deleteTournamentGolfer,
   handler: async (ctx, args) => {
     return await deleteTournamentGolferRecord(ctx, args.tournamentGolferId);
   },
 });
 
+/**
+ * Internal compatibility mutation used by cron ingestion to ensure each incoming
+ * DataGolf player exists as both a golfer and tournamentGolfer for a tournament.
+ *
+ * @param tournamentId Tournament document id.
+ * @param golfers Incoming DataGolf golfer payloads.
+ * @returns Summary of how many missing tournament golfers were inserted.
+ */
 export const createMissingTournamentGolfers = internalMutation({
-  args: {
-    tournamentId: v.id("tournaments"),
-    golfers: v.array(
-      v.object({
-        dg_id: v.number(),
-        player_name: v.string(),
-        country: v.optional(v.string()),
-        worldRank: v.optional(v.number()),
-        dg_skill_estimate: v.optional(v.number()),
-        r1_teetime: v.optional(v.union(v.number(), v.string())),
-        r2_teetime: v.optional(v.union(v.number(), v.string())),
-      }),
-    ),
-  },
+  args: golfersValidators.args.createMissingTournamentGolfers,
   handler: async (ctx, args) => {
     let inserted = 0;
 

@@ -56,7 +56,7 @@ function TournamentRoute() {
         teamGolfers={data.golfers.filter((g) =>
           existingTeam?.golferIds.includes(g.apiId ?? 0),
         )}
-        playoffEventIndex={data.tournament.eventIndex}
+        playoffEventIndex={data.tournament.playoffEventIndex}
         onTournamentChange={(nextTournamentId) => {
           navigate({
             search: (prev) => ({

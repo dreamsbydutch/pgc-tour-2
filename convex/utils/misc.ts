@@ -2,9 +2,7 @@ import { Doc } from "../_generated/dataModel";
 import { CENTS_PER_DOLLAR, MS_PER_DAY } from "../functions/_constants";
 import type { BuildUsageRateByGolferApiIdOptions } from "../types/types";
 import {
-  EnhancedTournamentDoc,
   EnhancedTournamentGolferDoc,
-  EnhancedTournamentTeamDoc,
 } from "../types/types";
 
 export function getPath<T = unknown, R = unknown>(
@@ -21,6 +19,12 @@ export function getPath<T = unknown, R = unknown>(
           : undefined,
       obj,
     ) as R | undefined;
+}
+
+export function omitUndefined<T extends Record<string, unknown>>(data: T) {
+  return Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
 }
 
 export function getErrorMessage(error: unknown): string {
@@ -279,9 +283,9 @@ export const categorizeTeamGolfersForRound = (
       liveMode &&
       sortedGolfers.every((g) => g.thru === null || (g.thru ?? 0) === 0)
     ) {
-      roundState = "active" // TODO: CHANGE BACK TO UPCOMING
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     } else {
-      roundState = "active" // TODO: CHANGE BACK TO UPCOMING
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     }
   } else if (round === 2) {
     if (sortedGolfers.every((g) => g.roundTwo !== null)) {
@@ -303,9 +307,9 @@ export const categorizeTeamGolfersForRound = (
       liveMode &&
       sortedGolfers.every((g) => g.thru === null || (g.thru ?? 0) === 0)
     ) {
-      roundState = "active" // TODO: CHANGE BACK TO UPCOMING
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     } else {
-      roundState = "active" // TODO: CHANGE BACK TO UPCOMING
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     }
   } else if (round === 3) {
     if (sortedGolfers.every((g) => g.roundThree !== null)) {
@@ -327,9 +331,9 @@ export const categorizeTeamGolfersForRound = (
       liveMode &&
       sortedGolfers.every((g) => g.thru === null || (g.thru ?? 0) === 0)
     ) {
-      roundState = "active" // TODO: CHANGE BACK TO UPCOMING
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     } else {
-      roundState = "active" // TODO: CHANGE BACK TO UPCOMING
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     }
   } else if (round === 4) {
     if (sortedGolfers.every((g) => g.roundFour !== null)) {
@@ -351,9 +355,9 @@ export const categorizeTeamGolfersForRound = (
       liveMode &&
       sortedGolfers.every((g) => g.thru === null || (g.thru ?? 0) === 0)
     ) {
-      roundState = "active" // TODO: CHANGE BACK TO UPCOMING
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     } else {
-      roundState = "active" // TODO: CHANGE BACK TO UPCOMING
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     }
   } else if (round === 4.5) {
     if (sortedGolfers.every((g) => g.roundFour !== null)) {
@@ -364,7 +368,7 @@ export const categorizeTeamGolfersForRound = (
     ) {
       roundState = "completed";
     } else {
-      roundState = "active" // TODO: CHANGE BACK TO UPCOMING
+      roundState = "active"; // TODO: CHANGE BACK TO UPCOMING
     }
   }
 
