@@ -480,7 +480,7 @@ function ScoreCell(args: {
   );
 }
 function PositionChange({ posChange }: { posChange: number }) {
-  if (posChange === 0) {
+  if (posChange === 0 || isNaN(posChange)) {
     return (
       <span className="ml-1 inline-flex items-center text-xs text-muted-foreground">
         <MoveHorizontal className="h-3 w-3" />
