@@ -7,14 +7,9 @@ import { useRoleAccess } from "@/hooks";
 export const Route = createFileRoute("/tournament")({
   component: TournamentRoute,
   validateSearch: (search: Record<string, unknown>) => {
-    const variantRaw = search.variant;
-    const variant: "regular" | "playoff" | null =
-      variantRaw === "regular" || variantRaw === "playoff" ? variantRaw : null;
-
     return {
       tournamentId: (search.tournamentId as string) || "",
       tourId: (search.tourId as string) || "",
-      variant,
     };
   },
 });
@@ -23,16 +18,89 @@ export const Route = createFileRoute("/tournament")({
  * Route wrapper for `/tournament`.
  */
 function TournamentRoute() {
-  const { tournamentId, tourId, variant } = Route.useSearch();
+  const { tournamentId, tourId } = Route.useSearch();
   const navigate = Route.useNavigate();
   const { member } = useRoleAccess();
-  const resolvedTournamentId = tournamentId || undefined;
-  const data = useQuery(
-    api.functions.tournaments.getTournamentLeaderboardView,
-    {
-      tournamentId: resolvedTournamentId as Id<"tournaments"> | undefined,
-      memberId: member?._id,
-    },
+  const resolvedTournament = tournamentId
+    ? useQuery(api.functions.tournaments.getTournament, {
+        tournamentId: tournamentId as Id<"tournaments">,
+      })
+    : null;
+  if (resolvedTournament) {
+    // Find out if it is a active, past, or upcoming tournament and redirect to the appropriate route.
+    if (resolvedTournament.status === "active") {
+      return (
+        <LeaderboardView
+          tournament={resolvedTournament}
+          userTourCard={data.userTourCard}
+          activeTourId={tourId ?? data.userTourCard?.tourId}
+          onTournamentChange={(nextTournamentId) => {
+            navigate({
+              search: (prev) => ({
+                ...prev,
+                tournamentId: nextTournamentId,
+                tourId: "",
+              }),
+            });
+          }}
+          onChangeTourId={(nextTourId) => {
+            navigate({
+              search: (prev) => ({
+                ...prev,
+                tourId: nextTourId,
+              }),
+            });
+          }}
+        />
+      );
+    } else if (resolvedTournament.status === "completed") {
+      return (
+        <LeaderboardView
+          tournament={resolvedTournament}
+          userTourCard={data.userTourCard}
+          activeTourId={tourId ?? data.userTourCard?.tourId}
+          onTournamentChange={(nextTournamentId) => {
+            navigate({
+              search: (prev) => ({
+                ...prev,
+                tournamentId: nextTournamentId,
+                tourId: "",
+              }),
+            });
+          }}
+          onChangeTourId={(nextTourId) => {
+            navigate({
+              search: (prev) => ({
+                ...prev,
+                tourId: nextTourId,
+              }),
+            });
+          }}
+        />
+      );
+    } else if (resolvedTournament.status === "upcoming") {
+      navigate({
+        to: "/tournament",
+        search: (prev) => ({
+          ...prev,
+          tournamentId,
+          tourId,
+        }),
+      });
+    } else {
+      navigate({
+        to: "/tournament",
+        search: (prev) => ({
+          ...prev,
+          tournamentId,
+          tourId,
+        }),
+      });
+    }
+  }
+  const currentTournament = useQuery(
+    api.functions.tournaments.getCurrentTournament,
+    {},
   );
 
   if (!data?.tournament)
@@ -52,7 +120,6 @@ function TournamentRoute() {
         member={member === null ? undefined : member}
         tourCard={data.userTourCard}
         existingTeam={existingTeam}
-        allTournaments={data.allTournaments}
         teamGolfers={data.golfers.filter((g) =>
           existingTeam?.golferIds.includes(g.apiId ?? 0),
         )}
@@ -76,7 +143,6 @@ function TournamentRoute() {
       tours={data.tours}
       teams={data.teams}
       golfers={data.golfers}
-      allTournaments={data.allTournaments}
       userTourCard={data.userTourCard}
       onTournamentChange={(nextTournamentId) => {
         navigate({
