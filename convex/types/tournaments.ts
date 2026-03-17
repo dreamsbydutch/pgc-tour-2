@@ -73,6 +73,7 @@ export type TournamentFetchResult = Doc<"tournaments"> & {
   season: Doc<"seasons">;
 };
 
+
 export type EnhancedTournamentDoc = TournamentFetchResult & {
   dateRange?: string;
   duration?: number;

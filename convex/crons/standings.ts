@@ -15,6 +15,7 @@ type TourCardStandingsTotals = {
   topFive: number;
   madeCut: number;
   appearances: number;
+  logos?: string[];
 };
 
 function parsePositionNumber(position?: string | null): number | null {
@@ -89,7 +90,7 @@ export const recomputeSeasonStandings = internalMutation({
     seasonId: v.id("seasons"),
   },
   handler: async (ctx, args) => {
-    const [completedTournaments, tourCards, tours] = await Promise.all([
+    const [completedTournaments, tourCards, tours, tiers] = await Promise.all([
       ctx.db
         .query("tournaments")
         .withIndex("by_season_status", (q) =>
@@ -102,6 +103,10 @@ export const recomputeSeasonStandings = internalMutation({
         .collect(),
       ctx.db
         .query("tours")
+        .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+        .collect(),
+      ctx.db
+        .query("tiers")
         .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
         .collect(),
     ]);
@@ -162,6 +167,21 @@ export const recomputeSeasonStandings = internalMutation({
 
         if (positionNumber !== null && positionNumber <= 5) {
           totals.topFive += 1;
+        }
+
+        const tournament = completedTournaments.find(
+          (t) => t._id === team.tournamentId,
+        );
+        const tier = tournament
+          ? tiers.find((tier) => tier._id === tournament.tierId)
+          : null;
+        if (
+          (tier?.name.toLowerCase() === "major" ||
+            tier?.name.toLowerCase() === "majors") &&
+          tournament?.logoUrl
+        ) {
+          totals.logos = totals.logos ?? [];
+          totals.logos.push(tournament.logoUrl);
         }
       }
     }

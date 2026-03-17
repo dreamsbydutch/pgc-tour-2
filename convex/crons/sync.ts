@@ -1328,6 +1328,141 @@ export const updateTournamentInfo = internalMutation({
   },
 });
 
+/** Creates missing golfer and tournamentGolfer rows for a tournament field feed. */
+export const createMissingTournamentGolfers = internalMutation({
+  args: {
+    tournamentId: v.id("tournaments"),
+    golfers: v.array(
+      v.object({
+        dg_id: v.number(),
+        player_name: v.string(),
+        country: v.optional(v.string()),
+        worldRank: v.optional(v.number()),
+        dg_skill_estimate: v.optional(v.number()),
+        r1_teetime: v.optional(v.union(v.number(), v.string())),
+        r2_teetime: v.optional(v.union(v.number(), v.string())),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    let createdGolfers = 0;
+    let createdTournamentGolfers = 0;
+
+    for (const incomingGolfer of args.golfers) {
+      let golfer = await ctx.db
+        .query("golfers")
+        .withIndex("by_api_id", (q) => q.eq("apiId", incomingGolfer.dg_id))
+        .first();
+
+      if (!golfer) {
+        const golferId = await ctx.db.insert("golfers", {
+          apiId: incomingGolfer.dg_id,
+          playerName: normalizePlayerNameFromDataGolf(
+            incomingGolfer.player_name,
+          ),
+          country: incomingGolfer.country,
+          worldRank: incomingGolfer.worldRank,
+          updatedAt: Date.now(),
+        });
+
+        golfer = await ctx.db.get(golferId);
+        createdGolfers += 1;
+      }
+
+      if (!golfer) {
+        continue;
+      }
+
+      const existingTournamentGolfer = await ctx.db
+        .query("tournamentGolfers")
+        .withIndex("by_golfer_tournament", (q) =>
+          q.eq("golferId", golfer._id).eq("tournamentId", args.tournamentId),
+        )
+        .first();
+
+      if (existingTournamentGolfer) {
+        continue;
+      }
+
+      await ctx.db.insert("tournamentGolfers", {
+        golferId: golfer._id,
+        tournamentId: args.tournamentId,
+        roundOneTeeTime:
+          typeof incomingGolfer.r1_teetime === "string"
+            ? parseDataGolfTeeTimeToMs(incomingGolfer.r1_teetime)
+            : incomingGolfer.r1_teetime,
+        roundTwoTeeTime:
+          typeof incomingGolfer.r2_teetime === "string"
+            ? parseDataGolfTeeTimeToMs(incomingGolfer.r2_teetime)
+            : incomingGolfer.r2_teetime,
+        rating: incomingGolfer.dg_skill_estimate,
+        worldRank: incomingGolfer.worldRank,
+        updatedAt: Date.now(),
+      });
+      createdTournamentGolfers += 1;
+    }
+
+    return {
+      ok: true,
+      createdGolfers,
+      createdTournamentGolfers,
+    } as const;
+  },
+});
+
+/** Applies direct tournamentGolfer sync patches without relying on external internal modules. */
+export const updateTournamentGolfer = internalMutation({
+  args: {
+    tournamentGolfer: v.object({
+      _id: v.id("tournamentGolfers"),
+      golferId: v.optional(v.id("golfers")),
+      tournamentId: v.optional(v.id("tournaments")),
+      position: v.optional(v.string()),
+      posChange: v.optional(v.number()),
+      score: v.optional(v.number()),
+      makeCut: v.optional(v.number()),
+      topTen: v.optional(v.number()),
+      win: v.optional(v.number()),
+      earnings: v.optional(v.number()),
+      today: v.optional(v.number()),
+      thru: v.optional(v.number()),
+      round: v.optional(v.number()),
+      endHole: v.optional(v.number()),
+      group: v.optional(v.number()),
+      roundOneTeeTime: v.optional(v.union(v.number(), v.string())),
+      roundOne: v.optional(v.number()),
+      roundTwoTeeTime: v.optional(v.union(v.number(), v.string())),
+      roundTwo: v.optional(v.number()),
+      roundThreeTeeTime: v.optional(v.union(v.number(), v.string())),
+      roundThree: v.optional(v.number()),
+      roundFourTeeTime: v.optional(v.union(v.number(), v.string())),
+      roundFour: v.optional(v.number()),
+      rating: v.optional(v.number()),
+      worldRank: v.optional(v.number()),
+      usage: v.optional(v.number()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const existingTournamentGolfer = await ctx.db.get(
+      args.tournamentGolfer._id,
+    );
+    if (!existingTournamentGolfer) {
+      throw new Error("Tournament golfer not found");
+    }
+
+    const { _id, ...patchData } = args.tournamentGolfer;
+    await ctx.db.patch(_id, {
+      ...getDefinedFields(patchData),
+      updatedAt: Date.now(),
+    });
+
+    return {
+      ok: true,
+      tournamentGolferId: _id,
+    } as const;
+  },
+});
+
 /** Loads the most relevant tournament to sync along with its course and optional tier context. */
 export const getActiveTournamentSyncContext = internalQuery({
   handler: async (ctx): Promise<TournamentSyncContextResponse> => {
@@ -1802,13 +1937,10 @@ async function syncUpcomingTournament(args: {
     });
 
   if (newGolfers.length > 0) {
-    await ctx.runMutation(
-      internal.functions.golfersInternal.createMissingTournamentGolfers,
-      {
-        tournamentId: context.tournament._id,
-        golfers: newGolfers,
-      },
-    );
+    await ctx.runMutation(internal.crons.sync.createMissingTournamentGolfers, {
+      tournamentId: context.tournament._id,
+      golfers: newGolfers,
+    });
   }
 
   await ctx.runMutation(internal.crons.sync.updateTournamentInfo, {
@@ -2047,15 +2179,12 @@ async function syncLiveTournament(args: {
       continue;
     }
 
-    await ctx.runMutation(
-      internal.functions.golfersInternal.updateTournamentGolfer,
-      {
-        tournamentGolfer: {
-          _id: golfer.tournamentGolfer._id,
-          ...changedTournamentGolfer,
-        },
+    await ctx.runMutation(internal.crons.sync.updateTournamentGolfer, {
+      tournamentGolfer: {
+        _id: golfer.tournamentGolfer._id,
+        ...changedTournamentGolfer,
       },
-    );
+    });
     golferUpdates += 1;
   }
 

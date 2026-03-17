@@ -179,6 +179,7 @@ const schema = defineSchema({
     topFive: v.optional(v.number()),
     madeCut: v.number(),
     appearances: v.number(),
+    logos: v.optional(v.array(v.string())),
     playoff: v.optional(v.number()), // Legacy field name
     currentPosition: v.optional(v.string()),
     updatedAt: v.optional(v.number()),
