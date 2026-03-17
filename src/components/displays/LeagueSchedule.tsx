@@ -4,6 +4,7 @@ import {
   getTournamentTimeline,
   isNonEmptyString,
   PGC_LOGO_URL,
+  Tournament,
 } from "@/lib";
 
 import {
@@ -36,7 +37,7 @@ import { useMemo } from "react";
 export function LeagueSchedule({
   tournaments,
 }: {
-  tournaments: EnhancedTournamentDoc[] | undefined;
+  tournaments: Tournament[] | undefined;
 }) {
   const state = useLeagueSchedule({ tournaments });
 
@@ -254,7 +255,7 @@ type LeagueScheduleState =
  * @returns A discriminated union describing loading/empty/ready schedule state.
  */
 function useLeagueSchedule(args: {
-  tournaments: EnhancedTournamentDoc[] | undefined;
+  tournaments: Tournament[] | undefined;
 }): LeagueScheduleState {
   const derived = useMemo(() => {
     if (!args.tournaments) {

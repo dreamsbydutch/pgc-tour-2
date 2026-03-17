@@ -5,12 +5,11 @@ export { ChampionsPopup } from "./standings/ChampionsPopup";
 // COMPLETED
 export { HardGateAdmin } from "./HardGateAdmin";
 export { HardGateSignedIn } from "./HardGateSignedIn";
-export { LeaderboardHeader } from "./LeaderboardHeader";
+export { LeaderboardHeader } from "../leaderboard/LeaderboardHeader";
 export { LeagueSchedule } from "./LeagueSchedule";
 export { LittleFucker } from "./LittleFucker";
-export { PGALeaderboard } from "./PGALeaderboard";
-export { PGCLeaderboard } from "./PGCLeaderboard";
-export { PointsAndPayoutsDetails } from "./PointsAndPayoutsDetails";
+export { PGALeaderboard } from "../leaderboard/PGALeaderboard";
+export { PGCLeaderboard } from "../leaderboard/PGCLeaderboard";
 export { Providers } from "./Providers";
 export { PWAInstallPrompt } from "./PWAInstallPrompt";
 export { SecondaryToolbar } from "./SecondaryToolbar";

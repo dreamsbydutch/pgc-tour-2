@@ -3,24 +3,20 @@ import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import isoCountries from "i18n-iso-countries";
 import isoCountriesEn from "i18n-iso-countries/langs/en.json";
-import type { Id } from "@/convex";
+import type { Doc, Id } from "@/convex";
 import type {
   AdminDataTableColumn,
   Article,
   ArticleModule,
   ErrorResponse,
   NavigationError,
+  PgaLeaderboardRow,
+  Tournament,
 } from "./types";
-import type { LeaderboardTeamRow } from "./types";
 import type {
-  ExtendedStandingsTourCard,
-  StandingsMember,
-  StandingsTeam,
-  StandingsTier,
-  StandingsTour,
-  StandingsTourCard,
-  StandingsTournament,
-} from "./types";
+  DataGolfHistoricalPlayer,
+  DataGolfLiveModelPlayer,
+} from "convex/types/datagolf";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -458,36 +454,6 @@ export function isSeasonForLabelValue(
   return typeof record.year === "number" && typeof record.number === "number";
 }
 
-export function isStandingsMember(value: unknown): value is StandingsMember {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  if (!("_id" in value)) return false;
-  if (
-    !("email" in value) ||
-    typeof (value as Record<string, unknown>).email !== "string"
-  ) {
-    return false;
-  }
-  if (
-    !("role" in value) ||
-    typeof (value as Record<string, unknown>).role !== "string"
-  ) {
-    return false;
-  }
-  if (
-    !("account" in value) ||
-    typeof (value as Record<string, unknown>).account !== "number"
-  ) {
-    return false;
-  }
-  if (
-    !("friends" in value) ||
-    !Array.isArray((value as Record<string, unknown>).friends)
-  ) {
-    return false;
-  }
-  return true;
-}
-
 export function pickLatestSeasonId<TId>(
   seasons: Array<{ _id: TId; year: number; number: number }>,
 ): TId | undefined {
@@ -765,216 +731,6 @@ export function parsePositionToNumber(
 }
 
 /**
- * Adds `standingsPosition` and `currentPosition` to a points-sorted standings list.
- *
- * @param cardsSorted - Cards sorted in descending points order.
- * @returns Cards with computed position fields.
- */
-export function computeStandingsPositionStrings(
-  cardsSorted: ExtendedStandingsTourCard[],
-): ExtendedStandingsTourCard[] {
-  const pointsToRanks = new Map<number, { rank: number; tieCount: number }>();
-
-  for (let i = 0; i < cardsSorted.length; i++) {
-    const points = cardsSorted[i]!.points;
-    const existing = pointsToRanks.get(points);
-    if (existing) {
-      existing.tieCount += 1;
-    } else {
-      pointsToRanks.set(points, { rank: i + 1, tieCount: 1 });
-    }
-  }
-
-  return cardsSorted.map((card) => {
-    const info = pointsToRanks.get(card.points);
-    const rank = info?.rank ?? 999;
-    const isTie = (info?.tieCount ?? 0) > 1;
-    const currentPosition = isTie ? `T${rank}` : String(rank);
-
-    return {
-      ...card,
-      standingsPosition: rank,
-      currentPosition,
-    };
-  });
-}
-
-/**
- * Computes position deltas by comparing current points to points before the most recent completed non-playoff tournament.
- *
- * @param args - Standings datasets for the current season.
- * @returns Map keyed by tourCard id with per-tour and overall position deltas.
- */
-export function computeStandingsPositionChangeByTour(args: {
-  cards: StandingsTourCard[];
-  tours: StandingsTour[];
-  teams: StandingsTeam[];
-  tournaments: StandingsTournament[];
-  tiers: StandingsTier[];
-}): Map<
-  string,
-  { posChange: number; posChangePO: number; pastPoints: number }
-> {
-  const now = Date.now();
-
-  const playoffTierIds = new Set(
-    args.tiers
-      .filter((t) => includesPlayoff(t.name))
-      .map((t) => t._id as string),
-  );
-
-  const pastTournament = args.tournaments
-    .filter((t) => !playoffTierIds.has(t.tierId as string))
-    .filter((t) => t.endDate < now)
-    .slice()
-    .sort((a, b) => b.endDate - a.endDate)[0];
-
-  if (!pastTournament) return new Map();
-
-  const pointsFromPastTournamentByTourCardId = new Map<string, number>();
-  for (const team of args.teams) {
-    if (team.tournamentId !== pastTournament._id) continue;
-    pointsFromPastTournamentByTourCardId.set(
-      team.tourCardId as string,
-      team.points ?? 0,
-    );
-  }
-
-  const pastPointsById = new Map<string, number>();
-  for (const tc of args.cards) {
-    const delta =
-      pointsFromPastTournamentByTourCardId.get(tc._id as string) ?? 0;
-    pastPointsById.set(tc._id as string, tc.points - delta);
-  }
-
-  const overallPastOrder = args.cards.slice().sort((a, b) => {
-    const delta =
-      (pastPointsById.get(b._id as string) ?? 0) -
-      (pastPointsById.get(a._id as string) ?? 0);
-    if (delta !== 0) return delta;
-    const nameDelta = String(a.displayName ?? "").localeCompare(
-      String(b.displayName ?? ""),
-    );
-    if (nameDelta !== 0) return nameDelta;
-    return String(a._id).localeCompare(String(b._id));
-  });
-
-  const overallCurrentOrder = args.cards.slice().sort((a, b) => {
-    const delta = b.points - a.points;
-    if (delta !== 0) return delta;
-    const nameDelta = String(a.displayName ?? "").localeCompare(
-      String(b.displayName ?? ""),
-    );
-    if (nameDelta !== 0) return nameDelta;
-    return String(a._id).localeCompare(String(b._id));
-  });
-
-  const overallPastRank = new Map<string, number>();
-  const overallCurrentRank = new Map<string, number>();
-
-  overallPastOrder.forEach((tc, idx) =>
-    overallPastRank.set(tc._id as string, idx + 1),
-  );
-  overallCurrentOrder.forEach((tc, idx) =>
-    overallCurrentRank.set(tc._id as string, idx + 1),
-  );
-
-  const perTourPastRank = new Map<string, Map<string, number>>();
-  const perTourCurrentRank = new Map<string, Map<string, number>>();
-
-  for (const tour of args.tours) {
-    const tourCards = args.cards.filter((c) => c.tourId === tour._id);
-
-    const pastSorted = tourCards.slice().sort((a, b) => {
-      const delta =
-        (pastPointsById.get(b._id as string) ?? 0) -
-        (pastPointsById.get(a._id as string) ?? 0);
-      if (delta !== 0) return delta;
-      const nameDelta = String(a.displayName ?? "").localeCompare(
-        String(b.displayName ?? ""),
-      );
-      if (nameDelta !== 0) return nameDelta;
-      return String(a._id).localeCompare(String(b._id));
-    });
-
-    const currentSorted = tourCards.slice().sort((a, b) => {
-      const delta = b.points - a.points;
-      if (delta !== 0) return delta;
-      const nameDelta = String(a.displayName ?? "").localeCompare(
-        String(b.displayName ?? ""),
-      );
-      if (nameDelta !== 0) return nameDelta;
-      return String(a._id).localeCompare(String(b._id));
-    });
-
-    const pastMap = new Map<string, number>();
-    const currentMap = new Map<string, number>();
-
-    pastSorted.forEach((tc, idx) => pastMap.set(tc._id as string, idx + 1));
-    currentSorted.forEach((tc, idx) =>
-      currentMap.set(tc._id as string, idx + 1),
-    );
-
-    perTourPastRank.set(tour._id as string, pastMap);
-    perTourCurrentRank.set(tour._id as string, currentMap);
-  }
-
-  const out = new Map<
-    string,
-    { posChange: number; posChangePO: number; pastPoints: number }
-  >();
-
-  for (const tc of args.cards) {
-    const id = tc._id as string;
-    const tourId = tc.tourId as string;
-    const pastRankInTour = perTourPastRank.get(tourId)?.get(id) ?? 999;
-    const currentRankInTour = perTourCurrentRank.get(tourId)?.get(id) ?? 999;
-    const posChange = pastRankInTour - currentRankInTour;
-
-    const pastPO = overallPastRank.get(id) ?? 999;
-    const currentPO = overallCurrentRank.get(id) ?? 999;
-    const posChangePO = pastPO - currentPO;
-
-    out.set(id, {
-      posChange: Number.isFinite(posChange) ? posChange : 0,
-      posChangePO: Number.isFinite(posChangePO) ? posChangePO : 0,
-      pastPoints: pastPointsById.get(id) ?? tc.points,
-    });
-  }
-
-  return out;
-}
-
-/**
- * Calculates a rounded (1 decimal) average score across the supplied teams.
- *
- * @param teams - Standings teams containing round score fields.
- * @param type - "weekday" uses rounds 1+2, "weekend" uses rounds 3+4.
- * @returns Average score rounded to 1 decimal.
- */
-export function calculateAverageScore(
-  teams: StandingsTeam[] = [],
-  type: "weekday" | "weekend",
-): number {
-  const rounds =
-    type === "weekday"
-      ? teams.reduce((acc, t) => acc + (t.roundOne ?? 0) + (t.roundTwo ?? 0), 0)
-      : teams.reduce(
-          (acc, t) => acc + (t.roundThree ?? 0) + (t.roundFour ?? 0),
-          0,
-        );
-
-  const roundCount =
-    type === "weekday"
-      ? teams.filter((t) => t.roundOne !== undefined).length +
-        teams.filter((t) => t.roundTwo !== undefined).length
-      : teams.filter((t) => t.roundThree !== undefined).length +
-        teams.filter((t) => t.roundFour !== undefined).length;
-
-  return Math.round((rounds / (roundCount || 1)) * 10) / 10;
-}
-
-/**
  * Determines whether a tournament should be treated as a playoff event.
  */
 export function isPlayoffTournament(args: {
@@ -1240,7 +996,7 @@ export function getPositionChangeForTeam(team: {
   return previousPosition - currentPosition;
 }
 
-export function sortTeamRows(rows: LeaderboardTeamRow[]): LeaderboardTeamRow[] {
+export function sortTeamRows(rows: Doc<"teams">[]): Doc<"teams">[] {
   const next = [...rows];
   next
     .sort((a, b) => (a.thru ?? 0) - (b.thru ?? 0))
@@ -1252,24 +1008,197 @@ export function sortTeamRows(rows: LeaderboardTeamRow[]): LeaderboardTeamRow[] {
   return next;
 }
 
-export function filterTeamRowsByTour(
-  rows: LeaderboardTeamRow[],
-  activeTourId: string,
-  variant: "regular" | "playoff",
-): LeaderboardTeamRow[] {
-  const sorted = sortTeamRows(rows);
+export function sortPgaRows<
+  T extends {
+    position: string | null | undefined;
+    score: number | null | undefined;
+    group?: number | null | undefined;
+  },
+>(rows: T[]): T[] {
+  const next = [...rows];
+  next.sort((a, b) => {
+    const aIsCut = isPlayerCut(a.position);
+    const bIsCut = isPlayerCut(b.position);
 
-  if (variant === "playoff") {
-    const playoffLevel =
-      activeTourId === "gold" ? 1 : activeTourId === "silver" ? 2 : 1;
-    return sorted.filter((t) => (t.tourCard.playoff ?? 0) === playoffLevel);
+    if (aIsCut !== bIsCut) {
+      return aIsCut ? 1 : -1;
+    }
+
+    const posA = Number.parseInt(
+      String(a.position ?? "").replace(/[^\d]/g, ""),
+      10,
+    );
+    const posB = Number.parseInt(
+      String(b.position ?? "").replace(/[^\d]/g, ""),
+      10,
+    );
+    const positionDiff =
+      (Number.isFinite(posA) ? posA : Number.POSITIVE_INFINITY) -
+      (Number.isFinite(posB) ? posB : Number.POSITIVE_INFINITY);
+    if (positionDiff !== 0) {
+      return positionDiff;
+    }
+
+    if (aIsCut && bIsCut) {
+      const groupDiff = (a.group ?? 999) - (b.group ?? 999);
+      if (groupDiff !== 0) {
+        return groupDiff;
+      }
+    }
+
+    return (
+      calculateScoreForSorting(a.position, a.score) -
+      calculateScoreForSorting(b.position, b.score)
+    );
+  });
+  return next;
+}
+
+export function getDataGolfLivePlayers(
+  result: unknown,
+): DataGolfLiveModelPlayer[] {
+  if (!result || typeof result !== "object" || !("data" in result)) {
+    return [];
   }
 
-  return sorted.filter((t) => (t.tourCard.tourId ?? "") === activeTourId);
+  const data = result.data;
+  return Array.isArray(data) ? (data as DataGolfLiveModelPlayer[]) : [];
+}
+
+export function getDataGolfHistoricalPlayers(
+  result: unknown,
+): DataGolfHistoricalPlayer[] {
+  if (!result || typeof result !== "object" || !("scores" in result)) {
+    return [];
+  }
+
+  const scores = result.scores;
+  return Array.isArray(scores) ? (scores as DataGolfHistoricalPlayer[]) : [];
+}
+
+export function parseLeaderboardThruValue(
+  value: string | null | undefined,
+): number | null {
+  if (value === "F") {
+    return 18;
+  }
+
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function getRoundTeeTimeDisplay(args: {
+  player?: DataGolfHistoricalPlayer;
+  currentRound?: number;
+}): number | undefined {
+  if ((args.currentRound ?? 0) <= 1) {
+    return args.player?.round_1?.teetime;
+  }
+
+  if (args.currentRound === 2) {
+    return args.player?.round_2?.teetime;
+  }
+
+  if (args.currentRound === 3) {
+    return args.player?.round_3?.teetime;
+  }
+
+  return args.player?.round_4?.teetime;
+}
+
+export function getDataGolfSkippedMessage(result: unknown): string | undefined {
+  if (!result || typeof result !== "object" || !("skipped" in result)) {
+    return undefined;
+  }
+
+  const skipped = result.skipped;
+  const reason = "reason" in result ? result.reason : undefined;
+
+  if (skipped !== true || typeof reason !== "string") {
+    return undefined;
+  }
+
+  if (reason === "event_name_mismatch") {
+    return "DataGolf returned data for a different event, so this PGA leaderboard is unavailable right now.";
+  }
+
+  if (reason === "missing_datagolf_event_name") {
+    return "DataGolf did not provide a compatible event name for this tournament.";
+  }
+
+  return "DataGolf has not published PGA golfer data for this tournament yet.";
+}
+
+export function getDataGolfStateMessage(args: {
+  liveResult: unknown;
+  historicalResult: unknown;
+}): string {
+  return (
+    getDataGolfSkippedMessage(args.liveResult) ??
+    getDataGolfSkippedMessage(args.historicalResult) ??
+    "No PGA golfer data is available for this tournament yet."
+  );
+}
+
+export function buildPgaLeaderboardRows(args: {
+  tournament: Pick<Tournament, "currentRound">;
+  liveResult: unknown;
+  historicalResult: unknown;
+}): PgaLeaderboardRow[] {
+  const livePlayers = getDataGolfLivePlayers(args.liveResult);
+  const historicalPlayers = getDataGolfHistoricalPlayers(args.historicalResult);
+  const historicalById = new Map<number, DataGolfHistoricalPlayer>(
+    historicalPlayers.map((player) => [player.dg_id, player]),
+  );
+
+  return livePlayers.map((player) => {
+    const historical = historicalById.get(player.dg_id);
+
+    return {
+      position: player.current_pos || "-",
+      playerName: player.player_name || "",
+      score: player.current_score,
+      apiId: player.dg_id,
+      country: player.country ?? null,
+      roundOne: historical?.round_1?.score ?? 0,
+      roundTwo: historical?.round_2?.score ?? 0,
+      roundThree: historical?.round_3?.score ?? 0,
+      roundFour: historical?.round_4?.score ?? 0,
+      posChange: 0,
+      worldRank: null,
+      rating: null,
+      group: null,
+      thru: parseLeaderboardThruValue(player.thru),
+      today: Number.isFinite(player.today) ? player.today : null,
+      makeCut: Number.isFinite(player.make_cut) ? player.make_cut : null,
+      topTen: Number.isFinite(player.top_10) ? player.top_10 : null,
+      win: Number.isFinite(player.win) ? player.win : null,
+      usage: null,
+      teeTimeDisplay: getRoundTeeTimeDisplay({
+        player: historical,
+        currentRound: args.tournament.currentRound,
+      }),
+    };
+  });
+}
+
+export function shouldRenderPgaDivider<
+  T extends {
+    position: string | null | undefined;
+    group?: number | null | undefined;
+  },
+>(prev: T, curr: T): boolean {
+  const prevIsCut = isPlayerCut(prev.position);
+  const currIsCut = isPlayerCut(curr.position);
+
+  if (!prevIsCut && currIsCut) return true;
+  if (prevIsCut && currIsCut) {
+    return (prev.group ?? 999) !== (curr.group ?? 999);
+  }
+  return false;
 }
 
 const DATAGOLF_BASE_URL = "https://feeds.datagolf.com/";
-
 /**
  * Fetches data from the DataGolf API with proper error handling and caching.
  * Adds a cache-busting `_t` query param.

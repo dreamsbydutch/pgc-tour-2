@@ -11,7 +11,7 @@ import type { MemberDoc } from "../../convex/types/types";
 
 export type UserRole = "admin" | "moderator" | "regular" | null;
 
-export interface UseRoleAccessReturn {
+export interface usePGCAuthReturn {
   /** Current user's role */
   role: UserRole;
   /** True if user is an admin */
@@ -35,7 +35,7 @@ export interface UseRoleAccessReturn {
  *
  * @example
  * ```tsx
- * const { isAdmin, isModerator, role } = useRoleAccess();
+ * const { isAdmin, isModerator, role } = usePGCAuth();
  *
  * return (
  *   <>
@@ -46,7 +46,7 @@ export interface UseRoleAccessReturn {
  * );
  * ```
  */
-export function useRoleAccess(): UseRoleAccessReturn {
+export function usePGCAuth(): usePGCAuthReturn {
   const { user, isLoaded: isClerkLoaded } = useUser();
   const convexAuth = useConvexAuth();
 
@@ -152,7 +152,7 @@ export function useCanAccessResource(
   resourceOwnerId: string | undefined,
 ): boolean {
   const { user } = useUser();
-  const { isAdmin } = useRoleAccess();
+  const { isAdmin } = usePGCAuth();
 
   return useMemo(() => {
     if (isAdmin) return true;

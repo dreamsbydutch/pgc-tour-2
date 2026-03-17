@@ -2,7 +2,8 @@
 
 import { api, Id, useQuery } from "@/convex";
 import type { Doc } from "@/convex";
-import { Dropdown } from "@/components/ui";
+import { Dropdown, Skeleton } from "@/components/ui";
+import { useUser } from "@clerk/tanstack-react-start";
 import {
   cn,
   DropdownItem,
@@ -12,21 +13,7 @@ import {
 } from "@/lib";
 import { ChevronDown, RefreshCwIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-
-type LeaderboardHeaderTournament = Doc<"tournaments"> & {
-  course: {
-    name: string;
-    location: string;
-    front: number;
-    back: number;
-    par: number;
-  };
-  tier: {
-    name: string;
-    payouts: number[];
-    points: number[];
-  };
-};
+import { type TournamentFetchResult } from "convex/types/tournaments";
 
 /**
  * LeaderboardHeader Component
@@ -52,7 +39,7 @@ type LeaderboardHeaderTournament = Doc<"tournaments"> & {
  * />
  */
 export function LeaderboardHeader(props: {
-  tournament: LeaderboardHeaderTournament;
+  tournament: TournamentFetchResult;
   onTournamentChange: (tournamentId: string) => void;
 }) {
   return (
@@ -129,7 +116,7 @@ export function LeaderboardHeader(props: {
  * @param props - `LeaderboardHeaderDropdownProps`.
  */
 function LeaderboardHeaderDropdown(props: {
-  tournament: LeaderboardHeaderTournament;
+  tournament: TournamentFetchResult;
   onTournamentChange: (tournamentId: string) => void;
 }) {
   const {
@@ -138,6 +125,7 @@ function LeaderboardHeaderDropdown(props: {
     handleOpenChange,
     groupMode,
     setGroupMode,
+    canSelectSeason,
     availableSeasons,
     selectedSeasonId,
     setSelectedSeasonId,
@@ -194,30 +182,41 @@ function LeaderboardHeaderDropdown(props: {
       header={
         <div className="border-b border-gray-200 px-3 py-2 text-xs uppercase tracking-wide text-gray-500">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 text-[11px] font-semibold">
-              <span>Season:</span>
-              <select
-                className="rounded border border-gray-300 bg-white px-2 py-1 text-xs lowercase text-gray-700"
-                value={selectedSeasonId ?? ""}
-                disabled={availableSeasons.length === 0}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setSelectedSeasonId(value as Id<"seasons">);
-                }}
-              >
-                {availableSeasons.map((season) => (
-                  <option key={season._id} value={season._id}>
-                    {formatSeasonLabel(season)}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {canSelectSeason ? (
+              <div className="flex items-center gap-1 text-[11px] font-semibold">
+                <span>Season:</span>
+                {availableSeasons.length > 0 ? (
+                  <select
+                    className="rounded border border-gray-300 bg-white px-2 py-1 text-xs lowercase text-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    value={selectedSeasonId ?? ""}
+                    disabled={isLoading}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setSelectedSeasonId(value as Id<"seasons">);
+                    }}
+                  >
+                    {availableSeasons.map((season) => (
+                      <option key={season._id} value={season._id}>
+                        {formatSeasonLabel(season)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <Skeleton className="h-7 w-20 rounded" />
+                )}
+              </div>
+            ) : (
+              <div className="text-[11px] font-semibold text-gray-400">
+                Current Season
+              </div>
+            )}
             <div className="ml-auto flex gap-1 text-[11px]">
               <button
                 type="button"
+                disabled={isLoading}
                 onClick={() => setGroupMode("schedule")}
                 className={cn(
-                  "rounded border px-2 py-1",
+                  "rounded border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-60",
                   groupMode === "schedule"
                     ? "border-blue-500 bg-blue-50 text-blue-700"
                     : "border-gray-300 text-gray-600",
@@ -227,9 +226,10 @@ function LeaderboardHeaderDropdown(props: {
               </button>
               <button
                 type="button"
+                disabled={isLoading}
                 onClick={() => setGroupMode("tier")}
                 className={cn(
-                  "rounded border px-2 py-1",
+                  "rounded border px-2 py-1 disabled:cursor-not-allowed disabled:opacity-60",
                   groupMode === "tier"
                     ? "border-blue-500 bg-blue-50 text-blue-700"
                     : "border-gray-300 text-gray-600",
@@ -254,12 +254,39 @@ function LeaderboardHeaderDropdown(props: {
           : undefined
       }
     >
-      <div className="px-4 py-3 text-sm text-gray-500">
-        {isLoading
-          ? "Loading tournaments..."
-          : `No tournaments for ${selectedSeasonLabel}.`}
-      </div>
+      {isLoading ? (
+        <LeaderboardHeaderDropdownSkeleton />
+      ) : (
+        <div className="px-4 py-3 text-sm text-gray-500">
+          {`No tournaments for ${selectedSeasonLabel}.`}
+        </div>
+      )}
     </Dropdown>
+  );
+}
+
+/** Renders the dropdown placeholder rows while tournament options are loading. */
+function LeaderboardHeaderDropdownSkeleton() {
+  return (
+    <div className="px-3 py-2">
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-24" />
+        <div className="space-y-1">
+          {[0, 1, 2, 3].map((index) => (
+            <div
+              key={index}
+              className="flex items-center gap-3 rounded-md px-1 py-2"
+            >
+              <Skeleton className="h-8 w-8 shrink-0 rounded-md" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -270,18 +297,20 @@ function LeaderboardHeaderDropdown(props: {
  * @returns Dropdown state (open, season, grouping) plus derived lists and handlers.
  */
 function useLeaderboardHeaderDropdown(props: {
-  tournament: LeaderboardHeaderTournament;
+  tournament: TournamentFetchResult;
   onTournamentChange: (tournamentId: string) => void;
 }) {
+  const { user, isLoaded: isAuthLoaded } = useUser();
   const [hasRequestedOptions, setHasRequestedOptions] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [groupMode, setGroupMode] = useState<"schedule" | "tier">("schedule");
   const [selectedSeasonId, setSelectedSeasonId] =
     useState<Id<"seasons"> | null>(props.tournament.seasonId);
+  const canSelectSeason = Boolean(user);
 
   const seasons = useQuery(
     api.functions.seasons.getSeasons,
-    hasRequestedOptions
+    hasRequestedOptions && canSelectSeason
       ? {
           options: {
             sort: {
@@ -333,22 +362,22 @@ function useLeaderboardHeaderDropdown(props: {
     return availableSeasons.find((season) => season._id === selectedSeasonId);
   }, [availableSeasons, selectedSeasonId]);
   const selectedSeasonLabel = useMemo(() => {
+    if (!canSelectSeason) return "the current season";
     return formatSeasonLabel(selectedSeason);
-  }, [selectedSeason]);
-  const tournamentsForSeason = useMemo<LeaderboardHeaderTournament[]>(() => {
+  }, [canSelectSeason, selectedSeason]);
+  const tournamentsForSeason = useMemo<TournamentFetchResult[]>(() => {
     return (
-      (tournamentsForSeasonQuery as
-        | LeaderboardHeaderTournament[]
-        | undefined) ?? []
+      (tournamentsForSeasonQuery as TournamentFetchResult[] | undefined) ?? []
     );
   }, [tournamentsForSeasonQuery]);
   const isLoading =
     hasRequestedOptions &&
-    (seasons === undefined ||
+    (!isAuthLoaded ||
+      (canSelectSeason && seasons === undefined) ||
       (selectedSeasonId !== null && tournamentsForSeasonQuery === undefined));
 
   const tierGroups = useMemo(() => {
-    const groups = new Map<string, LeaderboardHeaderTournament[]>();
+    const groups = new Map<string, TournamentFetchResult[]>();
     tournamentsForSeason.forEach((tournament) => {
       const tierName = tournament.tier?.name ?? "Uncategorized";
       const list = groups.get(tierName) ?? [];
@@ -380,6 +409,7 @@ function useLeaderboardHeaderDropdown(props: {
     handleOpenChange,
     groupMode,
     setGroupMode,
+    canSelectSeason,
     availableSeasons,
     selectedSeasonId,
     setSelectedSeasonId,

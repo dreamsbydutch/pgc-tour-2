@@ -1,3 +1,4 @@
 export * from "./useFriendManagement";
-export * from "./useRoleAccess";
+export * from "./useDataGolf";
+export * from "./usePGCAuth";
 export * from "./useSeasonIdOrCurrent";

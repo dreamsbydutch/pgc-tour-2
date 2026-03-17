@@ -4,7 +4,7 @@ import { Link as RouterLink } from "@tanstack/react-router";
 import { Shield, Star } from "lucide-react";
 import { formatMoney } from "@/lib";
 import { Skeleton } from "@/components/ui";
-import { useRoleAccess } from "@/hooks";
+import { usePGCAuth } from "@/hooks";
 import { useQuery } from "convex/react";
 import { api } from "@/convex";
 import {
@@ -55,7 +55,7 @@ function App() {
  * Fetches and derives all home page view state.
  *
  * Sources:
- * - `useRoleAccess()` for role/admin status
+ * - `usePGCAuth()` for role/admin status
  * - `api.functions.seasons.getCurrentSeason` for the current season
  * - `api.functions.tournaments.getTournaments` (limited to 1) for the first tournament
  *
@@ -80,7 +80,7 @@ function useHomePage():
       roleBadge: React.ReactNode;
       accountAlert: React.ReactNode;
     } {
-  const { role, member, isLoading } = useRoleAccess();
+  const { role, member, isLoading } = usePGCAuth();
 
   const currentSeason = useQuery(api.functions.seasons.getCurrentSeason);
   const tours =

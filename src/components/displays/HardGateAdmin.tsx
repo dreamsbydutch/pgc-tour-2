@@ -2,7 +2,7 @@
 
 import { SignedIn, SignedOut, SignInButton } from "@clerk/tanstack-react-start";
 
-import { useRoleAccess } from "@/hooks";
+import { usePGCAuth } from "@/hooks";
 import { Button } from "@/ui";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui";
 
@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/ui";
  *
  * This wrapper prevents the gated page UI from rendering unless the user is:
  * - signed in via Clerk, and
- * - resolved (non-loading) as an `admin` via `useRoleAccess()`.
+ * - resolved (non-loading) as an `admin` via `usePGCAuth()`.
  *
  * Major render states:
  * - Signed out: sign-in required prompt.
@@ -48,7 +48,7 @@ export function HardGateAdmin(props: { children: React.ReactNode }) {
 }
 
 function AdminGateContent(props: { children: React.ReactNode }) {
-  const access = useRoleAccess();
+  const access = usePGCAuth();
 
   if (access.isLoading || !access.isAuthenticated) {
     return (

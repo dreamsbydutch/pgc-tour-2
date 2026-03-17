@@ -1,6 +1,5 @@
 "use client";
 
-import { Id } from "@/convex";
 import { cn, hasItems, isNonEmptyString } from "@/lib";
 
 /**
@@ -17,34 +16,23 @@ import { cn, hasItems, isNonEmptyString } from "@/lib";
  * @returns A row of badges, a skeleton, or `null` when there are no wins.
  */
 export function LittleFucker(props: {
-  wins: {
-    tournamentId: Id<"tournaments">;
-    logoUrl: string | null;
-    seasonYear: number;
-  }[];
-  tourCardId?: Id<"tourCards">;
-  showSeasonText: boolean;
-  loading: boolean;
+  tourCard: { logos?: string[] };
+  showSeasonText?: number;
   className?: string;
 }) {
-  if (props.loading) {
+  if (!props.tourCard || !hasItems(props.tourCard.logos)) {
     return null;
   }
 
-  if (!hasItems(props.wins)) return null;
-
   return (
     <div className={cn("flex flex-row", props.className)}>
-      {props.wins.map((win) => (
-        <div
-          key={props.tourCardId + win.tournamentId}
-          className="mx-1 flex flex-col items-center"
-        >
+      {props.tourCard.logos.map((logo, index) => (
+        <div key={index} className="mx-1 flex flex-col items-center">
           <div className="relative h-8 w-8 overflow-hidden rounded-full bg-amber-500">
-            {isNonEmptyString(win.logoUrl) ? (
+            {isNonEmptyString(logo) ? (
               <img
-                src={win.logoUrl}
-                alt={`${win.seasonYear} Logo`}
+                src={logo}
+                alt={`Logo ${index + 1}`}
                 className="h-full w-full object-cover"
               />
             ) : (
@@ -54,9 +42,9 @@ export function LittleFucker(props: {
             )}
           </div>
 
-          {props.showSeasonText && typeof win.seasonYear === "number" && (
+          {props.showSeasonText && (
             <div className="mt-1 text-xs font-semibold text-amber-700">
-              {win.seasonYear}
+              {props.showSeasonText}
             </div>
           )}
         </div>

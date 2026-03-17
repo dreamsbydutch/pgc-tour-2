@@ -6,7 +6,6 @@ import { NavigationContainer } from "@/facilitators";
 
 import "../styles.css";
 import { Providers, SignedOutPersistentSignIn } from "@/components/displays";
-import { PWAInstallPrompt } from "@/components/displays/PWAInstallPrompt";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -151,7 +150,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <Providers>
           <NavigationContainer />
           <main className="pb-20 pt-16 md:pb-4 md:pt-20">{children}</main>
-          <PWAInstallPrompt />
+          {/* <PWAInstallPrompt /> */}
           <SignedOutPersistentSignIn />
           {import.meta.env.DEV ? (
             <TanstackDevtools

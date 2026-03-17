@@ -1,7 +1,6 @@
-import type { Doc, Id } from "@/convex";
-import type { EnhancedTournamentDoc } from "convex/types/types";
-import type { ComponentType, Dispatch, ReactNode, SetStateAction } from "react";
+import type { ComponentType, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
+import { Doc } from "@/convex";
 
 export type TransactionType =
   | "TourCardFee"
@@ -44,14 +43,6 @@ export type AdminDataTableColumn<T> = {
 };
 
 /**
- * Props for `TourCardChangeButton`.
- */
-export interface TourCardChangeButtonProps {
-  tourCardId: Id<"tourCards">;
-  loading?: boolean;
-}
-
-/**
  * Tier row shape for points distributions.
  */
 export type TierPointsRow = { key: string; name: string; points: number[] };
@@ -68,60 +59,10 @@ export type TierDistributionsTableProps =
   | { kind: "points"; tiers?: TierPointsRow[]; loading?: boolean }
   | { kind: "payouts"; tiers?: TierPayoutsRow[]; loading?: boolean };
 
-type TourCardFormButtonLoadedProps = {
-  tour: Doc<"tours">;
-  spotsRemaining: number;
-  seasonId: Id<"seasons">;
-  memberDisplayName: string;
-  buyInLabel: string;
-  isCreatingTourCard: boolean;
-  setIsCreatingTourCard: Dispatch<SetStateAction<boolean>>;
-  loading?: false;
-};
-
-/**
- * Props for `TourCardFormButton`.
- */
-export type TourCardFormButtonProps =
-  | TourCardFormButtonLoadedProps
-  | { loading: true };
-
-export interface LittleFuckerSkeletonProps {
-  showSeasonText?: boolean;
-  className?: string;
-}
-
-type LeaderboardHeaderLoadedProps = {
-  focusTourney: EnhancedTournamentDoc;
-  onTournamentChange?: (tournamentId: string) => void;
-  loading?: false;
-};
-
-/**
- * Props for `LeaderboardHeader`.
- */
-export type LeaderboardHeaderProps =
-  | LeaderboardHeaderLoadedProps
-  | { loading: true };
-
-type LeaderboardHeaderDropdownLoadedProps = {
-  activeTourney: EnhancedTournamentDoc;
-  onSelect?: (tournamentId: string) => void;
-  className?: string;
-  loading?: false;
-};
-
-/**
- * Props for `LeaderboardHeaderDropdown`.
- */
-export type LeaderboardHeaderDropdownProps =
-  | LeaderboardHeaderDropdownLoadedProps
-  | { loading: true; className?: string };
-
 /**
  * View options for `HomePageListingsContainer`.
  */
-export type HomePageListingsContainerView = "standings" | "leaderboard";
+type HomePageListingsContainerView = "standings" | "leaderboard";
 
 /**
  * Props for `HomePageListingsContainer`.
@@ -141,40 +82,6 @@ export interface HomePageListingsContainerProps {
  */
 export interface NavigationContainerProps {
   className?: string;
-}
-
-export interface NavigationUser {
-  id: string;
-  email: string;
-  avatar?: string;
-}
-
-export interface NavigationMember {
-  id: string;
-  email: string;
-  firstName: string | null;
-  lastName: string | null;
-  role: string;
-  account: number;
-  friends: string[];
-}
-
-export interface NavigationTourCard {
-  appearances: number;
-  win: number;
-  topTen: number;
-  points: number;
-  earnings: number;
-}
-
-export interface NavigationChampion {
-  id: number;
-  tournament: {
-    name: string;
-    logoUrl: string | null;
-    startDate: number;
-    currentRound: number | null;
-  };
 }
 
 export interface NavigationItemConfig {
@@ -220,63 +127,6 @@ export interface ErrorResponse {
   originalError: unknown;
 }
 
-export interface NavigationData {
-  user: NavigationUser | null;
-  member: NavigationMember | null;
-  tourCards: NavigationTourCard[] | null;
-  champions: NavigationChampion[] | null;
-  isLoading: boolean;
-  tourCardLoading: boolean;
-  error: NavigationError | null;
-  hasNetworkError: boolean;
-  retryCount: number;
-}
-
-/**
- * Props for `StandingsView`.
- */
-export interface StandingsViewProps {
-  initialSeasonId?: string;
-  initialTourId?: string;
-  onSeasonChange?: (seasonId: string) => void;
-  onTourChange?: (tourId: string) => void;
-}
-
-export type StandingsMember = Doc<"members">;
-export type StandingsSeason = Doc<"seasons">;
-export type StandingsTour = Doc<"tours">;
-export type StandingsTier = Doc<"tiers">;
-export type StandingsTournament = Doc<"tournaments">;
-export type StandingsTeam = Doc<"teams">;
-export type StandingsTourCard = Doc<"tourCards">;
-
-export type ExtendedStandingsTourCard = StandingsTourCard & {
-  tour?: StandingsTour;
-  isFriend?: boolean;
-  pastPoints?: number;
-  posChange?: number;
-  posChangePO?: number;
-  standingsPosition?: number;
-  currentPosition?: string;
-};
-
-export interface StandingsData {
-  tours: StandingsTour[];
-  tiers: StandingsTier[];
-  tourCards: ExtendedStandingsTourCard[];
-  currentTourCard: ExtendedStandingsTourCard | null;
-  currentMember: StandingsMember | null;
-  teams: StandingsTeam[];
-  tournaments: StandingsTournament[];
-  currentSeason: StandingsSeason | null;
-}
-
-export interface StandingsState {
-  data: StandingsData | null;
-  isLoading: boolean;
-  error: Error | null;
-}
-
 export interface FriendManagementHook {
   state: {
     friendChangingIds: Set<string>;
@@ -288,116 +138,43 @@ export interface FriendManagementHook {
   };
 }
 
-export type LeaderboardTourToggle = {
-  id: string;
-  shortForm: string;
-  name: string;
-  logoUrl?: string | null;
+// Main types for front end calls
+
+export type Season = Doc<"seasons">;
+export type Course = Doc<"courses">;
+export type Golfer = Doc<"golfers">;
+export type Tier = Doc<"tiers">;
+export type Tour = Doc<"tours">;
+export type Team = Doc<"teams">;
+export type TourCard = Doc<"tourCards"> & { member: Doc<"members"> };
+export type TournamentGolfer = Doc<"tournamentGolfers"> & {
+  golfer: Golfer;
+};
+export type Tournament = Doc<"tournaments"> & {
+  course: Course;
+  tier: Tier;
+  season: Season;
 };
 
-export type LeaderboardTournamentLite = {
-  name: string;
-  currentRound: number | null;
-  livePlay?: boolean | null;
-};
-
-export type LeaderboardViewerContext = {
-  tourCardId?: string | null;
-  friendIds?: string[] | null;
-  teamGolferApiIds?: number[] | null;
-};
-
-export type LeaderboardPgaRow = {
-  kind: "pga";
-  id: string;
-  apiId: number;
-
-  position: string | null;
-  posChange: number | null;
+export type PgaLeaderboardRow = {
+  position: string;
   playerName: string;
-
-  score: number | null;
-  today: number | null;
-  thru: number | null;
-  endHole: number | null;
-
-  group: number | null;
+  score: number;
+  apiId: number;
+  country: string | null;
+  roundOne: number;
+  roundTwo: number;
+  roundThree: number;
+  roundFour: number;
+  posChange: number;
+  worldRank: number | null;
   rating: number | null;
-
-  roundOne: number | null;
-  roundTwo: number | null;
-  roundThree: number | null;
-  roundFour: number | null;
-
-  usage: number | null;
+  group: number | null;
+  thru: number | null;
+  today: number | null;
   makeCut: number | null;
   topTen: number | null;
   win: number | null;
-  worldRank: number | null;
-
-  country: string | null;
-  teeTimeDisplay?: string | number | null;
+  usage: number | null;
+  teeTimeDisplay: string | number | null | undefined;
 };
-
-export type LeaderboardTourCardLite = {
-  id: string;
-  ownerClerkId?: string | null;
-  displayName: string;
-  tourId?: string | null;
-  playoff?: number | null;
-  currentPosition?: string | null;
-  points?: number | null;
-  earnings?: number | null;
-};
-
-export type LeaderboardTeamRow = {
-  kind: "pgc";
-  id: string;
-
-  pastPosition: string | null;
-  position: string | null;
-
-  golferApiIds: number[];
-
-  today: number | null;
-  thru: number | null;
-  score: number | null;
-
-  points: number | null;
-  pointsBeforeTournament?: number | null;
-  earnings: number | null;
-
-  roundOne: number | null;
-  roundTwo: number | null;
-  roundThree: number | null;
-  roundFour: number | null;
-
-  tourCard: LeaderboardTourCardLite;
-
-  championsCount?: number | null;
-  teeTimeDisplay?: string | number | null;
-};
-
-export type LeaderboardViewModelReady = {
-  kind: "ready";
-  tournament: LeaderboardTournamentLite;
-  toggleTours: LeaderboardTourToggle[];
-  pgaRows: LeaderboardPgaRow[];
-  pgcRows: LeaderboardTeamRow[];
-  leaderboardLastUpdatedAt?: number | null;
-  viewer?: LeaderboardViewerContext;
-};
-
-export type LeaderboardViewModelLoading = {
-  kind: "loading";
-};
-
-export type LeaderboardViewModelError = {
-  kind: "error";
-  message: string;
-};
-
-export type LeaderboardViewModel =
-  | LeaderboardViewModelLoading
-  | LeaderboardViewModelError
-  | LeaderboardViewModelReady;

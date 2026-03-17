@@ -12,71 +12,76 @@ import {
 } from "@/ui";
 import { PRE_TOURNAMENT_PICK_WINDOW_MS } from "@/lib/constants";
 import { LeaderboardHeader, TournamentCountdown } from "@/displays";
-import { cn, formatMoney } from "@/lib";
+import { cn, formatMoney, Tournament } from "@/lib";
 import { useMutation, useQuery } from "convex/react";
 import { api, Id } from "@/convex";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import {
-  EnhancedTournamentDoc,
-  EnhancedTournamentTeamDoc,
-} from "convex/types/types";
-import { SignedOut, useClerk } from "@clerk/tanstack-react-start";
+import type { HydratedTournamentGolfer } from "../../../convex/types/golfers";
+import { useClerk, useUser } from "@clerk/tanstack-react-start";
+
+type PreTournamentMember = {
+  firstname?: string | undefined;
+  lastname?: string | undefined;
+  email: string;
+  account: number;
+};
+
+type PreTournamentTourCard = {
+  _id: string;
+  tourId: string;
+  playoff?: number | undefined;
+  currentPosition?: string | number | undefined;
+  points: number;
+  earnings: number;
+};
+
+type PreTournamentTeam = {
+  _id: string;
+  golferIds: number[];
+};
+
+type PreTournamentTeamGolfer = {
+  apiId?: number | undefined;
+  _id: string;
+  playerName?: string | undefined;
+  worldRank?: number | null;
+  rating?: number | null;
+  group?: number | null;
+};
+
+type NextTournamentContext = {
+  tournament: { _id: string } | null;
+  isNonFirstPlayoffTournament: boolean;
+};
 
 /**
  * Renders the pre-tournament pick experience.
  *
  * Major states:
  * - Picks closed: shows the countdown.
- * - Not signed in (missing `member`/`tourCard`): prompts sign-in.
+ * - Viewer data loading: waits until the pick window is open before loading member-specific data.
+ * - Not signed in: prompts sign-in.
  * - Regular event: shows the team picker entry point.
  * - Playoff event:
  *   - If ineligible: shows an ineligible message.
  *   - If eligible: shows the picker until the carry-over lock applies.
  *
  * Notes:
- * - The main content relies on the parent route to provide tournament/member data.
+ * - This facilitator only receives tournament navigation props.
+ * - Member and tour-card reads are deferred until the pick window is actually open.
+ * - Existing team reads are deferred until the picker card is rendered.
  * - The picker dialog fetches the tournament pick pool when opened.
- * - Team-pick persistence happens via the dialog (create/update team).
  *
  * @param props.tournament - Tournament data including `startDate` and (optionally) tier.
- * @param props.member - Current member (required to pick a team).
- * @param props.tourCard - Current tour card (required to pick a team).
- * @param props.existingTeam - The member's existing team (if any).
- * @param props.teamGolfers - Golfers on the member's existing team (optional).
- * @param props.playoffEventIndex - 1-based playoff event index in the season (defaults to 0).
  * @returns The pre-tournament content UI.
  */
 export function PreTournamentContent(props: {
-  tournament: EnhancedTournamentDoc;
-  member?: {
-    firstname?: string | undefined;
-    lastname?: string | undefined;
-    email: string;
-    account: number;
-  };
-  tourCard?: {
-    _id: string;
-    tourId: string;
-    playoff?: number | undefined;
-    currentPosition?: string | undefined;
-    points: number;
-    earnings: number;
-  } | null;
-  existingTeam?: EnhancedTournamentTeamDoc;
-  teamGolfers: {
-    apiId?: number | undefined;
-    _id: string;
-    playerName?: string | undefined;
-    worldRank?: number | undefined;
-    rating?: number | undefined;
-    group?: number | undefined;
-  }[];
-  playoffEventIndex?: number;
+  tournament: Tournament;
   onTournamentChange: (tournamentId: string) => void;
 }) {
   const model = usePreTournamentContentModel(props);
 
-  if (model.kind === "picksClosed" || model.kind === "mustSignIn") {
+  if (model.kind === "picksClosed") {
     return (
       <>
         <LeaderboardHeader
@@ -84,9 +89,44 @@ export function PreTournamentContent(props: {
           onTournamentChange={props.onTournamentChange}
         />
         <TournamentCountdown {...props.tournament} />
-        <SignedOut>
-          <SignInPrompt />
-        </SignedOut>
+      </>
+    );
+  }
+  if (model.kind === "loading") {
+    return (
+      <>
+        <LeaderboardHeader
+          tournament={props.tournament}
+          onTournamentChange={props.onTournamentChange}
+        />
+        <TournamentCountdown {...props.tournament} />
+        <div className="text-center text-sm text-gray-600">
+          Loading your pick data...
+        </div>
+      </>
+    );
+  }
+  if (model.kind === "mustSignIn") {
+    return (
+      <>
+        <LeaderboardHeader
+          tournament={props.tournament}
+          onTournamentChange={props.onTournamentChange}
+        />
+        <TournamentCountdown {...props.tournament} />
+        <SignInPrompt />
+      </>
+    );
+  }
+  if (model.kind === "missingTourCard") {
+    return (
+      <>
+        <LeaderboardHeader
+          tournament={props.tournament}
+          onTournamentChange={props.onTournamentChange}
+        />
+        <TournamentCountdown {...props.tournament} />
+        <PickEligibilityMessage />
       </>
     );
   }
@@ -97,7 +137,6 @@ export function PreTournamentContent(props: {
           tournament={props.tournament}
           onTournamentChange={props.onTournamentChange}
         />
-        as
         <TournamentCountdown {...props.tournament} />
         <IneligiblePlayoffsMessage />
       </>
@@ -125,15 +164,12 @@ export function PreTournamentContent(props: {
       <TeamPickCard
         tournamentId={model.tournamentId}
         tourCardId={model.tourCardId}
-        existingTeam={model.existingTeam}
-        teamGolfers={model.teamGolfers}
         memberName={model.memberName}
         hasBalance={model.hasBalance}
         balanceNotice={model.balanceNotice}
         formattedRank={model.formattedRank}
         pointsDisplay={model.pointsDisplay}
         earningsDisplay={model.earningsDisplay}
-        hasExistingTeam={model.hasExistingTeam}
         isPickerOpen={model.isPickerOpen}
         onOpenChange={model.onPickerOpenChange}
         onOpenPicker={model.onOpenPicker}
@@ -145,48 +181,49 @@ export function PreTournamentContent(props: {
 /**
  * Builds the view model for `PreTournamentContent`.
  *
- * This hook only derives and normalizes *incoming* data and controls the picker open state.
- * Data fetching happens either at a higher level (tournament/member/tour card) or inside the
- * picker dialog (tournament pick pool).
+ * This hook defers viewer-specific reads until the pick window is open and then derives
+ * the render state for the rest of the facilitator.
  *
  * @param props Inputs from the tournament page.
  * @returns A render model describing which pre-tournament state to show.
  */
-function usePreTournamentContentModel(props: {
-  tournament: {
-    _id: string;
-    name: string;
-    startDate: number;
-    logoUrl?: string | undefined;
-    tier?: { name: string } | undefined;
-  };
-  member?: {
-    firstname?: string | undefined;
-    lastname?: string | undefined;
-    email: string;
-    account: number;
-  };
-  tourCard?: {
-    _id: string;
-    tourId: string;
-    playoff?: number | undefined;
-    currentPosition?: string | undefined;
-    points: number;
-    earnings: number;
-  } | null;
-  existingTeam?: EnhancedTournamentTeamDoc;
-  teamGolfers: {
-    apiId?: number | undefined;
-    _id: string;
-    playerName?: string | undefined;
-    worldRank?: number | undefined;
-    rating?: number | undefined;
-    group?: number | undefined;
-  }[];
-  playoffEventIndex?: number;
-}) {
+function usePreTournamentContentModel(props: { tournament: Tournament }) {
   const [isPickWindowOpen, setIsPickWindowOpen] = useState(false);
   const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [isEnsuringMember, setIsEnsuringMember] = useState(false);
+  const { user, isLoaded: isUserLoaded } = useUser();
+  const ensureMember = useMutation(
+    api.functions.members.ensureMemberForCurrentClerkUser,
+  );
+  const ensuredMemberRef = useRef<string | null>(null);
+  const isPlayoff = (props.tournament.tier?.name ?? "")
+    .toLowerCase()
+    .includes("playoff");
+  const shouldLoadViewerData = isPickWindowOpen && Boolean(user?.id);
+
+  const member = useQuery(
+    api.functions.members.getMembers,
+    shouldLoadViewerData && user ? { options: { clerkId: user.id } } : "skip",
+  ) as PreTournamentMember | null | undefined;
+
+  const tourCards = useQuery(
+    api.functions.tourCards.getTourCards,
+    shouldLoadViewerData && user
+      ? {
+          options: {
+            clerkId: user.id,
+            seasonId: props.tournament.seasonId,
+          },
+        }
+      : "skip",
+  ) as PreTournamentTourCard[] | undefined;
+
+  const nextTournamentContext = useQuery(
+    api.functions.tournaments.getNextTournament,
+    isPickWindowOpen && isPlayoff
+      ? { seasonId: props.tournament.seasonId }
+      : "skip",
+  ) as NextTournamentContext | undefined;
 
   useEffect(() => {
     const openAt = props.tournament.startDate - PRE_TOURNAMENT_PICK_WINDOW_MS;
@@ -215,19 +252,73 @@ function usePreTournamentContentModel(props: {
     setIsPickerOpen(true);
   }, []);
 
+  useEffect(() => {
+    if (!shouldLoadViewerData || !user) {
+      setIsEnsuringMember(false);
+      return;
+    }
+
+    if (member !== null) {
+      setIsEnsuringMember(false);
+      return;
+    }
+
+    if (ensuredMemberRef.current === user.id) {
+      return;
+    }
+
+    const email = user.primaryEmailAddress?.emailAddress;
+    if (!email) {
+      return;
+    }
+
+    ensuredMemberRef.current = user.id;
+    setIsEnsuringMember(true);
+
+    void ensureMember({
+      clerkId: user.id,
+      profile: {
+        email,
+        firstname: user.firstName ?? undefined,
+        lastname: user.lastName ?? undefined,
+      },
+    })
+      .catch(() => {
+        ensuredMemberRef.current = null;
+      })
+      .finally(() => {
+        setIsEnsuringMember(false);
+      });
+  }, [ensureMember, member, shouldLoadViewerData, user]);
+
   return useMemo(() => {
     if (!isPickWindowOpen) {
       return { kind: "picksClosed" as const };
     }
-    if (!props.member || !props.tourCard) {
+    if (!isUserLoaded) {
+      return { kind: "loading" as const };
+    }
+    if (!user) {
       return { kind: "mustSignIn" as const };
     }
+    if (member === undefined || tourCards === undefined || isEnsuringMember) {
+      return { kind: "loading" as const };
+    }
 
-    const tierName = (props.tournament.tier?.name ?? "").toLowerCase();
-    const isPlayoff = tierName.includes("playoff");
-    const isEligibleForPlayoffs = (props.tourCard.playoff ?? 0) >= 1;
-    const isLaterPlayoff = (props.playoffEventIndex ?? 0) > 1;
-    const hasExistingTeam = (props.teamGolfers ?? []).length > 0;
+    const tourCard = tourCards[0] ?? null;
+    if (!member || !tourCard) {
+      return { kind: "missingTourCard" as const };
+    }
+
+    if (isPlayoff && nextTournamentContext === undefined) {
+      return { kind: "loading" as const };
+    }
+
+    const isEligibleForPlayoffs = (tourCard.playoff ?? 0) >= 1;
+    const isLaterPlayoff =
+      isPlayoff &&
+      nextTournamentContext?.tournament?._id === props.tournament._id &&
+      nextTournamentContext.isNonFirstPlayoffTournament;
 
     if (isPlayoff && !isEligibleForPlayoffs) {
       return { kind: "ineligiblePlayoffs" as const };
@@ -236,14 +327,14 @@ function usePreTournamentContentModel(props: {
       return { kind: "carryOverLocked" as const };
     }
 
-    const firstname = props.member.firstname?.trim() ?? "";
-    const lastname = props.member.lastname?.trim() ?? "";
-    const positionRaw = props.tourCard.currentPosition;
+    const firstname = member.firstname?.trim() ?? "";
+    const lastname = member.lastname?.trim() ?? "";
+    const positionRaw = tourCard.currentPosition;
     const memberName =
       firstname && lastname
         ? `${firstname[0]}. ${lastname}`
         : (firstname ?? lastname ?? "Member");
-    const accountCents = props.member.account ?? 0;
+    const accountCents = member.account ?? 0;
     const owesMoney = accountCents < 0;
     const balanceNotice = owesMoney
       ? `Please send ${formatMoney(Math.abs(accountCents), true)} to puregolfcollectivetour@gmail.com to unlock your picks.`
@@ -258,38 +349,38 @@ function usePreTournamentContentModel(props: {
       const suffix = ["th", "st", "nd", "rd"][n % 10] ?? "th";
       return `${n}${suffix}`;
     })();
-    const pointsDisplay = `${(props.tourCard.points ?? 0).toLocaleString()}`;
+    const pointsDisplay = `${(tourCard.points ?? 0).toLocaleString()}`;
     const earningsDisplay =
-      props.tourCard.earnings != null && props.tourCard.earnings > 0
-        ? ` - ${formatMoney(props.tourCard.earnings, true)}`
+      tourCard.earnings != null && tourCard.earnings > 0
+        ? ` - ${formatMoney(tourCard.earnings, true)}`
         : "";
 
     return {
       kind: "ready" as const,
       tournamentId: props.tournament._id,
-      tourCardId: props.tourCard._id,
-      existingTeam: props.existingTeam ?? null,
-      teamGolfers: props.teamGolfers,
+      tourCardId: tourCard._id,
       memberName,
       hasBalance: owesMoney,
       balanceNotice,
       formattedRank,
       pointsDisplay,
       earningsDisplay,
-      hasExistingTeam,
       isPickerOpen,
       onPickerOpenChange,
       onOpenPicker,
     };
   }, [
     isPickWindowOpen,
-    props.member,
-    props.playoffEventIndex,
-    props.teamGolfers,
-    props.tourCard,
+    isEnsuringMember,
+    isPlayoff,
+    isUserLoaded,
+    member,
+    nextTournamentContext,
+    props.tournament,
+    tourCards,
+    user,
+    ensureMember,
     props.tournament._id,
-    props.tournament.tier?.name,
-    props.existingTeam,
     isPickerOpen,
     onOpenPicker,
     onPickerOpenChange,
@@ -314,6 +405,14 @@ function SignInPrompt() {
   );
 }
 
+function PickEligibilityMessage() {
+  return (
+    <div className="rounded-lg border border-slate-300 bg-slate-50 p-4 text-center text-sm text-slate-700">
+      You need an active tour card for this season to pick a team.
+    </div>
+  );
+}
+
 function IneligiblePlayoffsMessage() {
   return (
     <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center">
@@ -327,26 +426,21 @@ function IneligiblePlayoffsMessage() {
 function TeamPickCard(props: {
   tournamentId: string;
   tourCardId: string;
-  existingTeam: EnhancedTournamentTeamDoc | null;
-  teamGolfers: {
-    apiId?: number | undefined;
-    _id: string;
-    playerName?: string | undefined;
-    worldRank?: number | null;
-    rating?: number | null;
-    group?: number | null;
-  }[];
   memberName: string;
   hasBalance: boolean;
   balanceNotice: string | null;
   formattedRank: string;
   pointsDisplay: string;
   earningsDisplay: string;
-  hasExistingTeam: boolean;
   isPickerOpen: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenPicker: () => void;
 }) {
+  const model = useTeamPickCardModel({
+    tournamentId: props.tournamentId,
+    tourCardId: props.tourCardId,
+  });
+
   return (
     <div className="mx-auto mb-4 w-fit max-w-4xl rounded-lg border border-slate-400 bg-slate-100 px-6 py-2 text-center shadow-xl">
       <div className="text-2xl font-bold">{props.memberName}</div>
@@ -361,8 +455,10 @@ function TeamPickCard(props: {
         {`${props.formattedRank} - ${props.pointsDisplay} pts${props.earningsDisplay}`}
       </div>
 
-      {(props.teamGolfers.length ?? 0) > 0 ? (
-        <TeamGolfersList golfers={props.teamGolfers!} />
+      {model.isLoading ? (
+        <div className="mt-4 text-sm text-gray-600">Loading your team...</div>
+      ) : (model.teamGolfers.length ?? 0) > 0 ? (
+        <TeamGolfersList golfers={model.teamGolfers} />
       ) : null}
 
       <Button
@@ -372,7 +468,7 @@ function TeamPickCard(props: {
         className={cn("mb-4 mt-8 text-xl")}
         size="lg"
       >
-        {props.hasExistingTeam ? "Change Your Team" : "Create Your Team"}
+        {model.hasExistingTeam ? "Change Your Team" : "Create Your Team"}
       </Button>
 
       <TournamentTeamPickerDialog
@@ -380,11 +476,84 @@ function TeamPickCard(props: {
         onOpenChange={props.onOpenChange}
         tournamentId={props.tournamentId}
         tourCardId={props.tourCardId}
-        existingTeam={props.existingTeam}
-        teamGolfers={props.teamGolfers}
+        existingTeam={model.existingTeam}
+        existingGolferIds={model.existingGolferIds}
       />
     </div>
   );
+}
+
+/**
+ * Loads the viewer's existing team only once the team card is actually rendered.
+ *
+ * @param props.tournamentId - Tournament document id.
+ * @param props.tourCardId - Tour card document id.
+ * @returns Existing team metadata plus hydrated golfer rows for the saved roster.
+ */
+function useTeamPickCardModel(props: {
+  tournamentId: string;
+  tourCardId: string;
+}) {
+  const teamResults = useQuery(api.functions.teams.getTeams, {
+    options: {
+      filter: {
+        tournamentId: props.tournamentId as Id<"tournaments">,
+        tourCardId: props.tourCardId as Id<"tourCards">,
+      },
+    },
+  }) as PreTournamentTeam[] | undefined;
+
+  const existingTeam = teamResults?.[0] ?? null;
+  const existingGolferIds = existingTeam?.golferIds ?? [];
+
+  const tournamentGolfers = useQuery(
+    api.functions.golfers.getTournamentGolfers,
+    existingGolferIds.length > 0
+      ? {
+          options: {
+            filter: {
+              tournamentId: props.tournamentId as Id<"tournaments">,
+            },
+          },
+        }
+      : "skip",
+  ) as HydratedTournamentGolfer[] | undefined;
+
+  const teamGolfers = useMemo<PreTournamentTeamGolfer[]>(() => {
+    if (!existingTeam || !tournamentGolfers) {
+      return [];
+    }
+
+    const golferByApiId = new Map(
+      tournamentGolfers.map((tournamentGolfer) => [
+        tournamentGolfer.golfer.apiId,
+        {
+          apiId: tournamentGolfer.golfer.apiId,
+          _id: tournamentGolfer._id,
+          playerName: tournamentGolfer.golfer.playerName,
+          worldRank:
+            tournamentGolfer.worldRank ?? tournamentGolfer.golfer.worldRank,
+          rating: tournamentGolfer.rating ?? null,
+          group: tournamentGolfer.group ?? null,
+        },
+      ]),
+    );
+
+    return existingTeam.golferIds.flatMap((apiId) => {
+      const golfer = golferByApiId.get(apiId);
+      return golfer ? [golfer] : [];
+    });
+  }, [existingTeam, tournamentGolfers]);
+
+  return {
+    existingTeam,
+    existingGolferIds,
+    teamGolfers,
+    hasExistingTeam: existingGolferIds.length > 0,
+    isLoading:
+      teamResults === undefined ||
+      (existingGolferIds.length > 0 && tournamentGolfers === undefined),
+  };
 }
 
 /**
@@ -414,21 +583,15 @@ function TournamentTeamPickerDialog(props: {
   tourCardId: string;
   existingTeam?: {
     _id: string;
+    golferIds: number[];
   } | null;
-  teamGolfers: {
-    apiId?: number | undefined;
-    _id: string;
-    playerName?: string | undefined;
-    worldRank?: number | null;
-    rating?: number | null;
-    group?: number | null;
-  }[];
+  existingGolferIds: number[];
 }) {
   const {
+    existingGolferIds,
     existingTeam,
     onOpenChange,
     open,
-    teamGolfers,
     tournamentId,
     tourCardId,
   } = props;
@@ -436,7 +599,7 @@ function TournamentTeamPickerDialog(props: {
   const updateTeam = useMutation(api.functions.teams.updateTeam);
 
   const pickPool = useQuery(
-    api.functions.tournaments.getTournamentPickPool,
+    api.functions.tournaments.getTournamentGroups,
     open
       ? { tournamentId: tournamentId as unknown as Id<"tournaments"> }
       : "skip",
@@ -455,7 +618,7 @@ function TournamentTeamPickerDialog(props: {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const initializedPickerSeedRef = useRef<string | null>(null);
 
-  const pickerSeedKey = `${tournamentId}:${tourCardId}:${existingTeam?._id ?? "new"}`;
+  const pickerSeedKey = `${tournamentId}:${tourCardId}:${existingTeam?._id ?? "new"}:${existingGolferIds.join(",")}`;
 
   useEffect(() => {
     if (!open) {
@@ -468,14 +631,10 @@ function TournamentTeamPickerDialog(props: {
     }
 
     initializedPickerSeedRef.current = pickerSeedKey;
-    setSelectedApiIds(
-      teamGolfers
-        .map((golfer) => golfer.apiId)
-        .filter((apiId): apiId is number => typeof apiId === "number"),
-    );
+    setSelectedApiIds(existingGolferIds);
     setErrorMessage(null);
     setIsSaving(false);
-  }, [open, pickerSeedKey, teamGolfers]);
+  }, [existingGolferIds, open, pickerSeedKey]);
 
   const model = useMemo(() => {
     if (!open) {

@@ -1,18 +1,13 @@
 "use client";
 
+import { Id } from "@/convex";
 import {
   LeaderboardHeader,
   ToursToggle,
   PGCLeaderboard,
   PGALeaderboard,
 } from "@/displays";
-import {
-  EnhancedTournamentGolferDoc,
-  EnhancedTournamentTeamDoc,
-  TourCardDoc,
-  TourDoc,
-  TournamentDoc,
-} from "convex/types/types";
+import { Tournament } from "@/lib";
 
 /**
  * Renders the tournament leaderboard body (tour toggle + column header + rows).
@@ -29,36 +24,12 @@ import {
  * @returns A responsive leaderboard view.
  */
 export function LeaderboardView(props: {
-  tournament: TournamentDoc;
-  tours: TourDoc[];
-  teams: EnhancedTournamentTeamDoc[];
-  golfers: EnhancedTournamentGolferDoc[];
-  userTourCard?: TourCardDoc | null;
+  tournament: Tournament;
+  activeTourId: Id<"tours"> | "pga" | "gold" | "silver";
   onTournamentChange: (tournamentId: string) => void;
-  activeTourId: string;
   onChangeTourId: (tourId: string) => void;
-  variant: "regular" | "playoff";
-  isPreTournament?: boolean;
+  userTourCard?: { _id: Id<"tourCards"> };
 }) {
-  const activeTourShortForm =
-    props.tours?.find((t) => t._id === props.activeTourId)?.shortForm ?? "";
-
-  const tournamentOver = (props.tournament.currentRound ?? 0) === 5;
-
-  const leaderboardTeams = props.teams.map((t) => {
-    const teamGolfers = props.golfers.filter((g) =>
-      t.golferIds.includes(g.apiId ?? 0),
-    );
-    const posChange =
-      +(t.pastPosition?.replace("T", "") ?? 0) -
-      +(t.position?.replace("T", "") ?? 0);
-    return {
-      ...t,
-      teamGolfers,
-      posChange,
-    };
-  });
-
   return (
     <div className="container mx-auto px-4 py-8">
       <LeaderboardHeader
@@ -72,39 +43,24 @@ export function LeaderboardView(props: {
           )}
         </div>
         <ToursToggle
-          tours={[
-            ...props.tours,
-            {
-              _id: "pga",
-              shortForm: "PGA",
-              logoUrl:
-                "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPHn0reMa1Sl6K8NiXDVstIvkZcpyWUmEoY3xj",
-            },
-          ]}
+          tournament={props.tournament}
           activeTourId={props.activeTourId}
           onChangeTourId={props.onChangeTourId}
         />
         <LeaderboardHeaderRow
-          tournamentOver={tournamentOver}
-          activeTourShortForm={activeTourShortForm}
+          tournamentOver={props.tournament.status === "completed"}
+          activeTourId={props.activeTourId}
         />
         {props.activeTourId !== "pga" ? (
           <PGCLeaderboard
-            teams={leaderboardTeams}
             tournament={props.tournament}
             activeTourId={props.activeTourId}
-            variant={props.variant}
           />
         ) : (
           <>
             <PGALeaderboard
-              golfers={props.golfers}
               tournament={props.tournament}
-              currentTeam={
-                leaderboardTeams.find(
-                  (t) => t.tourCardId === props.userTourCard?._id,
-                ) ?? undefined
-              }
+              userTourCard={props.userTourCard}
             />
           </>
         )}
@@ -126,7 +82,7 @@ export function LeaderboardView(props: {
  */
 function LeaderboardHeaderRow(props: {
   tournamentOver: boolean;
-  activeTourShortForm: string;
+  activeTourId: Id<"tours"> | "pga" | "gold" | "silver";
 }) {
   return (
     <div className="mx-auto grid max-w-4xl grid-flow-row grid-cols-10 text-center sm:grid-cols-33">
@@ -141,14 +97,14 @@ function LeaderboardHeaderRow(props: {
       </div>
       <div className="col-span-1 place-self-center font-varela text-2xs sm:col-span-2">
         {props.tournamentOver
-          ? props.activeTourShortForm === "PGA"
+          ? props.activeTourId === "pga"
             ? "Group"
             : "Points"
           : "Today"}
       </div>
       <div className="col-span-1 place-self-center font-varela text-2xs sm:col-span-2">
         {props.tournamentOver
-          ? props.activeTourShortForm === "PGA"
+          ? props.activeTourId === "pga"
             ? "Rating"
             : "$$"
           : "Thru"}

@@ -9,15 +9,19 @@ import {
   formatToPar,
   isPlayerCut,
   parseTeeTimeValueToMs,
+  sortTeamRows,
+  Team,
+  TourCard,
+  Tournament,
+  TournamentGolfer,
 } from "@/lib";
 import { MoveDown, MoveHorizontal, MoveUp } from "lucide-react";
 import { Table, TableBody, TableHeader, TableRow } from "@/components/ui";
-import {
-  EnhancedTournamentGolferDoc,
-  EnhancedTournamentTeamDoc,
-  TournamentDoc,
-} from "convex/types/types";
-import { calculateScoreForSorting } from "convex/utils";
+import { TournamentFetchResult } from "convex/types/types";
+import { api, Id, useQuery } from "@/convex";
+import { usePGCAuth } from "@/hooks";
+import { PGALeaderboard } from "./PGALeaderboard";
+import { LittleFucker } from "../displays";
 
 /**
  * Renders the PGC leaderboard listing for the active tour (or playoff bracket).
@@ -36,48 +40,71 @@ import { calculateScoreForSorting } from "convex/utils";
  * @returns A sequence of clickable leaderboard rows.
  */
 export function PGCLeaderboard(props: {
-  teams: (EnhancedTournamentTeamDoc & {
-    teamGolfers?: EnhancedTournamentGolferDoc[];
-    posChange: number;
-  })[];
-  tournament: TournamentDoc;
-  activeTourId: string;
-  variant: "regular" | "playoff";
+  tournament: TournamentFetchResult;
+  activeTourId: Id<"tours"> | "pga" | "gold" | "silver";
 }) {
-  if (!props.teams || props.teams.length === 0) {
-    return <PGCLeaderboardSkeleton />;
-  }
-  let sorted = [...props.teams]
-    .sort((a, b) => (a.thru ?? 0) - (b.thru ?? 0))
-    .sort(
-      (a, b) =>
-        calculateScoreForSorting(a.position, a.score) -
-        calculateScoreForSorting(b.position, b.score),
-    );
+  if (!props.tournament) return null;
+  if (!props.activeTourId) return null;
+  if (props.activeTourId === "pga")
+    return <PGALeaderboard tournament={props.tournament} />;
 
-  if (props.variant === "playoff") {
+  const tourCards =
+    props.activeTourId === "gold" || props.activeTourId === "silver"
+      ? useQuery(api.functions.tourCards.getTourCards, {
+          options: { seasonId: props.tournament.seasonId },
+        })
+      : useQuery(api.functions.tourCards.getTourCards, {
+          options: { tourId: props.activeTourId },
+        });
+  const teams = useQuery(api.functions.teams.getTeamsForTournament, {
+    tournamentId: props.tournament._id,
+  });
+  if (!teams || !tourCards) return <PGCLeaderboardSkeleton />;
+
+  let sorted = sortTeamRows(teams);
+
+  if (props.tournament.tier.name.toLowerCase() === "playoff") {
     const playoffLevel =
       props.activeTourId === "gold"
         ? 1
         : props.activeTourId === "silver"
           ? 2
-          : 1;
-    sorted = sorted.filter((t) => (t.playoff ?? 0) === playoffLevel);
+          : 0;
+    sorted = sorted.filter((t) => {
+      const tc = tourCards.find((tc) => tc._id === t.tourCardId);
+      return (tc?.playoff ?? 0) === playoffLevel;
+    });
   } else {
-    sorted = sorted.filter((t) => t.tourId === props.activeTourId);
+    sorted = sorted
+      .filter((t) => {
+        const tc = tourCards.find((tc) => tc._id === t.tourCardId);
+        return (tc?.tourId ?? "") === props.activeTourId;
+      })
+      .sort((a, b) => {
+        const posA = a.position
+          ? parseInt(a.position.replace("T", ""))
+          : Number.POSITIVE_INFINITY;
+        const posB = b.position
+          ? parseInt(b.position.replace("T", ""))
+          : Number.POSITIVE_INFINITY;
+        return posA - posB;
+      });
   }
 
   return (
     <>
-      {sorted.map((team) => (
-        <>
+      {sorted.map((team) => {
+        const tc = tourCards.find((tc) => tc._id === team.tourCardId);
+        if (!tc) return null;
+        return (
           <LeaderboardListing
             key={team._id}
             tournament={props.tournament}
             team={team}
+            tourCard={tc}
           />
-        </>
-      ))}
+        );
+      })}
     </>
   );
 }
@@ -86,7 +113,29 @@ export function PGCLeaderboard(props: {
  * Loading UI for `PGCLeaderboard`.
  */
 function PGCLeaderboardSkeleton() {
-  return <div className="h-24 w-full rounded-md bg-slate-100" />;
+  return (
+    <div
+      className="mx-auto flex w-full max-w-4xl flex-col gap-2"
+      aria-busy="true"
+    >
+      {Array.from({ length: 22 }).map((_, index) => (
+        <div key={index} className="overflow-hidden rounded-xl">
+          <div className="mx-auto grid max-w-4xl grid-cols-10 items-center py-[1px] sm:grid-cols-33">
+            <SkeletonBlock className="col-span-2 mx-auto h-5 w-12 sm:col-span-5" />
+            <SkeletonBlock className="col-span-4 h-6 w-full max-w-40 justify-self-center sm:col-span-10" />
+            <SkeletonBlock className="col-span-2 h-5 w-14 justify-self-center sm:col-span-5" />
+            <SkeletonBlock className="col-span-1 h-5 w-8 justify-self-center sm:col-span-2" />
+            <SkeletonBlock className="col-span-1 h-5 w-8 justify-self-center sm:col-span-2" />
+            <div className="col-span-1 hidden sm:block" />
+            <SkeletonBlock className="col-span-2 mx-auto hidden h-5 w-8 justify-self-center sm:block" />
+            <SkeletonBlock className="col-span-2 mx-auto hidden h-5 w-8 justify-self-center sm:block" />
+            <SkeletonBlock className="col-span-2 mx-auto hidden h-5 w-8 justify-self-center sm:block" />
+            <SkeletonBlock className="col-span-2 mx-auto hidden h-5 w-8 justify-self-center sm:block" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /**
@@ -106,21 +155,17 @@ function PGCLeaderboardSkeleton() {
 function LeaderboardListing({
   tournament,
   team,
+  tourCard,
 }: {
-  tournament: {
-    currentRound?: number | undefined;
-    livePlay?: boolean | null;
-    name: string;
-  };
-  team: EnhancedTournamentTeamDoc & {
-    teamGolfers?: EnhancedTournamentGolferDoc[];
-    posChange: number;
-  };
+  tournament: Tournament;
+  team: Team;
+  tourCard: TourCard;
 }) {
+  const { member } = usePGCAuth();
   const [isOpen, setIsOpen] = useState(false);
   const isCut = isPlayerCut(team.position);
-  const isUser = false;
-  const isFriend = false;
+  const isUser = member?._id === tourCard.memberId;
+  const isFriend = member?.friends.includes(tourCard.memberId) ?? false;
   const onToggleOpen = () => setIsOpen((v) => !v);
   const rowClass = getLeaderboardRowClass({
     isCut,
@@ -136,12 +181,20 @@ function LeaderboardListing({
         <div className="col-span-2 flex place-self-center font-varela text-base sm:col-span-5">
           {team.position ?? "-"}
           {(tournament.currentRound ?? 0) >= 2 ? (
-            <PositionChange posChange={team.posChange} />
+            <PositionChange
+              posChange={
+                team.pastPosition
+                  ? parseInt(team.pastPosition.replace("T", "")) -
+                    parseInt(team.position ?? "0")
+                  : 0
+              }
+            />
           ) : null}
         </div>
 
         <div className="col-span-4 flex items-center justify-center place-self-center font-varela text-lg sm:col-span-10">
-          {team.displayName}
+          {tourCard.displayName}
+          <LittleFucker tourCard={tourCard} className="ml-2" />
         </div>
 
         <div className="col-span-2 place-self-center font-varela text-base sm:col-span-5">
@@ -158,10 +211,7 @@ function LeaderboardListing({
 
       {isOpen ? (
         <div className="col-span-10 mx-auto mb-2 w-full max-w-4xl rounded-md border border-gray-300 bg-white shadow-md">
-          <TeamGolfersTable
-            tournament={tournament}
-            teamGolfers={team.teamGolfers}
-          />
+          <TeamGolfersTable tournament={tournament} team={team} />
         </div>
       ) : null}
     </div>
@@ -181,17 +231,25 @@ function LeaderboardListing({
  * @param props.allGolfers - All PGA golfer rows (source for team golfers).
  * @returns A compact table of golfers on the team.
  */
-function TeamGolfersTable(props: {
-  tournament: { name: string; currentRound?: number | undefined };
-  teamGolfers?: EnhancedTournamentGolferDoc[];
-}) {
-  const sortedTeamGolfers = useTeamGolfersTable(props.teamGolfers!);
-
+function TeamGolfersTable(props: { tournament: Tournament; team: Team }) {
+  const golferResults = props.team.golferIds.map((g) => {
+    const golfer = useQuery(api.functions.golfers.getGolferByApiId, {
+      apiId: g,
+    });
+    return useQuery(api.functions.golfers.getTournamentGolfers, {
+      options: {
+        filter: { tournamentId: props.tournament._id, golferId: golfer?._id },
+      },
+    });
+  });
+  const isLoadingGolfers = golferResults.some((result) => result === undefined);
+  const golfers = golferResults.flat().filter(Boolean) as TournamentGolfer[];
+  const sortedTeamGolfers = useTeamGolfersTable(golfers ?? []);
   const GolferScoreCells = ({
     golfer,
     tournamentRound,
   }: {
-    golfer: EnhancedTournamentGolferDoc;
+    golfer: TournamentGolfer;
     tournamentRound?: number;
   }) => {
     if (isPlayerCut(golfer.position)) {
@@ -235,6 +293,18 @@ function TeamGolfersTable(props: {
     );
   };
 
+  if (isLoadingGolfers) {
+    return <TeamGolfersTableSkeleton />;
+  }
+
+  if (sortedTeamGolfers.length === 0) {
+    return (
+      <div className="mx-auto flex w-full max-w-3xl items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-sm text-slate-500">
+        Golfer details are not available yet.
+      </div>
+    );
+  }
+
   return (
     <Table className="scrollbar-hidden mx-auto w-full max-w-3xl border border-gray-700 text-center font-varela">
       <TableHeader>
@@ -277,7 +347,7 @@ function TeamGolfersTable(props: {
             >
               <td className="px-1 text-xs">{golfer.position ?? "-"}</td>
               <td className="whitespace-nowrap px-1 text-sm">
-                {golfer.playerName}
+                {golfer.golfer?.playerName}
               </td>
               <td className="px-1 text-sm">{formatToPar(golfer.score)}</td>
               <GolferScoreCells
@@ -314,13 +384,61 @@ function TeamGolfersTable(props: {
 }
 
 /**
+ * Loading UI for the expanded team golfer table.
+ */
+function TeamGolfersTableSkeleton() {
+  return (
+    <Table className="scrollbar-hidden mx-auto w-full max-w-3xl border border-gray-700 text-center font-varela">
+      <TableHeader>
+        <TableRow className="md:grid-cols-32 grid grid-cols-18 items-center gap-3 bg-gray-700 px-1 py-[2px] font-bold text-gray-100 hover:bg-gray-700">
+          <SkeletonBlock className="col-span-2 mx-auto h-3 w-6" />
+          <SkeletonBlock className="col-span-10 mx-auto h-3 w-32" />
+          <SkeletonBlock className="col-span-3 mx-auto h-3 w-12" />
+          <SkeletonBlock className="col-span-2 mx-auto h-3 w-6" />
+          <SkeletonBlock className="col-span-2 mx-auto h-3 w-6" />
+          <SkeletonBlock className="col-span-1 mx-auto hidden h-3 w-4 md:table-cell" />
+          <SkeletonBlock className="col-span-1 mx-auto hidden h-3 w-4 md:table-cell" />
+          <SkeletonBlock className="col-span-1 mx-auto hidden h-3 w-4 md:table-cell" />
+          <SkeletonBlock className="col-span-1 mx-auto hidden h-3 w-4 md:table-cell" />
+          <SkeletonBlock className="col-span-4 mx-auto hidden h-3 w-12 xs:table-cell" />
+          <SkeletonBlock className="col-span-3 mx-auto hidden h-3 w-12 xs:table-cell" />
+          <SkeletonBlock className="col-span-2 mx-auto h-3 w-6" />
+        </TableRow>
+      </TableHeader>
+
+      <TableBody>
+        {Array.from({ length: 10 }).map((_, index) => (
+          <TableRow
+            key={index}
+            className="md:grid-cols-32 grid grid-cols-18 items-center gap-3 px-1 py-[3px]"
+          >
+            <SkeletonBlock className="col-span-2 mx-auto h-4 w-6" />
+            <SkeletonBlock className="col-span-10 mx-auto h-4 w-32" />
+            <SkeletonBlock className="col-span-3 mx-auto h-4 w-12" />
+            <SkeletonBlock className="col-span-2 mx-auto h-4 w-6" />
+            <SkeletonBlock className="col-span-2 mx-auto h-4 w-6" />
+            <SkeletonBlock className="col-span-1 mx-auto hidden h-4 w-4 md:block" />
+            <SkeletonBlock className="col-span-1 mx-auto hidden h-4 w-4 md:block" />
+            <SkeletonBlock className="col-span-1 mx-auto hidden h-4 w-4 md:block" />
+            <SkeletonBlock className="col-span-1 mx-auto hidden h-4 w-4 md:block" />
+            <SkeletonBlock className="col-span-4 mx-auto hidden h-4 w-12 md:block" />
+            <SkeletonBlock className="col-span-3 mx-auto hidden h-4 w-12 md:block" />
+            <SkeletonBlock className="col-span-2 mx-auto h-4 w-6" />
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+/**
  * Computes the list of golfers to display for a team.
  *
  * @param args.teamGolfers - Team golfers.
  * @param args.tournament - Tournament info.
  * @returns Ordered rows with cut golfers last.
  */
-function useTeamGolfersTable(teamGolfers: EnhancedTournamentGolferDoc[]) {
+function useTeamGolfersTable(teamGolfers: TournamentGolfer[]) {
   return useMemo(() => {
     const nonCut = teamGolfers.filter((g) => !isPlayerCut(g.position));
     const cut = teamGolfers.filter((g) => isPlayerCut(g.position));
@@ -374,10 +492,10 @@ function useTeamGolfersTable(teamGolfers: EnhancedTournamentGolferDoc[]) {
 
     const sortedNonCut = sortByLive(nonCut);
     const sortedCut = [...cut].sort((a, b) =>
-      (a.playerName ?? "").localeCompare(b.playerName ?? ""),
+      (a.golfer.playerName ?? "").localeCompare(b.golfer.playerName ?? ""),
     );
 
-    return [...sortedNonCut, ...sortedCut] as EnhancedTournamentGolferDoc[];
+    return [...sortedNonCut, ...sortedCut] as TournamentGolfer[];
   }, [teamGolfers]);
 }
 
@@ -462,6 +580,21 @@ function getLeaderboardRowClass(args: {
   if (args.isCut) classes.push("text-gray-400");
   return classes.join(" ");
 }
+
+/**
+ * Shared loading shimmer used by leaderboard skeleton states.
+ */
+function SkeletonBlock({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        "animate-pulse rounded-full bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200",
+        className,
+      )}
+    />
+  );
+}
+
 function ScoreCell(args: {
   value: ReactNode;
   className?: string;

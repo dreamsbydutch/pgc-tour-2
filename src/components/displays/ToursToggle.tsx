@@ -1,6 +1,15 @@
 import { useMemo } from "react";
-import { Button } from "@/ui";
+import { Button, Skeleton } from "@/ui";
 import { cn } from "@/lib";
+import { TournamentFetchResult } from "convex/types/tournaments";
+import { useQuery } from "convex/react";
+import { api } from "@/convex";
+
+type ToursToggleItem = {
+  _id: string;
+  shortForm: string;
+  logoUrl?: string | null;
+};
 
 /**
  * ToursToggle
@@ -9,28 +18,26 @@ import { cn } from "@/lib";
  * selection changes via `onChangeTourId`.
  *
  * Data sources:
- * - None. This is a pure presentational component; fetch/compose tours upstream.
+ * - `api.functions.tours.getTours` for the tournament's season tours.
  *
  * Major render states:
- * - No tours/extras: returns `null`.
- * - Otherwise: renders one button per tour.
+ * - Loading: renders an internal skeleton while tours are being fetched.
+ * - Empty: returns `null` when there are no toggles to show.
+ * - Ready: renders one button per tour.
  *
  * Behavior notes:
  * - The active tour uses the `default` button variant and a subtle shadow.
  * - Toggle ordering is deterministic:
- *   - First: tours from the DB (`props.tours`, preserving their given order).
+ *   - First: tours from the DB (preserving their given order).
  *   - Then: `PGA`, `Gold`, `Silver`, `Playoff`/`Playoffs`.
  *   - Finally: any remaining extra toggles in their given order.
- * - `sort` (when true) alphabetically sorts only the DB-tour group by `shortForm`.
  * - When the active tour is not `PGA`, `Gold`, or `Silver`, its logo is inverted for contrast.
  *
  * @param props - Component props.
- * @param props.tours - Base set of tours to toggle between.
+ * @param props.tournament - Tournament that determines which season's tours are fetched.
  * @param props.activeTourId - Currently selected tour id.
  * @param props.onChangeTourId - Callback invoked when a tour is selected.
  * @param props.extraToggles - Optional extra toggle items appended after base tours.
- * @param props.sort - Whether to sort base tours by `shortForm` (default: `true`).
- * @param props.loading - Whether to render a skeleton state (default: `false`).
  * @returns A set of tour toggle buttons, a skeleton while loading, or `null` when empty.
  *
  * @example
@@ -42,25 +49,26 @@ import { cn } from "@/lib";
  * />
  */
 export function ToursToggle({
-  tours,
+  tournament,
   activeTourId,
   onChangeTourId,
   extraToggles,
 }: {
-  tours: {
-    _id: string;
-    shortForm: string;
-    logoUrl?: string | null;
-  }[];
+  tournament: TournamentFetchResult;
   activeTourId: string;
   onChangeTourId: (tourId: string) => void;
-  extraToggles?: {
-    _id: string;
-    shortForm: string;
-    logoUrl?: string | null;
-  }[];
+  extraToggles?: ToursToggleItem[];
 }) {
-  const { combinedToggles } = useToursToggle({ tours, extraToggles });
+  const { combinedToggles, isLoading } = useToursToggle(
+    tournament,
+    extraToggles,
+  );
+
+  if (isLoading) {
+    return (
+      <ToursToggleSkeleton count={Math.max(3, extraToggles?.length ?? 0)} />
+    );
+  }
 
   if (combinedToggles.length === 0) return null;
 
@@ -103,24 +111,46 @@ export function ToursToggle({
 }
 
 /**
- * Builds a combined, display-ready list of tour toggle items.
+ * Fetches season tours and builds the display-ready list of toggle items.
  */
-function useToursToggle({
-  tours,
-  extraToggles,
-}: {
-  tours: {
-    _id: string;
-    shortForm: string;
-    logoUrl?: string | null;
-  }[];
-  extraToggles?: {
-    _id: string;
-    shortForm: string;
-    logoUrl?: string | null;
-  }[];
-}) {
-  const combinedToggles = useMemo(() => {
+function useToursToggle(
+  tournament: TournamentFetchResult,
+  extraToggles?: ToursToggleItem[],
+): {
+  combinedToggles: ToursToggleItem[];
+  isLoading: boolean;
+} {
+  const tours = useQuery(api.functions.tours.getTours, {
+    options: { filter: { seasonId: tournament.seasonId } },
+  });
+  const isLoading = tours === undefined;
+
+  const combinedToggles = useMemo<ToursToggleItem[]>(() => {
+    if (!tours) {
+      return [];
+    }
+
+    if (
+      tournament.tier.name.toLowerCase() === "playoff" &&
+      (tours[0]?.playoffSpots.length ?? 0) > 0
+    ) {
+      return [
+        {
+          _id: "gold",
+          shortForm: "Gold",
+          logoUrl:
+            "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPHn0reMa1Sl6K8NiXDVstIvkZcpyWUmEoY3xj",
+        },
+        {
+          _id: "silver",
+          shortForm: "Silver",
+          logoUrl:
+            "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPHn0reMa1Sl6K8NiXDVstIvkZcpyWUmEoY3xj",
+        },
+        ...(extraToggles ?? []),
+      ];
+    }
+
     const all = [
       ...tours.map((tour, index) => ({ tour, index })),
       ...(extraToggles ?? []).map((tour, extraIndex) => ({
@@ -129,7 +159,8 @@ function useToursToggle({
       })),
     ];
 
-    const normalize = (value: string) => value ? value.trim().toLowerCase() : "";
+    const normalize = (value: string) =>
+      value ? value.trim().toLowerCase() : "";
     const playoffLike = (value: string) => normalize(value).includes("playoff");
 
     const rank = (item: {
@@ -144,9 +175,9 @@ function useToursToggle({
       const isPlayoffs =
         id === "playoff" || id === "playoffs" || playoffLike(shortForm);
 
-      if (isPga) return 1;
-      if (isGold) return 2;
-      if (isSilver) return 3;
+      if (isGold) return 1;
+      if (isSilver) return 2;
+      if (isPga) return 3;
       if (isPlayoffs) return 4;
 
       const isDbTour = !isPga && !isGold && !isSilver && !isPlayoffs;
@@ -161,7 +192,33 @@ function useToursToggle({
         return a.index - b.index;
       })
       .map(({ tour }) => tour);
-  }, [extraToggles, tours]);
+  }, [extraToggles, tournament.tier.name, tours]);
 
-  return { combinedToggles };
+  return { combinedToggles, isLoading };
+}
+
+/**
+ * Renders button-shaped placeholders while the season tours are loading.
+ *
+ * @param props - Skeleton props.
+ * @param props.count - Number of placeholder toggles to render.
+ * @returns A responsive skeleton row that matches the toggle layout.
+ */
+function ToursToggleSkeleton(props: { count: number }) {
+  return (
+    <div className="mx-auto my-4 flex w-full max-w-xl flex-wrap items-center justify-center gap-4">
+      {Array.from({ length: props.count }).map((_, index) => (
+        <div
+          key={index}
+          className={cn(
+            "flex h-9 items-center gap-2 rounded-md border border-input px-3",
+            index === 0 ? "w-20" : index % 3 === 0 ? "w-28" : "w-24",
+          )}
+        >
+          <Skeleton className="h-5 w-5 rounded-sm" />
+          <Skeleton className="h-3 flex-1" />
+        </div>
+      ))}
+    </div>
+  );
 }

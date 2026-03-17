@@ -1,21 +1,25 @@
 "use client";
 
-import { Fragment, ReactNode, useState } from "react";
+import { Fragment, ReactNode, useMemo, useState } from "react";
 import {
+  buildPgaLeaderboardRows,
   cn,
+  formatLeaderboardThruDisplay,
   formatNumberToPercentage,
-  formatTeeTimeTimeOfDay,
   formatToPar,
   getCountryFlagEmoji,
+  getDataGolfStateMessage,
   isPlayerCut,
+  PgaLeaderboardRow,
+  shouldRenderPgaDivider,
+  sortPgaRows,
+  Team,
+  Tournament,
 } from "@/lib";
-import {
-  EnhancedTournamentGolferDoc,
-  TeamDoc,
-  TournamentDoc,
-} from "convex/types/types";
 import { MoveDown, MoveHorizontal, MoveUp } from "lucide-react";
-import { calculateScoreForSorting } from "convex/utils";
+import { useDataGolf } from "@/hooks";
+import { useQuery } from "convex/react";
+import { api, Id } from "@/convex";
 
 /**
  * Renders the PGA leaderboard listing for the current tournament.
@@ -30,37 +34,74 @@ import { calculateScoreForSorting } from "convex/utils";
  * @param props.isPreTournament - When true, disables row expansion.
  * @returns A sequence of clickable leaderboard rows.
  */
-export function PGALeaderboard(props: {
-  golfers: EnhancedTournamentGolferDoc[];
-  tournament: TournamentDoc;
-  currentTeam?: TeamDoc;
-}) {
-  const nonCut = props.golfers.filter((r) => !isPlayerCut(r.position));
-  const cut = props.golfers.filter((r) => isPlayerCut(r.position));
-  nonCut
-    .sort(
-      (a, b) =>
-        calculateScoreForSorting(a.position, a.score) -
-        calculateScoreForSorting(b.position, b.score),
-    )
-    .sort(
-      (a, b) =>
-        +(a.position ?? "").replace("T", "") -
-        +(b.position ?? "").replace("T", ""),
+export function PGALeaderboard(props: { tournament: Tournament, userTourCard?: { _id: Id<"tourCards"> } }) {
+  const requests = useMemo(
+    () => ({
+      liveResult: {
+        endpoint: "fetchLiveModelPredictions" as const,
+        args: {
+          tournament: props.tournament,
+          options: {
+            tour: "pga" as const,
+            oddsFormat: "percent" as const,
+            sortByPosition: true,
+          },
+        },
+      },
+      historicalResult: {
+        endpoint: "fetchHistoricalRoundData" as const,
+        args: {
+          tournament: props.tournament,
+          options: {
+            year: new Date().getFullYear(),
+            tour: "pga",
+          },
+        },
+      },
+    }),
+    [props.tournament],
+  );
+  const { data, errors, hasError, isLoading } = useDataGolf({
+    requests,
+  });
+  const userTeam = useQuery(api.functions.teams.getTeams, {
+    options: {
+      filter: {
+        tournamentId: props.tournament._id,
+        tourCardId: props.userTourCard?._id,
+      },
+    },
+  });
+  const rows = buildPgaLeaderboardRows({
+    tournament: props.tournament,
+    liveResult: data.liveResult,
+    historicalResult: data.historicalResult,
+  });
+  const message = getDataGolfStateMessage({
+    liveResult: data.liveResult,
+    historicalResult: data.historicalResult,
+  });
+
+  if (isLoading) {
+    return <PGALeaderboardSkeleton />;
+  }
+
+  if (hasError) {
+    return (
+      <LeaderboardStatePanel
+        message={
+          Object.values(errors)[0] ??
+          "Unable to load the PGA leaderboard from DataGolf right now."
+        }
+      />
     );
-  cut
-    .sort(
-      (a, b) =>
-        calculateScoreForSorting(a.position, a.score) -
-        calculateScoreForSorting(b.position, b.score),
-    )
-    .sort((a, b) => (a.group ?? 999) - (b.group ?? 999))
-    .sort(
-      (a, b) =>
-        +(a.position ?? "").replace("T", "") -
-        +(b.position ?? "").replace("T", ""),
-    );
-  const sortedGolfers = [...nonCut, ...cut];
+  }
+
+  if (rows.length === 0) {
+    return <LeaderboardStatePanel message={message} />;
+  }
+
+  const sortedGolfers = sortPgaRows(rows);
 
   return (
     <>
@@ -68,71 +109,20 @@ export function PGALeaderboard(props: {
         const prev = index === 0 ? null : sortedGolfers[index - 1];
         const showDivider =
           prev == null ? false : shouldRenderPgaDivider(prev, golfer);
-        const teeTimeDisplay =
-          props.tournament.currentRound === 1
-            ? golfer.roundOneTeeTime
-            : props.tournament.currentRound === 2
-              ? golfer.roundTwoTeeTime
-              : props.tournament.currentRound === 3
-                ? golfer.roundThreeTeeTime
-                : props.tournament.currentRound === 4
-                  ? golfer.roundFourTeeTime
-                  : "-";
 
         return (
-          <Fragment key={golfer._id}>
+          <Fragment key={golfer.apiId}>
             {showDivider ? <LeaderboardSectionDivider /> : null}
             <LeaderboardListing
               tournament={props.tournament}
-              team={props.currentTeam}
-              golfer={{
-                position: golfer.position ?? "-",
-                playerName: golfer.playerName ?? "",
-                score: golfer.score ?? 500,
-                apiId: golfer.apiId ?? -1,
-                country: golfer.country ?? null,
-                roundOne: golfer.roundOne ?? 0,
-                roundTwo: golfer.roundTwo ?? 0,
-                roundThree: golfer.roundThree ?? 0,
-                roundFour: golfer.roundFour ?? 0,
-                posChange: golfer.posChange ?? 0,
-                worldRank: golfer.worldRank ?? 501,
-                rating: golfer.rating ?? -1,
-                group: golfer.group ?? 0,
-                thru: golfer.thru ?? 0,
-                today: golfer.today ?? 500,
-                makeCut: golfer.makeCut ?? 0,
-                topTen: golfer.topTen ?? 0,
-                win: golfer.win ?? 0,
-                usage: golfer.usage ?? 0,
-                teeTimeDisplay,
-              }}
+              team={userTeam?.[0]}
+              golfer={golfer}
             />
           </Fragment>
         );
       })}
     </>
   );
-}
-
-/**
- * Determines whether to render a visual divider before the current PGA row.
- *
- * Rules:
- * - Add a divider between the last non-cut row and the first cut/WD/DQ row.
- * - Within the cut section, add a divider when `group` changes.
- */
-function shouldRenderPgaDivider(
-  prev: EnhancedTournamentGolferDoc,
-  curr: EnhancedTournamentGolferDoc,
-) {
-  const prevIsCut = isPlayerCut(prev.position);
-  const currIsCut = isPlayerCut(curr.position);
-
-  if (!prevIsCut && currIsCut) return true;
-  if (prevIsCut && currIsCut)
-    return (prev.group ?? 999) !== (curr.group ?? 999);
-  return false;
 }
 
 /**
@@ -162,32 +152,8 @@ function LeaderboardListing({
   golfer,
 }: {
   tournament: { currentRound?: number | undefined; livePlay?: boolean | null };
-  team?: {
-    _id: string;
-    golferIds: number[];
-  };
-  golfer: {
-    position: string;
-    playerName: string;
-    score: number;
-    apiId: number;
-    country: string | null;
-    roundOne: number;
-    roundTwo: number;
-    roundThree: number;
-    roundFour: number;
-    posChange: number;
-    worldRank: number;
-    rating: number;
-    group: number;
-    thru: number;
-    today: number;
-    makeCut: number;
-    topTen: number;
-    win: number;
-    usage: number;
-    teeTimeDisplay: string | number | null | undefined;
-  };
+  team?: Pick<Team, "_id" | "golferIds">;
+  golfer: PgaLeaderboardRow;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const isCut = isPlayerCut(golfer.position);
@@ -248,22 +214,7 @@ function LeaderboardListing({
  * @returns A compact stats panel.
  */
 function PGADropdown(props: {
-  golfer: {
-    apiId: number;
-    country: string | null;
-    roundOne: number;
-    roundTwo: number;
-    roundThree: number;
-    roundFour: number;
-    position: string;
-    group: number;
-    rating: number;
-    makeCut: number;
-    topTen: number;
-    win: number;
-    worldRank: number;
-    usage: number;
-  };
+  golfer: PgaLeaderboardRow;
   currentTeamGolferIds?: number[];
 }) {
   return (
@@ -328,7 +279,9 @@ function PGADropdown(props: {
           {formatNumberToPercentage(props.golfer.usage)}
         </div>
         <div className="col-span-2 hidden text-lg sm:grid">
-          {props.golfer.group === 0 ? "-" : (props.golfer.group ?? "-")}
+          {props.golfer.group == null || props.golfer.group === 0
+            ? "-"
+            : props.golfer.group}
         </div>
       </div>
     </div>
@@ -336,25 +289,18 @@ function PGADropdown(props: {
 }
 
 function ScoreDisplay(props: {
-  golfer: {
-    position: string;
-    group: number;
-    rating: number;
-    roundOne: number;
-    roundTwo: number;
-    roundThree: number;
-    roundFour: number;
-    thru: number;
-    today: number;
-    teeTimeDisplay: string | number | null | undefined;
-  };
+  golfer: PgaLeaderboardRow;
   tournamentComplete: boolean;
 }) {
   if (isPlayerCut(props.golfer.position)) {
     return (
       <>
         <ScoreCell
-          value={props.golfer.group === 0 ? "-" : (props.golfer.group ?? "-")}
+          value={
+            props.golfer.group == null || props.golfer.group === 0
+              ? "-"
+              : props.golfer.group
+          }
           className="col-span-1 sm:col-span-2"
         />
         <ScoreCell
@@ -390,7 +336,11 @@ function ScoreDisplay(props: {
     return (
       <>
         <ScoreCell
-          value={props.golfer.group === 0 ? "-" : (props.golfer.group ?? "-")}
+          value={
+            props.golfer.group == null || props.golfer.group === 0
+              ? "-"
+              : props.golfer.group
+          }
           className="col-span-1 sm:col-span-2"
         />
         <ScoreCell
@@ -426,19 +376,23 @@ function ScoreDisplay(props: {
     <>
       {props.golfer.thru == null || props.golfer.thru === 0 ? (
         <ScoreCell
-          value={formatTeeTimeTimeOfDay(props.golfer.teeTimeDisplay) ?? "-"}
+          value={formatLeaderboardThruDisplay({
+            thru: props.golfer.thru,
+            teeTimeDisplay: props.golfer.teeTimeDisplay,
+          })}
           className="col-span-2 sm:col-span-4"
         />
       ) : (
         <>
           <ScoreCell
-            value={
-              props.golfer.today == null ? "-" : formatToPar(props.golfer.today)
-            }
+            value={formatToPar(props.golfer.today)}
             className="col-span-1 sm:col-span-2"
           />
           <ScoreCell
-            value={props.golfer.thru === 18 ? "F" : (props.golfer.thru ?? "-")}
+            value={formatLeaderboardThruDisplay({
+              thru: props.golfer.thru,
+              teeTimeDisplay: props.golfer.teeTimeDisplay,
+            })}
             className="col-span-1 sm:col-span-2"
           />
         </>
@@ -478,6 +432,63 @@ function getLeaderboardRowClass(args: {
   if (args.isCut) classes.push("text-gray-400");
   return classes.join(" ");
 }
+
+/**
+ * Loading UI for PGA leaderboard rows while DataGolf requests are in flight.
+ */
+function PGALeaderboardSkeleton() {
+  return (
+    <div
+      className="mx-auto flex w-full max-w-4xl flex-col gap-2"
+      aria-busy="true"
+    >
+      {Array.from({ length: 10 }).map((_, index) => (
+        <div
+          key={index}
+          className="overflow-hidden rounded-xl border border-slate-200/80 bg-gradient-to-r from-white via-slate-50 to-slate-100 shadow-sm"
+        >
+          <div className="grid grid-cols-10 items-center gap-3 px-4 py-3 sm:grid-cols-33">
+            <SkeletonBlock className="col-span-2 h-5 w-12 sm:col-span-5" />
+            <SkeletonBlock className="col-span-4 h-6 w-full max-w-40 justify-self-center sm:col-span-10" />
+            <SkeletonBlock className="col-span-2 h-5 w-14 justify-self-center sm:col-span-5" />
+            <SkeletonBlock className="col-span-2 h-5 w-20 justify-self-center sm:col-span-4" />
+            <div className="col-span-1 hidden sm:flex" />
+            <SkeletonBlock className="hidden h-5 w-10 justify-self-center sm:block" />
+            <SkeletonBlock className="hidden h-5 w-10 justify-self-center sm:block" />
+            <SkeletonBlock className="hidden h-5 w-10 justify-self-center sm:block" />
+            <SkeletonBlock className="hidden h-5 w-10 justify-self-center sm:block" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Empty/error state container for PGA leaderboard fetch results.
+ */
+function LeaderboardStatePanel(props: { message: string }) {
+  return (
+    <div className="mx-auto flex w-full max-w-4xl items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">
+      {props.message}
+    </div>
+  );
+}
+
+/**
+ * Shared skeleton block used by leaderboard loading states.
+ */
+function SkeletonBlock({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        "animate-pulse rounded-full bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200",
+        className,
+      )}
+    />
+  );
+}
+
 function ScoreCell(args: {
   value: ReactNode;
   className?: string;
