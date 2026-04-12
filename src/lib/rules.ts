@@ -98,6 +98,10 @@ export const ruleList: {
         ruleText:
           "After each tournament throughout the season, the top 35 finishers will receive PGC Cup Points. Each tournament will distribute points based on the tournament's tier.",
       },
+      {
+        ruleText:
+          "Any tournament that finishes with a tie for first place will have the winner decided by the highest combined PGA earnings or their entire roster.",
+      },
     ],
   },
   {
