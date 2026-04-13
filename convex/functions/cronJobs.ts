@@ -31,6 +31,18 @@ import { v } from "convex/values";
 
 type TournamentLifecycleStatus = "upcoming" | "active" | "completed";
 
+type TournamentSyncTeam = Doc<"teams"> & {
+  golfers: EnhancedGolfer[];
+  tour?: Doc<"tours">;
+  tourCard?: Doc<"tourCards">;
+};
+
+type TeamTournamentRank = {
+  teamsAhead: number;
+  teamsTied: number;
+  position: string;
+};
+
 /**
  * Returns the earliest round-one tee time available for a synced golfer.
  */
@@ -57,6 +69,86 @@ function getGolferRoundOneTeeTimeMs(
   return typeof storedTeeTime === "string"
     ? parseDataGolfTeeTimeToMs(storedTeeTime)
     : undefined;
+}
+
+function getGolferEventEarnings(golfer: EnhancedGolfer): number | undefined {
+  const earnings = golfer.historicalEvent?.earnings;
+  return typeof earnings === "number" && Number.isFinite(earnings)
+    ? earnings
+    : undefined;
+}
+
+function getTeamGolferEventEarningsTotal(team: TournamentSyncTeam): {
+  total: number;
+  golferCount: number;
+} {
+  let total = 0;
+  let golferCount = 0;
+
+  for (const golfer of team.golfers) {
+    const earnings = getGolferEventEarnings(golfer);
+    total += earnings ?? 0;
+    golferCount += 1;
+  }
+
+  return { total, golferCount };
+}
+
+function getTeamTournamentRank(args: {
+  team: TournamentSyncTeam;
+  teams: TournamentSyncTeam[];
+  tournamentCompleted: boolean;
+}): TeamTournamentRank {
+  const sameTour = (team: TournamentSyncTeam) =>
+    team.tour?._id === args.team.tour?._id;
+  const teamScore = args.team.score ?? 0;
+  const teamsAhead = args.teams.filter(
+    (team) => sameTour(team) && (team.score ?? 0) < teamScore,
+  ).length;
+  const teamsTied = args.teams.filter(
+    (team) => sameTour(team) && (team.score ?? 0) === teamScore,
+  ).length;
+
+  if (args.team.position === "CUT") {
+    return { teamsAhead, teamsTied, position: "CUT" };
+  }
+
+  if (!args.tournamentCompleted || teamsAhead !== 0 || teamsTied <= 1) {
+    return {
+      teamsAhead,
+      teamsTied,
+      position: teamsTied > 1 ? `T${teamsAhead + 1}` : `${teamsAhead + 1}`,
+    };
+  }
+
+  const firstPlaceTeams = args.teams.filter(
+    (team) => sameTour(team) && (team.score ?? 0) === teamScore,
+  );
+  const tiebreakRows = firstPlaceTeams.map((team) => ({
+    team,
+    ...getTeamGolferEventEarningsTotal(team),
+  }));
+
+  if (tiebreakRows.some((row) => row.golferCount < 10)) {
+    return { teamsAhead, teamsTied, position: `T${teamsAhead + 1}` };
+  }
+
+  const highestEarnings = Math.max(...tiebreakRows.map((row) => row.total));
+  const winners = tiebreakRows.filter((row) => row.total === highestEarnings);
+  if (winners.length !== 1) {
+    return { teamsAhead, teamsTied, position: `T${teamsAhead + 1}` };
+  }
+
+  if (winners[0].team._id === args.team._id) {
+    return { teamsAhead: 0, teamsTied: 1, position: "1" };
+  }
+
+  const tiedSecondCount = firstPlaceTeams.length - 1;
+  return {
+    teamsAhead: 1,
+    teamsTied: tiedSecondCount,
+    position: tiedSecondCount > 1 ? "T2" : "2",
+  };
 }
 
 /**
@@ -1821,10 +1913,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           );
         }
       }
-      const updatedTeams: (Doc<"teams"> & {
-        tour?: Doc<"tours">;
-        tourCard?: Doc<"tourCards">;
-      })[] = [];
+      const updatedTeams: TournamentSyncTeam[] = [];
       for (const t of teams) {
         currentRound = getTournamentTeamSyncRound({
           golfers: t.golfers,
@@ -2024,20 +2113,11 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
       }
       for (const t of updatedTeams) {
         if (t._id) {
-          const teamsAhead = updatedTeams.filter(
-            (ut) =>
-              ut.tour?._id === t.tour?._id && (ut.score ?? 0) < (t.score ?? 0),
-          ).length;
           const teamsAheadPast = updatedTeams.filter(
             (ut) =>
               ut.tour?._id === t.tour?._id &&
               (ut.score ?? 0) - (ut.today ?? 0) <
                 (t.score ?? 0) - (t.today ?? 0),
-          ).length;
-          const teamsTied = updatedTeams.filter(
-            (ut) =>
-              ut.tour?._id === t.tour?._id &&
-              (ut.score ?? 0) === (t.score ?? 0),
           ).length;
           const teamsTiedPast = updatedTeams.filter(
             (ut) =>
@@ -2045,9 +2125,11 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
               (ut.score ?? 0) - (ut.today ?? 0) ===
                 (t.score ?? 0) - (t.today ?? 0),
           ).length;
-          if (teamsAhead === 0 && teamsTied > 0) {
-            // TODO Implement golfers earnings tiebreaker
-          }
+          const teamRank = getTeamTournamentRank({
+            team: t,
+            teams: updatedTeams,
+            tournamentCompleted: tournamentStatus === "completed",
+          });
           await ctx.runMutation(api.functions.teams.updateTeam, {
             team: {
               _id: t._id,
@@ -2068,14 +2150,17 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
               roundThree: t.roundThree,
               roundFourTeeTime: t.roundFourTeeTime,
               roundFour: t.roundFour,
-              earnings: awardTeamEarnings(tier, teamsAhead, teamsTied),
-              points: awardTeamPlayoffPoints(tier, teamsAhead, teamsTied),
-              position:
-                t.position === "CUT"
-                  ? "CUT"
-                  : teamsTied > 1
-                    ? `T${teamsAhead + 1}`
-                    : `${teamsAhead + 1}`,
+              earnings: awardTeamEarnings(
+                tier,
+                teamRank.teamsAhead,
+                teamRank.teamsTied,
+              ),
+              points: awardTeamPlayoffPoints(
+                tier,
+                teamRank.teamsAhead,
+                teamRank.teamsTied,
+              ),
+              position: teamRank.position,
               pastPosition:
                 teamsTiedPast > 1
                   ? `T${teamsAheadPast + 1}`
@@ -2598,10 +2683,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           );
         }
       }
-      const updatedTeams: (Doc<"teams"> & {
-        tour?: Doc<"tours">;
-        tourCard?: Doc<"tourCards">;
-      })[] = [];
+      const updatedTeams: TournamentSyncTeam[] = [];
       for (const t of teams) {
         currentRound = getTournamentTeamSyncRound({
           golfers: t.golfers,
@@ -2800,20 +2882,11 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
       }
       for (const t of updatedTeams) {
         if (t._id) {
-          const teamsAhead = updatedTeams.filter(
-            (ut) =>
-              ut.tour?._id === t.tour?._id && (ut.score ?? 0) < (t.score ?? 0),
-          ).length;
           const teamsAheadPast = updatedTeams.filter(
             (ut) =>
               ut.tour?._id === t.tour?._id &&
               (ut.score ?? 0) - (ut.today ?? 0) <
                 (t.score ?? 0) - (t.today ?? 0),
-          ).length;
-          const teamsTied = updatedTeams.filter(
-            (ut) =>
-              ut.tour?._id === t.tour?._id &&
-              (ut.score ?? 0) === (t.score ?? 0),
           ).length;
           const teamsTiedPast = updatedTeams.filter(
             (ut) =>
@@ -2821,9 +2894,11 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
               (ut.score ?? 0) - (ut.today ?? 0) ===
                 (t.score ?? 0) - (t.today ?? 0),
           ).length;
-          if (teamsAhead === 0 && teamsTied > 0) {
-            // TODO Implement golfers earnings tiebreaker
-          }
+          const teamRank = getTeamTournamentRank({
+            team: t,
+            teams: updatedTeams,
+            tournamentCompleted: tournamentStatus === "completed",
+          });
           await ctx.runMutation(api.functions.teams.updateTeam, {
             team: {
               _id: t._id,
@@ -2844,14 +2919,17 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
               roundThree: t.roundThree,
               roundFourTeeTime: t.roundFourTeeTime,
               roundFour: t.roundFour,
-              earnings: awardTeamEarnings(tier, teamsAhead, teamsTied),
-              points: awardTeamPlayoffPoints(tier, teamsAhead, teamsTied),
-              position:
-                t.position === "CUT"
-                  ? "CUT"
-                  : teamsTied > 1
-                    ? `T${teamsAhead + 1}`
-                    : `${teamsAhead + 1}`,
+              earnings: awardTeamEarnings(
+                tier,
+                teamRank.teamsAhead,
+                teamRank.teamsTied,
+              ),
+              points: awardTeamPlayoffPoints(
+                tier,
+                teamRank.teamsAhead,
+                teamRank.teamsTied,
+              ),
+              position: teamRank.position,
               pastPosition:
                 teamsTiedPast > 1
                   ? `T${teamsAheadPast + 1}`

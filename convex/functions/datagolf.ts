@@ -588,7 +588,7 @@ export const fetchHistoricalEventDataEvents = action({
     const format = (options.format || "json") as "json" | "csv";
     const endpoint = `/historical-event-data/events?tour=${options.tour}&event_id=${tournament.apiId}&year=${options.year}&file_format=${format}`;
     const data = await fetchFromDataGolf<Record<string, unknown>>(endpoint);
-    if (!data.scores || !Array.isArray(data.scores))
+    if (!data.event_stats || !Array.isArray(data.event_stats))
       return {
         ok: true,
         skipped: true,
@@ -597,10 +597,7 @@ export const fetchHistoricalEventDataEvents = action({
         tournamentName: tournament.name,
       };
 
-    const processedScores =
-      data.event_stats && Array.isArray(data.event_stats)
-        ? data.event_stats
-        : [];
+    const processedEventStats = data.event_stats;
     const info = data as { event_name?: string } | undefined;
     const eventName = String(info?.event_name || "").trim();
     const compatible = checkCompatabilityOfEventNames(
@@ -630,7 +627,7 @@ export const fetchHistoricalEventDataEvents = action({
         actualTokens: compatible.actualTokens,
       };
     }
-    if (!processedScores.length) {
+    if (!processedEventStats.length) {
       return {
         ok: true,
         skipped: true,
@@ -643,7 +640,7 @@ export const fetchHistoricalEventDataEvents = action({
 
     return {
       ...data,
-      event_stats: processedScores.map(validateDataGolfWinningsPlayer),
+      event_stats: processedEventStats.map(validateDataGolfWinningsPlayer),
     } as DataGolfHistoricalEventDataResponse;
   },
 });

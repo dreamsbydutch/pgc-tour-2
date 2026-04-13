@@ -478,7 +478,7 @@ export const getExternalDataForTournament = internalAction({
         rankingData: DataGolfRankingsResponse;
         liveData: DataGolfLiveModelPredictionsResponse;
         historicalData: DataGolfHistoricalRoundDataResponse | undefined;
-        winningsData: DataGolfHistoricalEventDataResponse | undefined;
+        historicalEventData: DataGolfHistoricalEventDataResponse | undefined;
       }
     | { ok: false }
   > => {
@@ -516,7 +516,7 @@ export const getExternalDataForTournament = internalAction({
             },
           })
         : undefined;
-    const winningsData =
+    const historicalEventData =
       args.tournament.endDate < Date.now()
         ? await ctx.runAction(
             api.functions.datagolf.fetchHistoricalEventDataEvents,
@@ -542,7 +542,7 @@ export const getExternalDataForTournament = internalAction({
       historicalData: historicalData as unknown as
         | DataGolfHistoricalRoundDataResponse
         | undefined,
-      winningsData: winningsData as unknown as
+      historicalEventData: historicalEventData as unknown as
         | DataGolfHistoricalEventDataResponse
         | undefined,
     };
@@ -576,7 +576,7 @@ export const getAllDataForTournament = internalAction({
         rankingData: DataGolfRankingsResponse;
         liveData: DataGolfLiveModelPredictionsResponse;
         historicalData: DataGolfHistoricalRoundDataResponse | undefined;
-        winningsData: DataGolfHistoricalEventDataResponse | undefined;
+        historicalEventData: DataGolfHistoricalEventDataResponse | undefined;
       }
     | { ok: false }
   > => {
@@ -619,8 +619,8 @@ export const getAllDataForTournament = internalAction({
             (e) => e.dg_id === g.golfer?.apiId,
           )
         : undefined,
-      winnings: externalData.winningsData?.event_stats
-        ? externalData.winningsData?.event_stats.find(
+      historicalEvent: externalData.historicalEventData?.event_stats
+        ? externalData.historicalEventData?.event_stats.find(
             (e) => e.dg_id === g.golfer?.apiId,
           )
         : undefined,
@@ -640,7 +640,7 @@ export const getAllDataForTournament = internalAction({
       rankingData: externalData.rankingData,
       liveData: externalData.liveData,
       historicalData: externalData.historicalData,
-      winningsData: externalData.winningsData,
+      historicalEventData: externalData.historicalEventData,
     };
   },
 });

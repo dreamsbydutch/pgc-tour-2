@@ -14,6 +14,7 @@ import type {
 } from "../_generated/server";
 import type {
   DataGolfFieldPlayer,
+  DataGolfHistoricalEventDataStat,
   DataGolfHistoricalPlayer,
   DataGolfLiveModelPlayer,
   DataGolfRankedPlayer,
@@ -1003,6 +1004,7 @@ export type EnhancedGolfer = {
   ranking?: DataGolfRankedPlayer;
   live?: DataGolfLiveModelPlayer;
   historical?: DataGolfHistoricalPlayer;
+  historicalEvent?: DataGolfHistoricalEventDataStat;
   tournamentGolfer?: Doc<"tournamentGolfers">;
   golfer?: Doc<"golfers">;
 };
