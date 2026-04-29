@@ -7,11 +7,19 @@ import {
   formatNumberToPercentage,
   formatTeeTimeTimeOfDay,
   formatToPar,
+  getMemberRowHighlightClass,
   isPlayerCut,
   parseTeeTimeValueToMs,
 } from "@/lib";
+import type { MajorChampionBadgesByMemberId } from "@/hooks";
 import { MoveDown, MoveHorizontal, MoveUp } from "lucide-react";
-import { Table, TableBody, TableHeader, TableRow } from "@/components/ui";
+import {
+  MemberNameWithBadges,
+  Table,
+  TableBody,
+  TableHeader,
+  TableRow,
+} from "@/components/ui";
 import {
   EnhancedTournamentGolferDoc,
   EnhancedTournamentTeamDoc,
@@ -43,6 +51,9 @@ export function PGCLeaderboard(props: {
   tournament: TournamentDoc;
   activeTourId: string;
   variant: "regular" | "playoff";
+  currentTourCardId?: string | null;
+  friendIds?: ReadonlySet<string>;
+  majorChampionBadgesByMemberId?: MajorChampionBadgesByMemberId;
 }) {
   if (!props.teams || props.teams.length === 0) {
     return <PGCLeaderboardSkeleton />;
@@ -75,6 +86,9 @@ export function PGCLeaderboard(props: {
             key={team._id}
             tournament={props.tournament}
             team={team}
+            currentTourCardId={props.currentTourCardId}
+            friendIds={props.friendIds}
+            majorChampionBadgesByMemberId={props.majorChampionBadgesByMemberId}
           />
         </>
       ))}
@@ -106,6 +120,9 @@ function PGCLeaderboardSkeleton() {
 function LeaderboardListing({
   tournament,
   team,
+  currentTourCardId,
+  friendIds,
+  majorChampionBadgesByMemberId,
 }: {
   tournament: {
     currentRound?: number | undefined;
@@ -116,11 +133,15 @@ function LeaderboardListing({
     teamGolfers?: EnhancedTournamentGolferDoc[];
     posChange: number;
   };
+  currentTourCardId?: string | null;
+  friendIds?: ReadonlySet<string>;
+  majorChampionBadgesByMemberId?: MajorChampionBadgesByMemberId;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const isCut = isPlayerCut(team.position);
-  const isUser = false;
-  const isFriend = false;
+  const isUser =
+    !!currentTourCardId && String(team.tourCardId) === currentTourCardId;
+  const isFriend = !!team.memberId && !!friendIds?.has(String(team.memberId));
   const onToggleOpen = () => setIsOpen((v) => !v);
   const rowClass = getLeaderboardRowClass({
     isCut,
@@ -141,7 +162,14 @@ function LeaderboardListing({
         </div>
 
         <div className="col-span-4 flex items-center justify-center place-self-center font-varela text-lg sm:col-span-10">
-          {team.displayName}
+          <MemberNameWithBadges
+            name={team.displayName ?? ""}
+            badges={
+              team.memberId
+                ? majorChampionBadgesByMemberId?.[String(team.memberId)]
+                : undefined
+            }
+          />
         </div>
 
         <div className="col-span-2 place-self-center font-varela text-base sm:col-span-5">
@@ -454,13 +482,14 @@ function getLeaderboardRowClass(args: {
   isUser: boolean;
   isFriend: boolean;
 }): string {
-  const classes = [
+  return cn(
     "col-span-10 grid grid-flow-row grid-cols-10 py-0.5 sm:grid-cols-33",
-  ];
-  if (args.isUser) classes.push("bg-slate-200 font-semibold");
-  else if (args.isFriend) classes.push("bg-slate-100");
-  if (args.isCut) classes.push("text-gray-400");
-  return classes.join(" ");
+    getMemberRowHighlightClass({
+      isCurrent: args.isUser,
+      isFriend: args.isFriend,
+    }),
+    args.isCut && "text-gray-400",
+  );
 }
 function ScoreCell(args: {
   value: ReactNode;

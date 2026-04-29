@@ -78,6 +78,7 @@ function TournamentRoute() {
       golfers={data.golfers}
       allTournaments={data.allTournaments}
       userTourCard={data.userTourCard}
+      viewerMember={member ?? null}
       onTournamentChange={(nextTournamentId) => {
         navigate({
           search: (prev) => ({

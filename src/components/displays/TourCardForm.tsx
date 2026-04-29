@@ -17,11 +17,13 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  MemberNameWithBadges,
   DialogTitle,
 } from "@/ui";
 import { DEFAULT_MAX_PARTICIPANTS } from "@/lib/constants";
 import { cn, formatMoney, formatMonthDay, getMemberDisplayName } from "@/lib";
 import { SeasonDoc, TourCardDoc } from "convex/types/types";
+import { useCurrentSeasonMajorChampionBadges } from "@/hooks";
 
 /**
  * TourCardForm
@@ -198,6 +200,7 @@ function TourCardOutput(props: {
   member: Doc<"members">;
   currentTourCard: TourCardDoc;
 }) {
+  const majorChampionBadgesByMemberId = useCurrentSeasonMajorChampionBadges();
   const currentTour = props.tours?.find(
     (t) => t.tour._id === props.currentTourCard.tourId,
   ) as { tour: Doc<"tours">; tourCards: TourCardDoc[] } | undefined;
@@ -220,7 +223,10 @@ function TourCardOutput(props: {
           className="h-3/4 max-h-32 w-3/4 max-w-32 object-contain"
         />
         <h2 className="text-2xl font-bold text-gray-800">
-          {getMemberDisplayName(props.member, undefined)}
+          <MemberNameWithBadges
+            name={getMemberDisplayName(props.member, undefined)}
+            badges={majorChampionBadgesByMemberId[String(props.member._id)]}
+          />
         </h2>
         <p className="text-base italic text-gray-600">
           {currentTour.tour.name}

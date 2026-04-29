@@ -10,11 +10,12 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { LogIn, UserRound } from "lucide-react";
 import { useMemo } from "react";
 
-import { Button, Skeleton } from "@/ui";
+import { Button, MemberNameWithBadges, Skeleton } from "@/ui";
 import { NAV_ITEMS } from "@/lib";
 import type { NavigationContainerProps } from "@/lib";
 import { cn, formatUserDisplayName, isNavItemActive } from "@/lib";
 import { api, useQuery } from "@/convex";
+import { useCurrentSeasonMajorChampionBadges } from "@/hooks";
 
 const keepParams = <TParams extends Record<string, string>>(current: TParams) =>
   current;
@@ -163,7 +164,14 @@ export function NavigationContainer(props: NavigationContainerProps) {
               <div className="flex items-center gap-2">
                 <div className="hidden lg:flex lg:flex-col lg:items-end lg:gap-1">
                   <span className="text-lg font-bold text-black">
-                    {model.displayName}
+                    <MemberNameWithBadges
+                      name={model.displayName}
+                      badges={
+                        model.memberId
+                          ? model.majorChampionBadgesByMemberId[model.memberId]
+                          : undefined
+                      }
+                    />
                   </span>
                   {typeof model.accountCents === "number" && (
                     <span className="text-sm font-medium text-gray-600">
@@ -224,6 +232,7 @@ function useNavigationContainer(_props: NavigationContainerProps) {
     api.functions.members.getMembers,
     clerkUser ? { options: { clerkId: clerkUser.id } } : "skip",
   );
+  const majorChampionBadgesByMemberId = useCurrentSeasonMajorChampionBadges();
 
   const navItems = useMemo(() => {
     return NAV_ITEMS.map(({ href, icon: Icon, label }) => {
@@ -280,6 +289,14 @@ function useNavigationContainer(_props: NavigationContainerProps) {
     openSignIn: () => openSignIn(),
     isAccountLoading,
     displayName,
+    memberId:
+      memberData &&
+      typeof memberData === "object" &&
+      !Array.isArray(memberData) &&
+      "_id" in memberData
+        ? String(memberData._id)
+        : null,
+    majorChampionBadgesByMemberId,
     avatarUrl: clerkUser?.imageUrl,
     accountCents,
   };

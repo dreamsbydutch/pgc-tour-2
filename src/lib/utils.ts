@@ -26,6 +26,16 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function getMemberRowHighlightClass(args: {
+  isCurrent?: boolean | null;
+  isFriend?: boolean | null;
+}) {
+  return cn(
+    args.isCurrent && "bg-slate-300 font-bold text-slate-950",
+    !args.isCurrent && args.isFriend && "bg-slate-100",
+  );
+}
+
 /**
  * Builds the standard AdminDataTable "actions" column used by CRUD screens.
  */

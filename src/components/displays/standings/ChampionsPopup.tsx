@@ -1,11 +1,7 @@
 import { Link } from "@tanstack/react-router";
-import {
-  capitalize,
-  formatScore,
-  hasItems,
-  isNonEmptyString,
-} from "@/lib";
-import { Skeleton } from "@/ui";
+import { useCurrentSeasonMajorChampionBadges } from "@/hooks";
+import { capitalize, formatScore, hasItems, isNonEmptyString } from "@/lib";
+import { MemberNameWithBadges, Skeleton } from "@/ui";
 
 /**
  * Displays the champions of the most recent tournament.
@@ -26,6 +22,7 @@ import { Skeleton } from "@/ui";
 export function ChampionsPopup(props: {
   champs?: {
     id: number;
+    memberId?: string;
     displayName: string;
     score: number;
     tournament: {
@@ -54,6 +51,7 @@ export function ChampionsPopup(props: {
   };
   loading?: boolean;
 }) {
+  const majorChampionBadgesByMemberId = useCurrentSeasonMajorChampionBadges();
   const model = useChampionsPopup(props);
   if (model.status === "loading") return <ChampionsPopupSkeleton />;
   if (model.status === "hidden") return null;
@@ -98,7 +96,14 @@ export function ChampionsPopup(props: {
                   />
                 )}
                 <div className="flex gap-2 text-xl font-semibold">
-                  {capitalize(champ.displayName)}
+                  <MemberNameWithBadges
+                    name={capitalize(champ.displayName)}
+                    badges={
+                      champ.memberId
+                        ? majorChampionBadgesByMemberId[champ.memberId]
+                        : undefined
+                    }
+                  />
                 </div>
                 <div className="text-lg font-semibold">
                   {formatScore(champ.score)}
@@ -145,6 +150,7 @@ export function ChampionsPopup(props: {
 function useChampionsPopup(args: {
   champs?: {
     id: number;
+    memberId?: string;
     displayName: string;
     score: number;
     tournament: {
@@ -181,6 +187,7 @@ function useChampionsPopup(args: {
         tournament: NonNullable<typeof args.tournament>;
         champs: Array<{
           id: number;
+          memberId?: string;
           displayName: string;
           score: number;
           tournamentId: string;
@@ -217,6 +224,7 @@ function useChampionsPopup(args: {
 
     return {
       id: champ.id,
+      memberId: champ.memberId,
       displayName: champ.displayName,
       score: champ.score,
       tournamentId: champ.tournament.id,

@@ -105,3 +105,103 @@ export const getStandingsViewData = query({
     };
   },
 });
+
+export const getCurrentSeasonMajorChampionBadges = query({
+  args: {},
+  handler: async (ctx) => {
+    const currentYear = new Date().getFullYear();
+    let currentSeason = await ctx.db
+      .query("seasons")
+      .withIndex("by_year", (q) => q.eq("year", currentYear))
+      .first();
+
+    if (!currentSeason) {
+      const seasons = await ctx.db.query("seasons").collect();
+      currentSeason =
+        [...seasons].sort((a, b) => {
+          if (a.year !== b.year) return b.year - a.year;
+          return b.number - a.number;
+        })[0] ?? null;
+    }
+
+    if (!currentSeason) return {};
+
+    const tiers = await ctx.db
+      .query("tiers")
+      .withIndex("by_season", (q) => q.eq("seasonId", currentSeason._id))
+      .collect();
+
+    const majorTierIds = new Set(
+      tiers
+        .filter((tier) => (tier.name ?? "").trim().toLowerCase() === "major")
+        .map((tier) => tier._id),
+    );
+
+    if (majorTierIds.size === 0) return {};
+
+    const tournaments = await ctx.db
+      .query("tournaments")
+      .withIndex("by_season", (q) => q.eq("seasonId", currentSeason._id))
+      .collect();
+
+    const majorTournaments = tournaments
+      .filter((tournament) => majorTierIds.has(tournament.tierId))
+      .sort((a, b) => a.startDate - b.startDate);
+
+    const badgesByMemberId: Record<
+      string,
+      Array<{
+        tournamentId: string;
+        tournamentName: string;
+        logoUrl: string | null;
+      }>
+    > = {};
+
+    const parseRank = (position: string | null | undefined) => {
+      if (!position) return Number.POSITIVE_INFINITY;
+      const match = /\d+/.exec(position);
+      if (!match) return Number.POSITIVE_INFINITY;
+      const value = Number.parseInt(match[0], 10);
+      return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
+    };
+
+    for (const tournament of majorTournaments) {
+      const teams = await ctx.db
+        .query("teams")
+        .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
+        .collect();
+
+      const winningTeams = teams.filter(
+        (team) => parseRank(team.position) === 1,
+      );
+      if (winningTeams.length === 0) continue;
+
+      const winningTourCards = await Promise.all(
+        winningTeams.map((team) => ctx.db.get(team.tourCardId)),
+      );
+
+      for (const tourCard of winningTourCards) {
+        if (!tourCard?.memberId) continue;
+
+        const memberId = String(tourCard.memberId);
+        const currentBadges = badgesByMemberId[memberId] ?? [];
+        if (
+          currentBadges.some(
+            (badge) => badge.tournamentId === String(tournament._id),
+          )
+        ) {
+          continue;
+        }
+
+        currentBadges.push({
+          tournamentId: String(tournament._id),
+          tournamentName: tournament.name,
+          logoUrl: tournament.logoUrl ?? null,
+        });
+        badgesByMemberId[memberId] = currentBadges;
+      }
+    }
+
+    return badgesByMemberId;
+  },
+});

@@ -6,8 +6,10 @@ import {
   PGCLeaderboard,
   PGALeaderboard,
 } from "@/displays";
+import { useCurrentSeasonMajorChampionBadges } from "@/hooks";
 import {
   EnhancedTournamentGolferDoc,
+  MemberDoc,
   EnhancedTournamentTeamDoc,
   TourCardDoc,
   TourDoc,
@@ -35,6 +37,7 @@ export function LeaderboardView(props: {
   golfers: EnhancedTournamentGolferDoc[];
   allTournaments: TournamentDoc[];
   userTourCard?: TourCardDoc | null;
+  viewerMember?: MemberDoc | null;
   onTournamentChange: (tournamentId: string) => void;
   activeTourId: string;
   onChangeTourId: (tourId: string) => void;
@@ -43,6 +46,10 @@ export function LeaderboardView(props: {
 }) {
   const activeTourShortForm =
     props.tours?.find((t) => t._id === props.activeTourId)?.shortForm ?? "";
+  const viewerFriendIds = new Set(
+    (props.viewerMember?.friends ?? []).map((friendId) => String(friendId)),
+  );
+  const majorChampionBadgesByMemberId = useCurrentSeasonMajorChampionBadges();
 
   const tournamentOver = (props.tournament.currentRound ?? 0) === 5;
 
@@ -96,6 +103,9 @@ export function LeaderboardView(props: {
             tournament={props.tournament}
             activeTourId={props.activeTourId}
             variant={props.variant}
+            currentTourCardId={props.userTourCard?._id ?? null}
+            friendIds={viewerFriendIds}
+            majorChampionBadgesByMemberId={majorChampionBadgesByMemberId}
           />
         ) : (
           <>

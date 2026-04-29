@@ -2,14 +2,17 @@ import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useUser } from "@clerk/clerk-react";
 
 import { PointsAndPayoutsDetails, ToursToggle } from "@/displays";
+import { useCurrentSeasonMajorChampionBadges } from "@/hooks";
 import {
   Button,
   Card,
   CardContent,
   CardHeader,
   CardTitle,
+  MemberNameWithBadges,
   Skeleton,
 } from "@/ui";
+import type { MajorChampionBadgesByMemberId } from "@/hooks";
 import { useFriendManagement } from "@/hooks";
 import type {
   ExtendedStandingsTourCard,
@@ -26,6 +29,7 @@ import {
   computeStandingsPositionChangeByTour,
   computeStandingsPositionStrings,
   formatMoney,
+  getMemberRowHighlightClass,
   includesPlayoff,
   isStandingsMember,
   parsePositionToNumber,
@@ -53,6 +57,7 @@ import { Link } from "@tanstack/react-router";
  * @returns Standings UI.
  */
 export function StandingsView(props: StandingsViewProps) {
+  const majorChampionBadgesByMemberId = useCurrentSeasonMajorChampionBadges();
   const model = useStandingsView(props);
 
   if (model.status === "loading") return <StandingsViewSkeleton />;
@@ -163,6 +168,7 @@ export function StandingsView(props: StandingsViewProps) {
                 teamsForPlayoff={model.playoffGroups.goldTeams}
                 strokes={model.playoffStrokesGold}
                 tourLogoUrl={model.toursById.get(String(tc.tourId))?.logoUrl}
+                majorChampionBadgesByMemberId={majorChampionBadgesByMemberId}
               />
             ))}
           </div>
@@ -199,6 +205,7 @@ export function StandingsView(props: StandingsViewProps) {
                 teamsForPlayoff={model.playoffGroups.silverTeams}
                 strokes={model.playoffStrokesSilver}
                 tourLogoUrl={model.toursById.get(String(tc.tourId))?.logoUrl}
+                majorChampionBadgesByMemberId={majorChampionBadgesByMemberId}
               />
             ))}
           </div>
@@ -224,6 +231,7 @@ export function StandingsView(props: StandingsViewProps) {
                 onRemoveFriend={model.onRemoveFriend}
                 renderPositionChange={renderPositionChange}
                 tourLogoUrl={model.toursById.get(String(tc.tourId))?.logoUrl}
+                majorChampionBadgesByMemberId={majorChampionBadgesByMemberId}
               />
             ))}
           </div>
@@ -251,6 +259,7 @@ export function StandingsView(props: StandingsViewProps) {
                 onAddFriend={model.onAddFriend}
                 onRemoveFriend={model.onRemoveFriend}
                 renderPositionChange={renderPositionChange}
+                majorChampionBadgesByMemberId={majorChampionBadgesByMemberId}
               />
             ))}
           </div>
@@ -275,6 +284,7 @@ export function StandingsView(props: StandingsViewProps) {
                 onAddFriend={model.onAddFriend}
                 onRemoveFriend={model.onRemoveFriend}
                 renderPositionChange={renderPositionChange}
+                majorChampionBadgesByMemberId={majorChampionBadgesByMemberId}
               />
             ))}
           </div>
@@ -299,6 +309,7 @@ export function StandingsView(props: StandingsViewProps) {
                 onAddFriend={model.onAddFriend}
                 onRemoveFriend={model.onRemoveFriend}
                 renderPositionChange={renderPositionChange}
+                majorChampionBadgesByMemberId={majorChampionBadgesByMemberId}
               />
             ))}
           </div>
@@ -503,12 +514,7 @@ function useStandingsView(props: StandingsViewProps) {
       tournaments,
       currentSeason: currentSeason ?? null,
     };
-  }, [
-    currentMemberDoc,
-    currentSeason,
-    isLoading,
-    standingsData,
-  ]);
+  }, [currentMemberDoc, currentSeason, isLoading, standingsData]);
 
   const [friendsOnly, setFriendsOnly] = useState(false);
   const friendManagement = useFriendManagement(
@@ -852,6 +858,7 @@ export function StandingsListingRow(props: {
   teamsForPlayoff?: ExtendedStandingsTourCard[];
   strokes?: number[];
   tourLogoUrl?: string;
+  majorChampionBadgesByMemberId: MajorChampionBadgesByMemberId;
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -945,8 +952,10 @@ export function StandingsListingRow(props: {
       }}
       className={cn(
         "grid cursor-pointer grid-flow-row grid-cols-16 rounded-lg py-[1px] text-center",
-        isCurrent ? "bg-slate-200 font-semibold" : "",
-        !isCurrent && isFriend ? "bg-slate-100" : "",
+        getMemberRowHighlightClass({
+          isCurrent,
+          isFriend,
+        }),
       )}
     >
       <div className="col-span-2 flex place-self-center font-varela text-sm sm:text-base">
@@ -960,7 +969,10 @@ export function StandingsListingRow(props: {
           props.mode === "playoff" && "min-[550px]:col-span-5",
         )}
       >
-        {props.card.displayName}
+        <MemberNameWithBadges
+          name={props.card.displayName ?? ""}
+          badges={props.majorChampionBadgesByMemberId[memberId]}
+        />
       </div>
 
       <div
