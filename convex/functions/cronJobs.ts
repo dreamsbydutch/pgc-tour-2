@@ -43,6 +43,22 @@ type TeamTournamentRank = {
   position: string;
 };
 
+function isDataGolfEventCompleted(value: unknown): boolean {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (!normalized) return false;
+  if (normalized === "true" || normalized === "1") return true;
+
+  return Number.isFinite(Date.parse(normalized));
+}
+
+function hasDataGolfHistoricalEventEarnings(
+  historicalEventData: { event_stats?: unknown[] } | undefined,
+): boolean {
+  return (historicalEventData?.event_stats?.length ?? 0) > 0;
+}
+
 /**
  * Returns the earliest round-one tee time available for a synced golfer.
  */
@@ -1453,8 +1469,14 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         tier,
         type: tournamentType,
       } = activeTournamentData;
-      const { teams, golfers, fieldData, liveData, historicalData } =
-        tournamentStats;
+      const {
+        teams,
+        golfers,
+        fieldData,
+        liveData,
+        historicalData,
+        historicalEventData,
+      } = tournamentStats;
 
       if (tournamentType === "recent") {
         console.log("runTournamentSync: skipped (recent_tournament)", {
@@ -1556,9 +1578,9 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           nowMs: now.getTime(),
           existingStatus: tournament.status,
           openingTeeTimeMs: openingTeeTime,
-          eventCompleted:
-            historicalData?.event_completed === "true" ||
-            historicalData?.event_completed === "1",
+          eventCompleted: isDataGolfEventCompleted(
+            historicalData?.event_completed,
+          ),
         });
         const lifecycleUpdates = getChangedTournamentLifecycleFields({
           tournament,
@@ -1687,9 +1709,9 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         nowMs: now.getTime(),
         existingStatus: tournament.status,
         openingTeeTimeMs: firstTeeTime,
-        eventCompleted:
-          historicalData?.event_completed === "true" ||
-          historicalData?.event_completed === "1",
+        eventCompleted: isDataGolfEventCompleted(
+          historicalData?.event_completed,
+        ),
       });
       const lifecycleUpdates = getChangedTournamentLifecycleFields({
         tournament,
@@ -2128,7 +2150,9 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           const teamRank = getTeamTournamentRank({
             team: t,
             teams: updatedTeams,
-            tournamentCompleted: tournamentStatus === "completed",
+            tournamentCompleted:
+              tournamentStatus === "completed" ||
+              hasDataGolfHistoricalEventEarnings(historicalEventData),
           });
           await ctx.runMutation(api.functions.teams.updateTeam, {
             team: {
@@ -2236,8 +2260,14 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         tier,
         type: tournamentType,
       } = activeTournamentData;
-      const { teams, golfers, fieldData, liveData, historicalData } =
-        tournamentStats;
+      const {
+        teams,
+        golfers,
+        fieldData,
+        liveData,
+        historicalData,
+        historicalEventData,
+      } = tournamentStats;
 
       for (const t of teams) {
         if (t.golfers?.length < 10) {
@@ -2326,9 +2356,9 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           nowMs: now.getTime(),
           existingStatus: tournament.status,
           openingTeeTimeMs: openingTeeTime,
-          eventCompleted:
-            historicalData?.event_completed === "true" ||
-            historicalData?.event_completed === "1",
+          eventCompleted: isDataGolfEventCompleted(
+            historicalData?.event_completed,
+          ),
         });
         const lifecycleUpdates = getChangedTournamentLifecycleFields({
           tournament,
@@ -2457,9 +2487,9 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         nowMs: now.getTime(),
         existingStatus: tournament.status,
         openingTeeTimeMs: firstTeeTime,
-        eventCompleted:
-          historicalData?.event_completed === "true" ||
-          historicalData?.event_completed === "1",
+        eventCompleted: isDataGolfEventCompleted(
+          historicalData?.event_completed,
+        ),
       });
       const lifecycleUpdates = getChangedTournamentLifecycleFields({
         tournament,
@@ -2897,7 +2927,9 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           const teamRank = getTeamTournamentRank({
             team: t,
             teams: updatedTeams,
-            tournamentCompleted: tournamentStatus === "completed",
+            tournamentCompleted:
+              tournamentStatus === "completed" ||
+              hasDataGolfHistoricalEventEarnings(historicalEventData),
           });
           await ctx.runMutation(api.functions.teams.updateTeam, {
             team: {
