@@ -88,19 +88,19 @@ export function PGALeaderboard(props: {
               golfer={{
                 position: golfer.position ?? "-",
                 playerName: golfer.playerName ?? "",
-                score: golfer.score ?? 500,
+                score: golfer.score,
                 apiId: golfer.apiId ?? -1,
                 country: golfer.country ?? null,
-                roundOne: golfer.roundOne ?? 0,
-                roundTwo: golfer.roundTwo ?? 0,
-                roundThree: golfer.roundThree ?? 0,
-                roundFour: golfer.roundFour ?? 0,
+                roundOne: golfer.roundOne,
+                roundTwo: golfer.roundTwo,
+                roundThree: golfer.roundThree,
+                roundFour: golfer.roundFour,
                 posChange: golfer.posChange ?? 0,
                 worldRank: golfer.worldRank ?? 501,
                 rating: golfer.rating ?? -1,
                 group: golfer.group ?? 0,
-                thru: golfer.thru ?? 0,
-                today: golfer.today ?? 500,
+                thru: golfer.thru,
+                today: golfer.today,
                 makeCut: golfer.makeCut ?? 0,
                 topTen: golfer.topTen ?? 0,
                 win: golfer.win ?? 0,
@@ -169,19 +169,19 @@ function LeaderboardListing({
   golfer: {
     position: string;
     playerName: string;
-    score: number;
+    score: number | null | undefined;
     apiId: number;
     country: string | null;
-    roundOne: number;
-    roundTwo: number;
-    roundThree: number;
-    roundFour: number;
+    roundOne: number | null | undefined;
+    roundTwo: number | null | undefined;
+    roundThree: number | null | undefined;
+    roundFour: number | null | undefined;
     posChange: number;
     worldRank: number;
     rating: number;
     group: number;
-    thru: number;
-    today: number;
+    thru: number | null | undefined;
+    today: number | null | undefined;
     makeCut: number;
     topTen: number;
     win: number;
@@ -251,10 +251,10 @@ function PGADropdown(props: {
   golfer: {
     apiId: number;
     country: string | null;
-    roundOne: number;
-    roundTwo: number;
-    roundThree: number;
-    roundFour: number;
+    roundOne: number | null | undefined;
+    roundTwo: number | null | undefined;
+    roundThree: number | null | undefined;
+    roundFour: number | null | undefined;
     position: string;
     group: number;
     rating: number;
@@ -340,12 +340,12 @@ function ScoreDisplay(props: {
     position: string;
     group: number;
     rating: number;
-    roundOne: number;
-    roundTwo: number;
-    roundThree: number;
-    roundFour: number;
-    thru: number;
-    today: number;
+    roundOne: number | null | undefined;
+    roundTwo: number | null | undefined;
+    roundThree: number | null | undefined;
+    roundFour: number | null | undefined;
+    thru: number | null | undefined;
+    today: number | null | undefined;
     teeTimeDisplay: string | number | null | undefined;
   };
   tournamentComplete: boolean;
@@ -363,22 +363,42 @@ function ScoreDisplay(props: {
         />
         <div className="col-span-1 hidden sm:flex" />
         <ScoreCell
-          value={props.golfer.roundOne > 0 ? props.golfer.roundOne : "-"}
+          value={
+            typeof props.golfer.roundOne === "number" &&
+            props.golfer.roundOne > 0
+              ? props.golfer.roundOne
+              : "-"
+          }
           className="col-span-1"
           hiddenOnMobile
         />
         <ScoreCell
-          value={props.golfer.roundTwo > 0 ? props.golfer.roundTwo : "-"}
+          value={
+            typeof props.golfer.roundTwo === "number" &&
+            props.golfer.roundTwo > 0
+              ? props.golfer.roundTwo
+              : "-"
+          }
           className="col-span-1"
           hiddenOnMobile
         />
         <ScoreCell
-          value={props.golfer.roundThree > 0 ? props.golfer.roundThree : "-"}
+          value={
+            typeof props.golfer.roundThree === "number" &&
+            props.golfer.roundThree > 0
+              ? props.golfer.roundThree
+              : "-"
+          }
           className="col-span-1"
           hiddenOnMobile
         />
         <ScoreCell
-          value={props.golfer.roundFour > 0 ? props.golfer.roundFour : "-"}
+          value={
+            typeof props.golfer.roundFour === "number" &&
+            props.golfer.roundFour > 0
+              ? props.golfer.roundFour
+              : "-"
+          }
           className="col-span-1"
           hiddenOnMobile
         />
@@ -399,22 +419,42 @@ function ScoreDisplay(props: {
         />
         <div className="col-span-1 hidden sm:flex" />
         <ScoreCell
-          value={props.golfer.roundOne > 0 ? props.golfer.roundOne : "-"}
+          value={
+            typeof props.golfer.roundOne === "number" &&
+            props.golfer.roundOne > 0
+              ? props.golfer.roundOne
+              : "-"
+          }
           className="col-span-1"
           hiddenOnMobile
         />
         <ScoreCell
-          value={props.golfer.roundTwo > 0 ? props.golfer.roundTwo : "-"}
+          value={
+            typeof props.golfer.roundTwo === "number" &&
+            props.golfer.roundTwo > 0
+              ? props.golfer.roundTwo
+              : "-"
+          }
           className="col-span-1"
           hiddenOnMobile
         />
         <ScoreCell
-          value={props.golfer.roundThree > 0 ? props.golfer.roundThree : "-"}
+          value={
+            typeof props.golfer.roundThree === "number" &&
+            props.golfer.roundThree > 0
+              ? props.golfer.roundThree
+              : "-"
+          }
           className="col-span-1"
           hiddenOnMobile
         />
         <ScoreCell
-          value={props.golfer.roundFour > 0 ? props.golfer.roundFour : "-"}
+          value={
+            typeof props.golfer.roundFour === "number" &&
+            props.golfer.roundFour > 0
+              ? props.golfer.roundFour
+              : "-"
+          }
           className="col-span-1"
           hiddenOnMobile
         />
@@ -445,22 +485,42 @@ function ScoreDisplay(props: {
       )}
       <div className="col-span-1 hidden sm:flex" />
       <ScoreCell
-        value={props.golfer.roundOne > 0 ? props.golfer.roundOne : "-"}
+        value={
+          typeof props.golfer.roundOne === "number" &&
+          props.golfer.roundOne > 0
+            ? props.golfer.roundOne
+            : "-"
+        }
         className="col-span-1"
         hiddenOnMobile
       />
       <ScoreCell
-        value={props.golfer.roundTwo > 0 ? props.golfer.roundTwo : "-"}
+        value={
+          typeof props.golfer.roundTwo === "number" &&
+          props.golfer.roundTwo > 0
+            ? props.golfer.roundTwo
+            : "-"
+        }
         className="col-span-1"
         hiddenOnMobile
       />
       <ScoreCell
-        value={props.golfer.roundThree > 0 ? props.golfer.roundThree : "-"}
+        value={
+          typeof props.golfer.roundThree === "number" &&
+          props.golfer.roundThree > 0
+            ? props.golfer.roundThree
+            : "-"
+        }
         className="col-span-1"
         hiddenOnMobile
       />
       <ScoreCell
-        value={props.golfer.roundFour > 0 ? props.golfer.roundFour : "-"}
+        value={
+          typeof props.golfer.roundFour === "number" &&
+          props.golfer.roundFour > 0
+            ? props.golfer.roundFour
+            : "-"
+        }
         className="col-span-1"
         hiddenOnMobile
       />

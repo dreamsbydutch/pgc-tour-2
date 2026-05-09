@@ -223,7 +223,11 @@ function TeamGolfersTable(props: {
     tournamentRound?: number;
   }) => {
     if (isPlayerCut(golfer.position)) {
-      if (golfer.position === "WD" && (tournamentRound ?? 5) < 3) {
+      if (
+        golfer.position === "WD" &&
+        (tournamentRound ?? 5) < 3 &&
+        golfer.today != null
+      ) {
         return (
           <>
             <td className="text-xs">{formatToPar(golfer.today)}</td>

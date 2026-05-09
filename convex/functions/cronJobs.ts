@@ -251,6 +251,195 @@ function isWithdrawnOrDisqualifiedPosition(
   return position === "WD" || position === "DQ";
 }
 
+function shouldApplyPreStartNonStarterReplacement(args: {
+  isPlayoff: boolean;
+  eventIndex?: number;
+}): boolean {
+  return !args.isPlayoff || args.eventIndex === 1;
+}
+
+function hasTournamentPlayEvidence(golfer: EnhancedGolfer): boolean {
+  const thru = getHoleCount(golfer.live?.thru);
+  if (typeof thru === "number" && thru > 0) {
+    return true;
+  }
+
+  return Boolean(
+    (golfer.live?.R1 ?? 0) > 0 ||
+      (golfer.live?.R2 ?? 0) > 0 ||
+      (golfer.live?.R3 ?? 0) > 0 ||
+      (golfer.live?.R4 ?? 0) > 0 ||
+      (golfer.historical?.round_1?.score ?? 0) > 0 ||
+      (golfer.historical?.round_2?.score ?? 0) > 0 ||
+      (golfer.historical?.round_3?.score ?? 0) > 0 ||
+      (golfer.historical?.round_4?.score ?? 0) > 0 ||
+      (golfer.tournamentGolfer?.roundOne ?? 0) > 0 ||
+      (golfer.tournamentGolfer?.roundTwo ?? 0) > 0 ||
+      (golfer.tournamentGolfer?.roundThree ?? 0) > 0 ||
+      (golfer.tournamentGolfer?.roundFour ?? 0) > 0 ||
+      (golfer.live?.current_score ?? 0) !== 0,
+  );
+}
+
+function isPreStartNonStarter(args: {
+  golfer: EnhancedGolfer;
+  allowPreStartNonStarterReplacement: boolean;
+}): boolean {
+  if (!args.allowPreStartNonStarterReplacement) {
+    return false;
+  }
+
+  return (
+    typeof getGolferRoundOneTeeTimeMs(args.golfer) !== "number" &&
+    !hasTournamentPlayEvidence(args.golfer)
+  );
+}
+
+function getTournamentSyncPosition(args: {
+  golfer: EnhancedGolfer;
+  allowPreStartNonStarterReplacement: boolean;
+}): string | undefined {
+  if (isPreStartNonStarter(args)) {
+    return "WD";
+  }
+
+  return getEffectiveTournamentPosition(args.golfer);
+}
+
+function getGolferReplacementRank(golfer: EnhancedGolfer): number {
+  return (
+    golfer.tournamentGolfer?.worldRank ??
+    golfer.ranking?.owgr_rank ??
+    golfer.golfer?.worldRank ??
+    Number.POSITIVE_INFINITY
+  );
+}
+
+function getTeamGolfersByApiIds(
+  golfers: EnhancedGolfer[],
+  golferApiIds: number[],
+): EnhancedGolfer[] {
+  return golferApiIds
+    .map((apiId) =>
+      golfers.find(
+        (golfer) =>
+          golfer.golfer?.apiId === apiId &&
+          (golfer.tournamentGolfer?.group ?? 0) > 0,
+      ),
+    )
+    .filter((golfer): golfer is EnhancedGolfer => Boolean(golfer));
+}
+
+function getReplacementCandidateForGroup(args: {
+  golfers: EnhancedGolfer[];
+  group: number;
+  excludedApiIds: Set<number>;
+  allowPreStartNonStarterReplacement: boolean;
+}): EnhancedGolfer | undefined {
+  return args.golfers
+    .filter((golfer) => {
+      const apiId = golfer.golfer?.apiId;
+      if (!apiId || args.excludedApiIds.has(apiId)) {
+        return false;
+      }
+      if (golfer.tournamentGolfer?.group !== args.group) {
+        return false;
+      }
+      if (
+        isPreStartNonStarter({
+          golfer,
+          allowPreStartNonStarterReplacement:
+            args.allowPreStartNonStarterReplacement,
+        })
+      ) {
+        return false;
+      }
+
+      return !isNonRankingTournamentPosition(
+        getTournamentSyncPosition({
+          golfer,
+          allowPreStartNonStarterReplacement:
+            args.allowPreStartNonStarterReplacement,
+        }),
+      );
+    })
+    .sort((a, b) => getGolferReplacementRank(a) - getGolferReplacementRank(b))[0];
+}
+
+async function applyPreStartNonStarterRosterReplacements(
+  ctx: {
+    runMutation: any;
+  },
+  args: {
+    teams: TournamentSyncTeam[];
+    golfers: EnhancedGolfer[];
+    allowPreStartNonStarterReplacement: boolean;
+  },
+): Promise<void> {
+  if (!args.allowPreStartNonStarterReplacement) {
+    return;
+  }
+
+  for (const team of args.teams) {
+    const rosteredGolfers = team.golfers ?? [];
+    const nonStarters = rosteredGolfers.filter((golfer) =>
+      isPreStartNonStarter({
+        golfer,
+        allowPreStartNonStarterReplacement:
+          args.allowPreStartNonStarterReplacement,
+      }),
+    );
+
+    if (nonStarters.length === 0) {
+      continue;
+    }
+
+    const nextApiIds = [...team.golferIds];
+    const originalRosterKey = nextApiIds.join(",");
+
+    for (const golfer of nonStarters) {
+      const removedApiId = golfer.golfer?.apiId;
+      const removedGroup = golfer.tournamentGolfer?.group;
+      if (!removedApiId || !removedGroup) {
+        continue;
+      }
+
+      const replaceIndex = nextApiIds.findIndex((apiId) => apiId === removedApiId);
+      if (replaceIndex === -1) {
+        continue;
+      }
+
+      const excludedApiIds = new Set(nextApiIds);
+      excludedApiIds.delete(removedApiId);
+
+      const replacement = getReplacementCandidateForGroup({
+        golfers: args.golfers,
+        group: removedGroup,
+        excludedApiIds,
+        allowPreStartNonStarterReplacement:
+          args.allowPreStartNonStarterReplacement,
+      });
+      const replacementApiId = replacement?.golfer?.apiId;
+      if (!replacementApiId) {
+        continue;
+      }
+
+      nextApiIds[replaceIndex] = replacementApiId;
+    }
+
+    if (nextApiIds.join(",") === originalRosterKey) {
+      continue;
+    }
+
+    await ctx.runMutation(api.functions.teams.updateTeamRoster, {
+      teamId: team._id,
+      apiIds: nextApiIds,
+    });
+    team.golferIds = nextApiIds;
+    team.golfers = getTeamGolfersByApiIds(args.golfers, nextApiIds);
+  }
+}
+
 /**
  * Returns the stored score for a completed round when available.
  */
@@ -303,8 +492,22 @@ function getTournamentRoundScore(args: {
   currentRound: number;
   isRoundRunning: boolean;
   coursePar: number;
+  allowPreStartNonStarterReplacement: boolean;
 }): number | undefined {
-  const position = getEffectiveTournamentPosition(args.golfer);
+  if (
+    isPreStartNonStarter({
+      golfer: args.golfer,
+      allowPreStartNonStarterReplacement:
+        args.allowPreStartNonStarterReplacement,
+    })
+  ) {
+    return undefined;
+  }
+
+  const position = getTournamentSyncPosition({
+    golfer: args.golfer,
+    allowPreStartNonStarterReplacement: args.allowPreStartNonStarterReplacement,
+  });
   const completedScore = getCompletedRoundScore(args.golfer, args.roundNumber);
 
   if (isWithdrawnOrDisqualifiedPosition(position)) {
@@ -340,6 +543,7 @@ function getCurrentRoundPenaltyToday(args: {
   currentRound: number;
   isRoundRunning: boolean;
   coursePar: number;
+  allowPreStartNonStarterReplacement: boolean;
 }): number | undefined {
   if (args.currentRound !== 1 && args.currentRound !== 2) {
     return undefined;
@@ -359,6 +563,8 @@ function getCurrentRoundPenaltyToday(args: {
     currentRound: args.currentRound,
     isRoundRunning: args.isRoundRunning,
     coursePar: args.coursePar,
+    allowPreStartNonStarterReplacement:
+      args.allowPreStartNonStarterReplacement,
   });
 
   return roundScore === args.coursePar + 8 ? 8 : undefined;
@@ -372,13 +578,17 @@ function getTournamentTodayValue(args: {
   currentRound: number;
   isRoundRunning: boolean;
   coursePar: number;
+  allowPreStartNonStarterReplacement: boolean;
 }): number | undefined {
   const penaltyToday = getCurrentRoundPenaltyToday(args);
   if (typeof penaltyToday === "number") {
     return penaltyToday;
   }
 
-  const position = getEffectiveTournamentPosition(args.golfer);
+  const position = getTournamentSyncPosition({
+    golfer: args.golfer,
+    allowPreStartNonStarterReplacement: args.allowPreStartNonStarterReplacement,
+  });
   if (isNonRankingTournamentPosition(position)) {
     return undefined;
   }
@@ -400,12 +610,16 @@ function getTournamentThruValue(args: {
   currentRound: number;
   isRoundRunning: boolean;
   coursePar: number;
+  allowPreStartNonStarterReplacement: boolean;
 }): number | undefined {
   if (typeof getCurrentRoundPenaltyToday(args) === "number") {
     return 18;
   }
 
-  const position = getEffectiveTournamentPosition(args.golfer);
+  const position = getTournamentSyncPosition({
+    golfer: args.golfer,
+    allowPreStartNonStarterReplacement: args.allowPreStartNonStarterReplacement,
+  });
   if (isNonRankingTournamentPosition(position)) {
     return undefined;
   }
@@ -425,8 +639,12 @@ function shouldIncludeGolferInTeamLiveWindow(args: {
   currentRound: number;
   isRoundRunning: boolean;
   coursePar: number;
+  allowPreStartNonStarterReplacement: boolean;
 }): boolean {
-  const position = getEffectiveTournamentPosition(args.golfer);
+  const position = getTournamentSyncPosition({
+    golfer: args.golfer,
+    allowPreStartNonStarterReplacement: args.allowPreStartNonStarterReplacement,
+  });
 
   if (position === "CUT" || position === "") {
     return false;
@@ -452,6 +670,7 @@ function isWeekendEligibleTeamPosition(position: string | undefined): boolean {
 function isTeamWeekendCut(args: {
   golfers: EnhancedGolfer[];
   currentRound: number;
+  allowPreStartNonStarterReplacement: boolean;
 }): boolean {
   if (args.currentRound < 3) {
     return false;
@@ -459,7 +678,13 @@ function isTeamWeekendCut(args: {
 
   return (
     args.golfers.filter((golfer) =>
-      isWeekendEligibleTeamPosition(getEffectiveTournamentPosition(golfer)),
+      isWeekendEligibleTeamPosition(
+        getTournamentSyncPosition({
+          golfer,
+          allowPreStartNonStarterReplacement:
+            args.allowPreStartNonStarterReplacement,
+        }),
+      ),
     ).length < 5
   );
 }
@@ -472,11 +697,14 @@ function getTeamLiveWindowGolfers(args: {
   currentRound: number;
   isRoundRunning: boolean;
   coursePar: number;
+  allowPreStartNonStarterReplacement: boolean;
 }): EnhancedGolfer[] {
   if (
     isTeamWeekendCut({
       golfers: args.golfers,
       currentRound: args.currentRound,
+      allowPreStartNonStarterReplacement:
+        args.allowPreStartNonStarterReplacement,
     })
   ) {
     return [];
@@ -505,6 +733,7 @@ function getTeamLiveWindowMean(args: {
   isRoundRunning: boolean;
   coursePar: number;
   metric: "today" | "thru";
+  allowPreStartNonStarterReplacement: boolean;
 }): number | undefined {
   if (args.golfers.length === 0) {
     return undefined;
@@ -531,6 +760,7 @@ function isTeamRoundComplete(args: {
   currentRound: number;
   isRoundRunning: boolean;
   coursePar: number;
+  allowPreStartNonStarterReplacement: boolean;
 }): boolean {
   const roundScores = args.golfers.map((golfer) =>
     getTournamentRoundScore({
@@ -539,6 +769,8 @@ function isTeamRoundComplete(args: {
       currentRound: args.currentRound,
       isRoundRunning: args.isRoundRunning,
       coursePar: args.coursePar,
+      allowPreStartNonStarterReplacement:
+        args.allowPreStartNonStarterReplacement,
     }),
   );
 
@@ -550,6 +782,8 @@ function isTeamRoundComplete(args: {
     isTeamWeekendCut({
       golfers: args.golfers,
       currentRound: args.currentRound,
+      allowPreStartNonStarterReplacement:
+        args.allowPreStartNonStarterReplacement,
     })
   ) {
     return false;
@@ -567,6 +801,7 @@ function getTeamRoundScore(args: {
   currentRound: number;
   isRoundRunning: boolean;
   coursePar: number;
+  allowPreStartNonStarterReplacement: boolean;
 }): number | undefined {
   if (!isTeamRoundComplete(args)) {
     return undefined;
@@ -575,13 +810,15 @@ function getTeamRoundScore(args: {
   const roundScores = args.golfers
     .map((golfer) =>
       getTournamentRoundScore({
-        golfer,
-        roundNumber: args.roundNumber,
-        currentRound: args.currentRound,
-        isRoundRunning: args.isRoundRunning,
-        coursePar: args.coursePar,
-      }),
-    )
+      golfer,
+      roundNumber: args.roundNumber,
+      currentRound: args.currentRound,
+      isRoundRunning: args.isRoundRunning,
+      coursePar: args.coursePar,
+      allowPreStartNonStarterReplacement:
+        args.allowPreStartNonStarterReplacement,
+    }),
+  )
     .filter((score): score is number => typeof score === "number");
 
   if (args.roundNumber <= 2) {
@@ -612,26 +849,7 @@ function hasGolferStartedPlay(golfer: EnhancedGolfer): boolean {
     return true;
   }
 
-  const thru = getHoleCount(golfer.live?.thru);
-  if (typeof thru === "number" && thru > 0) {
-    return true;
-  }
-
-  return Boolean(
-    (golfer.live?.R1 ?? 0) > 0 ||
-      (golfer.live?.R2 ?? 0) > 0 ||
-      (golfer.live?.R3 ?? 0) > 0 ||
-      (golfer.live?.R4 ?? 0) > 0 ||
-      (golfer.historical?.round_1?.score ?? 0) > 0 ||
-      (golfer.historical?.round_2?.score ?? 0) > 0 ||
-      (golfer.historical?.round_3?.score ?? 0) > 0 ||
-      (golfer.historical?.round_4?.score ?? 0) > 0 ||
-      (golfer.tournamentGolfer?.roundOne ?? 0) > 0 ||
-      (golfer.tournamentGolfer?.roundTwo ?? 0) > 0 ||
-      (golfer.tournamentGolfer?.roundThree ?? 0) > 0 ||
-      (golfer.tournamentGolfer?.roundFour ?? 0) > 0 ||
-      (golfer.live?.current_score ?? 0) !== 0,
-  );
+  return hasTournamentPlayEvidence(golfer);
 }
 
 /**
@@ -1468,6 +1686,8 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         course,
         tier,
         type: tournamentType,
+        isPlayoff,
+        eventIndex,
       } = activeTournamentData;
       const {
         teams,
@@ -1491,6 +1711,16 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           tournamentName: tournament.name,
         } as const;
       }
+      const allowPreStartNonStarterReplacement =
+        shouldApplyPreStartNonStarterReplacement({
+          isPlayoff,
+          eventIndex,
+        });
+      await applyPreStartNonStarterRosterReplacements(ctx, {
+        teams,
+        golfers,
+        allowPreStartNonStarterReplacement,
+      });
       for (const t of teams) {
         if (t.golfers?.length < 10) {
           const groupCounts = [
@@ -1738,13 +1968,21 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
 
       for (const g of golfers) {
         if (g.golfer?._id && g.tournamentGolfer?._id) {
-          const golferPosition = getEffectiveTournamentPosition(g);
+          const golferIsPreStartNonStarter = isPreStartNonStarter({
+            golfer: g,
+            allowPreStartNonStarterReplacement,
+          });
+          const golferPosition = getTournamentSyncPosition({
+            golfer: g,
+            allowPreStartNonStarterReplacement,
+          });
           const roundOneScore = getTournamentRoundScore({
             golfer: g,
             roundNumber: 1,
             currentRound,
             isRoundRunning,
             coursePar: course.par,
+            allowPreStartNonStarterReplacement,
           });
           const roundTwoScore = getTournamentRoundScore({
             golfer: g,
@@ -1752,6 +1990,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             currentRound,
             isRoundRunning,
             coursePar: course.par,
+            allowPreStartNonStarterReplacement,
           });
           const roundThreeScore = getTournamentRoundScore({
             golfer: g,
@@ -1759,6 +1998,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             currentRound,
             isRoundRunning,
             coursePar: course.par,
+            allowPreStartNonStarterReplacement,
           });
           const roundFourScore = getTournamentRoundScore({
             golfer: g,
@@ -1766,9 +2006,13 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             currentRound,
             isRoundRunning,
             coursePar: course.par,
+            allowPreStartNonStarterReplacement,
           });
           const betterGolfers = golfers.filter((og) => {
-            const otherPosition = getEffectiveTournamentPosition(og);
+            const otherPosition = getTournamentSyncPosition({
+              golfer: og,
+              allowPreStartNonStarterReplacement,
+            });
             return (
               (isNonRankingTournamentPosition(otherPosition)
                 ? 999
@@ -1779,7 +2023,10 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             );
           }).length;
           const betterGolfersPast = golfers.filter((og) => {
-            const otherPosition = getEffectiveTournamentPosition(og);
+            const otherPosition = getTournamentSyncPosition({
+              golfer: og,
+              allowPreStartNonStarterReplacement,
+            });
             return (
               (isNonRankingTournamentPosition(otherPosition)
                 ? 999
@@ -1790,7 +2037,10 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             );
           }).length;
           const tiedGolfers = golfers.filter((og) => {
-            const otherPosition = getEffectiveTournamentPosition(og);
+            const otherPosition = getTournamentSyncPosition({
+              golfer: og,
+              allowPreStartNonStarterReplacement,
+            });
             return (
               (isNonRankingTournamentPosition(otherPosition)
                 ? 999
@@ -1807,28 +2057,31 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                 _id: g.tournamentGolfer._id,
                 tournamentId: tournament._id,
                 golferId: g.golfer._id,
-                position: isNonRankingTournamentPosition(golferPosition)
-                  ? golferPosition
-                  : tiedGolfers > 1
-                    ? `T${betterGolfers + 1}`
-                    : `${betterGolfers + 1}`,
+                position: golferIsPreStartNonStarter
+                  ? "WD"
+                  : isNonRankingTournamentPosition(golferPosition)
+                    ? golferPosition
+                    : tiedGolfers > 1
+                      ? `T${betterGolfers + 1}`
+                      : `${betterGolfers + 1}`,
                 posChange: betterGolfersPast - betterGolfers,
-                score:
-                  g.live?.current_score ??
-                  (g.historical
-                    ? roundToDecimalPlace(
-                        (g.historical.round_1?.score ?? 0) -
-                          (g.historical.round_1?.course_par ?? 0) +
-                          ((g.historical.round_2?.score ?? 0) -
-                            (g.historical.round_2?.course_par ?? 0)) +
-                          ((g.historical.round_3?.score ?? 0) -
-                            (g.historical.round_3?.course_par ?? 0)) +
-                          ((g.historical.round_4?.score ?? 0) -
-                            (g.historical.round_4?.course_par ?? 0)),
-                      )
-                    : g.tournamentGolfer.score
-                      ? roundToDecimalPlace(g.tournamentGolfer.score)
-                      : undefined),
+                score: golferIsPreStartNonStarter
+                  ? undefined
+                  : (g.live?.current_score ??
+                    (g.historical
+                      ? roundToDecimalPlace(
+                          (g.historical.round_1?.score ?? 0) -
+                            (g.historical.round_1?.course_par ?? 0) +
+                            ((g.historical.round_2?.score ?? 0) -
+                              (g.historical.round_2?.course_par ?? 0)) +
+                            ((g.historical.round_3?.score ?? 0) -
+                              (g.historical.round_3?.course_par ?? 0)) +
+                            ((g.historical.round_4?.score ?? 0) -
+                              (g.historical.round_4?.course_par ?? 0)),
+                        )
+                      : g.tournamentGolfer.score
+                        ? roundToDecimalPlace(g.tournamentGolfer.score)
+                        : undefined)),
                 endHole:
                   g.live?.end_hole ?? g.tournamentGolfer?.endHole ?? undefined,
                 makeCut:
@@ -1841,12 +2094,14 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                   currentRound,
                   isRoundRunning,
                   coursePar: course.par,
+                  allowPreStartNonStarterReplacement,
                 }),
                 thru: getTournamentThruValue({
                   golfer: g,
                   currentRound,
                   isRoundRunning,
                   coursePar: course.par,
+                  allowPreStartNonStarterReplacement,
                 }),
                 roundOne: roundOneScore,
                 roundTwo: roundTwoScore,
@@ -1956,6 +2211,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           currentRound,
           isRoundRunning,
           coursePar: course.par,
+          allowPreStartNonStarterReplacement,
         });
         const roundTwo = getTeamRoundScore({
           golfers: t.golfers,
@@ -1963,6 +2219,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           currentRound,
           isRoundRunning,
           coursePar: course.par,
+          allowPreStartNonStarterReplacement,
         });
         const roundThree = getTeamRoundScore({
           golfers: t.golfers,
@@ -1970,6 +2227,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           currentRound,
           isRoundRunning,
           coursePar: course.par,
+          allowPreStartNonStarterReplacement,
         });
         const roundFour = getTeamRoundScore({
           golfers: t.golfers,
@@ -1977,16 +2235,19 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           currentRound,
           isRoundRunning,
           coursePar: course.par,
+          allowPreStartNonStarterReplacement,
         });
         const teamWeekendCut = isTeamWeekendCut({
           golfers: t.golfers,
           currentRound,
+          allowPreStartNonStarterReplacement,
         });
         const teamLiveWindowGolfers = getTeamLiveWindowGolfers({
           golfers: t.golfers,
           currentRound,
           isRoundRunning,
           coursePar: course.par,
+          allowPreStartNonStarterReplacement,
         });
         const teamLiveTodayMean = getTeamLiveWindowMean({
           golfers: teamLiveWindowGolfers,
@@ -1994,6 +2255,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           isRoundRunning,
           coursePar: course.par,
           metric: "today",
+          allowPreStartNonStarterReplacement,
         });
         const teamLiveThruMean = getTeamLiveWindowMean({
           golfers: teamLiveWindowGolfers,
@@ -2001,6 +2263,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           isRoundRunning,
           coursePar: course.par,
           metric: "thru",
+          allowPreStartNonStarterReplacement,
         });
 
         updatedTeams.push({
@@ -2259,6 +2522,8 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         course,
         tier,
         type: tournamentType,
+        isPlayoff,
+        eventIndex,
       } = activeTournamentData;
       const {
         teams,
@@ -2268,6 +2533,17 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         historicalData,
         historicalEventData,
       } = tournamentStats;
+
+      const allowPreStartNonStarterReplacement =
+        shouldApplyPreStartNonStarterReplacement({
+          isPlayoff,
+          eventIndex,
+        });
+      await applyPreStartNonStarterRosterReplacements(ctx, {
+        teams,
+        golfers,
+        allowPreStartNonStarterReplacement,
+      });
 
       for (const t of teams) {
         if (t.golfers?.length < 10) {
@@ -2516,13 +2792,21 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
 
       for (const g of golfers) {
         if (g.golfer?._id && g.tournamentGolfer?._id) {
-          const golferPosition = getEffectiveTournamentPosition(g);
+          const golferIsPreStartNonStarter = isPreStartNonStarter({
+            golfer: g,
+            allowPreStartNonStarterReplacement,
+          });
+          const golferPosition = getTournamentSyncPosition({
+            golfer: g,
+            allowPreStartNonStarterReplacement,
+          });
           const roundOneScore = getTournamentRoundScore({
             golfer: g,
             roundNumber: 1,
             currentRound,
             isRoundRunning,
             coursePar: course.par,
+            allowPreStartNonStarterReplacement,
           });
           const roundTwoScore = getTournamentRoundScore({
             golfer: g,
@@ -2530,6 +2814,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             currentRound,
             isRoundRunning,
             coursePar: course.par,
+            allowPreStartNonStarterReplacement,
           });
           const roundThreeScore = getTournamentRoundScore({
             golfer: g,
@@ -2537,6 +2822,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             currentRound,
             isRoundRunning,
             coursePar: course.par,
+            allowPreStartNonStarterReplacement,
           });
           const roundFourScore = getTournamentRoundScore({
             golfer: g,
@@ -2544,9 +2830,13 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             currentRound,
             isRoundRunning,
             coursePar: course.par,
+            allowPreStartNonStarterReplacement,
           });
           const betterGolfers = golfers.filter((og) => {
-            const otherPosition = getEffectiveTournamentPosition(og);
+            const otherPosition = getTournamentSyncPosition({
+              golfer: og,
+              allowPreStartNonStarterReplacement,
+            });
             return (
               (isNonRankingTournamentPosition(otherPosition)
                 ? 999
@@ -2557,7 +2847,10 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             );
           }).length;
           const betterGolfersPast = golfers.filter((og) => {
-            const otherPosition = getEffectiveTournamentPosition(og);
+            const otherPosition = getTournamentSyncPosition({
+              golfer: og,
+              allowPreStartNonStarterReplacement,
+            });
             return (
               (isNonRankingTournamentPosition(otherPosition)
                 ? 999
@@ -2568,7 +2861,10 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             );
           }).length;
           const tiedGolfers = golfers.filter((og) => {
-            const otherPosition = getEffectiveTournamentPosition(og);
+            const otherPosition = getTournamentSyncPosition({
+              golfer: og,
+              allowPreStartNonStarterReplacement,
+            });
             return (
               (isNonRankingTournamentPosition(otherPosition)
                 ? 999
@@ -2585,28 +2881,31 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                 _id: g.tournamentGolfer._id,
                 tournamentId: tournament._id,
                 golferId: g.golfer._id,
-                position: isNonRankingTournamentPosition(golferPosition)
-                  ? golferPosition
-                  : tiedGolfers > 1
-                    ? `T${betterGolfers + 1}`
-                    : `${betterGolfers + 1}`,
+                position: golferIsPreStartNonStarter
+                  ? "WD"
+                  : isNonRankingTournamentPosition(golferPosition)
+                    ? golferPosition
+                    : tiedGolfers > 1
+                      ? `T${betterGolfers + 1}`
+                      : `${betterGolfers + 1}`,
                 posChange: betterGolfersPast - betterGolfers,
-                score:
-                  g.live?.current_score ??
-                  (g.historical
-                    ? roundToDecimalPlace(
-                        (g.historical.round_1?.score ?? 0) -
-                          (g.historical.round_1?.course_par ?? 0) +
-                          ((g.historical.round_2?.score ?? 0) -
-                            (g.historical.round_2?.course_par ?? 0)) +
-                          ((g.historical.round_3?.score ?? 0) -
-                            (g.historical.round_3?.course_par ?? 0)) +
-                          ((g.historical.round_4?.score ?? 0) -
-                            (g.historical.round_4?.course_par ?? 0)),
-                      )
-                    : g.tournamentGolfer.score
-                      ? roundToDecimalPlace(g.tournamentGolfer.score)
-                      : undefined),
+                score: golferIsPreStartNonStarter
+                  ? undefined
+                  : (g.live?.current_score ??
+                    (g.historical
+                      ? roundToDecimalPlace(
+                          (g.historical.round_1?.score ?? 0) -
+                            (g.historical.round_1?.course_par ?? 0) +
+                            ((g.historical.round_2?.score ?? 0) -
+                              (g.historical.round_2?.course_par ?? 0)) +
+                            ((g.historical.round_3?.score ?? 0) -
+                              (g.historical.round_3?.course_par ?? 0)) +
+                            ((g.historical.round_4?.score ?? 0) -
+                              (g.historical.round_4?.course_par ?? 0)),
+                        )
+                      : g.tournamentGolfer.score
+                        ? roundToDecimalPlace(g.tournamentGolfer.score)
+                        : undefined)),
                 endHole:
                   g.live?.end_hole ?? g.tournamentGolfer?.endHole ?? undefined,
                 makeCut:
@@ -2619,12 +2918,14 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                   currentRound,
                   isRoundRunning,
                   coursePar: course.par,
+                  allowPreStartNonStarterReplacement,
                 }),
                 thru: getTournamentThruValue({
                   golfer: g,
                   currentRound,
                   isRoundRunning,
                   coursePar: course.par,
+                  allowPreStartNonStarterReplacement,
                 }),
                 roundOne: roundOneScore,
                 roundTwo: roundTwoScore,
@@ -2734,6 +3035,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           currentRound,
           isRoundRunning,
           coursePar: course.par,
+          allowPreStartNonStarterReplacement,
         });
         const roundTwo = getTeamRoundScore({
           golfers: t.golfers,
@@ -2741,6 +3043,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           currentRound,
           isRoundRunning,
           coursePar: course.par,
+          allowPreStartNonStarterReplacement,
         });
         const roundThree = getTeamRoundScore({
           golfers: t.golfers,
@@ -2748,6 +3051,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           currentRound,
           isRoundRunning,
           coursePar: course.par,
+          allowPreStartNonStarterReplacement,
         });
         const roundFour = getTeamRoundScore({
           golfers: t.golfers,
@@ -2755,16 +3059,19 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           currentRound,
           isRoundRunning,
           coursePar: course.par,
+          allowPreStartNonStarterReplacement,
         });
         const teamWeekendCut = isTeamWeekendCut({
           golfers: t.golfers,
           currentRound,
+          allowPreStartNonStarterReplacement,
         });
         const teamLiveWindowGolfers = getTeamLiveWindowGolfers({
           golfers: t.golfers,
           currentRound,
           isRoundRunning,
           coursePar: course.par,
+          allowPreStartNonStarterReplacement,
         });
         const teamLiveTodayMean = getTeamLiveWindowMean({
           golfers: teamLiveWindowGolfers,
@@ -2772,6 +3079,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           isRoundRunning,
           coursePar: course.par,
           metric: "today",
+          allowPreStartNonStarterReplacement,
         });
         const teamLiveThruMean = getTeamLiveWindowMean({
           golfers: teamLiveWindowGolfers,
@@ -2779,6 +3087,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           isRoundRunning,
           coursePar: course.par,
           metric: "thru",
+          allowPreStartNonStarterReplacement,
         });
 
         updatedTeams.push({

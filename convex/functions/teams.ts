@@ -10,6 +10,7 @@ export const updateTeamRoster = mutation({
     await ctx.db.patch(args.teamId, {
       golferIds: args.apiIds,
       updatedAt: Date.now(),
+      updatedRosterAt: Date.now(),
     });
   },
 });
@@ -59,6 +60,7 @@ export const createTeam = mutation({
     }),
   },
   handler: async (ctx, args) => {
+    const now = Date.now();
     const existingTeam = await ctx.db
       .query("teams")
       .withIndex("by_tournament_tour_card", (q) =>
@@ -69,16 +71,24 @@ export const createTeam = mutation({
       .first();
 
     if (existingTeam) {
+      const golferIdsChanged =
+        existingTeam.golferIds.length !== args.data.golferIds.length ||
+        existingTeam.golferIds.some(
+          (apiId, index) => apiId !== args.data.golferIds[index],
+        );
+
       await ctx.db.patch(existingTeam._id, {
         ...args.data,
-        updatedAt: Date.now(),
+        updatedAt: now,
+        ...(golferIdsChanged ? { updatedRosterAt: now } : {}),
       });
       return await ctx.db.get(existingTeam._id);
     }
 
     const teamId = await ctx.db.insert("teams", {
       ...args.data,
-      updatedAt: Date.now(),
+      updatedAt: now,
+      updatedRosterAt: now,
     });
 
     return await ctx.db.get(teamId);
