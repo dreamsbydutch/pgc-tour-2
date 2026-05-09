@@ -4,6 +4,7 @@ import { Fragment, ReactNode, useState } from "react";
 import {
   cn,
   formatNumberToPercentage,
+  parseRankFromPositionString,
   formatTeeTimeTimeOfDay,
   formatToPar,
   getCountryFlagEmoji,
@@ -45,8 +46,8 @@ export function PGALeaderboard(props: {
     )
     .sort(
       (a, b) =>
-        +(a.position ?? "").replace("T", "") -
-        +(b.position ?? "").replace("T", ""),
+        parseRankFromPositionString(a.position) -
+        parseRankFromPositionString(b.position),
     );
   cut
     .sort(
@@ -57,8 +58,8 @@ export function PGALeaderboard(props: {
     .sort((a, b) => (a.group ?? 999) - (b.group ?? 999))
     .sort(
       (a, b) =>
-        +(a.position ?? "").replace("T", "") -
-        +(b.position ?? "").replace("T", ""),
+        parseRankFromPositionString(a.position) -
+        parseRankFromPositionString(b.position),
     );
   const sortedGolfers = [...nonCut, ...cut];
 

@@ -87,6 +87,20 @@ function getGolferRoundOneTeeTimeMs(
     : undefined;
 }
 
+function getCurrentFeedRoundOneTeeTimeMs(
+  golfer: EnhancedGolfer,
+): number | undefined {
+  const fieldTeeTime = golfer.field?.teetimes.find(
+    (teetime) => teetime.round_num === 1,
+  )?.teetime;
+  if (typeof fieldTeeTime === "number") {
+    return fieldTeeTime;
+  }
+
+  const historicalTeeTime = golfer.historical?.round_1?.teetime;
+  return typeof historicalTeeTime === "number" ? historicalTeeTime : undefined;
+}
+
 function getGolferEventEarnings(golfer: EnhancedGolfer): number | undefined {
   const earnings = golfer.historicalEvent?.earnings;
   return typeof earnings === "number" && Number.isFinite(earnings)
@@ -281,6 +295,14 @@ function hasTournamentPlayEvidence(golfer: EnhancedGolfer): boolean {
   );
 }
 
+function isTerminalNonPlayingFeedState(position: string | undefined): boolean {
+  return ["WD", "DQ", "DNS", "DNF"].includes(position ?? "");
+}
+
+function hasDisappearedFromActiveFeeds(golfer: EnhancedGolfer): boolean {
+  return !golfer.field && !golfer.live && !golfer.historical;
+}
+
 function isPreStartNonStarter(args: {
   golfer: EnhancedGolfer;
   allowPreStartNonStarterReplacement: boolean;
@@ -289,8 +311,12 @@ function isPreStartNonStarter(args: {
     return false;
   }
 
+  const effectivePosition = getEffectiveTournamentPosition(args.golfer);
+
   return (
-    typeof getGolferRoundOneTeeTimeMs(args.golfer) !== "number" &&
+    typeof getCurrentFeedRoundOneTeeTimeMs(args.golfer) !== "number" &&
+    (isTerminalNonPlayingFeedState(effectivePosition) ||
+      hasDisappearedFromActiveFeeds(args.golfer)) &&
     !hasTournamentPlayEvidence(args.golfer)
   );
 }
