@@ -478,9 +478,7 @@ function ScoreDisplay(props: {
             className="col-span-1 sm:col-span-2"
           />
           <ScoreCell
-            value={
-              formatLeaderboardThruDisplay({ thru: props.golfer.thru })
-            }
+            value={formatLeaderboardThruDisplay({ thru: props.golfer.thru })}
             className="col-span-1 sm:col-span-2"
           />
         </>
@@ -488,8 +486,7 @@ function ScoreDisplay(props: {
       <div className="col-span-1 hidden sm:flex" />
       <ScoreCell
         value={
-          typeof props.golfer.roundOne === "number" &&
-          props.golfer.roundOne > 0
+          typeof props.golfer.roundOne === "number" && props.golfer.roundOne > 0
             ? props.golfer.roundOne
             : "-"
         }
@@ -498,8 +495,7 @@ function ScoreDisplay(props: {
       />
       <ScoreCell
         value={
-          typeof props.golfer.roundTwo === "number" &&
-          props.golfer.roundTwo > 0
+          typeof props.golfer.roundTwo === "number" && props.golfer.roundTwo > 0
             ? props.golfer.roundTwo
             : "-"
         }
