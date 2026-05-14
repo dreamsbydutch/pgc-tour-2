@@ -146,6 +146,10 @@ export const getCurrentSeasonMajorChampionBadges = query({
 
     const majorTournaments = tournaments
       .filter((tournament) => majorTierIds.has(tournament.tierId))
+      .filter(
+        (tournament) =>
+          (tournament.currentRound ?? 0) > 4 && !tournament.livePlay,
+      )
       .sort((a, b) => a.startDate - b.startDate);
 
     const badgesByMemberId: Record<
