@@ -3,6 +3,7 @@
 import { ReactNode, useMemo, useState } from "react";
 import {
   cn,
+  formatLeaderboardThruDisplay,
   formatMoney,
   formatNumberToPercentage,
   formatTeeTimeTimeOfDay,
@@ -262,7 +263,9 @@ function TeamGolfersTable(props: {
     return (
       <>
         <td className="text-xs">{formatToPar(golfer.today)}</td>
-        <td className="text-xs">{golfer.thru === 18 ? "F" : golfer.thru}</td>
+        <td className="text-xs">
+          {formatLeaderboardThruDisplay({ thru: golfer.thru })}
+        </td>
       </>
     );
   };
@@ -428,31 +431,31 @@ function ScoreDisplay(props: {
   };
   tournamentComplete: boolean;
 }) {
+  const isCut = isPlayerCut(props.team.position);
+
   return (
     <>
       <ScoreCell
         value={
-          isPlayerCut(props.team.position)
+          isCut
             ? "-"
             : props.tournamentComplete
               ? (props.team.points ?? 0 > 0)
                 ? props.team.points
                 : "-"
-              : (props.team.today ?? 0 > 0)
-                ? props.team.today
-                : "-"
+              : formatToPar(props.team.today)
         }
         className="col-span-1 sm:col-span-2"
       />
       <ScoreCell
         value={
-          isPlayerCut(props.team.position)
+          isCut
             ? "-"
             : props.tournamentComplete
               ? (props.team.earnings ?? 0) > 0
                 ? formatMoney(props.team.earnings ?? 0, false)
                 : "-"
-              : (props.team.thru ?? "-")
+              : formatLeaderboardThruDisplay({ thru: props.team.thru })
         }
         className="col-span-1 sm:col-span-2"
       />

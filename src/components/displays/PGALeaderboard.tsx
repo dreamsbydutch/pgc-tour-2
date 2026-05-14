@@ -3,6 +3,7 @@
 import { Fragment, ReactNode, useState } from "react";
 import {
   cn,
+  formatLeaderboardThruDisplay,
   formatNumberToPercentage,
   parseRankFromPositionString,
   formatTeeTimeTimeOfDay,
@@ -473,13 +474,13 @@ function ScoreDisplay(props: {
       ) : (
         <>
           <ScoreCell
-            value={
-              props.golfer.today == null ? "-" : formatToPar(props.golfer.today)
-            }
+            value={formatToPar(props.golfer.today)}
             className="col-span-1 sm:col-span-2"
           />
           <ScoreCell
-            value={props.golfer.thru === 18 ? "F" : (props.golfer.thru ?? "-")}
+            value={
+              formatLeaderboardThruDisplay({ thru: props.golfer.thru })
+            }
             className="col-span-1 sm:col-span-2"
           />
         </>
