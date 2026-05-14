@@ -1,5 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { useCurrentSeasonMajorChampionBadges } from "@/hooks";
+import {
+  filterMajorChampionBadges,
+  useCurrentSeasonMajorChampionBadges,
+} from "@/hooks";
 import { capitalize, formatScore, hasItems, isNonEmptyString } from "@/lib";
 import { MemberNameWithBadges, Skeleton } from "@/ui";
 
@@ -56,6 +59,8 @@ export function ChampionsPopup(props: {
   if (model.status === "loading") return <ChampionsPopupSkeleton />;
   if (model.status === "hidden") return null;
 
+  const tournamentComplete = (model.tournament.currentRound ?? 0) === 5;
+
   return (
     <div className="mx-auto my-3 rounded-2xl bg-amber-100 bg-opacity-70 shadow-lg md:w-10/12 lg:w-7/12">
       <div className="mx-auto max-w-3xl p-2 text-center">
@@ -100,7 +105,12 @@ export function ChampionsPopup(props: {
                     name={capitalize(champ.displayName)}
                     badges={
                       champ.memberId
-                        ? majorChampionBadgesByMemberId[champ.memberId]
+                        ? filterMajorChampionBadges({
+                            badges: majorChampionBadgesByMemberId[champ.memberId],
+                            hiddenTournamentIds: tournamentComplete
+                              ? []
+                              : [model.tournament.id],
+                          })
                         : undefined
                     }
                   />

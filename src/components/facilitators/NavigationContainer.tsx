@@ -15,7 +15,10 @@ import { NAV_ITEMS } from "@/lib";
 import type { NavigationContainerProps } from "@/lib";
 import { cn, formatUserDisplayName, isNavItemActive } from "@/lib";
 import { api, useQuery } from "@/convex";
-import { useCurrentSeasonMajorChampionBadges } from "@/hooks";
+import {
+  filterMajorChampionBadgesByMemberId,
+  useCurrentSeasonMajorChampionBadges,
+} from "@/hooks";
 
 const keepParams = <TParams extends Record<string, string>>(current: TParams) =>
   current;
@@ -233,6 +236,33 @@ function useNavigationContainer(_props: NavigationContainerProps) {
     clerkUser ? { options: { clerkId: clerkUser.id } } : "skip",
   );
   const majorChampionBadgesByMemberId = useCurrentSeasonMajorChampionBadges();
+  const activeTournaments = useQuery(api.functions.tournaments.getTournaments, {
+    options: {
+      filter: { status: "active" },
+      enhance: { includeTier: true },
+    },
+  });
+
+  const filteredMajorChampionBadgesByMemberId = useMemo(() => {
+    const activeMajorTournamentIds = (activeTournaments ?? [])
+      .filter((tournament) => {
+        const tier = "tier" in tournament ? tournament.tier : undefined;
+        if (!tier || typeof tier !== "object") {
+          return false;
+        }
+
+        const tierName = "name" in tier ? tier.name : undefined;
+        return (
+          typeof tierName === "string" && tierName.trim().toLowerCase() === "major"
+        );
+      })
+      .map((tournament) => String(tournament._id));
+
+    return filterMajorChampionBadgesByMemberId({
+      badgesByMemberId: majorChampionBadgesByMemberId,
+      hiddenTournamentIds: activeMajorTournamentIds,
+    });
+  }, [activeTournaments, majorChampionBadgesByMemberId]);
 
   const navItems = useMemo(() => {
     return NAV_ITEMS.map(({ href, icon: Icon, label }) => {
@@ -296,7 +326,7 @@ function useNavigationContainer(_props: NavigationContainerProps) {
       "_id" in memberData
         ? String(memberData._id)
         : null,
-    majorChampionBadgesByMemberId,
+    majorChampionBadgesByMemberId: filteredMajorChampionBadgesByMemberId,
     avatarUrl: clerkUser?.imageUrl,
     accountCents,
   };

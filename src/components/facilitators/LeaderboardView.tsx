@@ -6,7 +6,10 @@ import {
   PGCLeaderboard,
   PGALeaderboard,
 } from "@/displays";
-import { useCurrentSeasonMajorChampionBadges } from "@/hooks";
+import {
+  filterMajorChampionBadgesByMemberId,
+  useCurrentSeasonMajorChampionBadges,
+} from "@/hooks";
 import {
   EnhancedTournamentGolferDoc,
   MemberDoc,
@@ -52,6 +55,11 @@ export function LeaderboardView(props: {
   const majorChampionBadgesByMemberId = useCurrentSeasonMajorChampionBadges();
 
   const tournamentOver = (props.tournament.currentRound ?? 0) === 5;
+  const filteredMajorChampionBadgesByMemberId =
+    filterMajorChampionBadgesByMemberId({
+      badgesByMemberId: majorChampionBadgesByMemberId,
+      hiddenTournamentIds: tournamentOver ? [] : [String(props.tournament._id)],
+    });
 
   const leaderboardTeams = props.teams.map((t) => {
     const teamGolfers = props.golfers.filter((g) =>
@@ -105,7 +113,7 @@ export function LeaderboardView(props: {
             variant={props.variant}
             currentTourCardId={props.userTourCard?._id ?? null}
             friendIds={viewerFriendIds}
-            majorChampionBadgesByMemberId={majorChampionBadgesByMemberId}
+            majorChampionBadgesByMemberId={filteredMajorChampionBadgesByMemberId}
           />
         ) : (
           <>
