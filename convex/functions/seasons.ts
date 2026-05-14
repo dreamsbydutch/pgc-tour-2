@@ -144,11 +144,15 @@ export const getCurrentSeasonMajorChampionBadges = query({
       .withIndex("by_season", (q) => q.eq("seasonId", currentSeason._id))
       .collect();
 
+    const isTournamentCompleted = (tournament: (typeof tournaments)[number]) =>
+      tournament.status === "completed" ||
+      ((tournament.currentRound ?? 0) > 4 && tournament.livePlay !== true);
+
     const majorTournaments = tournaments
-      .filter((tournament) => majorTierIds.has(tournament.tierId))
       .filter(
         (tournament) =>
-          (tournament.currentRound ?? 0) > 4 && !tournament.livePlay,
+          majorTierIds.has(tournament.tierId) &&
+          isTournamentCompleted(tournament),
       )
       .sort((a, b) => a.startDate - b.startDate);
 
