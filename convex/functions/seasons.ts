@@ -109,7 +109,6 @@ export const getStandingsViewData = query({
 export const getCurrentSeasonMajorChampionBadges = query({
   args: {},
   handler: async (ctx) => {
-    const now = Date.now();
     const currentYear = new Date().getFullYear();
     let currentSeason = await ctx.db
       .query("seasons")
@@ -146,7 +145,7 @@ export const getCurrentSeasonMajorChampionBadges = query({
       .collect();
 
     const isTournamentCompleted = (tournament: (typeof tournaments)[number]) =>
-      tournament.status === "completed" || tournament.endDate <= now;
+      tournament.status === "completed";
 
     const majorTournaments = tournaments
       .filter(
