@@ -4,6 +4,7 @@ import {
   internalMutation,
   mutation,
 } from "../_generated/server";
+import type { ActionCtx } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type {
@@ -414,9 +415,7 @@ function getReplacementCandidateForGroup(args: {
 }
 
 async function applyPreStartNonStarterRosterReplacements(
-  ctx: {
-    runMutation: (mutationRef: unknown, args: unknown) => Promise<unknown>;
-  },
+  ctx: Pick<ActionCtx, "runMutation">,
   args: {
     teams: TournamentSyncTeam[];
     golfers: EnhancedGolfer[];
