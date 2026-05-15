@@ -5,6 +5,7 @@ import {
 } from "@/hooks";
 import { capitalize, formatScore, hasItems, isNonEmptyString } from "@/lib";
 import { MemberNameWithBadges, Skeleton } from "@/ui";
+import type { TournamentDoc } from "convex/types/types";
 
 /**
  * Displays the champions of the most recent tournament.
@@ -34,6 +35,7 @@ export function ChampionsPopup(props: {
       logoUrl: string | null;
       startDate: Date;
       currentRound: number | null;
+      status?: TournamentDoc["status"];
       tier?: { name?: string };
     };
     tour: { id: string; name: string; logoUrl: string | null };
@@ -50,6 +52,7 @@ export function ChampionsPopup(props: {
     logoUrl: string | null;
     startDate: Date;
     currentRound: number | null;
+    status?: TournamentDoc["status"];
     tier?: { name?: string };
   };
   loading?: boolean;
@@ -59,7 +62,7 @@ export function ChampionsPopup(props: {
   if (model.status === "loading") return <ChampionsPopupSkeleton />;
   if (model.status === "hidden") return null;
 
-  const tournamentComplete = (model.tournament.currentRound ?? 0) === 5;
+  const tournamentComplete = model.tournament.status === "completed";
 
   return (
     <div className="mx-auto my-3 rounded-2xl bg-amber-100 bg-opacity-70 shadow-lg md:w-10/12 lg:w-7/12">
@@ -169,6 +172,7 @@ function useChampionsPopup(args: {
       logoUrl: string | null;
       startDate: Date;
       currentRound: number | null;
+      status?: TournamentDoc["status"];
       tier?: { name?: string };
     };
     tour: { id: string; name: string; logoUrl: string | null };
@@ -185,6 +189,7 @@ function useChampionsPopup(args: {
     logoUrl: string | null;
     startDate: Date;
     currentRound: number | null;
+    status?: TournamentDoc["status"];
     tier?: { name?: string };
   };
   loading?: boolean;

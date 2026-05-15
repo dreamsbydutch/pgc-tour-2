@@ -128,6 +128,7 @@ function LeaderboardListing({
   tournament: {
     currentRound?: number | undefined;
     livePlay?: boolean | null;
+    status?: TournamentDoc["status"];
     name: string;
   };
   team: EnhancedTournamentTeamDoc & {
@@ -179,9 +180,7 @@ function LeaderboardListing({
 
         <ScoreDisplay
           team={team}
-          tournamentComplete={
-            (tournament.currentRound ?? 0) > 4 && !tournament.livePlay
-          }
+          tournamentComplete={tournament.status === "completed"}
         />
       </div>
 

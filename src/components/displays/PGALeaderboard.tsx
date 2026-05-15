@@ -163,7 +163,11 @@ function LeaderboardListing({
   team,
   golfer,
 }: {
-  tournament: { currentRound?: number | undefined; livePlay?: boolean | null };
+  tournament: {
+    currentRound?: number | undefined;
+    livePlay?: boolean | null;
+    status?: TournamentDoc["status"];
+  };
   team?: {
     _id: string;
     golferIds: number[];
@@ -222,9 +226,7 @@ function LeaderboardListing({
 
         <ScoreDisplay
           golfer={golfer}
-          tournamentComplete={
-            (tournament.currentRound ?? 0) > 4 && !tournament.livePlay
-          }
+          tournamentComplete={tournament.status === "completed"}
         />
       </div>
 

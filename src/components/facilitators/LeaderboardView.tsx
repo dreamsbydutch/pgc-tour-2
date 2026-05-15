@@ -54,7 +54,7 @@ export function LeaderboardView(props: {
   );
   const majorChampionBadgesByMemberId = useCurrentSeasonMajorChampionBadges();
 
-  const tournamentOver = (props.tournament.currentRound ?? 0) === 5;
+  const tournamentOver = props.tournament.status === "completed";
   const filteredMajorChampionBadgesByMemberId =
     filterMajorChampionBadgesByMemberId({
       badgesByMemberId: majorChampionBadgesByMemberId,
