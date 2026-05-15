@@ -165,17 +165,33 @@ function AdminRoute() {
         </div>
 
         <div className="space-y-2">
-          <button
-            className="rounded bg-primary px-4 py-2 text-primary-foreground"
-            onClick={() => runJob("liveSync", () => runLiveSync({}))}
-            type="button"
-          >
-            Run Live Sync
-          </button>
+          <div className="flex gap-2">
+            <button
+              className="rounded bg-primary px-4 py-2 text-primary-foreground"
+              onClick={() => runJob("liveSync", () => runLiveSync({}))}
+              type="button"
+            >
+              Run Live Sync
+            </button>
+            <button
+              className="rounded bg-secondary px-4 py-2 text-secondary-foreground"
+              onClick={() =>
+                runJob("liveSyncForce", () => runLiveSync({ force: true }))
+              }
+              type="button"
+            >
+              Force Live Sync
+            </button>
+          </div>
           <textarea
             className="h-28 w-full rounded border p-2 text-xs"
             readOnly
             value={outputs.liveSync ?? ""}
+          />
+          <textarea
+            className="h-28 w-full rounded border p-2 text-xs"
+            readOnly
+            value={outputs.liveSyncForce ?? ""}
           />
         </div>
 

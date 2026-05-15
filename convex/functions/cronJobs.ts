@@ -1752,9 +1752,12 @@ export const recomputeStandings_Public: ReturnType<typeof mutation> = mutation({
 
 export const runTournamentSync: ReturnType<typeof internalAction> =
   internalAction({
-    handler: async (ctx) => {
+    args: {
+      force: v.optional(v.boolean()),
+    },
+    handler: async (ctx, args) => {
       const now = new Date();
-      if (now.getHours() <= 10 && now.getHours() >= 2) {
+      if (args.force !== true && now.getHours() <= 10 && now.getHours() >= 2) {
         console.log("runTournamentSync: skipped (outside_of_time_window)", {
           currentHour: now.getHours(),
         });
@@ -2615,10 +2618,13 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
     },
   });
 export const runTournamentSync_Public: ReturnType<typeof action> = action({
-  handler: async (ctx) => {
+  args: {
+    force: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
     return await ctx.runAction(
       internal.functions.cronJobs.runTournamentSync,
-      {},
+      { force: args.force },
     );
   },
 });
