@@ -804,7 +804,7 @@ function getRoundScoreToPar(
 /**
  * Returns round-specific today/thru values for the visible or overlap round window.
  */
-function getTournamentRoundWindowMetrics(args: {
+export function getTournamentRoundWindowMetrics(args: {
   golfer: EnhancedGolfer;
   roundNumber: RoundNumber;
   roundStarted: boolean;
@@ -826,16 +826,26 @@ function getTournamentRoundWindowMetrics(args: {
     golfer: args.golfer,
     allowPreStartNonStarterReplacement: args.allowPreStartNonStarterReplacement,
   });
+  const completedScore = getCompletedRoundScore(args.golfer, args.roundNumber);
+  const completedToday = getRoundScoreToPar(completedScore, args.coursePar);
+  const liveRound = getGolferLiveRound(args.golfer);
+  const thru = getHoleCount(args.golfer.live?.thru);
+
+  if (position === "CUT") {
+    if (typeof completedToday === "number") {
+      return { today: completedToday, thru: 18 };
+    }
+    if (liveRound > args.roundNumber) {
+      return { today: 0, thru: 18 };
+    }
+    return {};
+  }
+
   if (isNonRankingTournamentPosition(position)) {
     if (!isWithdrawnOrDisqualifiedPosition(position)) {
       return {};
     }
   }
-
-  const completedScore = getCompletedRoundScore(args.golfer, args.roundNumber);
-  const completedToday = getRoundScoreToPar(completedScore, args.coursePar);
-  const liveRound = getGolferLiveRound(args.golfer);
-  const thru = getHoleCount(args.golfer.live?.thru);
 
   if (isWithdrawnOrDisqualifiedPosition(position)) {
     if (args.roundNumber >= 3) {

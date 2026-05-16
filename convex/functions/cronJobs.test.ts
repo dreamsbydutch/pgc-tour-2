@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EnhancedGolfer } from "../types/types";
 import {
   deriveTournamentTimelineState,
+  getTournamentRoundWindowMetrics,
   isRoundPublishedForTimeline,
 } from "./cronJobs";
 
@@ -209,5 +210,23 @@ describe("isRoundPublishedForTimeline", () => {
         4,
       ),
     ).toBe(true);
+  });
+});
+
+describe("getTournamentRoundWindowMetrics", () => {
+  it("keeps round-two today/thru visible for cut golfers after round two closes", () => {
+    const metrics = getTournamentRoundWindowMetrics({
+      golfer: makeGolfer({
+        live: { current_pos: "CUT", R1: 70, R2: 71 },
+      }),
+      roundNumber: 2,
+      roundStarted: true,
+      timeline: { currentRound: 2, livePlay: false, status: "active" },
+      coursePar: 72,
+      allowPreStartNonStarterReplacement: false,
+    });
+
+    expect(metrics.today).toBe(-1);
+    expect(metrics.thru).toBe(18);
   });
 });
