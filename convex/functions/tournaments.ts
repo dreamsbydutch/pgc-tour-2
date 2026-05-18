@@ -11,6 +11,81 @@ import { v } from "convex/values";
 import { query } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 
+const TOURNAMENT_DEFAULT_HANDOFF_WINDOW_MS = 72 * 60 * 60 * 1000;
+
+type TournamentDefaultCandidate = {
+  startDate: number;
+  endDate: number;
+  status?: Doc<"tournaments">["status"];
+};
+
+type TournamentGolferGroupCandidate = {
+  group?: number | null;
+};
+
+export function getNextUpcomingTournament<T extends TournamentDefaultCandidate>(
+  tournaments: T[],
+  now: number,
+): T | null {
+  return (
+    [...tournaments]
+      .filter((tournament) => tournament.startDate > now)
+      .sort((a, b) => a.startDate - b.startDate)[0] ?? null
+  );
+}
+
+export function hasRealTournamentGroups<
+  T extends TournamentGolferGroupCandidate,
+>(tournamentGolfers: T[]): boolean {
+  return tournamentGolfers.some(
+    (tournamentGolfer) =>
+      typeof tournamentGolfer.group === "number" && tournamentGolfer.group > 0,
+  );
+}
+
+export function selectTournamentLeaderboardDefault<
+  T extends TournamentDefaultCandidate,
+>(args: {
+  explicitTournament?: T | null;
+  tournaments: T[];
+  now: number;
+  nextUpcomingHasGroups: boolean;
+}): T | null {
+  if (args.explicitTournament) return args.explicitTournament;
+
+  const { tournaments, now, nextUpcomingHasGroups } = args;
+
+  const activeByStatus =
+    tournaments.find((tournament) => tournament.status === "active") ?? null;
+  if (activeByStatus) return activeByStatus;
+
+  const activeByDate =
+    tournaments.find(
+      (tournament) => tournament.startDate <= now && tournament.endDate >= now,
+    ) ?? null;
+  if (activeByDate) return activeByDate;
+
+  const nextUpcoming = getNextUpcomingTournament(tournaments, now);
+  const recentCompleted =
+    [...tournaments]
+      .filter((tournament) => tournament.endDate < now)
+      .sort((a, b) => b.endDate - a.endDate)[0] ?? null;
+
+  if (recentCompleted) {
+    if (!nextUpcoming) return recentCompleted;
+    if (nextUpcomingHasGroups) return nextUpcoming;
+
+    const msSinceRecentEnded = now - recentCompleted.endDate;
+    if (msSinceRecentEnded < TOURNAMENT_DEFAULT_HANDOFF_WINDOW_MS) {
+      return recentCompleted;
+    }
+
+    return nextUpcoming;
+  }
+
+  return nextUpcoming;
+}
+
 /**
  * HELPER
  * Gets all teams and golfers from the first playoff tournament and duplicates them into the current playoff tournament
@@ -233,23 +308,28 @@ export const getTournamentLeaderboardView = query({
   handler: async (ctx, args) => {
     const allTournaments = await ctx.db.query("tournaments").collect();
     const now = Date.now();
-
-    let tournament = args.tournamentId
+    const explicitTournament = args.tournamentId
       ? await ctx.db.get(args.tournamentId)
       : null;
 
-    if (!tournament) {
-      tournament =
-        allTournaments.find((t) => t.status === "active") ??
-        allTournaments.find((t) => t.startDate <= now && t.endDate >= now) ??
-        [...allTournaments]
-          .filter((t) => t.startDate > now)
-          .sort((a, b) => a.startDate - b.startDate)[0] ??
-        [...allTournaments]
-          .filter((t) => t.endDate < now)
-          .sort((a, b) => b.endDate - a.endDate)[0] ??
-        null;
-    }
+    const nextUpcoming = getNextUpcomingTournament(allTournaments, now);
+    const nextUpcomingHasGroups = nextUpcoming
+      ? hasRealTournamentGroups(
+          await ctx.db
+            .query("tournamentGolfers")
+            .withIndex("by_tournament", (q) =>
+              q.eq("tournamentId", nextUpcoming._id),
+            )
+            .collect(),
+        )
+      : false;
+
+    const tournament = selectTournamentLeaderboardDefault({
+      explicitTournament,
+      tournaments: allTournaments,
+      now,
+      nextUpcomingHasGroups,
+    });
 
     if (!tournament) {
       return {
