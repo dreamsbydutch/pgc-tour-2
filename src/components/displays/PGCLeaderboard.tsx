@@ -306,9 +306,7 @@ function TeamGolfersTable(props: {
                 {golfer.playerName}
               </td>
               <td className="px-1 text-sm">{formatToPar(golfer.score)}</td>
-              <GolferScoreCells
-                golfer={golfer}
-              />
+              <GolferScoreCells golfer={golfer} />
               <td className="hidden border-l border-gray-300 text-xs md:table-cell">
                 {golfer.roundOne ?? "-"}
               </td>
