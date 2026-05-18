@@ -2743,6 +2743,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           _id: tournament._id,
           currentRound: tournamentCurrentRound,
           livePlay: tournamentLivePlay,
+          leaderboardLastUpdatedAt: now.getTime(),
           ...(lifecycleUpdates ?? {}),
         },
       });
@@ -3625,6 +3626,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           _id: tournament._id,
           currentRound: tournamentCurrentRound,
           livePlay: tournamentLivePlay,
+          leaderboardLastUpdatedAt: now.getTime(),
           ...(lifecycleUpdates ?? {}),
         },
       });

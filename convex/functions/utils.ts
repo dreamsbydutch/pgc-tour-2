@@ -659,6 +659,7 @@ export const updateTournamentInfo = internalMutation({
       endDate: v.optional(v.number()),
       livePlay: v.optional(v.boolean()),
       currentRound: v.optional(v.number()),
+      leaderboardLastUpdatedAt: v.optional(v.number()),
     }),
   },
   handler: async (ctx, args) => {
