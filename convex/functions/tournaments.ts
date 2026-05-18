@@ -345,6 +345,41 @@ export const getTournamentLeaderboardView = query({
     const seasonTournaments = allTournaments
       .filter((t) => t.seasonId === tournament.seasonId)
       .sort((a, b) => b.startDate - a.startDate);
+    const seasonIds = Array.from(
+      new Set(seasonTournaments.map((tournament) => tournament.seasonId)),
+    );
+    const tierIds = Array.from(
+      new Set(seasonTournaments.map((tournament) => tournament.tierId)),
+    );
+    const courseIds = Array.from(
+      new Set(seasonTournaments.map((tournament) => tournament.courseId)),
+    );
+    const [seasonDocs, tierDocs, courseDocs] = await Promise.all([
+      Promise.all(seasonIds.map((seasonId) => ctx.db.get(seasonId))),
+      Promise.all(tierIds.map((tierId) => ctx.db.get(tierId))),
+      Promise.all(courseIds.map((courseId) => ctx.db.get(courseId))),
+    ]);
+    const seasonById = new Map(
+      seasonDocs.filter(Boolean).map((season) => [season!._id, season!] as const),
+    );
+    const tierById = new Map(
+      tierDocs.filter(Boolean).map((tier) => [tier!._id, tier!] as const),
+    );
+    const courseById = new Map(
+      courseDocs.filter(Boolean).map((course) => [course!._id, course!] as const),
+    );
+    const enhancedTournament = {
+      ...tournament,
+      season: seasonById.get(tournament.seasonId),
+      tier: tierById.get(tournament.tierId),
+      course: courseById.get(tournament.courseId),
+    };
+    const enhancedSeasonTournaments = seasonTournaments.map((seasonTournament) => ({
+      ...seasonTournament,
+      season: seasonById.get(seasonTournament.seasonId),
+      tier: tierById.get(seasonTournament.tierId),
+      course: courseById.get(seasonTournament.courseId),
+    }));
 
     const tours = await ctx.db
       .query("tours")
@@ -402,11 +437,11 @@ export const getTournamentLeaderboardView = query({
     }
 
     return {
-      tournament,
+      tournament: enhancedTournament,
       tours,
       teams: enhancedTeams,
       golfers: enhancedGolfers,
-      allTournaments: seasonTournaments,
+      allTournaments: enhancedSeasonTournaments,
       userTourCard,
     };
   },

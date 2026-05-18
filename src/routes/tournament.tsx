@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect } from "react";
 
 import {
   LeaderboardView,
@@ -38,6 +39,20 @@ function TournamentRoute() {
       memberId: member?._id,
     },
   );
+  const defaultTourId =
+    tourId || (data?.userTourCard ? String(data.userTourCard.tourId) : "");
+
+  useEffect(() => {
+    if (!tourId && defaultTourId) {
+      navigate({
+        replace: true,
+        search: (prev) => ({
+          ...prev,
+          tourId: defaultTourId,
+        }),
+      });
+    }
+  }, [defaultTourId, navigate, tourId]);
 
   if (data === undefined) {
     return <LeaderboardViewSkeleton />;
@@ -96,7 +111,7 @@ function TournamentRoute() {
           }),
         });
       }}
-      activeTourId={tourId ?? data.userTourCard?.tourId}
+      activeTourId={defaultTourId}
       onChangeTourId={(nextTourId) => {
         navigate({
           search: (prev) => ({
