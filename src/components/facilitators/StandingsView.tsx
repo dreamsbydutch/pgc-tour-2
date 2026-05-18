@@ -378,6 +378,10 @@ function useStandingsView(props: StandingsViewProps) {
 
   const { user } = useUser();
   const clerkId = user?.id;
+  const initialSeasonId = props.initialSeasonId;
+  const initialTourId = props.initialTourId;
+  const onSeasonChange = props.onSeasonChange;
+  const onTourChange = props.onTourChange;
 
   const currentSeason = useQuery(api.functions.seasons.getCurrentSeason);
 
@@ -388,10 +392,10 @@ function useStandingsView(props: StandingsViewProps) {
   });
 
   const selectedSeasonId = useMemo(() => {
-    if (props.initialSeasonId) return props.initialSeasonId as Id<"seasons">;
+    if (initialSeasonId) return initialSeasonId as Id<"seasons">;
     if (currentSeason) return currentSeason._id;
     return null;
-  }, [currentSeason, props.initialSeasonId]);
+  }, [currentSeason, initialSeasonId]);
 
   const standingsData = useQuery(
     api.functions.seasons.getStandingsViewData,
@@ -425,7 +429,7 @@ function useStandingsView(props: StandingsViewProps) {
     ? currentMemberStable
     : null;
 
-  const needsCurrentSeason = !props.initialSeasonId;
+  const needsCurrentSeason = !initialSeasonId;
 
   const isLoading =
     (needsCurrentSeason && currentSeason === undefined) ||
@@ -532,25 +536,45 @@ function useStandingsView(props: StandingsViewProps) {
   const allTourCards = useMemo(() => data?.tourCards ?? [], [data?.tourCards]);
 
   const [activeView, setActiveViewState] = useState<ViewMode>(
-    props.initialTourId ?? "",
+    initialTourId ?? "",
   );
 
   useEffect(() => {
-    if (!props.initialTourId) return;
-    setActiveViewState(props.initialTourId);
-  }, [props.initialSeasonId, props.initialTourId]);
+    if (!initialTourId) return;
+    setActiveViewState(initialTourId);
+  }, [initialSeasonId, initialTourId]);
 
   useEffect(() => {
     if (activeView === "playoffs") return;
     if (!tours.length) return;
     const exists = tours.some((t) => t._id === activeView);
     if (activeView && exists) return;
-    setActiveViewState(tours[0]!._id);
-  }, [activeView, tours]);
+
+    const preferredTourId =
+      !initialTourId && data?.currentTourCard?.tourId
+        ? String(data.currentTourCard.tourId)
+        : null;
+    const fallbackTourId = tours[0]!._id;
+    const nextView =
+      preferredTourId && tours.some((t) => t._id === preferredTourId)
+        ? preferredTourId
+        : fallbackTourId;
+
+    setActiveViewState(nextView);
+    if (!initialTourId) {
+      onTourChange?.(nextView);
+    }
+  }, [
+    activeView,
+    data?.currentTourCard?.tourId,
+    initialTourId,
+    onTourChange,
+    tours,
+  ]);
 
   const setActiveView = (next: ViewMode) => {
     setActiveViewState(next);
-    props.onTourChange?.(next);
+    onTourChange?.(next);
   };
 
   const seasonOptions = useMemo(() => {
@@ -568,7 +592,7 @@ function useStandingsView(props: StandingsViewProps) {
   const activeSeasonId = selectedSeasonId ? String(selectedSeasonId) : null;
 
   const setActiveSeasonId = (nextSeasonId: string) => {
-    props.onSeasonChange?.(nextSeasonId);
+    onSeasonChange?.(nextSeasonId);
   };
 
   const currentMemberId =
