@@ -4,18 +4,23 @@ import {
   buildFirstPlaceTiebreakSummary,
   derivePersistedTournamentState,
   deriveTournamentTimelineState,
+  getTeamRoundWindowGolfers,
   getTournamentRoundWindowMetrics,
   getTeamTournamentRank,
   isRoundPublishedForTimeline,
 } from "./cronJobs";
 
+type TestSyncTeam = Parameters<typeof buildFirstPlaceTiebreakSummary>[0]["teams"][number];
+
 function makeGolfer(args: {
+  golfer?: Partial<NonNullable<EnhancedGolfer["golfer"]>>;
   live?: Partial<NonNullable<EnhancedGolfer["live"]>>;
   historical?: Partial<NonNullable<EnhancedGolfer["historical"]>>;
   historicalEvent?: Partial<NonNullable<EnhancedGolfer["historicalEvent"]>>;
   tournamentGolfer?: Partial<NonNullable<EnhancedGolfer["tournamentGolfer"]>>;
 } = {}): EnhancedGolfer {
   return {
+    golfer: args.golfer as EnhancedGolfer["golfer"],
     live: args.live as EnhancedGolfer["live"],
     historical: args.historical as EnhancedGolfer["historical"],
     historicalEvent: args.historicalEvent as EnhancedGolfer["historicalEvent"],
@@ -36,15 +41,16 @@ function makeTeam(args: {
     _id: args.id,
     score: args.score,
     position: args.position ?? "T1",
-    golfers: (args.golferEarnings ?? []).map((earnings) =>
+    golfers: (args.golferEarnings ?? []).map((earnings, index) =>
       makeGolfer({
+        golfer: { apiId: index + 1 },
         historicalEvent:
           typeof earnings === "number" ? { earnings } : undefined,
       }),
     ),
     tour: { _id: tourId },
     tourCard: { tourId },
-  } as any;
+  } as unknown as TestSyncTeam;
 }
 
 describe("deriveTournamentTimelineState", () => {
@@ -257,6 +263,121 @@ describe("getTournamentRoundWindowMetrics", () => {
 
     expect(metrics.today).toBe(-1);
     expect(metrics.thru).toBe(18);
+  });
+});
+
+describe("getTeamRoundWindowGolfers", () => {
+  it("breaks weekend scoring ties by lower thru first", () => {
+    const selected = getTeamRoundWindowGolfers({
+      golfers: [
+        makeGolfer({
+          golfer: { apiId: 1 },
+          live: {
+            current_pos: "T1",
+            round: 3,
+            thru: "12",
+            today: 2,
+            current_score: -2,
+            R1: 70,
+            R2: 69,
+          },
+        }),
+        makeGolfer({
+          golfer: { apiId: 2 },
+          live: {
+            current_pos: "T1",
+            round: 3,
+            thru: "8",
+            today: -1,
+            current_score: -5,
+            R1: 70,
+            R2: 69,
+          },
+        }),
+        makeGolfer({
+          golfer: { apiId: 3 },
+          live: {
+            current_pos: "T1",
+            round: 3,
+            thru: "18",
+            today: -3,
+            current_score: -7,
+            R1: 70,
+            R2: 69,
+          },
+        }),
+        makeGolfer({
+          golfer: { apiId: 4 },
+          live: {
+            current_pos: "T1",
+            round: 3,
+            thru: "18",
+            today: -2,
+            current_score: -6,
+            R1: 70,
+            R2: 69,
+          },
+        }),
+        makeGolfer({
+          golfer: { apiId: 5 },
+          live: {
+            current_pos: "T1",
+            round: 3,
+            thru: "10",
+            today: 0,
+            current_score: -4,
+            R1: 70,
+            R2: 69,
+          },
+        }),
+        makeGolfer({
+          golfer: { apiId: 6 },
+          live: {
+            current_pos: "T1",
+            round: 3,
+            thru: "0",
+            today: 0,
+            current_score: -4,
+            R1: 70,
+            R2: 69,
+          },
+        }),
+        makeGolfer({
+          golfer: { apiId: 7 },
+          live: {
+            current_pos: "T1",
+            round: 3,
+            thru: "4",
+            today: -1,
+            current_score: -5,
+            R1: 70,
+            R2: 69,
+          },
+        }),
+        makeGolfer({
+          golfer: { apiId: 8 },
+          live: {
+            current_pos: "T1",
+            round: 3,
+            thru: "15",
+            today: 1,
+            current_score: -3,
+            R1: 70,
+            R2: 69,
+          },
+        }),
+      ],
+      roundNumber: 3,
+      roundStarted: true,
+      timeline: { currentRound: 3, livePlay: true, status: "active" },
+      coursePar: 72,
+      allowPreStartNonStarterReplacement: false,
+    });
+
+    expect(selected).toHaveLength(5);
+    expect(selected.map((golfer) => golfer.golfer?.apiId)).toEqual([3, 4, 7, 2, 6]);
+    expect(selected.some((golfer) => golfer.golfer?.apiId === 1)).toBe(false);
+    expect(selected.some((golfer) => golfer.golfer?.apiId === 8)).toBe(false);
   });
 });
 

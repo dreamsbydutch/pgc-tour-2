@@ -219,7 +219,10 @@ function TeamGolfersTable(props: {
   tournament: { name: string; currentRound?: number | undefined };
   teamGolfers?: EnhancedTournamentGolferDoc[];
 }) {
-  const sortedTeamGolfers = useTeamGolfersTable(props.teamGolfers!);
+  const sortedTeamGolfers = useTeamGolfersTable({
+    teamGolfers: props.teamGolfers!,
+    currentRound: props.tournament.currentRound,
+  });
 
   const GolferScoreCells = ({
     golfer,
@@ -283,7 +286,11 @@ function TeamGolfersTable(props: {
       <TableBody>
         {sortedTeamGolfers.map((golfer, i) => {
           const borderClasses: string[] = [];
-          if (props.tournament.name === "TOUR Championship") {
+          if ((props.tournament.currentRound ?? 0) >= 3) {
+            if (i === 4) {
+              borderClasses.push("border-b border-black");
+            }
+          } else if (props.tournament.name === "TOUR Championship") {
             if (i === 2 || i === 9)
               borderClasses.push("border-b border-gray-700");
           } else if (props.tournament.name === "BMW Championship") {
@@ -343,10 +350,13 @@ function TeamGolfersTable(props: {
  * @param args.tournament - Tournament info.
  * @returns Ordered rows with cut golfers last.
  */
-function useTeamGolfersTable(teamGolfers: EnhancedTournamentGolferDoc[]) {
+function useTeamGolfersTable(args: {
+  teamGolfers: EnhancedTournamentGolferDoc[];
+  currentRound?: number;
+}) {
   return useMemo(() => {
-    const nonCut = teamGolfers.filter((g) => !isPlayerCut(g.position));
-    const cut = teamGolfers.filter((g) => isPlayerCut(g.position));
+    const nonCut = args.teamGolfers.filter((g) => !isPlayerCut(g.position));
+    const cut = args.teamGolfers.filter((g) => isPlayerCut(g.position));
 
     const toTimeMs = (teeTime?: string | number | null) => {
       const ms = parseTeeTimeValueToMs(teeTime);
@@ -364,7 +374,21 @@ function useTeamGolfersTable(teamGolfers: EnhancedTournamentGolferDoc[]) {
       return [...rows].sort((a, b) => {
         const aStarted = typeof a.thru === "number" && a.thru > 0;
         const bStarted = typeof b.thru === "number" && b.thru > 0;
-        if (aStarted !== bStarted) return aStarted ? -1 : 1;
+        const aTodayValue = aStarted
+          ? (typeof a.today === "number"
+              ? a.today
+              : Number.POSITIVE_INFINITY)
+          : 0;
+        const bTodayValue = bStarted
+          ? (typeof b.today === "number"
+              ? b.today
+              : Number.POSITIVE_INFINITY)
+          : 0;
+        if (aTodayValue !== bTodayValue) return aTodayValue - bTodayValue;
+
+        if (aStarted !== bStarted) {
+          return aStarted ? -1 : 1;
+        }
 
         if (!aStarted && !bStarted) {
           const ta = toTimeMs(a.teeTimeDisplay ?? null);
@@ -372,12 +396,6 @@ function useTeamGolfersTable(teamGolfers: EnhancedTournamentGolferDoc[]) {
           if (ta !== tb) return ta - tb;
           return (a.playerName ?? "").localeCompare(b.playerName ?? "");
         }
-
-        const aToday =
-          typeof a.today === "number" ? a.today : Number.POSITIVE_INFINITY;
-        const bToday =
-          typeof b.today === "number" ? b.today : Number.POSITIVE_INFINITY;
-        if (aToday !== bToday) return aToday - bToday;
 
         const aThru =
           typeof a.thru === "number" ? a.thru : Number.NEGATIVE_INFINITY;
@@ -394,14 +412,54 @@ function useTeamGolfersTable(teamGolfers: EnhancedTournamentGolferDoc[]) {
         return (a.playerName ?? "").localeCompare(b.playerName ?? "");
       });
     };
+    const sortByWeekendSelection = (
+      rows: EnhancedTournamentGolferDoc[],
+    ): EnhancedTournamentGolferDoc[] => {
+      return [...rows].sort((a, b) => {
+        const aToday =
+          typeof a.today === "number" ? a.today : Number.POSITIVE_INFINITY;
+        const bToday =
+          typeof b.today === "number" ? b.today : Number.POSITIVE_INFINITY;
+        if (aToday !== bToday) return aToday - bToday;
+
+        const aThru =
+          typeof a.thru === "number" ? a.thru : Number.POSITIVE_INFINITY;
+        const bThru =
+          typeof b.thru === "number" ? b.thru : Number.POSITIVE_INFINITY;
+        if (aThru !== bThru) return aThru - bThru;
+
+        const aScore =
+          typeof a.score === "number" ? a.score : Number.POSITIVE_INFINITY;
+        const bScore =
+          typeof b.score === "number" ? b.score : Number.POSITIVE_INFINITY;
+        if (aScore !== bScore) return aScore - bScore;
+
+        return (a.playerName ?? "").localeCompare(b.playerName ?? "");
+      });
+    };
 
     const sortedNonCut = sortByLive(nonCut);
     const sortedCut = [...cut].sort((a, b) =>
       (a.playerName ?? "").localeCompare(b.playerName ?? ""),
     );
 
-    return [...sortedNonCut, ...sortedCut] as EnhancedTournamentGolferDoc[];
-  }, [teamGolfers]);
+    if ((args.currentRound ?? 0) < 3) {
+      return [...sortedNonCut, ...sortedCut] as EnhancedTournamentGolferDoc[];
+    }
+
+    const weekendOrdered = sortByWeekendSelection(nonCut);
+    const countedGolfers = weekendOrdered.slice(0, 5);
+    const countedIds = new Set(countedGolfers.map((golfer) => golfer._id));
+    const remainingGolfers = sortByLive(
+      nonCut.filter((golfer) => !countedIds.has(golfer._id)),
+    );
+
+    return [
+      ...countedGolfers,
+      ...remainingGolfers,
+      ...sortedCut,
+    ] as EnhancedTournamentGolferDoc[];
+  }, [args.currentRound, args.teamGolfers]);
 }
 
 function ScoreDisplay(props: {

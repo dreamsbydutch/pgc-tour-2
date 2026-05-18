@@ -1127,7 +1127,7 @@ function isTeamWeekendCut(args: {
 /**
  * Returns the golfers that should contribute to a team's live today/thru window.
  */
-function getTeamRoundWindowGolfers(args: {
+export function getTeamRoundWindowGolfers(args: {
   golfers: EnhancedGolfer[];
   roundNumber: RoundNumber;
   roundStarted: boolean;
@@ -1152,15 +1152,24 @@ function getTeamRoundWindowGolfers(args: {
     .filter((golfer) =>
       shouldIncludeGolferInTeamRoundWindow({ ...args, golfer }),
     )
-    .sort(
-      (a, b) => {
-        const aToday =
-          getTournamentRoundWindowMetrics({ ...args, golfer: a }).today ?? 500;
-        const bToday =
-          getTournamentRoundWindowMetrics({ ...args, golfer: b }).today ?? 500;
+    .sort((a, b) => {
+      const aMetrics = getTournamentRoundWindowMetrics({ ...args, golfer: a });
+      const bMetrics = getTournamentRoundWindowMetrics({ ...args, golfer: b });
+      const aToday = aMetrics.today ?? Number.POSITIVE_INFINITY;
+      const bToday = bMetrics.today ?? Number.POSITIVE_INFINITY;
+      if (aToday !== bToday) {
         return aToday - bToday;
-      },
-    )
+      }
+
+      const aThru = aMetrics.thru ?? Number.POSITIVE_INFINITY;
+      const bThru = bMetrics.thru ?? Number.POSITIVE_INFINITY;
+      if (aThru !== bThru) {
+        return aThru - bThru;
+      }
+
+      return (a.golfer?.apiId ?? Number.POSITIVE_INFINITY) -
+        (b.golfer?.apiId ?? Number.POSITIVE_INFINITY);
+    })
     .slice(0, selectionSize);
 }
 
@@ -1996,7 +2005,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         golfers,
         fieldData,
         historicalData,
-        historicalEventData,
+        historicalEventData: _historicalEventData,
       } = tournamentStats;
 
       if (tournamentType === "recent") {
@@ -2890,7 +2899,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         golfers,
         fieldData,
         historicalData,
-        historicalEventData,
+        historicalEventData: _historicalEventData,
       } = tournamentStats;
 
       const allowPreStartNonStarterReplacement =
