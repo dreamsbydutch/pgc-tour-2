@@ -10,6 +10,7 @@ import {
   formatToPar,
   getMemberRowHighlightClass,
   isPlayerCut,
+  parseRankFromPositionString,
   parseTeeTimeValueToMs,
 } from "@/lib";
 import type { MajorChampionBadgesByMemberId } from "@/hooks";
@@ -65,6 +66,11 @@ export function PGCLeaderboard(props: {
       (a, b) =>
         calculateScoreForSorting(a.position, a.score) -
         calculateScoreForSorting(b.position, b.score),
+    )
+    .sort(
+      (a, b) =>
+        parseRankFromPositionString(a.position) -
+        parseRankFromPositionString(b.position),
     );
 
   if (props.variant === "playoff") {

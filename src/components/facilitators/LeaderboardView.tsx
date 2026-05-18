@@ -10,6 +10,7 @@ import {
   filterMajorChampionBadgesByMemberId,
   useCurrentSeasonMajorChampionBadges,
 } from "@/hooks";
+import { Skeleton } from "@/ui";
 import {
   EnhancedTournamentGolferDoc,
   MemberDoc,
@@ -205,4 +206,126 @@ function formatLeaderboardLastUpdated(
   }).format(dt);
 
   return `Last updated: ${formatted}`;
+}
+
+/**
+ * Loading UI for the tournament leaderboard page.
+ *
+ * @returns A skeleton that mirrors the leaderboard page layout.
+ */
+export function LeaderboardViewSkeleton() {
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <div className="mx-auto w-full max-w-4xl md:w-11/12 lg:w-8/12">
+        <div className="grid grid-cols-10 items-center border-b-2 border-gray-800 py-2">
+          <div className="col-span-3 row-span-4 place-self-center px-1 py-2">
+            <Skeleton className="mx-auto h-24 w-24 rounded-2xl sm:h-28 sm:w-28" />
+          </div>
+          <div className="col-span-5 row-span-2 place-self-center space-y-3 text-center">
+            <Skeleton className="mx-auto h-8 w-48 sm:h-10 sm:w-64" />
+            <Skeleton className="mx-auto h-4 w-36 sm:w-44" />
+          </div>
+          <div className="col-span-2 row-span-1 place-self-center">
+            <Skeleton className="h-9 w-24 rounded-full md:w-36" />
+          </div>
+          <div className="col-span-2 row-span-1 place-self-center">
+            <Skeleton className="h-5 w-24" />
+          </div>
+          <div className="col-span-3 row-span-1 place-self-center">
+            <Skeleton className="mx-auto h-5 w-28 sm:w-36" />
+          </div>
+          <div className="col-span-2 row-span-1 place-self-center">
+            <Skeleton className="mx-auto h-5 w-24 sm:w-28" />
+          </div>
+          <div className="col-span-2 row-span-1 place-self-center">
+            <Skeleton className="mx-auto h-5 w-20 sm:w-24" />
+          </div>
+          <div className="col-span-7 row-span-1 place-self-center">
+            <Skeleton className="mx-auto h-5 w-48 sm:w-72" />
+          </div>
+        </div>
+      </div>
+
+      <div className="mx-auto mt-2 w-full max-w-4xl md:w-11/12 lg:w-8/12">
+        <div className="mb-3 flex justify-end">
+          <Skeleton className="h-4 w-32" />
+        </div>
+
+        <div className="mb-4 flex flex-wrap gap-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-10 w-20 rounded-full sm:w-24" />
+          ))}
+        </div>
+
+        <div className="mx-auto grid max-w-4xl grid-cols-10 gap-y-2 text-center sm:grid-cols-33">
+          <div className="col-span-2 sm:col-span-5">
+            <Skeleton className="mx-auto h-4 w-10" />
+          </div>
+          <div className="col-span-4 sm:col-span-10">
+            <Skeleton className="mx-auto h-4 w-16" />
+          </div>
+          <div className="col-span-2 sm:col-span-5">
+            <Skeleton className="mx-auto h-4 w-12" />
+          </div>
+          <div className="col-span-1 sm:col-span-2">
+            <Skeleton className="mx-auto h-4 w-8" />
+          </div>
+          <div className="col-span-1 sm:col-span-2">
+            <Skeleton className="mx-auto h-4 w-8" />
+          </div>
+          <div className="col-span-1 hidden sm:flex" />
+          <div className="col-span-1 hidden sm:flex sm:justify-center">
+            <Skeleton className="h-4 w-6" />
+          </div>
+          <div className="col-span-1 hidden sm:flex sm:justify-center">
+            <Skeleton className="h-4 w-6" />
+          </div>
+          <div className="col-span-1 hidden sm:flex sm:justify-center">
+            <Skeleton className="h-4 w-6" />
+          </div>
+          <div className="col-span-1 hidden sm:flex sm:justify-center">
+            <Skeleton className="h-4 w-6" />
+          </div>
+        </div>
+
+        <div className="mt-2 space-y-2">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-10 items-center rounded-md px-2 py-3 sm:grid-cols-33"
+            >
+              <div className="col-span-2 sm:col-span-5">
+                <Skeleton className="h-5 w-10" />
+              </div>
+              <div className="col-span-4 sm:col-span-10">
+                <Skeleton className="h-5 w-24 sm:w-36" />
+              </div>
+              <div className="col-span-2 sm:col-span-5">
+                <Skeleton className="mx-auto h-5 w-12" />
+              </div>
+              <div className="col-span-1 sm:col-span-2">
+                <Skeleton className="mx-auto h-5 w-8" />
+              </div>
+              <div className="col-span-1 sm:col-span-2">
+                <Skeleton className="mx-auto h-5 w-8" />
+              </div>
+              <div className="col-span-1 hidden sm:flex" />
+              <div className="col-span-1 hidden sm:flex sm:justify-center">
+                <Skeleton className="h-5 w-8" />
+              </div>
+              <div className="col-span-1 hidden sm:flex sm:justify-center">
+                <Skeleton className="h-5 w-8" />
+              </div>
+              <div className="col-span-1 hidden sm:flex sm:justify-center">
+                <Skeleton className="h-5 w-8" />
+              </div>
+              <div className="col-span-1 hidden sm:flex sm:justify-center">
+                <Skeleton className="h-5 w-8" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }

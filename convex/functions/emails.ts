@@ -12,6 +12,7 @@ import { internal } from "../_generated/api";
 import type { GroupsEmailContext } from "../types/emails";
 import {
   formatMemberName,
+  findPreviousCompletedTournament,
   getChampionsStringForTournamentId,
   getLeaderboardRowsForTournament,
   getPreviousCompletedTournamentName,
@@ -42,19 +43,15 @@ export const getActiveTourCardRecipientsForTournament = internalQuery({
     const season = await ctx.db.get(tournament.seasonId);
     const seasonYear = season?.year ?? new Date(Date.now()).getFullYear();
 
-    const now = Date.now();
     const tournaments = await ctx.db
       .query("tournaments")
       .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
       .collect();
 
-    const previous = tournaments
-      .filter(
-        (t) =>
-          t.startDate < tournament.startDate &&
-          (t.status === "completed" || t.endDate <= now),
-      )
-      .sort((a, b) => b.startDate - a.startDate)[0];
+    const previous = findPreviousCompletedTournament({
+      tournaments,
+      startDate: tournament.startDate,
+    });
 
     const previousTournamentName =
       previous?.name ??
@@ -359,14 +356,10 @@ export const adminGetGroupsEmailPreview: ReturnType<typeof query> = query({
       .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
       .collect();
 
-    const now = Date.now();
-    const previous = tournaments
-      .filter(
-        (t) =>
-          t.startDate < tournament.startDate &&
-          (t.status === "completed" || t.endDate <= now),
-      )
-      .sort((a, b) => b.startDate - a.startDate)[0];
+    const previous = findPreviousCompletedTournament({
+      tournaments,
+      startDate: tournament.startDate,
+    });
 
     const previousTournamentName = previous?.name ?? "";
 

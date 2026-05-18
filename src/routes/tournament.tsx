@@ -1,6 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { LeaderboardView, PreTournamentContent } from "@/facilitators";
+import {
+  LeaderboardView,
+  LeaderboardViewSkeleton,
+  PreTournamentContent,
+} from "@/facilitators";
 import { api, Id, useQuery } from "@/convex";
 import { useRoleAccess } from "@/hooks";
 
@@ -34,6 +38,10 @@ function TournamentRoute() {
       memberId: member?._id,
     },
   );
+
+  if (data === undefined) {
+    return <LeaderboardViewSkeleton />;
+  }
 
   if (!data?.tournament)
     return (

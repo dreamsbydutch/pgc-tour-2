@@ -65,6 +65,44 @@ type TeamTournamentRank = {
   position: string;
 };
 
+type FirstPlaceTiebreakResolution =
+  | {
+      status: "no_tie";
+      tourKey: string;
+      tiedTeamIds: Id<"teams">[];
+    }
+  | {
+      status: "resolved";
+      tourKey: string;
+      tiedTeamIds: Id<"teams">[];
+      winnerTeamId: Id<"teams">;
+    }
+  | {
+      status: "unresolved_missing_earnings";
+      tourKey: string;
+      tiedTeamIds: Id<"teams">[];
+    }
+  | {
+      status: "unresolved_equal_earnings";
+      tourKey: string;
+      tiedTeamIds: Id<"teams">[];
+    };
+
+type FirstPlaceTiebreakSummary = {
+  byTourKey: Map<string, FirstPlaceTiebreakResolution>;
+  unresolved: Array<
+    Extract<
+      FirstPlaceTiebreakResolution,
+      | { status: "unresolved_missing_earnings" }
+      | { status: "unresolved_equal_earnings" }
+    >
+  >;
+};
+
+type TournamentCompletionHoldReason =
+  | "first_place_tiebreak_missing_earnings"
+  | "first_place_tiebreak_equal_earnings";
+
 function isDataGolfEventCompleted(value: unknown): boolean {
   const normalized = String(value ?? "")
     .trim()
@@ -73,12 +111,6 @@ function isDataGolfEventCompleted(value: unknown): boolean {
   if (normalized === "true" || normalized === "1") return true;
 
   return Number.isFinite(Date.parse(normalized));
-}
-
-function hasDataGolfHistoricalEventEarnings(
-  historicalEventData: { event_stats?: unknown[] } | undefined,
-): boolean {
-  return (historicalEventData?.event_stats?.length ?? 0) > 0;
 }
 
 /**
@@ -133,26 +165,178 @@ function getGolferEventEarnings(golfer: EnhancedGolfer): number | undefined {
 function getTeamGolferEventEarningsTotal(team: TournamentSyncTeam): {
   total: number;
   golferCount: number;
+  earningsCount: number;
 } {
   let total = 0;
   let golferCount = 0;
+  let earningsCount = 0;
 
   for (const golfer of team.golfers) {
     const earnings = getGolferEventEarnings(golfer);
     total += earnings ?? 0;
     golferCount += 1;
+    earningsCount += typeof earnings === "number" ? 1 : 0;
   }
 
-  return { total, golferCount };
+  return { total, golferCount, earningsCount };
 }
 
-function getTeamTournamentRank(args: {
+function getTeamTourKey(
+  team: Pick<TournamentSyncTeam, "tour" | "tourCard">,
+): string {
+  return String(team.tour?._id ?? team.tourCard?.tourId ?? "");
+}
+
+export function buildFirstPlaceTiebreakSummary(args: {
+  teams: TournamentSyncTeam[];
+}): FirstPlaceTiebreakSummary {
+  const teamsByTourKey = new Map<string, TournamentSyncTeam[]>();
+
+  for (const team of args.teams) {
+    const tourKey = getTeamTourKey(team);
+    const existing = teamsByTourKey.get(tourKey) ?? [];
+    existing.push(team);
+    teamsByTourKey.set(tourKey, existing);
+  }
+
+  const byTourKey = new Map<string, FirstPlaceTiebreakResolution>();
+  const unresolved: FirstPlaceTiebreakSummary["unresolved"] = [];
+
+  for (const [tourKey, teams] of teamsByTourKey.entries()) {
+    const scoredTeams = teams.filter(
+      (team) =>
+        team.position !== "CUT" &&
+        typeof team.score === "number" &&
+        Number.isFinite(team.score),
+    );
+
+    if (scoredTeams.length === 0) {
+      byTourKey.set(tourKey, {
+        status: "no_tie",
+        tourKey,
+        tiedTeamIds: [],
+      });
+      continue;
+    }
+
+    const bestScore = Math.min(
+      ...scoredTeams.map((team) => team.score as number),
+    );
+    const firstPlaceTeams = scoredTeams.filter(
+      (team) => (team.score as number) === bestScore,
+    );
+    const tiedTeamIds = firstPlaceTeams.map((team) => team._id);
+
+    if (firstPlaceTeams.length <= 1) {
+      byTourKey.set(tourKey, {
+        status: "no_tie",
+        tourKey,
+        tiedTeamIds,
+      });
+      continue;
+    }
+
+    const tiebreakRows = firstPlaceTeams.map((team) => ({
+      team,
+      ...getTeamGolferEventEarningsTotal(team),
+    }));
+
+    if (
+      tiebreakRows.some(
+        (row) => row.golferCount === 0 || row.earningsCount < row.golferCount,
+      )
+    ) {
+      const resolution = {
+        status: "unresolved_missing_earnings",
+        tourKey,
+        tiedTeamIds,
+      } as const;
+      byTourKey.set(tourKey, resolution);
+      unresolved.push(resolution);
+      continue;
+    }
+
+    const highestEarnings = Math.max(...tiebreakRows.map((row) => row.total));
+    const winners = tiebreakRows.filter((row) => row.total === highestEarnings);
+    if (winners.length !== 1) {
+      const resolution = {
+        status: "unresolved_equal_earnings",
+        tourKey,
+        tiedTeamIds,
+      } as const;
+      byTourKey.set(tourKey, resolution);
+      unresolved.push(resolution);
+      continue;
+    }
+
+    byTourKey.set(tourKey, {
+      status: "resolved",
+      tourKey,
+      tiedTeamIds,
+      winnerTeamId: winners[0].team._id,
+    });
+  }
+
+  return { byTourKey, unresolved };
+}
+
+function getTournamentCompletionHoldReason(
+  summary: FirstPlaceTiebreakSummary,
+): TournamentCompletionHoldReason | undefined {
+  if (
+    summary.unresolved.some(
+      (resolution) => resolution.status === "unresolved_missing_earnings",
+    )
+  ) {
+    return "first_place_tiebreak_missing_earnings";
+  }
+  if (
+    summary.unresolved.some(
+      (resolution) => resolution.status === "unresolved_equal_earnings",
+    )
+  ) {
+    return "first_place_tiebreak_equal_earnings";
+  }
+
+  return undefined;
+}
+
+export function derivePersistedTournamentState(args: {
+  timeline: TournamentTimelineState;
+  firstPlaceTiebreakSummary: FirstPlaceTiebreakSummary;
+}): {
+  currentRound: number;
+  livePlay: boolean;
+  status: TournamentLifecycleStatus;
+  holdReason?: TournamentCompletionHoldReason;
+} {
+  const holdReason = getTournamentCompletionHoldReason(
+    args.firstPlaceTiebreakSummary,
+  );
+  if (args.timeline.status !== "completed" || !holdReason) {
+    return {
+      currentRound: args.timeline.currentRound,
+      livePlay: args.timeline.livePlay,
+      status: args.timeline.status,
+    };
+  }
+
+  return {
+    currentRound: 4,
+    livePlay: false,
+    status: "active",
+    holdReason,
+  };
+}
+
+export function getTeamTournamentRank(args: {
   team: TournamentSyncTeam;
   teams: TournamentSyncTeam[];
+  firstPlaceTiebreakSummary?: FirstPlaceTiebreakSummary;
   tournamentCompleted: boolean;
 }): TeamTournamentRank {
   const sameTour = (team: TournamentSyncTeam) =>
-    team.tour?._id === args.team.tour?._id;
+    getTeamTourKey(team) === getTeamTourKey(args.team);
   const teamScore = args.team.score ?? 0;
   const teamsAhead = args.teams.filter(
     (team) => sameTour(team) && (team.score ?? 0) < teamScore,
@@ -173,29 +357,17 @@ function getTeamTournamentRank(args: {
     };
   }
 
-  const firstPlaceTeams = args.teams.filter(
-    (team) => sameTour(team) && (team.score ?? 0) === teamScore,
+  const firstPlaceResolution = args.firstPlaceTiebreakSummary?.byTourKey.get(
+    getTeamTourKey(args.team),
   );
-  const tiebreakRows = firstPlaceTeams.map((team) => ({
-    team,
-    ...getTeamGolferEventEarningsTotal(team),
-  }));
-
-  if (tiebreakRows.some((row) => row.golferCount < 10)) {
+  if (!firstPlaceResolution || firstPlaceResolution.status !== "resolved") {
     return { teamsAhead, teamsTied, position: `T${teamsAhead + 1}` };
   }
-
-  const highestEarnings = Math.max(...tiebreakRows.map((row) => row.total));
-  const winners = tiebreakRows.filter((row) => row.total === highestEarnings);
-  if (winners.length !== 1) {
-    return { teamsAhead, teamsTied, position: `T${teamsAhead + 1}` };
-  }
-
-  if (winners[0].team._id === args.team._id) {
+  if (firstPlaceResolution.winnerTeamId === args.team._id) {
     return { teamsAhead: 0, teamsTied: 1, position: "1" };
   }
 
-  const tiedSecondCount = firstPlaceTeams.length - 1;
+  const tiedSecondCount = firstPlaceResolution.tiedTeamIds.length - 1;
   return {
     teamsAhead: 1,
     teamsTied: tiedSecondCount,
@@ -2057,32 +2229,13 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           historicalData?.event_completed,
         ),
       });
-      const tournamentStatus = timeline.status;
-      const tournamentCurrentRound = timeline.currentRound;
-      const tournamentLivePlay = timeline.livePlay;
+      const feedCompleted = timeline.status === "completed";
       const visibleRound =
-        tournamentCurrentRound >= 1 && tournamentCurrentRound <= 4
-          ? (tournamentCurrentRound as RoundNumber)
-          : tournamentStatus === "completed"
+        timeline.currentRound >= 1 && timeline.currentRound <= 4
+          ? (timeline.currentRound as RoundNumber)
+          : feedCompleted
             ? 4
             : 0;
-      const lifecycleUpdates = getChangedTournamentLifecycleFields({
-        tournament,
-        startDate: firstTeeTime,
-        endDate:
-          tournamentStatus === "completed" && tournament.status !== "completed"
-            ? now.getTime()
-            : undefined,
-        status: tournamentStatus,
-      });
-      await ctx.runMutation(internal.functions.utils.updateTournamentInfo, {
-        tournament: {
-          _id: tournament._id,
-          currentRound: tournamentCurrentRound,
-          livePlay: tournamentLivePlay,
-          ...(lifecycleUpdates ?? {}),
-        },
-      });
       const usageMap = buildUsageRateByGolferApiId({ teams });
 
       for (const g of golfers) {
@@ -2416,7 +2569,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           ...t,
           position: teamWeekendCut ? "CUT" : t.position,
           score:
-            tournamentStatus === "upcoming"
+            timeline.status === "upcoming"
               ? undefined
               : roundToDecimalPlace(completedScoreTotal + liveScoreTotal, 1),
           today:
@@ -2538,6 +2691,53 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           roundFour,
         });
       }
+      const firstPlaceTiebreakSummary = buildFirstPlaceTiebreakSummary({
+        teams: updatedTeams,
+      });
+      const persistedTournamentState = derivePersistedTournamentState({
+        timeline,
+        firstPlaceTiebreakSummary,
+      });
+      const tournamentStatus = persistedTournamentState.status;
+      const tournamentCurrentRound = persistedTournamentState.currentRound;
+      const tournamentLivePlay = persistedTournamentState.livePlay;
+
+      if (persistedTournamentState.holdReason) {
+        console.log(
+          "runTournamentSync: holding tournament active for first-place tiebreak",
+          {
+            tournamentId: tournament._id,
+            tournamentName: tournament.name,
+            reason: persistedTournamentState.holdReason,
+            unresolvedTours: firstPlaceTiebreakSummary.unresolved.map(
+              (resolution) => ({
+                tourKey: resolution.tourKey,
+                status: resolution.status,
+                tiedTeamIds: resolution.tiedTeamIds,
+              }),
+            ),
+          },
+        );
+      }
+
+      const lifecycleUpdates = getChangedTournamentLifecycleFields({
+        tournament,
+        startDate: firstTeeTime,
+        endDate:
+          tournamentStatus === "completed" && tournament.status !== "completed"
+            ? now.getTime()
+            : undefined,
+        status: tournamentStatus,
+      });
+      await ctx.runMutation(internal.functions.utils.updateTournamentInfo, {
+        tournament: {
+          _id: tournament._id,
+          currentRound: tournamentCurrentRound,
+          livePlay: tournamentLivePlay,
+          ...(lifecycleUpdates ?? {}),
+        },
+      });
+
       for (const t of updatedTeams) {
         if (t._id) {
           const teamsAheadPast = updatedTeams.filter(
@@ -2571,9 +2771,8 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           const teamRank = getTeamTournamentRank({
             team: t,
             teams: updatedTeams,
-            tournamentCompleted:
-              tournamentStatus === "completed" ||
-              hasDataGolfHistoricalEventEarnings(historicalEventData),
+            firstPlaceTiebreakSummary,
+            tournamentCompleted: tournamentStatus === "completed",
           });
           await ctx.runMutation(api.functions.teams.updateTeam, {
             team: {
@@ -2618,7 +2817,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
       return {
         ok: true,
         skipped: false,
-        reason: "completed update",
+        reason: persistedTournamentState.holdReason ?? "completed update",
         tournamentId: tournament._id,
         tournamentName: tournament.name,
         currentRound: tournamentCurrentRound,
@@ -2912,32 +3111,13 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           historicalData?.event_completed,
         ),
       });
-      const tournamentStatus = timeline.status;
-      const tournamentCurrentRound = timeline.currentRound;
-      const tournamentLivePlay = timeline.livePlay;
+      const feedCompleted = timeline.status === "completed";
       const visibleRound =
-        tournamentCurrentRound >= 1 && tournamentCurrentRound <= 4
-          ? (tournamentCurrentRound as RoundNumber)
-          : tournamentStatus === "completed"
+        timeline.currentRound >= 1 && timeline.currentRound <= 4
+          ? (timeline.currentRound as RoundNumber)
+          : feedCompleted
             ? 4
             : 0;
-      const lifecycleUpdates = getChangedTournamentLifecycleFields({
-        tournament,
-        startDate: firstTeeTime,
-        endDate:
-          tournamentStatus === "completed" && tournament.status !== "completed"
-            ? now.getTime()
-            : undefined,
-        status: tournamentStatus,
-      });
-      await ctx.runMutation(internal.functions.utils.updateTournamentInfo, {
-        tournament: {
-          _id: tournament._id,
-          currentRound: tournamentCurrentRound,
-          livePlay: tournamentLivePlay,
-          ...(lifecycleUpdates ?? {}),
-        },
-      });
       const usageMap = buildUsageRateByGolferApiId({ teams });
 
       for (const g of golfers) {
@@ -3271,7 +3451,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           ...t,
           position: teamWeekendCut ? "CUT" : t.position,
           score:
-            tournamentStatus === "upcoming"
+            timeline.status === "upcoming"
               ? undefined
               : roundToDecimalPlace(completedScoreTotal + liveScoreTotal, 1),
           today:
@@ -3393,6 +3573,53 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           roundFour,
         });
       }
+      const firstPlaceTiebreakSummary = buildFirstPlaceTiebreakSummary({
+        teams: updatedTeams,
+      });
+      const persistedTournamentState = derivePersistedTournamentState({
+        timeline,
+        firstPlaceTiebreakSummary,
+      });
+      const tournamentStatus = persistedTournamentState.status;
+      const tournamentCurrentRound = persistedTournamentState.currentRound;
+      const tournamentLivePlay = persistedTournamentState.livePlay;
+
+      if (persistedTournamentState.holdReason) {
+        console.log(
+          "updatePreviousTournament: holding tournament active for first-place tiebreak",
+          {
+            tournamentId: tournament._id,
+            tournamentName: tournament.name,
+            reason: persistedTournamentState.holdReason,
+            unresolvedTours: firstPlaceTiebreakSummary.unresolved.map(
+              (resolution) => ({
+                tourKey: resolution.tourKey,
+                status: resolution.status,
+                tiedTeamIds: resolution.tiedTeamIds,
+              }),
+            ),
+          },
+        );
+      }
+
+      const lifecycleUpdates = getChangedTournamentLifecycleFields({
+        tournament,
+        startDate: firstTeeTime,
+        endDate:
+          tournamentStatus === "completed" && tournament.status !== "completed"
+            ? now.getTime()
+            : undefined,
+        status: tournamentStatus,
+      });
+      await ctx.runMutation(internal.functions.utils.updateTournamentInfo, {
+        tournament: {
+          _id: tournament._id,
+          currentRound: tournamentCurrentRound,
+          livePlay: tournamentLivePlay,
+          ...(lifecycleUpdates ?? {}),
+        },
+      });
+
       for (const t of updatedTeams) {
         if (t._id) {
           const teamsAheadPast = updatedTeams.filter(
@@ -3426,9 +3653,8 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           const teamRank = getTeamTournamentRank({
             team: t,
             teams: updatedTeams,
-            tournamentCompleted:
-              tournamentStatus === "completed" ||
-              hasDataGolfHistoricalEventEarnings(historicalEventData),
+            firstPlaceTiebreakSummary,
+            tournamentCompleted: tournamentStatus === "completed",
           });
           await ctx.runMutation(api.functions.teams.updateTeam, {
             team: {
@@ -3473,7 +3699,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
       return {
         ok: true,
         skipped: false,
-        reason: "completed update",
+        reason: persistedTournamentState.holdReason ?? "completed update",
         tournamentId: tournament._id,
         tournamentName: tournament.name,
         currentRound: tournamentCurrentRound,

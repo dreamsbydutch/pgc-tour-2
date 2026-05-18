@@ -1,21 +1,50 @@
 import { describe, expect, it } from "vitest";
 import type { EnhancedGolfer } from "../types/types";
 import {
+  buildFirstPlaceTiebreakSummary,
+  derivePersistedTournamentState,
   deriveTournamentTimelineState,
   getTournamentRoundWindowMetrics,
+  getTeamTournamentRank,
   isRoundPublishedForTimeline,
 } from "./cronJobs";
 
 function makeGolfer(args: {
   live?: Partial<NonNullable<EnhancedGolfer["live"]>>;
   historical?: Partial<NonNullable<EnhancedGolfer["historical"]>>;
+  historicalEvent?: Partial<NonNullable<EnhancedGolfer["historicalEvent"]>>;
   tournamentGolfer?: Partial<NonNullable<EnhancedGolfer["tournamentGolfer"]>>;
 } = {}): EnhancedGolfer {
   return {
     live: args.live as EnhancedGolfer["live"],
     historical: args.historical as EnhancedGolfer["historical"],
+    historicalEvent: args.historicalEvent as EnhancedGolfer["historicalEvent"],
     tournamentGolfer: args.tournamentGolfer as EnhancedGolfer["tournamentGolfer"],
   } as EnhancedGolfer;
+}
+
+function makeTeam(args: {
+  id: string;
+  tourId?: string;
+  score: number;
+  position?: string;
+  golferEarnings?: Array<number | undefined>;
+}) {
+  const tourId = args.tourId ?? "tour-a";
+
+  return {
+    _id: args.id,
+    score: args.score,
+    position: args.position ?? "T1",
+    golfers: (args.golferEarnings ?? []).map((earnings) =>
+      makeGolfer({
+        historicalEvent:
+          typeof earnings === "number" ? { earnings } : undefined,
+      }),
+    ),
+    tour: { _id: tourId },
+    tourCard: { tourId },
+  } as any;
 }
 
 describe("deriveTournamentTimelineState", () => {
@@ -228,5 +257,307 @@ describe("getTournamentRoundWindowMetrics", () => {
 
     expect(metrics.today).toBe(-1);
     expect(metrics.thru).toBe(18);
+  });
+});
+
+describe("buildFirstPlaceTiebreakSummary", () => {
+  it("marks tours without a first-place tie as resolved enough to complete", () => {
+    const summary = buildFirstPlaceTiebreakSummary({
+      teams: [
+        makeTeam({
+          id: "winner",
+          score: -10,
+          position: "1",
+          golferEarnings: [100, 200],
+        }),
+        makeTeam({
+          id: "second",
+          score: -8,
+          position: "2",
+          golferEarnings: [150, 250],
+        }),
+      ],
+    });
+
+    expect(summary.unresolved).toHaveLength(0);
+    expect(summary.byTourKey.get("tour-a")?.status).toBe("no_tie");
+  });
+
+  it("resolves a first-place tie when one team has the highest combined earnings", () => {
+    const summary = buildFirstPlaceTiebreakSummary({
+      teams: [
+        makeTeam({
+          id: "winner",
+          score: -10,
+          golferEarnings: [500, 400],
+        }),
+        makeTeam({
+          id: "runner-up",
+          score: -10,
+          golferEarnings: [300, 200],
+        }),
+      ],
+    });
+
+    expect(summary.unresolved).toHaveLength(0);
+    expect(summary.byTourKey.get("tour-a")).toMatchObject({
+      status: "resolved",
+      winnerTeamId: "winner",
+    });
+  });
+
+  it("holds completion when tied first-place teams are missing golfer earnings", () => {
+    const summary = buildFirstPlaceTiebreakSummary({
+      teams: [
+        makeTeam({
+          id: "team-a",
+          score: -10,
+          golferEarnings: [500, undefined],
+        }),
+        makeTeam({
+          id: "team-b",
+          score: -10,
+          golferEarnings: [300, 200],
+        }),
+      ],
+    });
+
+    expect(summary.unresolved).toHaveLength(1);
+    expect(summary.byTourKey.get("tour-a")?.status).toBe(
+      "unresolved_missing_earnings",
+    );
+  });
+
+  it("holds completion when tied first-place teams stay tied on combined earnings", () => {
+    const summary = buildFirstPlaceTiebreakSummary({
+      teams: [
+        makeTeam({
+          id: "team-a",
+          score: -10,
+          golferEarnings: [400, 300],
+        }),
+        makeTeam({
+          id: "team-b",
+          score: -10,
+          golferEarnings: [350, 350],
+        }),
+      ],
+    });
+
+    expect(summary.unresolved).toHaveLength(1);
+    expect(summary.byTourKey.get("tour-a")?.status).toBe(
+      "unresolved_equal_earnings",
+    );
+  });
+});
+
+describe("derivePersistedTournamentState", () => {
+  it("keeps completed tournaments completed when every tour has a sole winner", () => {
+    const summary = buildFirstPlaceTiebreakSummary({
+      teams: [
+        makeTeam({
+          id: "winner",
+          score: -10,
+          position: "1",
+          golferEarnings: [100, 100],
+        }),
+        makeTeam({
+          id: "second",
+          score: -8,
+          position: "2",
+          golferEarnings: [50, 50],
+        }),
+      ],
+    });
+
+    const state = derivePersistedTournamentState({
+      timeline: {
+        currentRound: 4,
+        livePlay: false,
+        status: "completed",
+        rounds: {
+          1: { started: true, completed: true, live: false },
+          2: { started: true, completed: true, live: false },
+          3: { started: true, completed: true, live: false },
+          4: { started: true, completed: true, live: false },
+        },
+      },
+      firstPlaceTiebreakSummary: summary,
+    });
+
+    expect(state).toMatchObject({
+      status: "completed",
+      currentRound: 4,
+      livePlay: false,
+    });
+  });
+
+  it("holds completed tournaments active when first-place earnings are missing", () => {
+    const summary = buildFirstPlaceTiebreakSummary({
+      teams: [
+        makeTeam({
+          id: "team-a",
+          score: -10,
+          golferEarnings: [100, undefined],
+        }),
+        makeTeam({
+          id: "team-b",
+          score: -10,
+          golferEarnings: [50, 50],
+        }),
+      ],
+    });
+
+    const state = derivePersistedTournamentState({
+      timeline: {
+        currentRound: 4,
+        livePlay: false,
+        status: "completed",
+        rounds: {
+          1: { started: true, completed: true, live: false },
+          2: { started: true, completed: true, live: false },
+          3: { started: true, completed: true, live: false },
+          4: { started: true, completed: true, live: false },
+        },
+      },
+      firstPlaceTiebreakSummary: summary,
+    });
+
+    expect(state).toMatchObject({
+      status: "active",
+      currentRound: 4,
+      livePlay: false,
+      holdReason: "first_place_tiebreak_missing_earnings",
+    });
+  });
+
+  it("holds completed tournaments active when combined earnings remain tied", () => {
+    const summary = buildFirstPlaceTiebreakSummary({
+      teams: [
+        makeTeam({
+          id: "team-a",
+          score: -10,
+          golferEarnings: [100, 100],
+        }),
+        makeTeam({
+          id: "team-b",
+          score: -10,
+          golferEarnings: [150, 50],
+        }),
+      ],
+    });
+
+    const state = derivePersistedTournamentState({
+      timeline: {
+        currentRound: 4,
+        livePlay: false,
+        status: "completed",
+        rounds: {
+          1: { started: true, completed: true, live: false },
+          2: { started: true, completed: true, live: false },
+          3: { started: true, completed: true, live: false },
+          4: { started: true, completed: true, live: false },
+        },
+      },
+      firstPlaceTiebreakSummary: summary,
+    });
+
+    expect(state).toMatchObject({
+      status: "active",
+      currentRound: 4,
+      livePlay: false,
+      holdReason: "first_place_tiebreak_equal_earnings",
+    });
+  });
+});
+
+describe("getTeamTournamentRank", () => {
+  it("promotes a sole earnings winner to 1 and the other tied leader to 2", () => {
+    const teams = [
+      makeTeam({
+        id: "winner",
+        score: -10,
+        golferEarnings: [500, 400],
+      }),
+      makeTeam({
+        id: "runner-up",
+        score: -10,
+        golferEarnings: [300, 200],
+      }),
+    ];
+    const summary = buildFirstPlaceTiebreakSummary({ teams });
+
+    expect(
+      getTeamTournamentRank({
+        team: teams[0],
+        teams,
+        firstPlaceTiebreakSummary: summary,
+        tournamentCompleted: true,
+      }).position,
+    ).toBe("1");
+    expect(
+      getTeamTournamentRank({
+        team: teams[1],
+        teams,
+        firstPlaceTiebreakSummary: summary,
+        tournamentCompleted: true,
+      }).position,
+    ).toBe("2");
+  });
+
+  it("keeps unresolved first-place ties at T1", () => {
+    const teams = [
+      makeTeam({
+        id: "team-a",
+        score: -10,
+        golferEarnings: [500, undefined],
+      }),
+      makeTeam({
+        id: "team-b",
+        score: -10,
+        golferEarnings: [300, 200],
+      }),
+    ];
+    const summary = buildFirstPlaceTiebreakSummary({ teams });
+
+    expect(
+      getTeamTournamentRank({
+        team: teams[0],
+        teams,
+        firstPlaceTiebreakSummary: summary,
+        tournamentCompleted: true,
+      }).position,
+    ).toBe("T1");
+  });
+
+  it("keeps ties below first unchanged", () => {
+    const teams = [
+      makeTeam({
+        id: "leader",
+        score: -11,
+        position: "1",
+        golferEarnings: [500, 400],
+      }),
+      makeTeam({
+        id: "team-a",
+        score: -10,
+        golferEarnings: [300, 200],
+      }),
+      makeTeam({
+        id: "team-b",
+        score: -10,
+        golferEarnings: [250, 250],
+      }),
+    ];
+    const summary = buildFirstPlaceTiebreakSummary({ teams });
+
+    expect(
+      getTeamTournamentRank({
+        team: teams[1],
+        teams,
+        firstPlaceTiebreakSummary: summary,
+        tournamentCompleted: true,
+      }).position,
+    ).toBe("T2");
   });
 });

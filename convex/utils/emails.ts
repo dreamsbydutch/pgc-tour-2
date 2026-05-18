@@ -179,22 +179,35 @@ export async function getLeaderboardRowsForTournament(
   }));
 }
 
+export function findPreviousCompletedTournament<
+  T extends { startDate: number; status?: Doc<"tournaments">["status"] },
+>(args: {
+  tournaments: T[];
+  startDate: number;
+}): T | null {
+  return (
+    [...args.tournaments]
+      .filter(
+        (tournament) =>
+          tournament.startDate < args.startDate &&
+          tournament.status === "completed",
+      )
+      .sort((a, b) => b.startDate - a.startDate)[0] ?? null
+  );
+}
+
 export async function getPreviousCompletedTournamentName(
   args: GetPreviousCompletedTournamentNameArgs,
 ): Promise<string> {
-  const now = Date.now();
   const tournaments = await args.ctx.db
     .query("tournaments")
     .withIndex("by_season", (q) => q.eq("seasonId", args.tournament.seasonId))
     .collect();
 
-  const previous = tournaments
-    .filter(
-      (t) =>
-        t.startDate < args.tournament.startDate &&
-        (t.status === "completed" || t.endDate <= now),
-    )
-    .sort((a, b) => b.startDate - a.startDate)[0];
+  const previous = findPreviousCompletedTournament({
+    tournaments,
+    startDate: args.tournament.startDate,
+  });
 
   return previous?.name ?? "";
 }
