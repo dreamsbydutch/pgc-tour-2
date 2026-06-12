@@ -49,7 +49,6 @@ export function useFriendManagement(
         );
 
         await updateMember({
-          clerkId: currentMemberClerkId,
           memberId: currentMember._id,
           data: { friends: nextFriends },
         });
@@ -81,7 +80,6 @@ export function useFriendManagement(
         );
 
         await updateMember({
-          clerkId: currentMemberClerkId,
           memberId: currentMember._id,
           data: { friends: nextFriends },
         });

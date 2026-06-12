@@ -128,6 +128,7 @@ export const updateMembers = mutation({
       lastname: v.optional(v.string()),
       email: v.optional(v.string()),
       isActive: v.optional(v.boolean()),
+      friends: v.optional(v.array(v.union(v.string(), v.id("members")))),
     }),
     options: v.optional(
       v.object({
