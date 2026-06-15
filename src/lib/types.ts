@@ -287,6 +287,7 @@ export interface StandingsState {
 export interface FriendManagementHook {
   state: {
     friendChangingIds: Set<string>;
+    friendIds: Set<string>;
     isUpdating: boolean;
   };
   actions: {

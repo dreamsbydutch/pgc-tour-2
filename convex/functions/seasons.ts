@@ -2,6 +2,21 @@ import { query } from "../_generated/server";
 import { v } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 
+const CANADIAN_OPEN_BADGE_LOGO_URL =
+  "https://jn9n1jxo7g.ufs.sh/f/3f3580a5-8a7f-4bc3-a16c-53188869acb2-x8pl2f.png";
+
+function normalizeTournamentName(name: string | null | undefined) {
+  return (name ?? "").trim().toLowerCase();
+}
+
+function isCanadianOpenTournament(name: string | null | undefined) {
+  const normalizedName = normalizeTournamentName(name);
+  return (
+    normalizedName === "rbc canadian open" ||
+    normalizedName === "canadian open"
+  );
+}
+
 export const getCurrentSeason = query({
   args: {},
   handler: async (ctx) => {
@@ -147,10 +162,11 @@ export const getCurrentSeasonMajorChampionBadges = query({
     const isTournamentCompleted = (tournament: (typeof tournaments)[number]) =>
       tournament.status === "completed";
 
-    const majorTournaments = tournaments
+    const badgeTournaments = tournaments
       .filter(
         (tournament) =>
-          majorTierIds.has(tournament.tierId) &&
+          (majorTierIds.has(tournament.tierId) ||
+            isCanadianOpenTournament(tournament.name)) &&
           isTournamentCompleted(tournament),
       )
       .sort((a, b) => a.startDate - b.startDate);
@@ -172,7 +188,7 @@ export const getCurrentSeasonMajorChampionBadges = query({
       return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
     };
 
-    for (const tournament of majorTournaments) {
+    for (const tournament of badgeTournaments) {
       const teams = await ctx.db
         .query("teams")
         .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
@@ -203,7 +219,9 @@ export const getCurrentSeasonMajorChampionBadges = query({
         currentBadges.push({
           tournamentId: String(tournament._id),
           tournamentName: tournament.name,
-          logoUrl: tournament.logoUrl ?? null,
+          logoUrl: isCanadianOpenTournament(tournament.name)
+            ? CANADIAN_OPEN_BADGE_LOGO_URL
+            : tournament.logoUrl ?? null,
         });
         badgesByMemberId[memberId] = currentBadges;
       }

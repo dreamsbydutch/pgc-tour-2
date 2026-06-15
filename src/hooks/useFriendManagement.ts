@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex";
 import type { FriendManagementHook, StandingsMember } from "@/lib";
@@ -15,6 +15,9 @@ export function useFriendManagement(
   const [friendChangingIds, setFriendChangingIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [friendIds, setFriendIds] = useState<Set<string>>(
+    () => new Set(getFriendIds(currentMember)),
+  );
 
   const updateMember = useMutation(api.functions.members.updateMembers);
 
@@ -22,6 +25,10 @@ export function useFriendManagement(
     () => getFriendIds(currentMember),
     [currentMember],
   );
+
+  useEffect(() => {
+    setFriendIds(new Set(currentFriends));
+  }, [currentFriends]);
 
   const addToChangingSet = useCallback((clerkId: string) => {
     setFriendChangingIds((prev) => new Set([...prev, clerkId]));
@@ -42,25 +49,31 @@ export function useFriendManagement(
       if (friendChangingIds.has(memberIdToAdd)) return;
 
       addToChangingSet(memberIdToAdd);
+      const nextFriends = Array.from(new Set([...friendIds, memberIdToAdd]));
+      setFriendIds(new Set(nextFriends));
 
       try {
-        const nextFriends = Array.from(
-          new Set([...currentFriends, memberIdToAdd]),
-        );
-
         await updateMember({
           memberId: currentMember._id,
           data: { friends: nextFriends },
         });
+      } catch (error) {
+        setFriendIds((prev) => {
+          const next = new Set(prev);
+          next.delete(memberIdToAdd);
+          return next;
+        });
+        console.error("Failed to add friend", error);
+        throw error;
       } finally {
         removeFromChangingSet(memberIdToAdd);
       }
     },
     [
       addToChangingSet,
-      currentFriends,
       currentMember,
       currentMemberClerkId,
+      friendIds,
       friendChangingIds,
       removeFromChangingSet,
       updateMember,
@@ -73,25 +86,29 @@ export function useFriendManagement(
       if (friendChangingIds.has(memberIdToRemove)) return;
 
       addToChangingSet(memberIdToRemove);
+      const nextFriends = Array.from(friendIds).filter(
+        (id) => id !== memberIdToRemove,
+      );
+      setFriendIds(new Set(nextFriends));
 
       try {
-        const nextFriends = currentFriends.filter(
-          (id) => id !== memberIdToRemove,
-        );
-
         await updateMember({
           memberId: currentMember._id,
           data: { friends: nextFriends },
         });
+      } catch (error) {
+        setFriendIds((prev) => new Set([...prev, memberIdToRemove]));
+        console.error("Failed to remove friend", error);
+        throw error;
       } finally {
         removeFromChangingSet(memberIdToRemove);
       }
     },
     [
       addToChangingSet,
-      currentFriends,
       currentMember,
       currentMemberClerkId,
+      friendIds,
       friendChangingIds,
       removeFromChangingSet,
       updateMember,
@@ -101,6 +118,7 @@ export function useFriendManagement(
   return {
     state: {
       friendChangingIds,
+      friendIds,
       isUpdating: friendChangingIds.size > 0,
     },
     actions: {

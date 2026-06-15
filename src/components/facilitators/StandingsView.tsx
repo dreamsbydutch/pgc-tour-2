@@ -598,11 +598,7 @@ function useStandingsView(props: StandingsViewProps) {
   const currentMemberId =
     data && data.currentMember ? String(data.currentMember._id) : null;
 
-  const friendIds = useMemo(() => {
-    const ids = new Set<string>();
-    (data?.currentMember?.friends ?? []).forEach((f) => ids.add(String(f)));
-    return ids;
-  }, [data?.currentMember?.friends]);
+  const friendIds = friendManagement.state.friendIds;
 
   const isFriendChanging = (memberId: string) => {
     return friendManagement.state.friendChangingIds.has(memberId);
