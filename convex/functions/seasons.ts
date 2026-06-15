@@ -11,10 +11,7 @@ function normalizeTournamentName(name: string | null | undefined) {
 
 function isCanadianOpenTournament(name: string | null | undefined) {
   const normalizedName = normalizeTournamentName(name);
-  return (
-    normalizedName === "rbc canadian open" ||
-    normalizedName === "canadian open"
-  );
+  return normalizedName.includes("canadian open");
 }
 
 export const getCurrentSeason = query({
