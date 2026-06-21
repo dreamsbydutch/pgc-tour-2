@@ -337,16 +337,22 @@ export function getTeamTournamentRank(args: {
 }): TeamTournamentRank {
   const sameTour = (team: TournamentSyncTeam) =>
     getTeamTourKey(team) === getTeamTourKey(args.team);
+  const isRankEligibleTeam = (team: TournamentSyncTeam) =>
+    sameTour(team) && !isNonRankingTournamentPosition(team.position);
   const teamScore = args.team.score ?? 0;
   const teamsAhead = args.teams.filter(
-    (team) => sameTour(team) && (team.score ?? 0) < teamScore,
+    (team) => isRankEligibleTeam(team) && (team.score ?? 0) < teamScore,
   ).length;
   const teamsTied = args.teams.filter(
-    (team) => sameTour(team) && (team.score ?? 0) === teamScore,
+    (team) => isRankEligibleTeam(team) && (team.score ?? 0) === teamScore,
   ).length;
 
-  if (args.team.position === "CUT") {
-    return { teamsAhead, teamsTied, position: "CUT" };
+  if (isNonRankingTournamentPosition(args.team.position)) {
+    return {
+      teamsAhead,
+      teamsTied,
+      position: args.team.position === "CUT" ? "CUT" : args.team.position ?? "",
+    };
   }
 
   if (!args.tournamentCompleted || teamsAhead !== 0 || teamsTied <= 1) {

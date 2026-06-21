@@ -593,6 +593,26 @@ describe("derivePersistedTournamentState", () => {
 });
 
 describe("getTeamTournamentRank", () => {
+  it("ignores CUT teams when ranking active teams in the same tour", () => {
+    const teams = [
+      makeTeam({ id: "team-1", score: -12, position: "1" }),
+      makeTeam({ id: "team-2", score: -11, position: "2" }),
+      makeTeam({ id: "team-3", score: -10, position: "3" }),
+      makeTeam({ id: "cut-team", score: -9, position: "CUT" }),
+      makeTeam({ id: "team-4", score: -8, position: "5" }),
+    ];
+
+    const rank = getTeamTournamentRank({
+      team: teams[4],
+      teams,
+      tournamentCompleted: false,
+    });
+
+    expect(rank.teamsAhead).toBe(3);
+    expect(rank.teamsTied).toBe(1);
+    expect(rank.position).toBe("4");
+  });
+
   it("promotes a sole earnings winner to 1 and the other tied leader to 2", () => {
     const teams = [
       makeTeam({
