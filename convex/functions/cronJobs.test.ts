@@ -593,39 +593,24 @@ describe("derivePersistedTournamentState", () => {
 });
 
 describe("getTeamTournamentRank", () => {
-  it("keeps CUT, WD, and DQ teams out of tournament ranking", () => {
+  it("ignores CUT teams when ranking active teams in the same tour", () => {
     const teams = [
-      makeTeam({ id: "cut-team", score: 4, position: "CUT" }),
-      makeTeam({ id: "wd-team", score: 6, position: "WD" }),
-      makeTeam({ id: "dq-team", score: 8, position: "DQ" }),
-      makeTeam({ id: "ranked-team", score: -3, position: "1" }),
+      makeTeam({ id: "team-1", score: -12, position: "1" }),
+      makeTeam({ id: "team-2", score: -11, position: "2" }),
+      makeTeam({ id: "team-3", score: -10, position: "3" }),
+      makeTeam({ id: "cut-team", score: -9, position: "CUT" }),
+      makeTeam({ id: "team-4", score: -8, position: "5" }),
     ];
-    const summary = buildFirstPlaceTiebreakSummary({ teams });
 
-    expect(
-      getTeamTournamentRank({
-        team: teams[0],
-        teams,
-        firstPlaceTiebreakSummary: summary,
-        tournamentCompleted: true,
-      }).position,
-    ).toBe("CUT");
-    expect(
-      getTeamTournamentRank({
-        team: teams[1],
-        teams,
-        firstPlaceTiebreakSummary: summary,
-        tournamentCompleted: true,
-      }).position,
-    ).toBe("WD");
-    expect(
-      getTeamTournamentRank({
-        team: teams[2],
-        teams,
-        firstPlaceTiebreakSummary: summary,
-        tournamentCompleted: true,
-      }).position,
-    ).toBe("DQ");
+    const rank = getTeamTournamentRank({
+      team: teams[4],
+      teams,
+      tournamentCompleted: false,
+    });
+
+    expect(rank.teamsAhead).toBe(3);
+    expect(rank.teamsTied).toBe(1);
+    expect(rank.position).toBe("4");
   });
 
   it("promotes a sole earnings winner to 1 and the other tied leader to 2", () => {
