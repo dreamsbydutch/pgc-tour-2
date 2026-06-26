@@ -344,7 +344,7 @@ export function getTeamTournamentRank(args: {
   const sameTour = (team: TournamentSyncTeam) =>
     getTeamTourKey(team) === getTeamTourKey(args.team);
   const isRankEligibleTeam = (team: TournamentSyncTeam) =>
-    sameTour(team) && !isNonRankingTournamentPosition(team.position);
+    sameTour(team) && !isNonRankingTeamPosition(team.position);
   const teamScore = args.team.score ?? 0;
   const teamsAhead = args.teams.filter(
     (team) => isRankEligibleTeam(team) && (team.score ?? 0) < teamScore,
@@ -353,11 +353,11 @@ export function getTeamTournamentRank(args: {
     (team) => isRankEligibleTeam(team) && (team.score ?? 0) === teamScore,
   ).length;
 
-  if (isNonRankingTournamentPosition(args.team.position)) {
+  if (isNonRankingTeamPosition(args.team.position)) {
     return {
       teamsAhead,
       teamsTied,
-      position: args.team.position === "CUT" ? "CUT" : args.team.position ?? "",
+      position: String(args.team.position ?? "").trim().toUpperCase(),
     };
   }
 
@@ -385,6 +385,22 @@ export function getTeamTournamentRank(args: {
     teamsTied: tiedSecondCount,
     position: tiedSecondCount > 1 ? "T2" : "2",
   };
+}
+
+function applyComputedTeamPositions(args: {
+  teams: TournamentSyncTeam[];
+  firstPlaceTiebreakSummary?: FirstPlaceTiebreakSummary;
+  tournamentCompleted: boolean;
+}): TournamentSyncTeam[] {
+  return args.teams.map((team) => ({
+    ...team,
+    position: getTeamTournamentRank({
+      team,
+      teams: args.teams,
+      firstPlaceTiebreakSummary: args.firstPlaceTiebreakSummary,
+      tournamentCompleted: args.tournamentCompleted,
+    }).position,
+  }));
 }
 
 /**
@@ -1960,17 +1976,6 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
     },
     handler: async (ctx, args) => {
       const now = new Date();
-      if (args.force !== true && now.getHours() <= 10 && now.getHours() >= 2) {
-        console.log("runTournamentSync: skipped (outside_of_time_window)", {
-          currentHour: now.getHours(),
-        });
-        return {
-          ok: true,
-          skipped: true,
-          reason: "outside_of_time_window",
-          currentHour: now.getHours(),
-        } as const;
-      }
       const activeTournamentData = await ctx.runQuery(
         internal.functions.utils.getActiveTournamentData,
       );
@@ -2722,6 +2727,11 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
       const tournamentStatus = persistedTournamentState.status;
       const tournamentCurrentRound = persistedTournamentState.currentRound;
       const tournamentLivePlay = persistedTournamentState.livePlay;
+      const teamsWithComputedPositions = applyComputedTeamPositions({
+        teams: updatedTeams,
+        firstPlaceTiebreakSummary,
+        tournamentCompleted: tournamentStatus === "completed",
+      });
 
       if (persistedTournamentState.holdReason) {
         console.log(
@@ -2760,9 +2770,9 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         },
       });
 
-      for (const t of updatedTeams) {
+      for (const t of teamsWithComputedPositions) {
         if (t._id) {
-          const teamsAheadPast = updatedTeams.filter(
+          const teamsAheadPast = teamsWithComputedPositions.filter(
             (ut) =>
               ut.tour?._id === t.tour?._id &&
               getTeamPreviousStandingScore({
@@ -2776,7 +2786,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                   coursePar: course.par,
                 }),
           ).length;
-          const teamsTiedPast = updatedTeams.filter(
+          const teamsTiedPast = teamsWithComputedPositions.filter(
             (ut) =>
               ut.tour?._id === t.tour?._id &&
               getTeamPreviousStandingScore({
@@ -2792,7 +2802,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           ).length;
           const teamRank = getTeamTournamentRank({
             team: t,
-            teams: updatedTeams,
+            teams: teamsWithComputedPositions,
             firstPlaceTiebreakSummary,
             tournamentCompleted: tournamentStatus === "completed",
           });
@@ -3605,6 +3615,11 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
       const tournamentStatus = persistedTournamentState.status;
       const tournamentCurrentRound = persistedTournamentState.currentRound;
       const tournamentLivePlay = persistedTournamentState.livePlay;
+      const teamsWithComputedPositions = applyComputedTeamPositions({
+        teams: updatedTeams,
+        firstPlaceTiebreakSummary,
+        tournamentCompleted: tournamentStatus === "completed",
+      });
 
       if (persistedTournamentState.holdReason) {
         console.log(
@@ -3643,9 +3658,9 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         },
       });
 
-      for (const t of updatedTeams) {
+      for (const t of teamsWithComputedPositions) {
         if (t._id) {
-          const teamsAheadPast = updatedTeams.filter(
+          const teamsAheadPast = teamsWithComputedPositions.filter(
             (ut) =>
               ut.tour?._id === t.tour?._id &&
               getTeamPreviousStandingScore({
@@ -3659,7 +3674,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                   coursePar: course.par,
                 }),
           ).length;
-          const teamsTiedPast = updatedTeams.filter(
+          const teamsTiedPast = teamsWithComputedPositions.filter(
             (ut) =>
               ut.tour?._id === t.tour?._id &&
               getTeamPreviousStandingScore({
@@ -3675,7 +3690,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           ).length;
           const teamRank = getTeamTournamentRank({
             team: t,
-            teams: updatedTeams,
+            teams: teamsWithComputedPositions,
             firstPlaceTiebreakSummary,
             tournamentCompleted: tournamentStatus === "completed",
           });
