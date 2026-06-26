@@ -187,6 +187,12 @@ function getTeamTourKey(
   return String(team.tour?._id ?? team.tourCard?.tourId ?? "");
 }
 
+function isNonRankingTeamPosition(position: string | null | undefined): boolean {
+  return ["CUT", "WD", "DQ"].includes(
+    String(position ?? "").trim().toUpperCase(),
+  );
+}
+
 export function buildFirstPlaceTiebreakSummary(args: {
   teams: TournamentSyncTeam[];
 }): FirstPlaceTiebreakSummary {
@@ -205,7 +211,7 @@ export function buildFirstPlaceTiebreakSummary(args: {
   for (const [tourKey, teams] of teamsByTourKey.entries()) {
     const scoredTeams = teams.filter(
       (team) =>
-        team.position !== "CUT" &&
+        !isNonRankingTeamPosition(team.position) &&
         typeof team.score === "number" &&
         Number.isFinite(team.score),
     );
@@ -345,8 +351,12 @@ export function getTeamTournamentRank(args: {
     (team) => sameTour(team) && (team.score ?? 0) === teamScore,
   ).length;
 
-  if (args.team.position === "CUT") {
-    return { teamsAhead, teamsTied, position: "CUT" };
+  if (isNonRankingTeamPosition(args.team.position)) {
+    return {
+      teamsAhead,
+      teamsTied,
+      position: String(args.team.position).trim().toUpperCase(),
+    };
   }
 
   if (!args.tournamentCompleted || teamsAhead !== 0 || teamsTied <= 1) {

@@ -593,6 +593,41 @@ describe("derivePersistedTournamentState", () => {
 });
 
 describe("getTeamTournamentRank", () => {
+  it("keeps CUT, WD, and DQ teams out of tournament ranking", () => {
+    const teams = [
+      makeTeam({ id: "cut-team", score: 4, position: "CUT" }),
+      makeTeam({ id: "wd-team", score: 6, position: "WD" }),
+      makeTeam({ id: "dq-team", score: 8, position: "DQ" }),
+      makeTeam({ id: "ranked-team", score: -3, position: "1" }),
+    ];
+    const summary = buildFirstPlaceTiebreakSummary({ teams });
+
+    expect(
+      getTeamTournamentRank({
+        team: teams[0],
+        teams,
+        firstPlaceTiebreakSummary: summary,
+        tournamentCompleted: true,
+      }).position,
+    ).toBe("CUT");
+    expect(
+      getTeamTournamentRank({
+        team: teams[1],
+        teams,
+        firstPlaceTiebreakSummary: summary,
+        tournamentCompleted: true,
+      }).position,
+    ).toBe("WD");
+    expect(
+      getTeamTournamentRank({
+        team: teams[2],
+        teams,
+        firstPlaceTiebreakSummary: summary,
+        tournamentCompleted: true,
+      }).position,
+    ).toBe("DQ");
+  });
+
   it("promotes a sole earnings winner to 1 and the other tied leader to 2", () => {
     const teams = [
       makeTeam({

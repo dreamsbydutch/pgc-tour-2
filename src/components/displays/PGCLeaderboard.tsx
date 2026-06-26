@@ -84,10 +84,11 @@ export function PGCLeaderboard(props: {
   } else {
     sorted = sorted.filter((t) => t.tourId === props.activeTourId);
   }
+  const teamsWithDisplayPosition = buildTeamsWithDisplayPosition(sorted);
 
   return (
     <>
-      {sorted.map((team) => (
+      {teamsWithDisplayPosition.map((team) => (
         <>
           <LeaderboardListing
             key={team._id}
@@ -100,6 +101,44 @@ export function PGCLeaderboard(props: {
         </>
       ))}
     </>
+  );
+}
+
+function buildTeamsWithDisplayPosition(
+  teams: (EnhancedTournamentTeamDoc & {
+    teamGolfers?: EnhancedTournamentGolferDoc[];
+    posChange: number;
+  })[],
+) {
+  return teams.map((team, index, allTeams) => {
+    if (isTeamNonRanking(team.position)) {
+      return {
+        ...team,
+        position: undefined,
+      };
+    }
+    if (team.position) return team;
+
+    const score = calculateScoreForSorting(team.position, team.score);
+    const teamsAhead = allTeams.filter(
+      (candidate) =>
+        calculateScoreForSorting(candidate.position, candidate.score) < score,
+    ).length;
+    const teamsTied = allTeams.filter(
+      (candidate) =>
+        calculateScoreForSorting(candidate.position, candidate.score) === score,
+    ).length;
+
+    return {
+      ...team,
+      position: teamsTied > 1 ? `T${teamsAhead + 1}` : `${index + 1}`,
+    };
+  });
+}
+
+function isTeamNonRanking(position: string | null | undefined): boolean {
+  return ["CUT", "WD", "DQ"].includes(
+    String(position ?? "").trim().toUpperCase(),
   );
 }
 
