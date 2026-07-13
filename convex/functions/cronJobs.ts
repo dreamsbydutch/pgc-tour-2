@@ -187,6 +187,95 @@ function getTeamTourKey(
   return String(team.tour?._id ?? team.tourCard?.tourId ?? "");
 }
 
+function includesPlayoffLabel(value: string | null | undefined): boolean {
+  return typeof value === "string" && value.toLowerCase().includes("playoff");
+}
+
+type StandingsAggregationTeam = Pick<
+  Doc<"teams">,
+  "tournamentId" | "points" | "earnings" | "position"
+>;
+
+type StandingsAggregationTournament = Pick<
+  Doc<"tournaments">,
+  "_id" | "tierId" | "name" | "status"
+>;
+
+type StandingsAggregationTier = Pick<Doc<"tiers">, "_id" | "name">;
+
+export function buildTourCardStandingsTotals(args: {
+  teams: StandingsAggregationTeam[];
+  tournaments: StandingsAggregationTournament[];
+  tiers: StandingsAggregationTier[];
+}) {
+  const tournamentById = new Map(
+    args.tournaments.map((tournament) => [tournament._id, tournament] as const),
+  );
+  const tierNameById = new Map(
+    args.tiers.map((tier) => [tier._id, tier.name] as const),
+  );
+
+  const completed = args.teams.filter(
+    (team) => tournamentById.get(team.tournamentId)?.status === "completed",
+  );
+
+  const regularSeasonCompleted = completed.filter((team) => {
+    const tournament = tournamentById.get(team.tournamentId);
+    if (!tournament) return false;
+
+    const tierName = tierNameById.get(tournament.tierId) ?? null;
+    return (
+      !includesPlayoffLabel(tierName) &&
+      !includesPlayoffLabel(tournament.name)
+    );
+  });
+
+  const regularSeasonPoints = regularSeasonCompleted.reduce(
+    (sum, team) => sum + Math.round(team.points ?? 0),
+    0,
+  );
+  const completedEarnings = completed.reduce(
+    (sum, team) => sum + (team.earnings ?? 0),
+    0,
+  );
+
+  return {
+    wins: regularSeasonCompleted.filter((team) => {
+      const posNum = parsePositionNumber(team.position ?? null);
+      return posNum !== null && posNum === 1;
+    }).length,
+    topFive: regularSeasonCompleted.filter((team) => {
+      const posNum = parsePositionNumber(team.position ?? null);
+      return posNum !== null && posNum <= 5;
+    }).length,
+    topTen: regularSeasonCompleted.filter((team) => {
+      const posNum = parsePositionNumber(team.position ?? null);
+      return posNum !== null && posNum <= 10;
+    }).length,
+    madeCut: regularSeasonCompleted.filter((team) => team.position !== "CUT")
+      .length,
+    appearances: regularSeasonCompleted.length,
+    points: Math.round(regularSeasonPoints),
+    earnings: Math.round(completedEarnings),
+    pastPoints: Math.round(
+      regularSeasonPoints -
+        (regularSeasonCompleted[regularSeasonCompleted.length - 1]?.points ?? 0),
+    ),
+    pastEarnings: Math.round(
+      completedEarnings - (completed[completed.length - 1]?.earnings ?? 0),
+    ),
+    totalPoints: Math.round(
+      args.teams.reduce((sum, team) => sum + (team.points ?? 0), 0),
+    ),
+    totalEarnings: Math.round(
+      args.teams.reduce(
+        (sum, team) => sum + Math.round(team.earnings ?? 0),
+        0,
+      ),
+    ),
+  };
+}
+
 export function buildFirstPlaceTiebreakSummary(args: {
   teams: TournamentSyncTeam[];
 }): FirstPlaceTiebreakSummary {
@@ -1795,7 +1884,7 @@ export const runCreateGroupsForNextTournament_Public: ReturnType<
  *
  * What it does:
  * - Loads the current season.
- * - Aggregates completed team results into per-tour-card totals (points, earnings, wins, top  tens, cuts).
+ * - Aggregates regular-season completed team results into standings stats while keeping playoff earnings included.
  * - Assigns positions within each tour (with tie prefixes) and updates playoff qualification flags.
  */
 export const recomputeStandings: ReturnType<typeof internalMutation> =
@@ -1820,6 +1909,12 @@ export const recomputeStandings: ReturnType<typeof internalMutation> =
           q.eq("seasonId", currentSeason.season._id),
         )
         .collect();
+      const tiers = await ctx.db
+        .query("tiers")
+        .withIndex("by_season", (q) =>
+          q.eq("seasonId", currentSeason.season._id),
+        )
+        .collect();
       const tourCards = await ctx.db
         .query("tourCards")
         .withIndex("by_season", (q) =>
@@ -1840,48 +1935,16 @@ export const recomputeStandings: ReturnType<typeof internalMutation> =
             .query("teams")
             .withIndex("by_tour_card", (q) => q.eq("tourCardId", tc._id))
             .collect();
-
-          const completed = teams.filter(
-            (t) =>
-              tournaments.find((tr) => tr._id === t.tournamentId)?.status ===
-              "completed",
-          );
-          const points = completed.reduce(
-            (sum, t) => sum + Math.round(t.points ?? 0),
-            0,
-          );
-          const earnings = completed.reduce(
-            (sum, t) => sum + (t.earnings ?? 0),
-            0,
-          );
+          const totals = buildTourCardStandingsTotals({
+            teams,
+            tournaments,
+            tiers,
+          });
 
           return {
             tourCardId: tc._id,
             tourId: tc.tourId,
-            win: completed.filter((t) => {
-              const posNum = parsePositionNumber(t.position ?? null);
-              return posNum !== null && posNum === 1;
-            }).length,
-            topTen: completed.filter((t) => {
-              const posNum = parsePositionNumber(t.position ?? null);
-              return posNum !== null && posNum <= 10;
-            }).length,
-            madeCut: completed.filter((t) => t.position !== "CUT").length,
-            appearances: completed.length,
-            points: Math.round(points),
-            earnings: Math.round(earnings),
-            pastPoints: Math.round(
-              points - (completed[completed.length - 1]?.points ?? 0),
-            ),
-            pastEarnings: Math.round(
-              earnings - (completed[completed.length - 1]?.earnings ?? 0),
-            ),
-            totalPoints: Math.round(
-              teams.reduce((sum, t) => sum + (t.points ?? 0), 0),
-            ),
-            totalEarnings: Math.round(
-              teams.reduce((sum, t) => sum + Math.round(t.earnings ?? 0), 0),
-            ),
+            ...totals,
           };
         }),
       );
@@ -1917,7 +1980,8 @@ export const recomputeStandings: ReturnType<typeof internalMutation> =
           await ctx.db.patch(calc.tourCardId, {
             points: calc.points,
             earnings: calc.earnings,
-            wins: calc.win,
+            wins: calc.wins,
+            topFive: calc.topFive,
             topTen: calc.topTen,
             madeCut: calc.madeCut,
             appearances: calc.appearances,

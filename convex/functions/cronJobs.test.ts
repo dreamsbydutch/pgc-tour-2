@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { EnhancedGolfer } from "../types/types";
 import {
+  buildTourCardStandingsTotals,
   buildFirstPlaceTiebreakSummary,
   derivePersistedTournamentState,
   deriveTournamentTimelineState,
@@ -52,6 +53,84 @@ function makeTeam(args: {
     tourCard: { tourId },
   } as unknown as TestSyncTeam;
 }
+
+describe("buildTourCardStandingsTotals", () => {
+  it("counts only regular-season events for standings stats while keeping playoff earnings", () => {
+    const regularTierId = "tier-regular" as never;
+    const playoffByNameTierId = "tier-special" as never;
+    const regularTournamentId = "tournament-regular" as never;
+    const regularCutTournamentId = "tournament-regular-cut" as never;
+    const playoffTournamentId = "tournament-playoff" as never;
+    const upcomingTournamentId = "tournament-upcoming" as never;
+
+    const totals = buildTourCardStandingsTotals({
+      tiers: [
+        { _id: regularTierId, name: "Gold" },
+        { _id: playoffByNameTierId, name: "Championship" },
+      ] as never,
+      tournaments: [
+        {
+          _id: regularTournamentId,
+          tierId: regularTierId,
+          name: "The Open",
+          status: "completed",
+        },
+        {
+          _id: regularCutTournamentId,
+          tierId: regularTierId,
+          name: "Memorial",
+          status: "completed",
+        },
+        {
+          _id: playoffTournamentId,
+          tierId: playoffByNameTierId,
+          name: "Silver Playoff Finals",
+          status: "completed",
+        },
+        {
+          _id: upcomingTournamentId,
+          tierId: regularTierId,
+          name: "Future Event",
+          status: "upcoming",
+        },
+      ] as never,
+      teams: [
+        {
+          tournamentId: regularTournamentId,
+          points: 100,
+          earnings: 200_00,
+          position: "1",
+        },
+        {
+          tournamentId: regularCutTournamentId,
+          points: 30,
+          earnings: 50_00,
+          position: "CUT",
+        },
+        {
+          tournamentId: playoffTournamentId,
+          points: 500,
+          earnings: 800_00,
+          position: "1",
+        },
+        {
+          tournamentId: upcomingTournamentId,
+          points: 999,
+          earnings: 999_00,
+          position: "1",
+        },
+      ] as never,
+    });
+
+    expect(totals.points).toBe(130);
+    expect(totals.earnings).toBe(105_000);
+    expect(totals.wins).toBe(1);
+    expect(totals.topFive).toBe(1);
+    expect(totals.topTen).toBe(1);
+    expect(totals.madeCut).toBe(1);
+    expect(totals.appearances).toBe(2);
+  });
+});
 
 describe("deriveTournamentTimelineState", () => {
   it("derives the pre-start upcoming state", () => {
