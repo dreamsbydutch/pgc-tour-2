@@ -63,6 +63,7 @@ function AdminRoute() {
   const [paymentMemberId, setPaymentMemberId] = useState("");
   const [paymentSeasonId, setPaymentSeasonId] = useState("");
   const [paymentAmountDollars, setPaymentAmountDollars] = useState("");
+  const [recomputeSeasonId, setRecomputeSeasonId] = useState("");
 
   const runJob = async (key: string, fn: () => Promise<unknown>) => {
     setOutputs((prev) => ({ ...prev, [key]: "Running..." }));
@@ -334,10 +335,35 @@ function AdminRoute() {
         </div>
 
         <div className="space-y-2">
+          <div className="text-sm font-semibold">Recompute Standings</div>
+          <select
+            className="w-full rounded border px-3 py-2 text-sm"
+            value={recomputeSeasonId}
+            onChange={(event) => setRecomputeSeasonId(event.target.value)}
+            disabled={!seasons}
+          >
+            <option value="">
+              {seasons
+                ? "Current season (default)"
+                : "Loading seasons..."}
+            </option>
+            {(seasons ?? []).map((s) => (
+              <option key={s._id} value={s._id}>
+                {`${s.year} (Season ${s.number})`}
+              </option>
+            ))}
+          </select>
           <button
             className="rounded bg-primary px-4 py-2 text-primary-foreground"
             onClick={() =>
-              runJob("recomputeStandings", () => runRecomputeStandings({}))
+              runJob("recomputeStandings", () =>
+                runRecomputeStandings({
+                  seasonId:
+                    recomputeSeasonId.trim().length > 0
+                      ? (recomputeSeasonId as Id<"seasons">)
+                      : undefined,
+                }),
+              )
             }
             type="button"
           >

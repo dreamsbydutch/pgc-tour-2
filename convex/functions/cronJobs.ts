@@ -1905,20 +1905,35 @@ export const runCreateGroupsForNextTournament_Public: ReturnType<
  * Recomputes season standings for all tour cards.
  *
  * What it does:
- * - Loads the current season.
+ * - Loads the requested season, defaulting to the current season.
  * - Aggregates regular-season completed team results into standings stats while keeping playoff earnings included.
  * - Assigns positions within each tour (with tie prefixes) and updates playoff qualification flags.
  */
 export const recomputeStandings: ReturnType<typeof internalMutation> =
   internalMutation({
-    handler: async (ctx) => {
-      const currentSeason:
-        | { ok: true; season: Doc<"seasons"> }
-        | { ok: false } = await ctx.runQuery(
-        internal.functions.utils.getCurrentSeason,
-      );
+    args: {
+      seasonId: v.optional(v.id("seasons")),
+    },
+    handler: async (ctx, args) => {
+      const currentSeason = args.seasonId
+        ? null
+        : await ctx.runQuery(internal.functions.utils.getCurrentSeason);
+      const season = args.seasonId
+        ? await ctx.db.get(args.seasonId)
+        : currentSeason?.ok
+          ? currentSeason.season
+          : null;
 
-      if (!currentSeason.ok) {
+      if (args.seasonId && !season) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: "season_not_found",
+          seasonId: args.seasonId,
+        } as const;
+      }
+
+      if (!season) {
         return {
           ok: true,
           skipped: true,
@@ -1928,19 +1943,19 @@ export const recomputeStandings: ReturnType<typeof internalMutation> =
       const tournaments = await ctx.db
         .query("tournaments")
         .withIndex("by_season", (q) =>
-          q.eq("seasonId", currentSeason.season._id),
+          q.eq("seasonId", season._id),
         )
         .collect();
       const tiers = await ctx.db
         .query("tiers")
         .withIndex("by_season", (q) =>
-          q.eq("seasonId", currentSeason.season._id),
+          q.eq("seasonId", season._id),
         )
         .collect();
       const tourCards = await ctx.db
         .query("tourCards")
         .withIndex("by_season", (q) =>
-          q.eq("seasonId", currentSeason.season._id as Id<"seasons">),
+          q.eq("seasonId", season._id as Id<"seasons">),
         )
         .collect();
       if (tourCards.length === 0) {
@@ -1948,7 +1963,7 @@ export const recomputeStandings: ReturnType<typeof internalMutation> =
           ok: true,
           skipped: true,
           reason: "no_tour_cards",
-          seasonId: currentSeason.season._id,
+          seasonId: season._id,
         } as const;
       }
       const calculations = await Promise.all(
@@ -2019,16 +2034,19 @@ export const recomputeStandings: ReturnType<typeof internalMutation> =
       return {
         ok: true,
         skipped: false,
-        seasonId: currentSeason.season._id,
+        seasonId: season._id,
         tourCardsUpdated: updated,
       } as const;
     },
   });
 export const recomputeStandings_Public: ReturnType<typeof mutation> = mutation({
-  handler: async (ctx) => {
+  args: {
+    seasonId: v.optional(v.id("seasons")),
+  },
+  handler: async (ctx, args) => {
     return await ctx.runMutation(
       internal.functions.cronJobs.recomputeStandings,
-      {},
+      { seasonId: args.seasonId },
     );
   },
 });
