@@ -304,6 +304,65 @@ const schema = defineSchema({
     .index("by_earnings", ["earnings"])
     .index("by_tournament_round", ["tournamentId", "round"]),
 
+  /**
+   * ESPN event metadata is intentionally isolated from tournament lifecycle
+   * and DataGolf sync fields. A failed ESPN request only changes this table.
+   */
+  espnGolfEvents: defineTable({
+    tournamentId: v.id("tournaments"),
+    espnEventId: v.optional(v.string()),
+    espnEventName: v.optional(v.string()),
+    syncStatus: v.union(
+      v.literal("success"),
+      v.literal("not_found"),
+      v.literal("error"),
+    ),
+    lastAttemptAt: v.number(),
+    lastSuccessAt: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+    unmatchedPlayers: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_tournament", ["tournamentId"])
+    .index("by_espn_event", ["espnEventId"]),
+
+  /** Stable cross-provider identities. DataGolf golfer records remain unchanged. */
+  espnGolferMappings: defineTable({
+    golferId: v.id("golfers"),
+    espnAthleteId: v.string(),
+    espnPlayerName: v.string(),
+    matchMethod: v.union(v.literal("exact_name"), v.literal("manual")),
+    updatedAt: v.number(),
+  })
+    .index("by_golfer", ["golferId"])
+    .index("by_espn_athlete", ["espnAthleteId"]),
+
+  /** Last-known-good ESPN scorecard for one golfer in one tournament. */
+  espnHoleScorecards: defineTable({
+    tournamentId: v.id("tournaments"),
+    golferId: v.id("golfers"),
+    espnEventId: v.string(),
+    espnAthleteId: v.string(),
+    rounds: v.array(
+      v.object({
+        round: v.number(),
+        totalStrokes: v.optional(v.number()),
+        holes: v.array(
+          v.object({
+            hole: v.number(),
+            strokes: v.number(),
+            relativeToPar: v.number(),
+          }),
+        ),
+      }),
+    ),
+    sourceUpdatedAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_tournament", ["tournamentId"])
+    .index("by_tournament_golfer", ["tournamentId", "golferId"])
+    .index("by_event_athlete", ["espnEventId", "espnAthleteId"]),
+
   // =========================================================================
   // FINANCIAL TRANSACTIONS
   // =========================================================================

@@ -18,6 +18,7 @@ import {
 } from "convex/types/types";
 import { MoveDown, MoveHorizontal, MoveUp } from "lucide-react";
 import { calculateScoreForSorting } from "convex/utils";
+import { api, Id, useQuery } from "@/convex";
 
 /**
  * Renders the PGA leaderboard listing for the current tournament.
@@ -88,6 +89,7 @@ export function PGALeaderboard(props: {
               tournament={props.tournament}
               team={props.currentTeam}
               golfer={{
+                golferId: golfer.golferId,
                 position: golfer.position ?? "-",
                 playerName: golfer.playerName ?? "",
                 score: golfer.score,
@@ -164,6 +166,7 @@ function LeaderboardListing({
   golfer,
 }: {
   tournament: {
+    _id: Id<"tournaments">;
     currentRound?: number | undefined;
     livePlay?: boolean | null;
     status?: TournamentDoc["status"];
@@ -173,6 +176,7 @@ function LeaderboardListing({
     golferIds: number[];
   };
   golfer: {
+    golferId: Id<"golfers">;
     position: string;
     playerName: string;
     score: number | null | undefined;
@@ -196,6 +200,12 @@ function LeaderboardListing({
   };
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const holeScorecard = useQuery(
+    api.functions.espnGolf.getPlayerHoleScorecard,
+    isOpen
+      ? { tournamentId: tournament._id, golferId: golfer.golferId }
+      : "skip",
+  );
   const isCut = isPlayerCut(golfer.position);
   const isUserGolfer = !!team?.golferIds.includes(golfer.apiId);
   const onToggleOpen = () => setIsOpen((v) => !v);
@@ -232,7 +242,11 @@ function LeaderboardListing({
 
       {isOpen ? (
         <div className="col-span-10 mx-auto mb-2 w-full max-w-4xl rounded-md border border-gray-300 bg-white shadow-md">
-          <PGADropdown golfer={golfer} currentTeamGolferIds={team?.golferIds} />
+          <PGADropdown
+            golfer={golfer}
+            currentTeamGolferIds={team?.golferIds}
+            holeScorecard={holeScorecard}
+          />
         </div>
       ) : null}
     </div>
@@ -269,6 +283,20 @@ function PGADropdown(props: {
     usage: number;
   };
   currentTeamGolferIds?: number[];
+  holeScorecard:
+    | {
+        rounds: Array<{
+          round: number;
+          totalStrokes?: number;
+          holes: Array<{
+            hole: number;
+            strokes: number;
+            relativeToPar: number;
+          }>;
+        }>;
+      }
+    | null
+    | undefined;
 }) {
   return (
     <div
@@ -335,7 +363,130 @@ function PGADropdown(props: {
           {props.golfer.group === 0 ? "-" : (props.golfer.group ?? "-")}
         </div>
       </div>
+      <PGAHoleScorecard scorecard={props.holeScorecard} />
     </div>
+  );
+}
+
+type HoleScore = {
+  hole: number;
+  strokes: number;
+  relativeToPar: number;
+};
+
+type HoleScorecard = {
+  rounds: Array<{
+    round: number;
+    totalStrokes?: number;
+    holes: HoleScore[];
+  }>;
+};
+
+/** Minimal, horizontally scrollable four-round PGA scorecard. */
+export function PGAHoleScorecard(props: {
+  scorecard: HoleScorecard | null | undefined;
+}) {
+  if (props.scorecard === undefined) {
+    return (
+      <div className="mt-3 border-t pt-3 text-center text-xs text-muted-foreground">
+        Loading hole-by-hole scoring…
+      </div>
+    );
+  }
+  if (props.scorecard === null) {
+    return (
+      <div className="mt-3 border-t pt-3 text-center text-xs text-muted-foreground">
+        Hole-by-hole scoring unavailable.
+      </div>
+    );
+  }
+
+  const rounds = new Map(
+    props.scorecard.rounds.map((round) => [round.round, round]),
+  );
+  return (
+    <div
+      className="mt-3 overflow-x-auto border-t pt-3"
+      onClick={(event) => event.stopPropagation()}
+      aria-label="Hole-by-hole scorecard"
+    >
+      <table className="mx-auto min-w-[760px] table-fixed border-collapse text-center font-varela text-xs">
+        <caption className="sr-only">
+          Golfer scores for holes 1 through 18
+        </caption>
+        <thead>
+          <tr className="text-muted-foreground">
+            <th className="w-10 py-1 font-medium" scope="col">
+              Rd
+            </th>
+            {Array.from({ length: 18 }, (_, index) => (
+              <th className="w-10 py-1 font-medium" scope="col" key={index + 1}>
+                {index + 1}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {[1, 2, 3, 4].map((roundNumber) => {
+            const round = rounds.get(roundNumber);
+            const holes = new Map(
+              round?.holes.map((hole) => [hole.hole, hole]) ?? [],
+            );
+            return (
+              <tr key={roundNumber} className="border-t border-gray-100">
+                <th
+                  className="py-2 font-medium text-muted-foreground"
+                  scope="row"
+                >
+                  R{roundNumber}
+                </th>
+                {Array.from({ length: 18 }, (_, index) => {
+                  const holeNumber = index + 1;
+                  return (
+                    <td className="h-10 py-1" key={holeNumber}>
+                      <HoleScoreMark score={holes.get(holeNumber)} />
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function HoleScoreMark(props: { score?: HoleScore }) {
+  if (!props.score) {
+    return <span className="text-gray-300">–</span>;
+  }
+  const relative = props.score.relativeToPar;
+  const description =
+    relative <= -2
+      ? "eagle or better"
+      : relative === -1
+        ? "birdie"
+        : relative === 0
+          ? "par"
+          : relative === 1
+            ? "bogey"
+            : "double bogey or worse";
+  return (
+    <span
+      aria-label={`${props.score.strokes} strokes, ${description}`}
+      className={cn(
+        "mx-auto inline-flex h-6 w-6 items-center justify-center text-xs leading-none text-foreground",
+        relative === -1 && "rounded-full border border-current",
+        relative <= -2 &&
+          "rounded-full border border-current outline outline-1 outline-offset-2",
+        relative === 1 && "border border-current",
+        relative >= 2 &&
+          "border border-current outline outline-1 outline-offset-2",
+      )}
+    >
+      {props.score.strokes}
+    </span>
   );
 }
 

@@ -13,6 +13,15 @@ crons.interval(
   {},
 );
 
+// Optional ESPN hole scorecards. This job is deliberately independent from
+// the DataGolf leaderboard sync above, so either provider can fail alone.
+crons.interval(
+  "espn_hole_scorecard_sync",
+  { minutes: 4 },
+  internal.functions.espnGolf.syncLiveScorecards,
+  {},
+);
+
 // Standings recompute (teams -> tourCards standings)
 crons.cron(
   "recompute_standings",

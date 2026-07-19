@@ -33,6 +33,9 @@ function AdminRoute() {
   const runLiveSync = useAction(
     api.functions.cronJobs.runTournamentSync_Public,
   );
+  const startEspnScorecardBackfill = useAction(
+    api.functions.espnGolf.startScorecardBackfill,
+  );
   const runUpdateWorldRank = useAction(
     api.functions.cronJobs.updateGolfersWorldRankFromDataGolfInput_Public,
   );
@@ -200,6 +203,25 @@ function AdminRoute() {
           <button
             className="rounded bg-primary px-4 py-2 text-primary-foreground"
             onClick={() =>
+              runJob("espnScorecardBackfill", () =>
+                startEspnScorecardBackfill({}),
+              )
+            }
+            type="button"
+          >
+            Backfill ESPN Hole Scorecards
+          </button>
+          <textarea
+            className="h-28 w-full rounded border p-2 text-xs"
+            readOnly
+            value={outputs.espnScorecardBackfill ?? ""}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <button
+            className="rounded bg-primary px-4 py-2 text-primary-foreground"
+            onClick={() =>
               runJob("updateWorldRank", () => runUpdateWorldRank({}))
             }
             type="button"
@@ -343,9 +365,7 @@ function AdminRoute() {
             disabled={!seasons}
           >
             <option value="">
-              {seasons
-                ? "Current season (default)"
-                : "Loading seasons..."}
+              {seasons ? "Current season (default)" : "Loading seasons..."}
             </option>
             {(seasons ?? []).map((s) => (
               <option key={s._id} value={s._id}>
