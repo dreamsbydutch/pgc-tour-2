@@ -1,6 +1,20 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+const espnRoundsValidator = v.array(
+  v.object({
+    round: v.number(),
+    totalStrokes: v.optional(v.number()),
+    holes: v.array(
+      v.object({
+        hole: v.number(),
+        strokes: v.number(),
+        relativeToPar: v.number(),
+      }),
+    ),
+  }),
+);
+
 /**
  * Golf League App - Comprehensive Database Schema
  *
@@ -126,6 +140,7 @@ const schema = defineSchema({
     seasonId: v.id("seasons"),
     logoUrl: v.optional(v.string()),
     apiId: v.optional(v.string()), // External API identifier
+    espnId: v.optional(v.string()), // ESPN event identifier
 
     groupsEmailSentAt: v.optional(v.number()),
     reminderEmailSentAt: v.optional(v.number()),
@@ -154,6 +169,7 @@ const schema = defineSchema({
     .index("by_tier", ["tierId"])
     .index("by_course", ["courseId"])
     .index("by_status", ["status"])
+    .index("by_espn_id", ["espnId"])
     .index("by_season_status", ["seasonId", "status"])
     .index("by_season_end_date", ["seasonId", "endDate"])
     .index("by_dates", ["startDate", "endDate"]),
@@ -247,12 +263,14 @@ const schema = defineSchema({
    */
   golfers: defineTable({
     apiId: v.number(), // External API identifier (unique per golfer)
+    espnId: v.optional(v.string()), // ESPN athlete identifier
     playerName: v.string(),
     country: v.optional(v.string()),
     worldRank: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
     .index("by_api_id", ["apiId"])
+    .index("by_espn_id", ["espnId"])
     .index("by_player_name", ["playerName"])
     .index("by_world_rank", ["worldRank"]),
 
@@ -294,6 +312,11 @@ const schema = defineSchema({
     worldRank: v.optional(v.number()), // Tournament-specific world rank
     usage: v.optional(v.number()), // Tournament-specific usage percentage
 
+    // Isolated ESPN hole-by-hole cache. An empty array means the ESPN identity
+    // was confirmed but the golfer has not completed a hole yet.
+    espnRounds: v.optional(espnRoundsValidator),
+    espnScorecardUpdatedAt: v.optional(v.number()),
+
     updatedAt: v.optional(v.number()),
   })
     .index("by_tournament", ["tournamentId"])
@@ -305,68 +328,32 @@ const schema = defineSchema({
     .index("by_tournament_round", ["tournamentId", "round"]),
 
   /**
-   * ESPN event metadata is intentionally isolated from tournament lifecycle
-   * and DataGolf sync fields. A failed ESPN request only changes this table.
+   * Operator-facing audit queue for ESPN identities that could not be safely
+   * resolved. Adding the appropriate local ID or ESPN ID lets the next sync
+   * promote the relationship onto the canonical tournament/golfer document.
    */
-  espnGolfEvents: defineTable({
-    tournamentId: v.id("tournaments"),
-    espnEventId: v.optional(v.string()),
-    espnEventName: v.optional(v.string()),
-    syncStatus: v.union(
-      v.literal("success"),
-      v.literal("not_found"),
+  espnIdentityAudit: defineTable({
+    entityType: v.union(v.literal("tournament"), v.literal("golfer")),
+    status: v.union(
+      v.literal("unmatched"),
+      v.literal("resolved"),
       v.literal("error"),
     ),
-    lastAttemptAt: v.number(),
-    lastSuccessAt: v.optional(v.number()),
-    lastError: v.optional(v.string()),
-    unmatchedPlayers: v.optional(v.number()),
-    missingPlayerNames: v.optional(v.array(v.string())),
-    updatedAt: v.number(),
+    espnId: v.optional(v.string()),
+    espnName: v.optional(v.string()),
+    golferId: v.optional(v.id("golfers")),
+    tournamentId: v.optional(v.id("tournaments")),
+    candidateEspnIds: v.optional(v.array(v.string())),
+    candidateNames: v.optional(v.array(v.string())),
+    reason: v.optional(v.string()),
+    firstSeenAt: v.number(),
+    lastSeenAt: v.number(),
+    resolvedAt: v.optional(v.number()),
   })
+    .index("by_entity_espn_id", ["entityType", "espnId"])
     .index("by_tournament", ["tournamentId"])
-    .index("by_espn_event", ["espnEventId"]),
-
-  /** Stable cross-provider identities. DataGolf golfer records remain unchanged. */
-  espnGolferMappings: defineTable({
-    golferId: v.id("golfers"),
-    espnAthleteId: v.string(),
-    espnPlayerName: v.string(),
-    matchMethod: v.union(
-      v.literal("exact_name"),
-      v.literal("name_variant"),
-      v.literal("manual"),
-    ),
-    updatedAt: v.number(),
-  })
     .index("by_golfer", ["golferId"])
-    .index("by_espn_athlete", ["espnAthleteId"]),
-
-  /** Last-known-good ESPN scorecard for one golfer in one tournament. */
-  espnHoleScorecards: defineTable({
-    tournamentId: v.id("tournaments"),
-    golferId: v.id("golfers"),
-    espnEventId: v.string(),
-    espnAthleteId: v.string(),
-    rounds: v.array(
-      v.object({
-        round: v.number(),
-        totalStrokes: v.optional(v.number()),
-        holes: v.array(
-          v.object({
-            hole: v.number(),
-            strokes: v.number(),
-            relativeToPar: v.number(),
-          }),
-        ),
-      }),
-    ),
-    sourceUpdatedAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index("by_tournament", ["tournamentId"])
-    .index("by_tournament_golfer", ["tournamentId", "golferId"])
-    .index("by_event_athlete", ["espnEventId", "espnAthleteId"]),
+    .index("by_status", ["status"]),
 
   // =========================================================================
   // FINANCIAL TRANSACTIONS
