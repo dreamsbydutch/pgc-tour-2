@@ -429,18 +429,21 @@ export function PGAHoleScorecard(props: {
       onClick={(event) => event.stopPropagation()}
       aria-label="Hole-by-hole scorecard"
     >
-      <table className="mx-auto min-w-[620px] table-fixed border-collapse text-center font-varela text-[9px] sm:min-w-[760px] sm:text-xs">
+      <table className="mx-auto min-w-[620px] table-fixed border-collapse border border-gray-400 text-center font-varela text-[9px] sm:min-w-[760px] sm:text-xs">
         <caption className="sr-only">
           {props.caption ?? "Golfer scores for holes 1 through 18"}
         </caption>
         <thead>
           <tr className="text-muted-foreground">
-            <th className="w-7 py-1 font-medium sm:w-10" scope="col">
+            <th
+              className="w-7 border border-gray-300 border-r-2 border-r-gray-400 bg-gray-50/70 py-1 font-medium sm:w-10"
+              scope="col"
+            >
               Rd
             </th>
             {Array.from({ length: 9 }, (_, index) => (
               <th
-                className="w-7 py-1 font-medium sm:w-10"
+                className="w-7 border border-gray-200 py-1 font-medium sm:w-10"
                 scope="col"
                 key={index + 1}
               >
@@ -450,7 +453,7 @@ export function PGAHoleScorecard(props: {
             <ScorecardSummaryHeader label="OUT" />
             {Array.from({ length: 9 }, (_, index) => (
               <th
-                className="w-7 py-1 font-medium sm:w-10"
+                className="w-7 border border-gray-200 py-1 font-medium sm:w-10"
                 scope="col"
                 key={index + 10}
               >
@@ -460,18 +463,21 @@ export function PGAHoleScorecard(props: {
             <ScorecardSummaryHeader label="IN" />
             <ScorecardSummaryHeader label="TOT" />
           </tr>
-          <tr className="border-t border-gray-100 bg-gray-50/70 text-[8px] text-muted-foreground sm:text-[10px]">
-            <th className="py-1 font-normal" scope="row">
+          <tr className="bg-gray-50/70 text-[8px] text-muted-foreground sm:text-[10px]">
+            <th
+              className="border border-gray-300 border-r-2 border-r-gray-400 py-1 font-normal"
+              scope="row"
+            >
               Par
             </th>
             {Array.from({ length: 9 }, (_, index) => (
-              <td className="py-1" key={index + 1}>
+              <td className="border border-gray-200 py-1" key={index + 1}>
                 {formatScorecardNumber(pars.get(index + 1))}
               </td>
             ))}
             <ScorecardSummaryCell value={frontPar} />
             {Array.from({ length: 9 }, (_, index) => (
-              <td className="py-1" key={index + 10}>
+              <td className="border border-gray-200 py-1" key={index + 10}>
                 {formatScorecardNumber(pars.get(index + 10))}
               </td>
             ))}
@@ -503,9 +509,9 @@ export function PGAHoleScorecard(props: {
                 ? frontTotal + backTotal
                 : undefined);
             return (
-              <tr key={roundNumber} className="border-t border-gray-100">
+              <tr key={roundNumber}>
                 <th
-                  className="py-1.5 font-medium text-muted-foreground sm:py-2"
+                  className="border border-gray-300 border-r-2 border-r-gray-400 bg-gray-50/60 py-1.5 font-medium text-muted-foreground sm:py-2"
                   scope="row"
                 >
                   R{roundNumber}
@@ -513,7 +519,10 @@ export function PGAHoleScorecard(props: {
                 {Array.from({ length: 9 }, (_, index) => {
                   const holeNumber = index + 1;
                   return (
-                    <td className="h-8 py-1 sm:h-10" key={holeNumber}>
+                    <td
+                      className="h-8 border border-gray-200 py-1 sm:h-10"
+                      key={holeNumber}
+                    >
                       <HoleScoreMark score={holes.get(holeNumber)} />
                     </td>
                   );
@@ -522,7 +531,10 @@ export function PGAHoleScorecard(props: {
                 {Array.from({ length: 9 }, (_, index) => {
                   const holeNumber = index + 10;
                   return (
-                    <td className="h-8 py-1 sm:h-10" key={holeNumber}>
+                    <td
+                      className="h-8 border border-gray-200 py-1 sm:h-10"
+                      key={holeNumber}
+                    >
                       <HoleScoreMark score={holes.get(holeNumber)} />
                     </td>
                   );
@@ -540,7 +552,10 @@ export function PGAHoleScorecard(props: {
 
 function ScorecardSummaryHeader(props: { label: "OUT" | "IN" | "TOT" }) {
   return (
-    <th className="w-8 bg-gray-50 py-1 font-semibold sm:w-11" scope="col">
+    <th
+      className="w-8 border border-x-2 border-gray-400 bg-gray-100/80 py-1 font-semibold sm:w-11"
+      scope="col"
+    >
       {props.label}
     </th>
   );
@@ -548,7 +563,7 @@ function ScorecardSummaryHeader(props: { label: "OUT" | "IN" | "TOT" }) {
 
 function ScorecardSummaryCell(props: { value: number | undefined }) {
   return (
-    <td className="bg-gray-50 px-0.5 py-1 font-semibold">
+    <td className="border border-x-2 border-gray-400 bg-gray-100/80 px-0.5 py-1 font-semibold">
       {formatScorecardNumber(props.value)}
     </td>
   );
