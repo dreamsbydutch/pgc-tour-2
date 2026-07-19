@@ -389,7 +389,7 @@ export function PGAHoleScorecard(props: {
   if (props.scorecard === undefined) {
     return (
       <div className="mt-3 border-t pt-3 text-center text-xs text-muted-foreground">
-        Loading hole-by-hole scoring…
+        Loading hole-by-hole scoring...
       </div>
     );
   }
@@ -404,26 +404,78 @@ export function PGAHoleScorecard(props: {
   const rounds = new Map(
     props.scorecard.rounds.map((round) => [round.round, round]),
   );
+  const pars = new Map<number, number>();
+  for (const round of props.scorecard.rounds) {
+    for (const score of round.holes) {
+      if (!pars.has(score.hole)) {
+        pars.set(score.hole, score.strokes - score.relativeToPar);
+      }
+    }
+  }
+  const frontPar = totalWhenComplete(
+    Array.from({ length: 9 }, (_, index) => pars.get(index + 1)),
+  );
+  const backPar = totalWhenComplete(
+    Array.from({ length: 9 }, (_, index) => pars.get(index + 10)),
+  );
+  const totalPar =
+    frontPar !== undefined && backPar !== undefined
+      ? frontPar + backPar
+      : undefined;
   return (
     <div
       className="mt-3 overflow-x-auto border-t pt-3"
       onClick={(event) => event.stopPropagation()}
       aria-label="Hole-by-hole scorecard"
     >
-      <table className="mx-auto min-w-[760px] table-fixed border-collapse text-center font-varela text-xs">
+      <table className="mx-auto min-w-[620px] table-fixed border-collapse text-center font-varela text-[9px] sm:min-w-[760px] sm:text-xs">
         <caption className="sr-only">
           Golfer scores for holes 1 through 18
         </caption>
         <thead>
           <tr className="text-muted-foreground">
-            <th className="w-10 py-1 font-medium" scope="col">
+            <th className="w-7 py-1 font-medium sm:w-10" scope="col">
               Rd
             </th>
-            {Array.from({ length: 18 }, (_, index) => (
-              <th className="w-10 py-1 font-medium" scope="col" key={index + 1}>
+            {Array.from({ length: 9 }, (_, index) => (
+              <th
+                className="w-7 py-1 font-medium sm:w-10"
+                scope="col"
+                key={index + 1}
+              >
                 {index + 1}
               </th>
             ))}
+            <ScorecardSummaryHeader label="OUT" />
+            {Array.from({ length: 9 }, (_, index) => (
+              <th
+                className="w-7 py-1 font-medium sm:w-10"
+                scope="col"
+                key={index + 10}
+              >
+                {index + 10}
+              </th>
+            ))}
+            <ScorecardSummaryHeader label="IN" />
+            <ScorecardSummaryHeader label="TOT" />
+          </tr>
+          <tr className="border-t border-gray-100 bg-gray-50/70 text-[8px] text-muted-foreground sm:text-[10px]">
+            <th className="py-1 font-normal" scope="row">
+              Par
+            </th>
+            {Array.from({ length: 9 }, (_, index) => (
+              <td className="py-1" key={index + 1}>
+                {pars.get(index + 1) ?? "-"}
+              </td>
+            ))}
+            <ScorecardSummaryCell value={frontPar} />
+            {Array.from({ length: 9 }, (_, index) => (
+              <td className="py-1" key={index + 10}>
+                {pars.get(index + 10) ?? "-"}
+              </td>
+            ))}
+            <ScorecardSummaryCell value={backPar} />
+            <ScorecardSummaryCell value={totalPar} />
           </tr>
         </thead>
         <tbody>
@@ -432,22 +484,50 @@ export function PGAHoleScorecard(props: {
             const holes = new Map(
               round?.holes.map((hole) => [hole.hole, hole]) ?? [],
             );
+            const frontTotal = totalWhenComplete(
+              Array.from(
+                { length: 9 },
+                (_, index) => holes.get(index + 1)?.strokes,
+              ),
+            );
+            const backTotal = totalWhenComplete(
+              Array.from(
+                { length: 9 },
+                (_, index) => holes.get(index + 10)?.strokes,
+              ),
+            );
+            const roundTotal =
+              round?.totalStrokes ??
+              (frontTotal !== undefined && backTotal !== undefined
+                ? frontTotal + backTotal
+                : undefined);
             return (
               <tr key={roundNumber} className="border-t border-gray-100">
                 <th
-                  className="py-2 font-medium text-muted-foreground"
+                  className="py-1.5 font-medium text-muted-foreground sm:py-2"
                   scope="row"
                 >
                   R{roundNumber}
                 </th>
-                {Array.from({ length: 18 }, (_, index) => {
+                {Array.from({ length: 9 }, (_, index) => {
                   const holeNumber = index + 1;
                   return (
-                    <td className="h-10 py-1" key={holeNumber}>
+                    <td className="h-8 py-1 sm:h-10" key={holeNumber}>
                       <HoleScoreMark score={holes.get(holeNumber)} />
                     </td>
                   );
                 })}
+                <ScorecardSummaryCell value={frontTotal} />
+                {Array.from({ length: 9 }, (_, index) => {
+                  const holeNumber = index + 10;
+                  return (
+                    <td className="h-8 py-1 sm:h-10" key={holeNumber}>
+                      <HoleScoreMark score={holes.get(holeNumber)} />
+                    </td>
+                  );
+                })}
+                <ScorecardSummaryCell value={backTotal} />
+                <ScorecardSummaryCell value={roundTotal} />
               </tr>
             );
           })}
@@ -457,9 +537,31 @@ export function PGAHoleScorecard(props: {
   );
 }
 
+function ScorecardSummaryHeader(props: { label: "OUT" | "IN" | "TOT" }) {
+  return (
+    <th className="w-8 bg-gray-50 py-1 font-semibold sm:w-11" scope="col">
+      {props.label}
+    </th>
+  );
+}
+
+function ScorecardSummaryCell(props: { value: number | undefined }) {
+  return (
+    <td className="bg-gray-50 px-0.5 py-1 font-semibold">
+      {props.value ?? "-"}
+    </td>
+  );
+}
+
+function totalWhenComplete(values: Array<number | undefined>) {
+  return values.length > 0 && values.every((value) => value !== undefined)
+    ? (values as number[]).reduce((total, value) => total + value, 0)
+    : undefined;
+}
+
 function HoleScoreMark(props: { score?: HoleScore }) {
   if (!props.score) {
-    return <span className="text-gray-300">–</span>;
+    return <span className="text-gray-300">-</span>;
   }
   const relative = props.score.relativeToPar;
   const description =
@@ -472,20 +574,41 @@ function HoleScoreMark(props: { score?: HoleScore }) {
           : relative === 1
             ? "bogey"
             : "double bogey or worse";
+  const shape =
+    relative <= -2
+      ? "double-circle"
+      : relative === -1
+        ? "circle"
+        : relative >= 2
+          ? "double-square"
+          : relative === 1
+            ? "square"
+            : "none";
+  const isDouble = shape === "double-circle" || shape === "double-square";
+  const isCircle = shape === "circle" || shape === "double-circle";
   return (
     <span
       aria-label={`${props.score.strokes} strokes, ${description}`}
+      data-score-shape={shape}
       className={cn(
-        "mx-auto inline-flex h-6 w-6 items-center justify-center text-xs leading-none text-foreground",
-        relative === -1 && "rounded-full border border-current",
-        relative <= -2 &&
-          "rounded-full border border-current outline outline-1 outline-offset-2",
-        relative === 1 && "border border-current",
-        relative >= 2 &&
-          "border border-current outline outline-1 outline-offset-2",
+        "mx-auto inline-flex h-5 w-5 items-center justify-center text-[9px] leading-none text-foreground sm:h-6 sm:w-6 sm:text-xs",
+        shape !== "none" && "border border-current",
+        isCircle && "rounded-full",
       )}
     >
-      {props.score.strokes}
+      {isDouble ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "inline-flex h-3.5 w-3.5 items-center justify-center border border-current sm:h-[18px] sm:w-[18px]",
+            isCircle && "rounded-full",
+          )}
+        >
+          {props.score.strokes}
+        </span>
+      ) : (
+        props.score.strokes
+      )}
     </span>
   );
 }

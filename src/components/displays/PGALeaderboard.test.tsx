@@ -6,18 +6,25 @@ import { PGAHoleScorecard } from "./PGALeaderboard";
 
 describe("PGAHoleScorecard", () => {
   it("renders 18 holes, four rounds, placeholders, and score descriptions", () => {
+    const relativeToPar = new Map([
+      [1, -1],
+      [2, -2],
+      [3, 1],
+      [4, 2],
+    ]);
+    const holes = Array.from({ length: 18 }, (_, index) => {
+      const hole = index + 1;
+      const relative = relativeToPar.get(hole) ?? 0;
+      return { hole, strokes: 4 + relative, relativeToPar: relative };
+    });
     render(
       <PGAHoleScorecard
         scorecard={{
           rounds: [
             {
               round: 1,
-              holes: [
-                { hole: 1, strokes: 3, relativeToPar: -1 },
-                { hole: 2, strokes: 2, relativeToPar: -2 },
-                { hole: 3, strokes: 5, relativeToPar: 1 },
-                { hole: 4, strokes: 6, relativeToPar: 2 },
-              ],
+              totalStrokes: 72,
+              holes,
             },
           ],
         }}
@@ -25,19 +32,31 @@ describe("PGAHoleScorecard", () => {
     );
 
     expect(screen.getByRole("columnheader", { name: "18" })).toBeTruthy();
-    expect(screen.getAllByRole("rowheader")).toHaveLength(4);
+    expect(screen.getByRole("columnheader", { name: "OUT" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "IN" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "TOT" })).toBeTruthy();
+    expect(screen.getAllByRole("rowheader")).toHaveLength(5);
+    expect(screen.getByRole("rowheader", { name: "Par" })).toBeTruthy();
     expect(screen.getByLabelText("3 strokes, birdie")).toBeTruthy();
-    expect(screen.getByLabelText("2 strokes, eagle or better")).toBeTruthy();
+    expect(
+      screen
+        .getByLabelText("2 strokes, eagle or better")
+        .getAttribute("data-score-shape"),
+    ).toBe("double-circle");
     expect(screen.getByLabelText("5 strokes, bogey")).toBeTruthy();
     expect(
-      screen.getByLabelText("6 strokes, double bogey or worse"),
-    ).toBeTruthy();
-    expect(screen.getAllByText("–").length).toBeGreaterThan(0);
+      screen
+        .getByLabelText("6 strokes, double bogey or worse")
+        .getAttribute("data-score-shape"),
+    ).toBe("double-square");
+    expect(screen.getAllByText("36").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("72").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("-").length).toBeGreaterThan(0);
   });
 
   it("renders loading and unavailable states independently", () => {
     const { rerender } = render(<PGAHoleScorecard scorecard={undefined} />);
-    expect(screen.getByText("Loading hole-by-hole scoring…")).toBeTruthy();
+    expect(screen.getByText("Loading hole-by-hole scoring...")).toBeTruthy();
     rerender(<PGAHoleScorecard scorecard={null} />);
     expect(screen.getByText("Hole-by-hole scoring unavailable.")).toBeTruthy();
   });
