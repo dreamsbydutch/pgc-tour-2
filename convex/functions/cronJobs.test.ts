@@ -5,6 +5,8 @@ import {
   buildFirstPlaceTiebreakSummary,
   derivePersistedTournamentState,
   deriveTournamentTimelineState,
+  getEffectiveGolferLeaderboardScore,
+  getGolferLeaderboardRankMetrics,
   getTeamRoundWindowGolfers,
   getTournamentRoundWindowMetrics,
   getTeamTournamentRank,
@@ -53,6 +55,61 @@ function makeTeam(args: {
     tourCard: { tourId },
   } as unknown as TestSyncTeam;
 }
+
+describe("golfer leaderboard score and rank", () => {
+  it("uses historical totals when the live score is missing", () => {
+    const leader = makeGolfer({
+      historical: {
+        fin_text: "1",
+        round_1: { score: 69, course_par: 72, teetime: undefined },
+      },
+      tournamentGolfer: { position: "1", score: 4 },
+    });
+    const second = makeGolfer({
+      historical: {
+        fin_text: "2",
+        round_1: { score: 71, course_par: 72, teetime: undefined },
+      },
+      tournamentGolfer: { position: "2", score: 5 },
+    });
+
+    expect(getEffectiveGolferLeaderboardScore(leader)).toBe(-3);
+    expect(getEffectiveGolferLeaderboardScore(second)).toBe(-1);
+    expect(
+      getGolferLeaderboardRankMetrics({
+        golfer: leader,
+        golfers: [leader, second],
+        allowPreStartNonStarterReplacement: false,
+      }),
+    ).toMatchObject({ betterGolfers: 0, tiedGolfers: 1 });
+    expect(
+      getGolferLeaderboardRankMetrics({
+        golfer: second,
+        golfers: [leader, second],
+        allowPreStartNonStarterReplacement: false,
+      }),
+    ).toMatchObject({ betterGolfers: 1, tiedGolfers: 1 });
+  });
+
+  it("prefers a live score and preserves a saved even-par score", () => {
+    expect(
+      getEffectiveGolferLeaderboardScore(
+        makeGolfer({
+          live: { current_score: -5 },
+          historical: {
+            round_1: { score: 70, course_par: 72, teetime: undefined },
+          },
+          tournamentGolfer: { score: 0 },
+        }),
+      ),
+    ).toBe(-5);
+    expect(
+      getEffectiveGolferLeaderboardScore(
+        makeGolfer({ tournamentGolfer: { score: 0 } }),
+      ),
+    ).toBe(0);
+  });
+});
 
 describe("buildTourCardStandingsTotals", () => {
   it("counts only regular-season events for standings stats while keeping playoff earnings", () => {

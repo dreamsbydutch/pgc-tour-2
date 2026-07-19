@@ -676,6 +676,86 @@ function getTournamentSyncPosition(args: {
   return getEffectiveTournamentPosition(args.golfer);
 }
 
+/**
+ * Returns the same best-available score for persistence and leaderboard rank.
+ * Data Golf can omit live.current_score while still returning historical round
+ * totals, so missing live data must never be treated as even par.
+ */
+export function getEffectiveGolferLeaderboardScore(
+  golfer: EnhancedGolfer,
+): number | undefined {
+  if (
+    typeof golfer.live?.current_score === "number" &&
+    Number.isFinite(golfer.live.current_score)
+  ) {
+    return golfer.live.current_score;
+  }
+
+  const completedHistoricalRounds = [
+    golfer.historical?.round_1,
+    golfer.historical?.round_2,
+    golfer.historical?.round_3,
+    golfer.historical?.round_4,
+  ].filter(
+    (round): round is NonNullable<typeof round> =>
+      typeof round?.score === "number" &&
+      round.score > 0 &&
+      typeof round.course_par === "number" &&
+      round.course_par > 0,
+  );
+  if (completedHistoricalRounds.length > 0) {
+    return roundToDecimalPlace(
+      completedHistoricalRounds.reduce(
+        (total, round) => total + round.score - round.course_par,
+        0,
+      ),
+    );
+  }
+
+  return typeof golfer.tournamentGolfer?.score === "number" &&
+    Number.isFinite(golfer.tournamentGolfer.score)
+    ? roundToDecimalPlace(golfer.tournamentGolfer.score)
+    : undefined;
+}
+
+export function getGolferLeaderboardRankMetrics(args: {
+  golfer: EnhancedGolfer;
+  golfers: EnhancedGolfer[];
+  allowPreStartNonStarterReplacement: boolean;
+}): { betterGolfers: number; betterGolfersPast: number; tiedGolfers: number } {
+  const rankingScore = (golfer: EnhancedGolfer): number => {
+    const position = getTournamentSyncPosition({
+      golfer,
+      allowPreStartNonStarterReplacement:
+        args.allowPreStartNonStarterReplacement,
+    });
+    return isNonRankingTournamentPosition(position)
+      ? 999
+      : (getEffectiveGolferLeaderboardScore(golfer) ??
+          Number.POSITIVE_INFINITY);
+  };
+  const priorRankingScore = (golfer: EnhancedGolfer): number => {
+    const score = rankingScore(golfer);
+    if (!Number.isFinite(score)) return score;
+    const today =
+      golfer.live?.today ?? golfer.tournamentGolfer?.today ?? 0;
+    return score - today;
+  };
+  const score = rankingScore(args.golfer);
+  const priorScore = priorRankingScore(args.golfer);
+  return {
+    betterGolfers: args.golfers.filter(
+      (golfer) => rankingScore(golfer) < score,
+    ).length,
+    betterGolfersPast: args.golfers.filter(
+      (golfer) => priorRankingScore(golfer) < priorScore,
+    ).length,
+    tiedGolfers: args.golfers.filter(
+      (golfer) => rankingScore(golfer) === score,
+    ).length,
+  };
+}
+
 function getGolferReplacementRank(golfer: EnhancedGolfer): number {
   return (
     golfer.tournamentGolfer?.worldRank ??
@@ -2470,48 +2550,12 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             coursePar: course.par,
             allowPreStartNonStarterReplacement,
           });
-          const betterGolfers = golfers.filter((og) => {
-            const otherPosition = getTournamentSyncPosition({
-              golfer: og,
+          const { betterGolfers, betterGolfersPast, tiedGolfers } =
+            getGolferLeaderboardRankMetrics({
+              golfer: g,
+              golfers,
               allowPreStartNonStarterReplacement,
             });
-            return (
-              (isNonRankingTournamentPosition(otherPosition)
-                ? 999
-                : (og.live?.current_score ?? 0)) <
-              (isNonRankingTournamentPosition(golferPosition)
-                ? 999
-                : (g.live?.current_score ?? 0))
-            );
-          }).length;
-          const betterGolfersPast = golfers.filter((og) => {
-            const otherPosition = getTournamentSyncPosition({
-              golfer: og,
-              allowPreStartNonStarterReplacement,
-            });
-            return (
-              (isNonRankingTournamentPosition(otherPosition)
-                ? 999
-                : (og.live?.current_score ?? 0) - (og.live?.today ?? 0)) <
-              (isNonRankingTournamentPosition(golferPosition)
-                ? 999
-                : (g.live?.current_score ?? 0) - (g.live?.today ?? 0))
-            );
-          }).length;
-          const tiedGolfers = golfers.filter((og) => {
-            const otherPosition = getTournamentSyncPosition({
-              golfer: og,
-              allowPreStartNonStarterReplacement,
-            });
-            return (
-              (isNonRankingTournamentPosition(otherPosition)
-                ? 999
-                : (og.live?.current_score ?? 0)) ===
-              (isNonRankingTournamentPosition(golferPosition)
-                ? 999
-                : (g.live?.current_score ?? 0))
-            );
-          }).length;
           await ctx.runMutation(
             internal.functions.golfers.updateTournamentGolfer,
             {
@@ -2529,21 +2573,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                 posChange: betterGolfersPast - betterGolfers,
                 score: golferIsPreStartNonStarter
                   ? undefined
-                  : (g.live?.current_score ??
-                    (g.historical
-                      ? roundToDecimalPlace(
-                          (g.historical.round_1?.score ?? 0) -
-                            (g.historical.round_1?.course_par ?? 0) +
-                            ((g.historical.round_2?.score ?? 0) -
-                              (g.historical.round_2?.course_par ?? 0)) +
-                            ((g.historical.round_3?.score ?? 0) -
-                              (g.historical.round_3?.course_par ?? 0)) +
-                            ((g.historical.round_4?.score ?? 0) -
-                              (g.historical.round_4?.course_par ?? 0)),
-                        )
-                      : g.tournamentGolfer.score
-                        ? roundToDecimalPlace(g.tournamentGolfer.score)
-                        : undefined)),
+                  : getEffectiveGolferLeaderboardScore(g),
                 endHole:
                   g.live?.end_hole ?? g.tournamentGolfer?.endHole ?? undefined,
                 makeCut:
@@ -3377,48 +3407,12 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             coursePar: course.par,
             allowPreStartNonStarterReplacement,
           });
-          const betterGolfers = golfers.filter((og) => {
-            const otherPosition = getTournamentSyncPosition({
-              golfer: og,
+          const { betterGolfers, betterGolfersPast, tiedGolfers } =
+            getGolferLeaderboardRankMetrics({
+              golfer: g,
+              golfers,
               allowPreStartNonStarterReplacement,
             });
-            return (
-              (isNonRankingTournamentPosition(otherPosition)
-                ? 999
-                : (og.live?.current_score ?? 0)) <
-              (isNonRankingTournamentPosition(golferPosition)
-                ? 999
-                : (g.live?.current_score ?? 0))
-            );
-          }).length;
-          const betterGolfersPast = golfers.filter((og) => {
-            const otherPosition = getTournamentSyncPosition({
-              golfer: og,
-              allowPreStartNonStarterReplacement,
-            });
-            return (
-              (isNonRankingTournamentPosition(otherPosition)
-                ? 999
-                : (og.live?.current_score ?? 0) - (og.live?.today ?? 0)) <
-              (isNonRankingTournamentPosition(golferPosition)
-                ? 999
-                : (g.live?.current_score ?? 0) - (g.live?.today ?? 0))
-            );
-          }).length;
-          const tiedGolfers = golfers.filter((og) => {
-            const otherPosition = getTournamentSyncPosition({
-              golfer: og,
-              allowPreStartNonStarterReplacement,
-            });
-            return (
-              (isNonRankingTournamentPosition(otherPosition)
-                ? 999
-                : (og.live?.current_score ?? 0)) ===
-              (isNonRankingTournamentPosition(golferPosition)
-                ? 999
-                : (g.live?.current_score ?? 0))
-            );
-          }).length;
           await ctx.runMutation(
             internal.functions.golfers.updateTournamentGolfer,
             {
@@ -3436,21 +3430,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                 posChange: betterGolfersPast - betterGolfers,
                 score: golferIsPreStartNonStarter
                   ? undefined
-                  : (g.live?.current_score ??
-                    (g.historical
-                      ? roundToDecimalPlace(
-                          (g.historical.round_1?.score ?? 0) -
-                            (g.historical.round_1?.course_par ?? 0) +
-                            ((g.historical.round_2?.score ?? 0) -
-                              (g.historical.round_2?.course_par ?? 0)) +
-                            ((g.historical.round_3?.score ?? 0) -
-                              (g.historical.round_3?.course_par ?? 0)) +
-                            ((g.historical.round_4?.score ?? 0) -
-                              (g.historical.round_4?.course_par ?? 0)),
-                        )
-                      : g.tournamentGolfer.score
-                        ? roundToDecimalPlace(g.tournamentGolfer.score)
-                        : undefined)),
+                  : getEffectiveGolferLeaderboardScore(g),
                 endHole:
                   g.live?.end_hole ?? g.tournamentGolfer?.endHole ?? undefined,
                 makeCut:
