@@ -321,6 +321,7 @@ const schema = defineSchema({
     lastSuccessAt: v.optional(v.number()),
     lastError: v.optional(v.string()),
     unmatchedPlayers: v.optional(v.number()),
+    missingPlayerNames: v.optional(v.array(v.string())),
     updatedAt: v.number(),
   })
     .index("by_tournament", ["tournamentId"])
@@ -331,7 +332,11 @@ const schema = defineSchema({
     golferId: v.id("golfers"),
     espnAthleteId: v.string(),
     espnPlayerName: v.string(),
-    matchMethod: v.union(v.literal("exact_name"), v.literal("manual")),
+    matchMethod: v.union(
+      v.literal("exact_name"),
+      v.literal("name_variant"),
+      v.literal("manual"),
+    ),
     updatedAt: v.number(),
   })
     .index("by_golfer", ["golferId"])

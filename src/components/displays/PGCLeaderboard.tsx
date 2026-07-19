@@ -276,7 +276,7 @@ function TeamGolfersTable(props: {
     status?: TournamentDoc["status"];
   };
   teamGolfers?: EnhancedTournamentGolferDoc[];
-  teamHoleScorecards: TeamSourceScorecard[] | undefined;
+  teamHoleScorecards: TeamSourceScorecard[] | null | undefined;
 }) {
   const sortedTeamGolfers = useTeamGolfersTable({
     teamGolfers: props.teamGolfers!,
@@ -326,12 +326,14 @@ function TeamGolfersTable(props: {
   const teamAverageScorecard =
     props.teamHoleScorecards === undefined
       ? undefined
-      : buildTeamAverageScorecard({
-          teamGolfers: props.teamGolfers ?? [],
-          scorecards: props.teamHoleScorecards,
-          currentRound: props.tournament.currentRound ?? 0,
-          tournamentCompleted: props.tournament.status === "completed",
-        });
+      : props.teamHoleScorecards === null
+        ? null
+        : buildTeamAverageScorecard({
+            teamGolfers: props.teamGolfers ?? [],
+            scorecards: props.teamHoleScorecards,
+            currentRound: props.tournament.currentRound ?? 0,
+            tournamentCompleted: props.tournament.status === "completed",
+          });
   const hasTeamHoleScores = teamAverageScorecard?.rounds.some(
     (round) => round.holes.length > 0,
   );
@@ -424,7 +426,7 @@ function TeamGolfersTable(props: {
           scorecard={
             teamAverageScorecard === undefined
               ? undefined
-              : hasTeamHoleScores
+              : teamAverageScorecard !== null && hasTeamHoleScores
                 ? teamAverageScorecard
                 : null
           }

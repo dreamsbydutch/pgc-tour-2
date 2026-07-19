@@ -172,6 +172,42 @@ describe("findEspnGolferMatch", () => {
     ).toEqual({ golferId: "golfer-1", matchMethod: "exact_name" });
   });
 
+  it("matches unique initials, common nicknames, reversed names, and accents", () => {
+    const cases = [
+      ["R. McIlroy", "Rory McIlroy", "name_variant"],
+      ["Cam Davis", "Cameron Davis", "name_variant"],
+      ["Scheffler, Scottie", "Scottie Scheffler", "name_variant"],
+      ["Ludvig Aberg", "Ludvig Åberg", "exact_name"],
+      ["Tom Kim", "Joohyung Kim", "name_variant"],
+      ["Jose Garcia", "Jose Garcia Rodriguez", "name_variant"],
+      ["Rory McIlroy", "Rory Mc Ilroy", "name_variant"],
+    ] as const;
+    for (const [espnName, localName, matchMethod] of cases) {
+      expect(
+        findEspnGolferMatch({
+          espnAthleteId: `espn-${espnName}`,
+          playerName: espnName!,
+          localGolfers: [{ golferId: "golfer", playerName: localName! }],
+          mappings: [],
+        }),
+      ).toEqual({ golferId: "golfer", matchMethod });
+    }
+  });
+
+  it("does not guess when an initial matches more than one local golfer", () => {
+    expect(
+      findEspnGolferMatch({
+        espnAthleteId: "espn-r-smith",
+        playerName: "R. Smith",
+        localGolfers: [
+          { golferId: "golfer-1", playerName: "Robert Smith" },
+          { golferId: "golfer-2", playerName: "Riley Smith" },
+        ],
+        mappings: [],
+      }),
+    ).toBeNull();
+  });
+
   it("rejects ambiguous names and conflicting saved identities", () => {
     expect(
       findEspnGolferMatch({

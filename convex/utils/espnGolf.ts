@@ -36,10 +36,123 @@ export function normalizeEspnIdentityName(name: string): string {
     .toLowerCase()
     .replace(/\b(junior)\b/g, "jr")
     .replace(/\b(senior)\b/g, "sr")
-    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/[’']/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
     .replace(/\b(jr|sr|ii|iii|iv|v)\b$/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+const GIVEN_NAME_ALIASES = [
+  ["ben", "benjamin"],
+  ["bill", "billy", "will", "william"],
+  ["bob", "bobby", "rob", "robert"],
+  ["cam", "cameron"],
+  ["chris", "christopher"],
+  ["dan", "daniel"],
+  ["dave", "david"],
+  ["joe", "joseph"],
+  ["jon", "jonathan"],
+  ["matt", "matthew"],
+  ["nick", "nicholas"],
+  ["pat", "patrick"],
+  ["sam", "samuel"],
+  ["steve", "stephen", "steven"],
+  ["joohyung", "tom", "thomas"],
+  ["tony", "anthony"],
+] as const;
+
+const GIVEN_NAME_CANONICAL = new Map<string, string>(
+  GIVEN_NAME_ALIASES.flatMap((group) =>
+    group.map((name) => [name, group[0]] as const),
+  ),
+);
+
+type ParsedIdentityName = {
+  normalized: string;
+  orderedTokens: string[];
+  givenTokens: string[];
+  surnameTokens: string[];
+};
+
+function parseIdentityName(name: string): ParsedIdentityName | null {
+  const normalized = normalizeEspnIdentityName(name);
+  const tokens = normalized.split(" ").filter(Boolean);
+  if (tokens.length < 2) return null;
+  const commaReversed = /,/.test(name);
+  const ordered = commaReversed ? [...tokens].reverse() : tokens;
+  return {
+    normalized,
+    orderedTokens: ordered,
+    givenTokens: ordered.slice(0, -1),
+    surnameTokens: ordered.slice(-1),
+  };
+}
+
+function canonicalGivenName(value: string): string {
+  return GIVEN_NAME_CANONICAL.get(value) ?? value;
+}
+
+function givenNamesAreCompatible(a: string[], b: string[]): boolean {
+  const aJoined = a.join("");
+  const bJoined = b.join("");
+  if (!aJoined || !bJoined) return false;
+  if (aJoined === bJoined) return true;
+  if (canonicalGivenName(a[0] ?? "") === canonicalGivenName(b[0] ?? "")) {
+    return true;
+  }
+
+  const aInitials = a.map((token) => token[0]).join("");
+  const bInitials = b.map((token) => token[0]).join("");
+  return (
+    (aJoined.length <= 3 && aJoined === bInitials) ||
+    (bJoined.length <= 3 && bJoined === aInitials) ||
+    (aJoined.length === 1 && bJoined.startsWith(aJoined)) ||
+    (bJoined.length === 1 && aJoined.startsWith(bJoined))
+  );
+}
+
+function scoreIdentityNameMatch(espnName: string, localName: string): number {
+  const espn = parseIdentityName(espnName);
+  const local = parseIdentityName(localName);
+  if (!espn || !local) return 0;
+  if (espn.normalized === local.normalized) return 100;
+
+  const sameSurname =
+    espn.surnameTokens.join("") === local.surnameTokens.join("");
+  const compatibleGiven = givenNamesAreCompatible(
+    espn.givenTokens,
+    local.givenTokens,
+  );
+  if (sameSurname && compatibleGiven) {
+    const exactGiven = espn.givenTokens.join("") === local.givenTokens.join("");
+    return exactGiven ? 90 : 80;
+  }
+
+  // Some feeds omit one part of a compound family name. Only accept this when
+  // the full given name (or a known nickname) agrees and a substantial family
+  // token is shared; initials alone are intentionally not enough here.
+  const firstNamesAgree =
+    canonicalGivenName(espn.orderedTokens[0] ?? "") ===
+    canonicalGivenName(local.orderedTokens[0] ?? "");
+  const espnFamilyTokens = new Set(
+    espn.orderedTokens.slice(1).filter((token) => token.length >= 3),
+  );
+  const sharedFamilyToken = local.orderedTokens
+    .slice(1)
+    .some((token) => token.length >= 3 && espnFamilyTokens.has(token));
+  const espnFamilyCompact = espn.orderedTokens.slice(1).join("");
+  const localFamilyCompact = local.orderedTokens.slice(1).join("");
+  const compatibleFamilyCompact =
+    espnFamilyCompact.length >= 4 &&
+    localFamilyCompact.length >= 4 &&
+    (espnFamilyCompact.includes(localFamilyCompact) ||
+      localFamilyCompact.includes(espnFamilyCompact));
+  return firstNamesAgree && (sharedFamilyToken || compatibleFamilyCompact)
+    ? 75
+    : 0;
 }
 
 export function findEspnGolferMatch(args: {
@@ -47,7 +160,10 @@ export function findEspnGolferMatch(args: {
   playerName: string;
   localGolfers: Array<{ golferId: string; playerName: string }>;
   mappings: Array<{ golferId: string; espnAthleteId: string }>;
-}): { golferId: string; matchMethod: "saved" | "exact_name" } | null {
+}): {
+  golferId: string;
+  matchMethod: "saved" | "exact_name" | "name_variant";
+} | null {
   const saved = args.mappings.find(
     (mapping) => mapping.espnAthleteId === args.espnAthleteId,
   );
@@ -59,19 +175,28 @@ export function findEspnGolferMatch(args: {
       : null;
   }
 
-  const normalizedName = normalizeEspnIdentityName(args.playerName);
-  const exactMatches = args.localGolfers.filter(
-    (golfer) => normalizeEspnIdentityName(golfer.playerName) === normalizedName,
-  );
-  if (exactMatches.length !== 1) return null;
-  const golferId = exactMatches[0]?.golferId;
+  const candidates = args.localGolfers
+    .map((golfer) => ({
+      golfer,
+      score: scoreIdentityNameMatch(args.playerName, golfer.playerName),
+    }))
+    .filter((candidate) => candidate.score >= 75)
+    .sort((a, b) => b.score - a.score);
+  const best = candidates[0];
+  if (!best || candidates[1]?.score === best.score) return null;
+  const golferId = best.golfer.golferId;
   if (!golferId) return null;
   const conflictingMapping = args.mappings.some(
     (mapping) =>
       mapping.golferId === golferId &&
       mapping.espnAthleteId !== args.espnAthleteId,
   );
-  return conflictingMapping ? null : { golferId, matchMethod: "exact_name" };
+  return conflictingMapping
+    ? null
+    : {
+        golferId,
+        matchMethod: best.score === 100 ? "exact_name" : "name_variant",
+      };
 }
 
 function parseHole(value: unknown): EspnHoleScore | null {
@@ -174,10 +299,14 @@ export function selectEspnGolfEvent(
   events: EspnGolfEvent[],
   tournamentName: string,
 ): EspnGolfEvent | null {
+  const normalizedTournamentName = normalizeEspnIdentityName(tournamentName);
   const compatible = events
     .map((event) => ({
       event,
-      match: checkCompatabilityOfEventNames(tournamentName, event.eventName),
+      match: checkCompatabilityOfEventNames(
+        normalizedTournamentName,
+        normalizeEspnIdentityName(event.eventName),
+      ),
     }))
     .filter(({ match }) => match.ok)
     .sort((a, b) => b.match.score - a.match.score);

@@ -68,6 +68,7 @@ export const getTeamHoleScorecards = query({
   },
   handler: async (ctx, args) => {
     const uniqueGolferIds = [...new Set(args.golferIds)].slice(0, 10);
+    if (uniqueGolferIds.length !== 10) return null;
     const scorecards = await Promise.all(
       uniqueGolferIds.map((golferId) =>
         ctx.db
@@ -78,7 +79,8 @@ export const getTeamHoleScorecards = query({
           .first(),
       ),
     );
-    return scorecards.filter((scorecard) => scorecard !== null);
+    const available = scorecards.filter((scorecard) => scorecard !== null);
+    return available.length === uniqueGolferIds.length ? available : null;
   },
 });
 
@@ -216,14 +218,14 @@ export const applyScorecardChunk = internalMutation({
             (candidate) => String(candidate._id) === match.golferId,
           )
         : undefined;
-      if (golfer && match?.matchMethod === "exact_name") {
+      if (golfer && match && match.matchMethod !== "saved") {
         const candidateMapping = mappingByGolferId.get(golfer._id);
         if (!candidateMapping) {
           const mappingId = await ctx.db.insert("espnGolferMappings", {
             golferId: golfer._id,
             espnAthleteId: player.espnAthleteId,
             espnPlayerName: player.playerName,
-            matchMethod: "exact_name",
+            matchMethod: match.matchMethod,
             updatedAt: args.fetchedAt,
           });
           const inserted = await ctx.db.get(mappingId);
@@ -244,10 +246,6 @@ export const applyScorecardChunk = internalMutation({
       }
       matched += 1;
 
-      const hasHoleScores = player.rounds.some(
-        (round) => round.holes.length > 0,
-      );
-      if (!hasHoleScores) continue;
       const existingScorecard = await ctx.db
         .query("espnHoleScorecards")
         .withIndex("by_tournament_golfer", (q) =>
@@ -288,6 +286,39 @@ export const recordEventSyncSuccess = internalMutation({
     fetchedAt: v.number(),
   },
   handler: async (ctx, args) => {
+    const tournamentGolfers = await ctx.db
+      .query("tournamentGolfers")
+      .withIndex("by_tournament", (q) =>
+        q.eq("tournamentId", args.tournamentId),
+      )
+      .collect();
+    const scorecards = await ctx.db
+      .query("espnHoleScorecards")
+      .withIndex("by_tournament", (q) =>
+        q.eq("tournamentId", args.tournamentId),
+      )
+      .collect();
+    const covered = new Set(scorecards.map((scorecard) => scorecard.golferId));
+    const missingGolferIds = [
+      ...new Set(
+        tournamentGolfers
+          .map((golfer) => golfer.golferId)
+          .filter((golferId) => !covered.has(golferId)),
+      ),
+    ];
+    const missingGolfers = await Promise.all(
+      missingGolferIds.map((golferId) => ctx.db.get(golferId)),
+    );
+    const missingPlayerNames = missingGolfers.flatMap((golfer) =>
+      golfer ? [golfer.playerName] : [],
+    );
+    if (missingPlayerNames.length > 0) {
+      console.warn("ESPN Golf Scorecards: unmatched Data Golf golfers", {
+        tournamentId: args.tournamentId,
+        eventName: args.espnEventName,
+        missingPlayerNames,
+      });
+    }
     const existing = await ctx.db
       .query("espnGolfEvents")
       .withIndex("by_tournament", (q) =>
@@ -303,6 +334,7 @@ export const recordEventSyncSuccess = internalMutation({
       lastSuccessAt: args.fetchedAt,
       lastError: undefined,
       unmatchedPlayers: args.unmatchedPlayers,
+      missingPlayerNames,
       updatedAt: args.fetchedAt,
     };
     if (existing) await ctx.db.patch(existing._id, value);
