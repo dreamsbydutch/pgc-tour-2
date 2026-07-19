@@ -1,13 +1,12 @@
 import { v } from "convex/values";
 import {
-  action,
   internalAction,
   internalMutation,
   internalQuery,
   query,
 } from "../_generated/server";
 import { internal } from "../_generated/api";
-import type { Doc, Id } from "../_generated/dataModel";
+import type { Doc } from "../_generated/dataModel";
 import { fetchWithRetry } from "../utils/externalFetch";
 import {
   findEspnGolferMatch,
@@ -18,9 +17,6 @@ import {
 
 const ESPN_SCOREBOARD_URL =
   "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard";
-const BACKFILL_BATCH_SIZE = 5;
-const BACKFILL_BATCH_DELAY_MS = 60_000;
-const RECENT_COMPLETED_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
 const holeValidator = v.object({
   hole: v.number(),
@@ -122,50 +118,6 @@ export const getTournamentSyncContext = internalQuery({
       startDate: tournament.startDate,
       espnId: tournament.espnId ?? manualAudit?.espnId,
     };
-  },
-});
-
-export const getLiveSyncTournamentIds = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const now = Date.now();
-    const tournaments = await ctx.db.query("tournaments").collect();
-    return tournaments
-      .filter(
-        (tournament) =>
-          tournament.status === "active" ||
-          (tournament.startDate <= now && tournament.endDate >= now) ||
-          (tournament.status === "completed" &&
-            now - tournament.endDate <= RECENT_COMPLETED_WINDOW_MS),
-      )
-      .map((tournament) => tournament._id);
-  },
-});
-
-export const getBackfillTournamentBatch = internalQuery({
-  args: { offset: v.number() },
-  handler: async (ctx, args) => {
-    const tournaments = await ctx.db.query("tournaments").collect();
-    const sorted = tournaments.sort((a, b) => b.startDate - a.startDate);
-    return {
-      tournamentIds: sorted
-        .slice(args.offset, args.offset + BACKFILL_BATCH_SIZE)
-        .map((tournament) => tournament._id),
-      hasMore: args.offset + BACKFILL_BATCH_SIZE < sorted.length,
-      nextOffset: args.offset + BACKFILL_BATCH_SIZE,
-      total: sorted.length,
-    };
-  },
-});
-
-export const isAdminIdentity = internalQuery({
-  args: { clerkId: v.string() },
-  handler: async (ctx, args) => {
-    const member = await ctx.db
-      .query("members")
-      .withIndex("by_clerk_id", (q) => q.eq("clerkId", args.clerkId))
-      .first();
-    return member?.role === "admin";
   },
 });
 
@@ -492,93 +444,3 @@ export const syncTournamentScorecards: ReturnType<typeof internalAction> =
       }
     },
   });
-
-export const syncLiveScorecards: ReturnType<typeof internalAction> =
-  internalAction({
-    args: {},
-    handler: async (ctx) => {
-      const tournamentIds = await ctx.runQuery(
-        internal.functions.espnGolf.getLiveSyncTournamentIds,
-        {},
-      );
-      const results = [];
-      for (const tournamentId of tournamentIds) {
-        results.push(
-          await ctx.runAction(
-            internal.functions.espnGolf.syncTournamentScorecards,
-            { tournamentId },
-          ),
-        );
-      }
-      return { tournamentsProcessed: tournamentIds.length, results };
-    },
-  });
-
-export const runBackfillBatch: ReturnType<typeof internalAction> =
-  internalAction({
-    args: { offset: v.number() },
-    handler: async (ctx, args) => {
-      const batch = await ctx.runQuery(
-        internal.functions.espnGolf.getBackfillTournamentBatch,
-        args,
-      );
-      for (const tournamentId of batch.tournamentIds) {
-        await ctx.runAction(
-          internal.functions.espnGolf.syncTournamentScorecards,
-          { tournamentId },
-        );
-      }
-      if (batch.hasMore) {
-        await ctx.scheduler.runAfter(
-          BACKFILL_BATCH_DELAY_MS,
-          internal.functions.espnGolf.runBackfillBatch,
-          { offset: batch.nextOffset },
-        );
-      }
-      return {
-        processed: batch.tournamentIds.length,
-        nextOffset: batch.hasMore ? batch.nextOffset : null,
-        total: batch.total,
-      };
-    },
-  });
-
-/** Admin-triggered, idempotent entry point for the all-tournament backfill. */
-export const startScorecardBackfill: ReturnType<typeof action> = action({
-  args: {},
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    const isAdmin = identity
-      ? await ctx.runQuery(internal.functions.espnGolf.isAdminIdentity, {
-          clerkId: identity.subject,
-        })
-      : false;
-    if (!isAdmin) throw new Error("Administrator access is required.");
-    const scheduledId = await ctx.scheduler.runAfter(
-      0,
-      internal.functions.espnGolf.runBackfillBatch,
-      { offset: 0 },
-    );
-    return { ok: true, scheduledId };
-  },
-});
-
-/** Admin convenience action for validating a single tournament. */
-export const syncTournamentScorecardsNow: ReturnType<typeof action> = action({
-  args: { tournamentId: v.id("tournaments") },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    const isAdmin = identity
-      ? await ctx.runQuery(internal.functions.espnGolf.isAdminIdentity, {
-          clerkId: identity.subject,
-        })
-      : false;
-    if (!isAdmin) throw new Error("Administrator access is required.");
-    return await ctx.runAction(
-      internal.functions.espnGolf.syncTournamentScorecards,
-      args,
-    );
-  },
-});
-
-export type EspnTournamentId = Id<"tournaments">;
