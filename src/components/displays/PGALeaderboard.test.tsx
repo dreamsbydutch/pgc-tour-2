@@ -11,6 +11,7 @@ describe("PGAHoleScorecard", () => {
       [2, -2],
       [3, 1],
       [4, 2],
+      [5, -0.5],
     ]);
     const holes = Array.from({ length: 18 }, (_, index) => {
       const hole = index + 1;
@@ -49,6 +50,11 @@ describe("PGAHoleScorecard", () => {
         .getByLabelText("6 strokes, double bogey or worse")
         .getAttribute("data-score-shape"),
     ).toBe("double-square");
+    expect(
+      screen
+        .getByLabelText("3.5 strokes, under-par average")
+        .getAttribute("data-score-shape"),
+    ).toBe("circle");
     expect(screen.getAllByText("36").length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("72").length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("-").length).toBeGreaterThan(0);

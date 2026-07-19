@@ -60,6 +60,28 @@ export const getPlayerHoleScorecard = query({
   },
 });
 
+/** Lazily returns the isolated ESPN scorecards needed for one opened team. */
+export const getTeamHoleScorecards = query({
+  args: {
+    tournamentId: v.id("tournaments"),
+    golferIds: v.array(v.id("golfers")),
+  },
+  handler: async (ctx, args) => {
+    const uniqueGolferIds = [...new Set(args.golferIds)].slice(0, 10);
+    const scorecards = await Promise.all(
+      uniqueGolferIds.map((golferId) =>
+        ctx.db
+          .query("espnHoleScorecards")
+          .withIndex("by_tournament_golfer", (q) =>
+            q.eq("tournamentId", args.tournamentId).eq("golferId", golferId),
+          )
+          .first(),
+      ),
+    );
+    return scorecards.filter((scorecard) => scorecard !== null);
+  },
+});
+
 export const getTournamentSyncContext = internalQuery({
   args: { tournamentId: v.id("tournaments") },
   handler: async (ctx, args) => {

@@ -28,6 +28,8 @@ import {
   TournamentDoc,
 } from "convex/types/types";
 import { calculateScoreForSorting } from "convex/utils";
+import { api, Id, useQuery } from "@/convex";
+import { PGAHoleScorecard } from "./PGALeaderboard";
 
 /**
  * Renders the PGC leaderboard listing for the active tour (or playoff bracket).
@@ -138,7 +140,9 @@ function buildTeamsWithDisplayPosition(
 
 function isTeamNonRanking(position: string | null | undefined): boolean {
   return ["CUT", "WD", "DQ"].includes(
-    String(position ?? "").trim().toUpperCase(),
+    String(position ?? "")
+      .trim()
+      .toUpperCase(),
   );
 }
 
@@ -171,6 +175,7 @@ function LeaderboardListing({
   majorChampionBadgesByMemberId,
 }: {
   tournament: {
+    _id: Id<"tournaments">;
     currentRound?: number | undefined;
     livePlay?: boolean | null;
     status?: TournamentDoc["status"];
@@ -185,6 +190,15 @@ function LeaderboardListing({
   majorChampionBadgesByMemberId?: MajorChampionBadgesByMemberId;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const teamGolferIds = (team.teamGolfers ?? [])
+    .map((golfer) => golfer.golferId)
+    .slice(0, 10);
+  const teamHoleScorecards = useQuery(
+    api.functions.espnGolf.getTeamHoleScorecards,
+    isOpen && teamGolferIds.length > 0
+      ? { tournamentId: tournament._id, golferIds: teamGolferIds }
+      : "skip",
+  );
   const isCut = isPlayerCut(team.position);
   const isUser =
     !!currentTourCardId && String(team.tourCardId) === currentTourCardId;
@@ -234,6 +248,7 @@ function LeaderboardListing({
           <TeamGolfersTable
             tournament={tournament}
             teamGolfers={team.teamGolfers}
+            teamHoleScorecards={teamHoleScorecards}
           />
         </div>
       ) : null}
@@ -255,8 +270,13 @@ function LeaderboardListing({
  * @returns A compact table of golfers on the team.
  */
 function TeamGolfersTable(props: {
-  tournament: { name: string; currentRound?: number | undefined };
+  tournament: {
+    name: string;
+    currentRound?: number | undefined;
+    status?: TournamentDoc["status"];
+  };
   teamGolfers?: EnhancedTournamentGolferDoc[];
+  teamHoleScorecards: TeamSourceScorecard[] | undefined;
 }) {
   const sortedTeamGolfers = useTeamGolfersTable({
     teamGolfers: props.teamGolfers!,
@@ -303,83 +323,255 @@ function TeamGolfersTable(props: {
     );
   };
 
-  return (
-    <Table className="scrollbar-hidden mx-auto w-full max-w-3xl border border-gray-700 text-center font-varela">
-      <TableHeader>
-        <TableRow className="bg-gray-700 font-bold text-gray-100 hover:bg-gray-700">
-          <td className="px-0.5 text-xs">Pos</td>
-          <td className="px-0.5 text-xs">Player</td>
-          <td className="px-0.5 text-xs">Score</td>
-          <td className="px-0.5 text-2xs">Today</td>
-          <td className="px-0.5 text-2xs">Thru</td>
-          <td className="hidden px-0.5 text-2xs md:table-cell">R1</td>
-          <td className="hidden px-0.5 text-2xs md:table-cell">R2</td>
-          <td className="hidden px-0.5 text-2xs md:table-cell">R3</td>
-          <td className="hidden px-0.5 text-2xs md:table-cell">R4</td>
-          <td className="hidden px-0.5 text-2xs xs:table-cell">Make Cut</td>
-          <td className="hidden px-0.5 text-2xs xs:table-cell">Usage</td>
-          <td className="px-0.5 text-2xs">Group</td>
-        </TableRow>
-      </TableHeader>
-
-      <TableBody>
-        {sortedTeamGolfers.map((golfer, i) => {
-          const borderClasses: string[] = [];
-          if ((props.tournament.currentRound ?? 0) >= 3) {
-            if (i === 4) {
-              borderClasses.push("border-b border-black");
-            }
-          } else if (props.tournament.name === "TOUR Championship") {
-            if (i === 2 || i === 9)
-              borderClasses.push("border-b border-gray-700");
-          } else if (props.tournament.name === "BMW Championship") {
-            if (i === 4 || i === 9)
-              borderClasses.push("border-b border-gray-700");
-          } else {
-            if (i === 9) borderClasses.push("border-b border-gray-700");
-          }
-
-          return (
-            <TableRow
-              key={golfer._id}
-              className={cn(
-                isPlayerCut(golfer.position) && "text-gray-400",
-                borderClasses.join(" "),
-              )}
-            >
-              <td className="px-1 text-xs">{golfer.position ?? "-"}</td>
-              <td className="whitespace-nowrap px-1 text-sm">
-                {golfer.playerName}
-              </td>
-              <td className="px-1 text-sm">{formatToPar(golfer.score)}</td>
-              <GolferScoreCells golfer={golfer} />
-              <td className="hidden border-l border-gray-300 text-xs md:table-cell">
-                {golfer.roundOne ?? "-"}
-              </td>
-              <td className="hidden border-gray-300 text-xs md:table-cell">
-                {golfer.roundTwo ?? "-"}
-              </td>
-              <td className="hidden border-gray-300 text-xs md:table-cell">
-                {golfer.roundThree ?? "-"}
-              </td>
-              <td className="hidden border-gray-300 text-xs md:table-cell">
-                {golfer.roundFour ?? "-"}
-              </td>
-              <td className="hidden border-l border-gray-300 text-xs xs:table-cell">
-                {golfer.makeCut === 0 || golfer.makeCut === null
-                  ? "-"
-                  : formatNumberToPercentage(golfer.makeCut)}
-              </td>
-              <td className="hidden border-gray-300 text-xs xs:table-cell">
-                {formatNumberToPercentage(golfer.usage)}
-              </td>
-              <td className="border-gray-300 text-xs">{golfer.group ?? "-"}</td>
-            </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
+  const teamAverageScorecard =
+    props.teamHoleScorecards === undefined
+      ? undefined
+      : buildTeamAverageScorecard({
+          teamGolfers: props.teamGolfers ?? [],
+          scorecards: props.teamHoleScorecards,
+          currentRound: props.tournament.currentRound ?? 0,
+          tournamentCompleted: props.tournament.status === "completed",
+        });
+  const hasTeamHoleScores = teamAverageScorecard?.rounds.some(
+    (round) => round.holes.length > 0,
   );
+
+  return (
+    <>
+      <Table className="scrollbar-hidden mx-auto w-full max-w-3xl border border-gray-700 text-center font-varela">
+        <TableHeader>
+          <TableRow className="bg-gray-700 font-bold text-gray-100 hover:bg-gray-700">
+            <td className="px-0.5 text-xs">Pos</td>
+            <td className="px-0.5 text-xs">Player</td>
+            <td className="px-0.5 text-xs">Score</td>
+            <td className="px-0.5 text-2xs">Today</td>
+            <td className="px-0.5 text-2xs">Thru</td>
+            <td className="hidden px-0.5 text-2xs md:table-cell">R1</td>
+            <td className="hidden px-0.5 text-2xs md:table-cell">R2</td>
+            <td className="hidden px-0.5 text-2xs md:table-cell">R3</td>
+            <td className="hidden px-0.5 text-2xs md:table-cell">R4</td>
+            <td className="hidden px-0.5 text-2xs xs:table-cell">Make Cut</td>
+            <td className="hidden px-0.5 text-2xs xs:table-cell">Usage</td>
+            <td className="px-0.5 text-2xs">Group</td>
+          </TableRow>
+        </TableHeader>
+
+        <TableBody>
+          {sortedTeamGolfers.map((golfer, i) => {
+            const borderClasses: string[] = [];
+            if ((props.tournament.currentRound ?? 0) >= 3) {
+              if (i === 4) {
+                borderClasses.push("border-b border-black");
+              }
+            } else if (props.tournament.name === "TOUR Championship") {
+              if (i === 2 || i === 9)
+                borderClasses.push("border-b border-gray-700");
+            } else if (props.tournament.name === "BMW Championship") {
+              if (i === 4 || i === 9)
+                borderClasses.push("border-b border-gray-700");
+            } else {
+              if (i === 9) borderClasses.push("border-b border-gray-700");
+            }
+
+            return (
+              <TableRow
+                key={golfer._id}
+                className={cn(
+                  isPlayerCut(golfer.position) && "text-gray-400",
+                  borderClasses.join(" "),
+                )}
+              >
+                <td className="px-1 text-xs">{golfer.position ?? "-"}</td>
+                <td className="whitespace-nowrap px-1 text-sm">
+                  {golfer.playerName}
+                </td>
+                <td className="px-1 text-sm">{formatToPar(golfer.score)}</td>
+                <GolferScoreCells golfer={golfer} />
+                <td className="hidden border-l border-gray-300 text-xs md:table-cell">
+                  {golfer.roundOne ?? "-"}
+                </td>
+                <td className="hidden border-gray-300 text-xs md:table-cell">
+                  {golfer.roundTwo ?? "-"}
+                </td>
+                <td className="hidden border-gray-300 text-xs md:table-cell">
+                  {golfer.roundThree ?? "-"}
+                </td>
+                <td className="hidden border-gray-300 text-xs md:table-cell">
+                  {golfer.roundFour ?? "-"}
+                </td>
+                <td className="hidden border-l border-gray-300 text-xs xs:table-cell">
+                  {golfer.makeCut === 0 || golfer.makeCut === null
+                    ? "-"
+                    : formatNumberToPercentage(golfer.makeCut)}
+                </td>
+                <td className="hidden border-gray-300 text-xs xs:table-cell">
+                  {formatNumberToPercentage(golfer.usage)}
+                </td>
+                <td className="border-gray-300 text-xs">
+                  {golfer.group ?? "-"}
+                </td>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+      <div className="px-2 pb-2" onClick={(event) => event.stopPropagation()}>
+        <div className="pt-2 text-center font-varela text-[10px] text-muted-foreground sm:text-xs">
+          Team hole averages
+        </div>
+        <PGAHoleScorecard
+          caption="Team average scores for holes 1 through 18"
+          scorecard={
+            teamAverageScorecard === undefined
+              ? undefined
+              : hasTeamHoleScores
+                ? teamAverageScorecard
+                : null
+          }
+        />
+      </div>
+    </>
+  );
+}
+
+type TeamSourceScorecard = {
+  golferId: Id<"golfers">;
+  rounds: Array<{
+    round: number;
+    totalStrokes?: number;
+    holes: Array<{
+      hole: number;
+      strokes: number;
+      relativeToPar: number;
+    }>;
+  }>;
+};
+
+type TeamAverageGolfer = Pick<
+  EnhancedTournamentGolferDoc,
+  | "golferId"
+  | "apiId"
+  | "position"
+  | "today"
+  | "thru"
+  | "roundOne"
+  | "roundTwo"
+  | "roundThree"
+  | "roundFour"
+>;
+
+/**
+ * Builds the team scorecard from only the golfers contributing to each round.
+ * A hole average includes a selected golfer only after that golfer has a score
+ * for the hole, so live averages expand from one golfer up to five or ten.
+ */
+export function buildTeamAverageScorecard(args: {
+  teamGolfers: TeamAverageGolfer[];
+  scorecards: TeamSourceScorecard[];
+  currentRound: number;
+  tournamentCompleted: boolean;
+}) {
+  const scorecardByGolferId = new Map(
+    args.scorecards.map((scorecard) => [String(scorecard.golferId), scorecard]),
+  );
+
+  return {
+    rounds: [1, 2, 3, 4].map((roundNumber) => {
+      const countingGolfers = selectCountingGolfersForRound({
+        ...args,
+        roundNumber,
+      });
+      const holes = Array.from({ length: 18 }, (_, index) => {
+        const holeNumber = index + 1;
+        const completedScores = countingGolfers.flatMap((golfer) => {
+          const scorecard = scorecardByGolferId.get(String(golfer.golferId));
+          const score = scorecard?.rounds
+            .find((round) => round.round === roundNumber)
+            ?.holes.find((hole) => hole.hole === holeNumber);
+          return score ? [score] : [];
+        });
+        if (completedScores.length === 0) return [];
+        return [
+          {
+            hole: holeNumber,
+            strokes:
+              completedScores.reduce((sum, score) => sum + score.strokes, 0) /
+              completedScores.length,
+            relativeToPar:
+              completedScores.reduce(
+                (sum, score) => sum + score.relativeToPar,
+                0,
+              ) / completedScores.length,
+          },
+        ];
+      }).flat();
+      return { round: roundNumber, holes };
+    }),
+  };
+}
+
+function selectCountingGolfersForRound(args: {
+  teamGolfers: TeamAverageGolfer[];
+  roundNumber: number;
+  currentRound: number;
+  tournamentCompleted: boolean;
+}) {
+  if (args.roundNumber <= 2) return args.teamGolfers.slice(0, 10);
+  if (!args.tournamentCompleted && args.roundNumber > args.currentRound) {
+    return [];
+  }
+
+  const eligible = args.teamGolfers.filter(
+    (golfer) => !isPlayerCut(golfer.position),
+  );
+  if (eligible.length < 5) return [];
+  const isCompletedRound =
+    args.tournamentCompleted || args.roundNumber < args.currentRound;
+  if (isCompletedRound) {
+    const withRoundScores = eligible.filter(
+      (golfer) =>
+        typeof getGolferRoundScore(golfer, args.roundNumber) === "number",
+    );
+    if (withRoundScores.length < 5) return [];
+    return withRoundScores
+      .sort((a, b) => {
+        const scoreDifference =
+          getGolferRoundScore(a, args.roundNumber)! -
+          getGolferRoundScore(b, args.roundNumber)!;
+        return scoreDifference !== 0
+          ? scoreDifference
+          : (a.apiId ?? Number.POSITIVE_INFINITY) -
+              (b.apiId ?? Number.POSITIVE_INFINITY);
+      })
+      .slice(0, 5);
+  }
+
+  return [...eligible]
+    .sort((a, b) => {
+      const todayDifference =
+        (a.today ?? Number.POSITIVE_INFINITY) -
+        (b.today ?? Number.POSITIVE_INFINITY);
+      if (todayDifference !== 0) return todayDifference;
+      const thruDifference =
+        (a.thru ?? Number.POSITIVE_INFINITY) -
+        (b.thru ?? Number.POSITIVE_INFINITY);
+      if (thruDifference !== 0) return thruDifference;
+      return (
+        (a.apiId ?? Number.POSITIVE_INFINITY) -
+        (b.apiId ?? Number.POSITIVE_INFINITY)
+      );
+    })
+    .slice(0, 5);
+}
+
+function getGolferRoundScore(golfer: TeamAverageGolfer, roundNumber: number) {
+  return roundNumber === 1
+    ? golfer.roundOne
+    : roundNumber === 2
+      ? golfer.roundTwo
+      : roundNumber === 3
+        ? golfer.roundThree
+        : golfer.roundFour;
 }
 
 /**
@@ -414,14 +606,14 @@ function useTeamGolfersTable(args: {
         const aStarted = typeof a.thru === "number" && a.thru > 0;
         const bStarted = typeof b.thru === "number" && b.thru > 0;
         const aTodayValue = aStarted
-          ? (typeof a.today === "number"
-              ? a.today
-              : Number.POSITIVE_INFINITY)
+          ? typeof a.today === "number"
+            ? a.today
+            : Number.POSITIVE_INFINITY
           : 0;
         const bTodayValue = bStarted
-          ? (typeof b.today === "number"
-              ? b.today
-              : Number.POSITIVE_INFINITY)
+          ? typeof b.today === "number"
+            ? b.today
+            : Number.POSITIVE_INFINITY
           : 0;
         if (aTodayValue !== bTodayValue) return aTodayValue - bTodayValue;
 

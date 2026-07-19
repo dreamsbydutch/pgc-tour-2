@@ -385,6 +385,7 @@ type HoleScorecard = {
 /** Minimal, horizontally scrollable four-round PGA scorecard. */
 export function PGAHoleScorecard(props: {
   scorecard: HoleScorecard | null | undefined;
+  caption?: string;
 }) {
   if (props.scorecard === undefined) {
     return (
@@ -430,7 +431,7 @@ export function PGAHoleScorecard(props: {
     >
       <table className="mx-auto min-w-[620px] table-fixed border-collapse text-center font-varela text-[9px] sm:min-w-[760px] sm:text-xs">
         <caption className="sr-only">
-          Golfer scores for holes 1 through 18
+          {props.caption ?? "Golfer scores for holes 1 through 18"}
         </caption>
         <thead>
           <tr className="text-muted-foreground">
@@ -465,13 +466,13 @@ export function PGAHoleScorecard(props: {
             </th>
             {Array.from({ length: 9 }, (_, index) => (
               <td className="py-1" key={index + 1}>
-                {pars.get(index + 1) ?? "-"}
+                {formatScorecardNumber(pars.get(index + 1))}
               </td>
             ))}
             <ScorecardSummaryCell value={frontPar} />
             {Array.from({ length: 9 }, (_, index) => (
               <td className="py-1" key={index + 10}>
-                {pars.get(index + 10) ?? "-"}
+                {formatScorecardNumber(pars.get(index + 10))}
               </td>
             ))}
             <ScorecardSummaryCell value={backPar} />
@@ -548,7 +549,7 @@ function ScorecardSummaryHeader(props: { label: "OUT" | "IN" | "TOT" }) {
 function ScorecardSummaryCell(props: { value: number | undefined }) {
   return (
     <td className="bg-gray-50 px-0.5 py-1 font-semibold">
-      {props.value ?? "-"}
+      {formatScorecardNumber(props.value)}
     </td>
   );
 }
@@ -559,6 +560,11 @@ function totalWhenComplete(values: Array<number | undefined>) {
     : undefined;
 }
 
+function formatScorecardNumber(value: number | undefined) {
+  if (value === undefined) return "-";
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 function HoleScoreMark(props: { score?: HoleScore }) {
   if (!props.score) {
     return <span className="text-gray-300">-</span>;
@@ -567,21 +573,25 @@ function HoleScoreMark(props: { score?: HoleScore }) {
   const description =
     relative <= -2
       ? "eagle or better"
-      : relative === -1
-        ? "birdie"
+      : relative < 0
+        ? relative === -1
+          ? "birdie"
+          : "under-par average"
         : relative === 0
           ? "par"
-          : relative === 1
-            ? "bogey"
-            : "double bogey or worse";
+          : relative >= 2
+            ? "double bogey or worse"
+            : relative === 1
+              ? "bogey"
+              : "over-par average";
   const shape =
-    relative <= -2
+    relative <= -1.5
       ? "double-circle"
-      : relative === -1
+      : relative < 0
         ? "circle"
-        : relative >= 2
+        : relative >= 1.5
           ? "double-square"
-          : relative === 1
+          : relative > 0
             ? "square"
             : "none";
   const isDouble = shape === "double-circle" || shape === "double-square";
@@ -604,10 +614,10 @@ function HoleScoreMark(props: { score?: HoleScore }) {
             isCircle && "rounded-full",
           )}
         >
-          {props.score.strokes}
+          {formatScorecardNumber(props.score.strokes)}
         </span>
       ) : (
-        props.score.strokes
+        formatScorecardNumber(props.score.strokes)
       )}
     </span>
   );
