@@ -469,12 +469,13 @@ type TeamAverageGolfer = Pick<
  */
 export function buildTeamAverageScorecard(args: {
   teamGolfers: TeamAverageGolfer[];
-  scorecards: TeamSourceScorecard[];
+  scorecards: TeamSourceScorecard[] | null | undefined;
   currentRound: number;
   tournamentCompleted: boolean;
 }) {
+  const scorecards = Array.isArray(args.scorecards) ? args.scorecards : [];
   const scorecardByGolferId = new Map(
-    args.scorecards.map((scorecard) => [String(scorecard.golferId), scorecard]),
+    scorecards.map((scorecard) => [String(scorecard.golferId), scorecard]),
   );
 
   return {

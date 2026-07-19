@@ -21,6 +21,19 @@ function buildGolfers() {
 }
 
 describe("buildTeamAverageScorecard", () => {
+  it("treats a null scorecard collection as unavailable data", () => {
+    const scorecard = buildTeamAverageScorecard({
+      teamGolfers: buildGolfers(),
+      currentRound: 1,
+      tournamentCompleted: false,
+      scorecards: null,
+    });
+
+    expect(scorecard.rounds.every((round) => round.holes.length === 0)).toBe(
+      true,
+    );
+  });
+
   it("averages only counting golfers who have completed each hole", () => {
     const scorecard = buildTeamAverageScorecard({
       teamGolfers: buildGolfers(),
