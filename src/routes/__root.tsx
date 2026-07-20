@@ -150,7 +150,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body>
         <Providers>
           <NavigationContainer />
-          <main className="pb-20 pt-16 md:pb-4 md:pt-20">{children}</main>
+          <main className="app-main">{children}</main>
           <PWAInstallPrompt />
           <SignedOutPersistentSignIn />
           {import.meta.env.DEV ? (
