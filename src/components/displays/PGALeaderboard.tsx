@@ -425,25 +425,25 @@ export function PGAHoleScorecard(props: {
       : undefined;
   return (
     <div
-      className="mt-3 overflow-x-auto border-t pt-3"
+      className="mt-2 overflow-x-auto border-t pt-2"
       onClick={(event) => event.stopPropagation()}
       aria-label="Hole-by-hole scorecard"
     >
-      <table className="mx-auto min-w-[620px] table-fixed border-collapse border border-gray-400 text-center font-varela text-[8px] [-webkit-text-size-adjust:none] [text-size-adjust:none] sm:min-w-[760px] sm:text-[10px]">
+      <table className="mx-auto min-w-[540px] table-fixed border-collapse border border-gray-400 text-center font-varela text-[8px] [-webkit-text-size-adjust:none] [text-size-adjust:none] sm:min-w-[716px] sm:text-[10px]">
         <caption className="sr-only">
           {props.caption ?? "Golfer scores for holes 1 through 18"}
         </caption>
         <thead>
           <tr className="text-muted-foreground">
             <th
-              className="w-7 border border-gray-300 border-r-2 border-r-gray-400 bg-gray-50/70 py-1 font-medium sm:w-10"
+              className="w-6 border border-gray-300 border-r-2 border-r-gray-400 bg-gray-50/70 py-0.5 font-medium sm:w-8"
               scope="col"
             >
               Rd
             </th>
             {Array.from({ length: 9 }, (_, index) => (
               <th
-                className="w-7 border border-gray-200 py-1 font-medium sm:w-10"
+                className="w-6 border border-gray-200 py-0.5 font-medium sm:w-8"
                 scope="col"
                 key={index + 1}
               >
@@ -453,7 +453,7 @@ export function PGAHoleScorecard(props: {
             <ScorecardSummaryHeader label="OUT" />
             {Array.from({ length: 9 }, (_, index) => (
               <th
-                className="w-7 border border-gray-200 py-1 font-medium sm:w-10"
+                className="w-6 border border-gray-200 py-0.5 font-medium sm:w-8"
                 scope="col"
                 key={index + 10}
               >
@@ -465,19 +465,19 @@ export function PGAHoleScorecard(props: {
           </tr>
           <tr className="bg-gray-50/70 text-[7px] text-muted-foreground sm:text-[9px]">
             <th
-              className="border border-gray-300 border-r-2 border-r-gray-400 py-1 font-normal"
+              className="border border-gray-300 border-r-2 border-r-gray-400 py-0.5 font-normal"
               scope="row"
             >
               Par
             </th>
             {Array.from({ length: 9 }, (_, index) => (
-              <td className="border border-gray-200 py-1" key={index + 1}>
+              <td className="border border-gray-200 py-0.5" key={index + 1}>
                 {formatScorecardNumber(pars.get(index + 1))}
               </td>
             ))}
             <ScorecardSummaryCell value={frontPar} />
             {Array.from({ length: 9 }, (_, index) => (
-              <td className="border border-gray-200 py-1" key={index + 10}>
+              <td className="border border-gray-200 py-0.5" key={index + 10}>
                 {formatScorecardNumber(pars.get(index + 10))}
               </td>
             ))}
@@ -511,7 +511,7 @@ export function PGAHoleScorecard(props: {
             return (
               <tr key={roundNumber}>
                 <th
-                  className="border border-gray-300 border-r-2 border-r-gray-400 bg-gray-50/60 py-1.5 font-medium text-muted-foreground sm:py-2"
+                  className="border border-gray-300 border-r-2 border-r-gray-400 bg-gray-50/60 py-1 font-medium text-muted-foreground sm:py-1.5"
                   scope="row"
                 >
                   R{roundNumber}
@@ -520,7 +520,7 @@ export function PGAHoleScorecard(props: {
                   const holeNumber = index + 1;
                   return (
                     <td
-                      className="h-8 border border-gray-200 py-1 sm:h-10"
+                      className="h-6 border border-gray-200 py-0.5 sm:h-8"
                       key={holeNumber}
                     >
                       <HoleScoreMark score={holes.get(holeNumber)} />
@@ -532,7 +532,7 @@ export function PGAHoleScorecard(props: {
                   const holeNumber = index + 10;
                   return (
                     <td
-                      className="h-8 border border-gray-200 py-1 sm:h-10"
+                      className="h-6 border border-gray-200 py-0.5 sm:h-8"
                       key={holeNumber}
                     >
                       <HoleScoreMark score={holes.get(holeNumber)} />
@@ -553,7 +553,7 @@ export function PGAHoleScorecard(props: {
 function ScorecardSummaryHeader(props: { label: "OUT" | "IN" | "TOT" }) {
   return (
     <th
-      className="w-8 border border-x-2 border-gray-400 bg-gray-100/80 py-1 font-semibold sm:w-11"
+      className="w-7 border border-x-2 border-gray-400 bg-gray-100/80 py-0.5 font-semibold sm:w-9"
       scope="col"
     >
       {props.label}
@@ -563,7 +563,7 @@ function ScorecardSummaryHeader(props: { label: "OUT" | "IN" | "TOT" }) {
 
 function ScorecardSummaryCell(props: { value: number | undefined }) {
   return (
-    <td className="border border-x-2 border-gray-400 bg-gray-100/80 px-0.5 py-1 font-semibold">
+    <td className="border border-x-2 border-gray-400 bg-gray-100/80 px-0 py-0.5 font-semibold">
       {formatScorecardNumber(props.value)}
     </td>
   );
@@ -616,7 +616,7 @@ function HoleScoreMark(props: { score?: HoleScore }) {
       aria-label={`${props.score.strokes} strokes, ${description}`}
       data-score-shape={shape}
       className={cn(
-        "mx-auto inline-flex h-5 w-5 items-center justify-center text-[8px] leading-none text-foreground sm:h-6 sm:w-6 sm:text-[10px]",
+        "mx-auto inline-flex h-4 w-4 items-center justify-center text-[8px] leading-none text-foreground sm:h-5 sm:w-5 sm:text-[10px]",
         shape !== "none" && "border border-current",
         isCircle && "rounded-full",
       )}
@@ -625,7 +625,7 @@ function HoleScoreMark(props: { score?: HoleScore }) {
         <span
           aria-hidden="true"
           className={cn(
-            "inline-flex h-3.5 w-3.5 items-center justify-center border border-current sm:h-[18px] sm:w-[18px]",
+            "inline-flex h-3 w-3 items-center justify-center border border-current sm:h-4 sm:w-4",
             isCircle && "rounded-full",
           )}
         >
