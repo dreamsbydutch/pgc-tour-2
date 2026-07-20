@@ -429,7 +429,7 @@ export function PGAHoleScorecard(props: {
       onClick={(event) => event.stopPropagation()}
       aria-label="Hole-by-hole scorecard"
     >
-      <table className="mx-auto min-w-[620px] table-fixed border-collapse border border-gray-400 text-center font-varela text-[9px] sm:min-w-[760px] sm:text-xs">
+      <table className="mx-auto min-w-[620px] table-fixed border-collapse border border-gray-400 text-center font-varela text-[8px] [-webkit-text-size-adjust:none] [text-size-adjust:none] sm:min-w-[760px] sm:text-[10px]">
         <caption className="sr-only">
           {props.caption ?? "Golfer scores for holes 1 through 18"}
         </caption>
@@ -463,7 +463,7 @@ export function PGAHoleScorecard(props: {
             <ScorecardSummaryHeader label="IN" />
             <ScorecardSummaryHeader label="TOT" />
           </tr>
-          <tr className="bg-gray-50/70 text-[8px] text-muted-foreground sm:text-[10px]">
+          <tr className="bg-gray-50/70 text-[7px] text-muted-foreground sm:text-[9px]">
             <th
               className="border border-gray-300 border-r-2 border-r-gray-400 py-1 font-normal"
               scope="row"
@@ -616,7 +616,7 @@ function HoleScoreMark(props: { score?: HoleScore }) {
       aria-label={`${props.score.strokes} strokes, ${description}`}
       data-score-shape={shape}
       className={cn(
-        "mx-auto inline-flex h-5 w-5 items-center justify-center text-[9px] leading-none text-foreground sm:h-6 sm:w-6 sm:text-xs",
+        "mx-auto inline-flex h-5 w-5 items-center justify-center text-[8px] leading-none text-foreground sm:h-6 sm:w-6 sm:text-[10px]",
         shape !== "none" && "border border-current",
         isCircle && "rounded-full",
       )}
