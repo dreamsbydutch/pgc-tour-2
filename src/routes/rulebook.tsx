@@ -20,7 +20,7 @@ function Rulebook() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 pb-20 lg:pb-8 lg:pt-20">
+    <div className="container mx-auto px-4 py-8">
       <div className="mx-auto max-w-6xl">
         <div className="pb-4 pt-2 text-center font-yellowtail text-6xl lg:text-7xl">
           Rulebook
@@ -213,7 +213,7 @@ function useRulebookPage():
  */
 function RulebookPageSkeleton() {
   return (
-    <div className="container mx-auto px-4 py-8 pb-20 lg:pb-8 lg:pt-20">
+    <div className="container mx-auto px-4 py-8">
       <div className="mx-auto max-w-6xl space-y-4">
         <div className="h-10 w-48 rounded-md bg-muted" />
         <div className="h-24 w-full rounded-md bg-muted" />

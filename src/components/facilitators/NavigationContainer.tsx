@@ -46,8 +46,8 @@ export function NavigationContainer(props: NavigationContainerProps) {
     <nav
       className={cn(
         props.className,
-        "fixed bottom-0 z-50 flex w-full items-center justify-evenly border-t lg:top-0 lg:justify-center lg:gap-8 lg:border-b lg:border-t-0 lg:px-4 lg:py-2 xl:gap-14",
-        "h-[52px] text-center lg:h-[48px]",
+        "app-navigation fixed bottom-0 z-50 flex w-full items-center justify-evenly border-t lg:top-0 lg:justify-center lg:gap-8 lg:border-b lg:border-t-0 lg:px-4 xl:gap-14",
+        "text-center",
         "bg-gray-200 shadow-inv",
       )}
       role="navigation"

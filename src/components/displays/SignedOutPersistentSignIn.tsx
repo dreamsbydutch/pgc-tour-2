@@ -24,7 +24,7 @@ import { Card, CardContent } from "@/ui";
 export function SignedOutPersistentSignIn() {
   return (
     <SignedOut>
-      <div className="fixed bottom-16 left-4 right-4 z-50 lg:bottom-4 lg:left-4 lg:right-auto lg:w-80">
+      <div className="app-sign-in-prompt fixed left-4 right-4 z-50 lg:left-4 lg:right-auto lg:w-80">
         <Card className="shadow-lg">
           <CardContent className="flex items-center justify-between gap-3 p-3">
             <div className="text-sm font-medium">Sign in for full access</div>

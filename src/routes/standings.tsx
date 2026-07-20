@@ -16,7 +16,7 @@ function StandingsRoute() {
   const navigate = Route.useNavigate();
 
   return (
-    <div className="container mx-auto max-w-5xl px-4 py-8 pb-20 lg:pb-8 lg:pt-20">
+    <div className="container mx-auto max-w-5xl px-4 py-8">
       <StandingsView
         initialSeasonId={season}
         initialTourId={tour}

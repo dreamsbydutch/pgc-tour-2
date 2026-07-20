@@ -130,7 +130,7 @@ export function PWAInstallPrompt() {
   }
 
   return (
-    <div className="fixed bottom-32 left-4 right-4 z-50 lg:bottom-4 lg:left-auto lg:right-4 lg:w-80">
+    <div className="app-install-prompt fixed left-4 right-4 z-50 lg:left-auto lg:right-4 lg:w-80">
       <div className="rounded-lg border bg-white p-4 shadow-lg">
         <div className="flex items-start justify-between">
           <div className="flex items-center space-x-3">

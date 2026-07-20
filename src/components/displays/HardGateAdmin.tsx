@@ -26,7 +26,7 @@ export function HardGateAdmin(props: { children: React.ReactNode }) {
   return (
     <>
       <SignedOut>
-        <div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8 pb-20 lg:pb-8 lg:pt-20">
+        <div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8">
           <Card className="w-full max-w-md">
             <CardHeader>
               <CardTitle>Sign in required</CardTitle>
@@ -52,7 +52,7 @@ function AdminGateContent(props: { children: React.ReactNode }) {
 
   if (access.isLoading || !access.isAuthenticated) {
     return (
-      <div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8 pb-20 lg:pb-8 lg:pt-20">
+      <div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8">
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle>Loading…</CardTitle>
@@ -64,7 +64,7 @@ function AdminGateContent(props: { children: React.ReactNode }) {
 
   if (!access.isAdmin) {
     return (
-      <div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8 pb-20 lg:pb-8 lg:pt-20">
+      <div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8">
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle>Forbidden</CardTitle>

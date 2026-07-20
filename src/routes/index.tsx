@@ -33,7 +33,7 @@ function App() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 pb-20 lg:pb-8 lg:pt-20">
+    <div className="container mx-auto px-4 py-8">
       <div className="mx-auto max-w-4xl space-y-8">
         <div className="space-y-4 text-center">
           <h1 className="font-yellowtail text-7xl font-bold">
@@ -201,7 +201,7 @@ function useHomePage():
  */
 function HomePageSkeleton() {
   return (
-    <div className="container mx-auto px-4 py-8 pb-20 lg:pb-8 lg:pt-20">
+    <div className="container mx-auto px-4 py-8">
       <div className="mx-auto max-w-4xl space-y-6">
         <Skeleton className="h-12 w-3/4" />
         <Skeleton className="h-6 w-1/2" />
