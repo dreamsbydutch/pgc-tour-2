@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import isoCountries from "i18n-iso-countries";
+import isoCountries from "i18n-iso-countries/index.js";
 import isoCountriesEn from "i18n-iso-countries/langs/en.json";
 import type { Id } from "@/convex";
 import type {
