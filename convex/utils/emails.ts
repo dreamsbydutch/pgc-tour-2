@@ -181,10 +181,7 @@ export async function getLeaderboardRowsForTournament(
 
 export function findPreviousCompletedTournament<
   T extends { startDate: number; status?: Doc<"tournaments">["status"] },
->(args: {
-  tournaments: T[];
-  startDate: number;
-}): T | null {
+>(args: { tournaments: T[]; startDate: number }): T | null {
   return (
     [...args.tournaments]
       .filter(

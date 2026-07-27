@@ -8,170 +8,170 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './routes/__root'
-import { Route as TournamentRouteImport } from './routes/tournament'
-import { Route as StandingsRouteImport } from './routes/standings'
-import { Route as RulebookRouteImport } from './routes/rulebook'
-import { Route as HistoryRouteImport } from './routes/history'
-import { Route as AdminRouteImport } from './routes/admin'
-import { Route as AccountRouteImport } from './routes/account'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as rootRouteImport } from "./routes/__root";
+import { Route as IndexRouteImport } from "./routes/index";
+import { Route as AccountRouteImport } from "./routes/account";
+import { Route as AdminRouteImport } from "./routes/admin";
+import { Route as HistoryRouteImport } from "./routes/history";
+import { Route as RulebookRouteImport } from "./routes/rulebook";
+import { Route as StandingsRouteImport } from "./routes/standings";
+import { Route as TournamentRouteImport } from "./routes/tournament";
 
-const TournamentRoute = TournamentRouteImport.update({
-  id: '/tournament',
-  path: '/tournament',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const StandingsRoute = StandingsRouteImport.update({
-  id: '/standings',
-  path: '/standings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RulebookRoute = RulebookRouteImport.update({
-  id: '/rulebook',
-  path: '/rulebook',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HistoryRoute = HistoryRouteImport.update({
-  id: '/history',
-  path: '/history',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminRoute = AdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AccountRoute = AccountRouteImport.update({
-  id: '/account',
-  path: '/account',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
+const AccountRoute = AccountRouteImport.update({
+  id: "/account",
+  path: "/account",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const AdminRoute = AdminRouteImport.update({
+  id: "/admin",
+  path: "/admin",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const HistoryRoute = HistoryRouteImport.update({
+  id: "/history",
+  path: "/history",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const RulebookRoute = RulebookRouteImport.update({
+  id: "/rulebook",
+  path: "/rulebook",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const StandingsRoute = StandingsRouteImport.update({
+  id: "/standings",
+  path: "/standings",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const TournamentRoute = TournamentRouteImport.update({
+  id: "/tournament",
+  path: "/tournament",
+  getParentRoute: () => rootRouteImport,
+} as any);
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/account': typeof AccountRoute
-  '/admin': typeof AdminRoute
-  '/history': typeof HistoryRoute
-  '/rulebook': typeof RulebookRoute
-  '/standings': typeof StandingsRoute
-  '/tournament': typeof TournamentRoute
+  "/": typeof IndexRoute;
+  "/account": typeof AccountRoute;
+  "/admin": typeof AdminRoute;
+  "/history": typeof HistoryRoute;
+  "/rulebook": typeof RulebookRoute;
+  "/standings": typeof StandingsRoute;
+  "/tournament": typeof TournamentRoute;
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/account': typeof AccountRoute
-  '/admin': typeof AdminRoute
-  '/history': typeof HistoryRoute
-  '/rulebook': typeof RulebookRoute
-  '/standings': typeof StandingsRoute
-  '/tournament': typeof TournamentRoute
+  "/": typeof IndexRoute;
+  "/account": typeof AccountRoute;
+  "/admin": typeof AdminRoute;
+  "/history": typeof HistoryRoute;
+  "/rulebook": typeof RulebookRoute;
+  "/standings": typeof StandingsRoute;
+  "/tournament": typeof TournamentRoute;
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/account': typeof AccountRoute
-  '/admin': typeof AdminRoute
-  '/history': typeof HistoryRoute
-  '/rulebook': typeof RulebookRoute
-  '/standings': typeof StandingsRoute
-  '/tournament': typeof TournamentRoute
+  __root__: typeof rootRouteImport;
+  "/": typeof IndexRoute;
+  "/account": typeof AccountRoute;
+  "/admin": typeof AdminRoute;
+  "/history": typeof HistoryRoute;
+  "/rulebook": typeof RulebookRoute;
+  "/standings": typeof StandingsRoute;
+  "/tournament": typeof TournamentRoute;
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
+  fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
-    | '/'
-    | '/account'
-    | '/admin'
-    | '/history'
-    | '/rulebook'
-    | '/standings'
-    | '/tournament'
-  fileRoutesByTo: FileRoutesByTo
+    | "/"
+    | "/account"
+    | "/admin"
+    | "/history"
+    | "/rulebook"
+    | "/standings"
+    | "/tournament";
+  fileRoutesByTo: FileRoutesByTo;
   to:
-    | '/'
-    | '/account'
-    | '/admin'
-    | '/history'
-    | '/rulebook'
-    | '/standings'
-    | '/tournament'
+    | "/"
+    | "/account"
+    | "/admin"
+    | "/history"
+    | "/rulebook"
+    | "/standings"
+    | "/tournament";
   id:
-    | '__root__'
-    | '/'
-    | '/account'
-    | '/admin'
-    | '/history'
-    | '/rulebook'
-    | '/standings'
-    | '/tournament'
-  fileRoutesById: FileRoutesById
+    | "__root__"
+    | "/"
+    | "/account"
+    | "/admin"
+    | "/history"
+    | "/rulebook"
+    | "/standings"
+    | "/tournament";
+  fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  AccountRoute: typeof AccountRoute
-  AdminRoute: typeof AdminRoute
-  HistoryRoute: typeof HistoryRoute
-  RulebookRoute: typeof RulebookRoute
-  StandingsRoute: typeof StandingsRoute
-  TournamentRoute: typeof TournamentRoute
+  IndexRoute: typeof IndexRoute;
+  AccountRoute: typeof AccountRoute;
+  AdminRoute: typeof AdminRoute;
+  HistoryRoute: typeof HistoryRoute;
+  RulebookRoute: typeof RulebookRoute;
+  StandingsRoute: typeof StandingsRoute;
+  TournamentRoute: typeof TournamentRoute;
 }
 
-declare module '@tanstack/react-router' {
+declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    '/tournament': {
-      id: '/tournament'
-      path: '/tournament'
-      fullPath: '/tournament'
-      preLoaderRoute: typeof TournamentRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/standings': {
-      id: '/standings'
-      path: '/standings'
-      fullPath: '/standings'
-      preLoaderRoute: typeof StandingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/rulebook': {
-      id: '/rulebook'
-      path: '/rulebook'
-      fullPath: '/rulebook'
-      preLoaderRoute: typeof RulebookRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/history': {
-      id: '/history'
-      path: '/history'
-      fullPath: '/history'
-      preLoaderRoute: typeof HistoryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin': {
-      id: '/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/account': {
-      id: '/account'
-      path: '/account'
-      fullPath: '/account'
-      preLoaderRoute: typeof AccountRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
+    "/": {
+      id: "/";
+      path: "/";
+      fullPath: "/";
+      preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/account": {
+      id: "/account";
+      path: "/account";
+      fullPath: "/account";
+      preLoaderRoute: typeof AccountRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/admin": {
+      id: "/admin";
+      path: "/admin";
+      fullPath: "/admin";
+      preLoaderRoute: typeof AdminRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/history": {
+      id: "/history";
+      path: "/history";
+      fullPath: "/history";
+      preLoaderRoute: typeof HistoryRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/rulebook": {
+      id: "/rulebook";
+      path: "/rulebook";
+      fullPath: "/rulebook";
+      preLoaderRoute: typeof RulebookRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/standings": {
+      id: "/standings";
+      path: "/standings";
+      fullPath: "/standings";
+      preLoaderRoute: typeof StandingsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/tournament": {
+      id: "/tournament";
+      path: "/tournament";
+      fullPath: "/tournament";
+      preLoaderRoute: typeof TournamentRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
   }
 }
 
@@ -183,7 +183,16 @@ const rootRouteChildren: RootRouteChildren = {
   RulebookRoute: RulebookRoute,
   StandingsRoute: StandingsRoute,
   TournamentRoute: TournamentRoute,
-}
+};
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
+  ._addFileTypes<FileRouteTypes>();
+
+import type { getRouter } from "./router.tsx";
+import type { createStart } from "@tanstack/react-start";
+declare module "@tanstack/react-start" {
+  interface Register {
+    ssr: true;
+    router: Awaited<ReturnType<typeof getRouter>>;
+  }
+}

@@ -4,10 +4,11 @@
  */
 
 import { useEffect, useMemo, useRef } from "react";
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation } from "convex/react";
 import { useUser } from "@clerk/tanstack-react-start";
 import { api } from "@/convex";
 import type { MemberDoc } from "../../convex/types/types";
+import { useViewerBootstrap } from "@/convex";
 
 export type UserRole = "admin" | "moderator" | "regular" | null;
 
@@ -50,15 +51,12 @@ export function useRoleAccess(): UseRoleAccessReturn {
   const { user, isLoaded: isClerkLoaded } = useUser();
   const convexAuth = useConvexAuth();
 
-  const ensureMember = useMutation(
-    api.functions.members.ensureMemberForCurrentClerkUser,
-  );
+  const ensureMember = useMutation(api.functions.members.ensureCurrentMember);
   const ensuredOnceRef = useRef(false);
 
-  const member = useQuery(
-    api.functions.members.getMembers,
-    user ? { options: { clerkId: user.id } } : "skip",
-  );
+  const bootstrap = useViewerBootstrap();
+  const member =
+    user && convexAuth.isAuthenticated ? bootstrap?.member : undefined;
 
   useEffect(() => {
     if (!isClerkLoaded) return;
@@ -71,7 +69,6 @@ export function useRoleAccess(): UseRoleAccessReturn {
 
     ensuredOnceRef.current = true;
     void ensureMember({
-      clerkId: user.id,
       profile: {
         email,
         firstname: user.firstName ?? undefined,
@@ -109,9 +106,9 @@ export function useRoleAccess(): UseRoleAccessReturn {
   const isLoading = useMemo(() => {
     if (!isClerkLoaded) return true;
     if (convexAuth.isLoading) return true;
-    if (user && member === undefined) return true;
+    if (user && bootstrap === undefined) return true;
     return false;
-  }, [convexAuth.isLoading, isClerkLoaded, user, member]);
+  }, [bootstrap, convexAuth.isLoading, isClerkLoaded, user]);
 
   return {
     role,

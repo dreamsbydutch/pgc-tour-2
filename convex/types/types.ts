@@ -70,6 +70,11 @@ export interface EnhancedTournamentDoc extends TournamentDoc {
   golfers?: EnhancedTournamentGolferDoc[];
   isPlayoff?: boolean;
   eventIndex?: number;
+  pickWindow?: {
+    opensAt: number;
+    closesAt: number;
+    isOpen: boolean;
+  };
   playoffEvents?: Id<"tournaments">[] | null;
 }
 

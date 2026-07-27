@@ -142,28 +142,6 @@ export const emailsValidators = {
 
 export const tourCardsValidators = {
   args: {
-    createTourCards: {
-      data: v.object({
-        memberId: v.optional(v.id("members")),
-        displayName: v.string(),
-        tourId: v.id("tours"),
-        seasonId: v.id("seasons"),
-        earnings: v.number(),
-        points: v.number(),
-        wins: v.optional(v.number()),
-        topTen: v.number(),
-        topFive: v.optional(v.number()),
-        madeCut: v.number(),
-        appearances: v.number(),
-        playoff: v.optional(v.number()),
-        currentPosition: v.optional(v.string()),
-      }),
-      options: v.optional(
-        v.object({
-          skipValidation: v.optional(v.boolean()),
-        }),
-      ),
-    },
     getTourCards: {
       options: v.optional(
         v.object({

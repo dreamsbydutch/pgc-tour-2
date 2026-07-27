@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  SignedIn,
-  SignedOut,
-  useClerk,
-  useUser,
-} from "@clerk/tanstack-react-start";
+import { Show, useClerk, useUser } from "@clerk/tanstack-react-start";
 import { Link, useLocation } from "@tanstack/react-router";
 import { LogIn, UserRound } from "lucide-react";
 import { useMemo } from "react";
@@ -14,11 +9,7 @@ import { Button, MemberNameWithBadges, Skeleton } from "@/ui";
 import { NAV_ITEMS } from "@/lib";
 import type { NavigationContainerProps } from "@/lib";
 import { cn, formatUserDisplayName, isNavItemActive } from "@/lib";
-import { api, useQuery } from "@/convex";
-import {
-  filterMajorChampionBadgesByMemberId,
-  useCurrentSeasonMajorChampionBadges,
-} from "@/hooks";
+import { useViewerBootstrap } from "@/convex";
 
 const keepParams = <TParams extends Record<string, string>>(current: TParams) =>
   current;
@@ -126,7 +117,7 @@ export function NavigationContainer(props: NavigationContainerProps) {
           <NavigationContainerSkeleton />
         ) : (
           <>
-            <SignedOut>
+            <Show when="signed-out">
               <div className="flex lg:hidden">
                 <Button
                   variant="ghost"
@@ -161,9 +152,9 @@ export function NavigationContainer(props: NavigationContainerProps) {
                   </div>
                 </Button>
               </div>
-            </SignedOut>
+            </Show>
 
-            <SignedIn>
+            <Show when="signed-in">
               <div className="flex items-center gap-2">
                 <div className="hidden lg:flex lg:flex-col lg:items-end lg:gap-1">
                   <span className="text-lg font-bold text-black">
@@ -206,7 +197,7 @@ export function NavigationContainer(props: NavigationContainerProps) {
                   </Link>
                 </Button>
               </div>
-            </SignedIn>
+            </Show>
           </>
         )}
       </div>
@@ -231,38 +222,18 @@ function useNavigationContainer(_props: NavigationContainerProps) {
   const { openSignIn } = useClerk();
   const { user: clerkUser, isLoaded: isClerkLoaded } = useUser();
 
-  const memberData = useQuery(
-    api.functions.members.getMembers,
-    clerkUser ? { options: { clerkId: clerkUser.id } } : "skip",
-  );
-  const majorChampionBadgesByMemberId = useCurrentSeasonMajorChampionBadges();
-  const activeTournaments = useQuery(api.functions.tournaments.getTournaments, {
-    options: {
-      filter: { status: "active" },
-      enhance: { includeTier: true },
-    },
-  });
-
-  const filteredMajorChampionBadgesByMemberId = useMemo(() => {
-    const activeMajorTournamentIds = (activeTournaments ?? [])
-      .filter((tournament) => {
-        const tier = "tier" in tournament ? tournament.tier : undefined;
-        if (!tier || typeof tier !== "object") {
-          return false;
+  const bootstrap = useViewerBootstrap();
+  const memberData = bootstrap?.member ?? null;
+  const majorChampionBadgesByMemberId =
+    memberData && bootstrap
+      ? {
+          [String(memberData._id)]: bootstrap.badges.map((badge) => ({
+            tournamentId: String(badge.tournamentId),
+            tournamentName: badge.tournamentName,
+            logoUrl: badge.logoUrl ?? null,
+          })),
         }
-
-        const tierName = "name" in tier ? tier.name : undefined;
-        return (
-          typeof tierName === "string" && tierName.trim().toLowerCase() === "major"
-        );
-      })
-      .map((tournament) => String(tournament._id));
-
-    return filterMajorChampionBadgesByMemberId({
-      badgesByMemberId: majorChampionBadgesByMemberId,
-      hiddenTournamentIds: activeMajorTournamentIds,
-    });
-  }, [activeTournaments, majorChampionBadgesByMemberId]);
+      : {};
 
   const navItems = useMemo(() => {
     return NAV_ITEMS.map(({ href, icon: Icon, label }) => {
@@ -297,7 +268,7 @@ function useNavigationContainer(_props: NavigationContainerProps) {
   }, [clerkUser, memberData]);
 
   const isAccountLoading =
-    !isClerkLoaded || (clerkUser && memberData === undefined);
+    !isClerkLoaded || (clerkUser && bootstrap === undefined);
 
   const accountCents = useMemo(() => {
     if (!clerkUser || !memberData) return undefined;
@@ -326,7 +297,7 @@ function useNavigationContainer(_props: NavigationContainerProps) {
       "_id" in memberData
         ? String(memberData._id)
         : null,
-    majorChampionBadgesByMemberId: filteredMajorChampionBadgesByMemberId,
+    majorChampionBadgesByMemberId,
     avatarUrl: clerkUser?.imageUrl,
     accountCents,
   };

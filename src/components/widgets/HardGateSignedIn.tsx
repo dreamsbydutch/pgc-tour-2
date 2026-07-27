@@ -1,6 +1,6 @@
 "use client";
 
-import { SignedIn, SignedOut, SignInButton } from "@clerk/tanstack-react-start";
+import { Show, SignInButton } from "@clerk/tanstack-react-start";
 
 import { Button } from "@/ui";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui";
@@ -18,8 +18,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/ui";
 export function HardGateSignedIn(props: { children: React.ReactNode }) {
   return (
     <>
-      <SignedIn>{props.children}</SignedIn>
-      <SignedOut>
+      <Show when="signed-in">{props.children}</Show>
+      <Show when="signed-out">
         <div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8 pb-20 lg:pb-8 lg:pt-20">
           <Card className="w-full max-w-md">
             <CardHeader>
@@ -32,7 +32,7 @@ export function HardGateSignedIn(props: { children: React.ReactNode }) {
             </CardContent>
           </Card>
         </div>
-      </SignedOut>
+      </Show>
     </>
   );
 }

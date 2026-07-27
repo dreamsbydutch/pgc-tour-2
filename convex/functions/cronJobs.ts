@@ -5,7 +5,7 @@ import {
   mutation,
 } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
-import { api, internal } from "../_generated/api";
+import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type {
   DataGolfFieldPlayer,
@@ -28,6 +28,12 @@ import {
 import { determineGroupIndex } from "../utils/golfers";
 import { EnhancedGolfer } from "../types/types";
 import { v } from "convex/values";
+import {
+  getCurrentMember,
+  requireAdmin,
+  requireAdminForAction,
+} from "../utils/auth";
+import { writeAuditLog } from "../utils/audit";
 
 type TournamentLifecycleStatus = "upcoming" | "active" | "completed";
 type RoundNumber = 1 | 2 | 3 | 4;
@@ -187,9 +193,13 @@ function getTeamTourKey(
   return String(team.tour?._id ?? team.tourCard?.tourId ?? "");
 }
 
-function isNonRankingTeamPosition(position: string | null | undefined): boolean {
+function isNonRankingTeamPosition(
+  position: string | null | undefined,
+): boolean {
   return ["CUT", "WD", "DQ"].includes(
-    String(position ?? "").trim().toUpperCase(),
+    String(position ?? "")
+      .trim()
+      .toUpperCase(),
   );
 }
 
@@ -357,7 +367,9 @@ export function getTeamTournamentRank(args: {
     return {
       teamsAhead,
       teamsTied,
-      position: String(args.team.position ?? "").trim().toUpperCase(),
+      position: String(args.team.position ?? "")
+        .trim()
+        .toUpperCase(),
     };
   }
 
@@ -611,7 +623,9 @@ function getReplacementCandidateForGroup(args: {
         }),
       );
     })
-    .sort((a, b) => getGolferReplacementRank(a) - getGolferReplacementRank(b))[0];
+    .sort(
+      (a, b) => getGolferReplacementRank(a) - getGolferReplacementRank(b),
+    )[0];
 }
 
 async function applyPreStartNonStarterRosterReplacements(
@@ -650,7 +664,9 @@ async function applyPreStartNonStarterRosterReplacements(
         continue;
       }
 
-      const replaceIndex = nextApiIds.findIndex((apiId) => apiId === removedApiId);
+      const replaceIndex = nextApiIds.findIndex(
+        (apiId) => apiId === removedApiId,
+      );
       if (replaceIndex === -1) {
         continue;
       }
@@ -677,7 +693,7 @@ async function applyPreStartNonStarterRosterReplacements(
       continue;
     }
 
-    await ctx.runMutation(api.functions.teams.updateTeamRoster, {
+    await ctx.runMutation(internal.functions.teams.updateTeamRoster, {
       teamId: team._id,
       apiIds: nextApiIds,
     });
@@ -730,7 +746,8 @@ function getCompletedRoundScore(
 }
 
 function getGolferLiveRound(golfer: EnhancedGolfer): number {
-  return typeof golfer.live?.round === "number" && Number.isFinite(golfer.live.round)
+  return typeof golfer.live?.round === "number" &&
+    Number.isFinite(golfer.live.round)
     ? golfer.live.round
     : 0;
 }
@@ -880,7 +897,9 @@ export function deriveTournamentTimelineState(args: {
     };
   }
 
-  const startedByPlay = args.golfers.some((golfer) => hasGolferStartedPlay(golfer));
+  const startedByPlay = args.golfers.some((golfer) =>
+    hasGolferStartedPlay(golfer),
+  );
   if (!startedByPlay) {
     return {
       currentRound: 0,
@@ -927,7 +946,10 @@ export function deriveTournamentTimelineState(args: {
 }
 
 export function isRoundPublishedForTimeline(
-  timeline: Pick<TournamentTimelineState, "currentRound" | "livePlay" | "status">,
+  timeline: Pick<
+    TournamentTimelineState,
+    "currentRound" | "livePlay" | "status"
+  >,
   roundNumber: RoundNumber,
 ): boolean {
   if (timeline.status === "completed") {
@@ -938,10 +960,7 @@ export function isRoundPublishedForTimeline(
     return true;
   }
 
-  return (
-    timeline.currentRound === roundNumber &&
-    timeline.livePlay === false
-  );
+  return timeline.currentRound === roundNumber && timeline.livePlay === false;
 }
 
 /**
@@ -950,7 +969,10 @@ export function isRoundPublishedForTimeline(
 function getTournamentRoundScore(args: {
   golfer: EnhancedGolfer;
   roundNumber: RoundNumber;
-  timeline: Pick<TournamentTimelineState, "currentRound" | "livePlay" | "status">;
+  timeline: Pick<
+    TournamentTimelineState,
+    "currentRound" | "livePlay" | "status"
+  >;
   coursePar: number;
   allowPreStartNonStarterReplacement: boolean;
 }): number | undefined {
@@ -971,7 +993,10 @@ function getTournamentRoundScore(args: {
   const completedScore = getCompletedRoundScore(args.golfer, args.roundNumber);
 
   if (isWithdrawnOrDisqualifiedPosition(position)) {
-    if (args.roundNumber >= 3 || !isRoundPublishedForTimeline(args.timeline, args.roundNumber)) {
+    if (
+      args.roundNumber >= 3 ||
+      !isRoundPublishedForTimeline(args.timeline, args.roundNumber)
+    ) {
       return undefined;
     }
     if (typeof completedScore === "number") {
@@ -1008,7 +1033,10 @@ export function getTournamentRoundWindowMetrics(args: {
   golfer: EnhancedGolfer;
   roundNumber: RoundNumber;
   roundStarted: boolean;
-  timeline: Pick<TournamentTimelineState, "currentRound" | "livePlay" | "status">;
+  timeline: Pick<
+    TournamentTimelineState,
+    "currentRound" | "livePlay" | "status"
+  >;
   coursePar: number;
   allowPreStartNonStarterReplacement: boolean;
 }): TeamRoundWindowMetrics {
@@ -1100,7 +1128,10 @@ function shouldIncludeGolferInTeamRoundWindow(args: {
   golfer: EnhancedGolfer;
   roundNumber: RoundNumber;
   roundStarted: boolean;
-  timeline: Pick<TournamentTimelineState, "currentRound" | "livePlay" | "status">;
+  timeline: Pick<
+    TournamentTimelineState,
+    "currentRound" | "livePlay" | "status"
+  >;
   coursePar: number;
   allowPreStartNonStarterReplacement: boolean;
 }): boolean {
@@ -1159,7 +1190,10 @@ export function getTeamRoundWindowGolfers(args: {
   golfers: EnhancedGolfer[];
   roundNumber: RoundNumber;
   roundStarted: boolean;
-  timeline: Pick<TournamentTimelineState, "currentRound" | "livePlay" | "status">;
+  timeline: Pick<
+    TournamentTimelineState,
+    "currentRound" | "livePlay" | "status"
+  >;
   coursePar: number;
   allowPreStartNonStarterReplacement: boolean;
 }): EnhancedGolfer[] {
@@ -1195,8 +1229,10 @@ export function getTeamRoundWindowGolfers(args: {
         return aThru - bThru;
       }
 
-      return (a.golfer?.apiId ?? Number.POSITIVE_INFINITY) -
-        (b.golfer?.apiId ?? Number.POSITIVE_INFINITY);
+      return (
+        (a.golfer?.apiId ?? Number.POSITIVE_INFINITY) -
+        (b.golfer?.apiId ?? Number.POSITIVE_INFINITY)
+      );
     })
     .slice(0, selectionSize);
 }
@@ -1208,7 +1244,10 @@ function getTeamRoundWindowMean(args: {
   golfers: EnhancedGolfer[];
   roundNumber: RoundNumber;
   roundStarted: boolean;
-  timeline: Pick<TournamentTimelineState, "currentRound" | "livePlay" | "status">;
+  timeline: Pick<
+    TournamentTimelineState,
+    "currentRound" | "livePlay" | "status"
+  >;
   coursePar: number;
   metric: "today" | "thru";
   allowPreStartNonStarterReplacement: boolean;
@@ -1220,7 +1259,10 @@ function getTeamRoundWindowMean(args: {
   const selectionSize = args.roundNumber >= 3 ? 5 : 10;
   const total = args.golfers.reduce((sum, golfer) => {
     const metrics = getTournamentRoundWindowMetrics({ ...args, golfer });
-    return sum + (args.metric === "today" ? (metrics.today ?? 0) : (metrics.thru ?? 0));
+    return (
+      sum +
+      (args.metric === "today" ? (metrics.today ?? 0) : (metrics.thru ?? 0))
+    );
   }, 0);
 
   return total / selectionSize;
@@ -1232,7 +1274,10 @@ function getTeamRoundWindowMean(args: {
 function isTeamRoundComplete(args: {
   golfers: EnhancedGolfer[];
   roundNumber: RoundNumber;
-  timeline: Pick<TournamentTimelineState, "currentRound" | "livePlay" | "status">;
+  timeline: Pick<
+    TournamentTimelineState,
+    "currentRound" | "livePlay" | "status"
+  >;
   coursePar: number;
   allowPreStartNonStarterReplacement: boolean;
 }): boolean {
@@ -1275,7 +1320,10 @@ function isTeamRoundComplete(args: {
 function getTeamRoundScore(args: {
   golfers: EnhancedGolfer[];
   roundNumber: RoundNumber;
-  timeline: Pick<TournamentTimelineState, "currentRound" | "livePlay" | "status">;
+  timeline: Pick<
+    TournamentTimelineState,
+    "currentRound" | "livePlay" | "status"
+  >;
   coursePar: number;
   allowPreStartNonStarterReplacement: boolean;
 }): number | undefined {
@@ -1471,10 +1519,12 @@ export function getTournamentSyncLivePlay(args: {
   }>;
   datagolfLivePlay: boolean;
 }): boolean {
-  return args.datagolfLivePlay ||
+  return (
+    args.datagolfLivePlay ||
     deriveTournamentTimelineState({
       golfers: args.teams.flatMap((team) => team.golfers),
-    }).livePlay;
+    }).livePlay
+  );
 }
 
 /**
@@ -1524,7 +1574,10 @@ function getChangedTournamentLifecycleFields(args: {
     update.status = args.status;
   }
 
-  if (typeof args.endDate === "number" && args.endDate !== args.tournament.endDate) {
+  if (
+    typeof args.endDate === "number" &&
+    args.endDate !== args.tournament.endDate
+  ) {
     update.endDate = args.endDate;
   }
 
@@ -1543,7 +1596,7 @@ export const updateGolfersWorldRankFromDataGolfInput: ReturnType<
     let rankings: unknown;
     try {
       rankings = await ctx.runAction(
-        api.functions.datagolf.fetchDataGolfRankings,
+        internal.functions.datagolf.fetchDataGolfRankings,
         {},
       );
     } catch (err) {
@@ -1585,6 +1638,11 @@ export const updateGolfersWorldRankFromDataGolfInput_Public: ReturnType<
   typeof action
 > = action({
   handler: async (ctx) => {
+    const actorMemberId = await requireAdminForAction(ctx);
+    await ctx.runMutation(internal.functions.syncRuns.recordAdminInvocation, {
+      memberId: actorMemberId,
+      jobName: "update_golfer_world_ranks",
+    });
     return await ctx.runAction(
       internal.functions.cronJobs.updateGolfersWorldRankFromDataGolfInput,
       {},
@@ -1676,10 +1734,10 @@ export const runCreateGroupsForNextTournament: ReturnType<
     let rankings: unknown;
     try {
       const [fieldResult, rankingsResult] = await Promise.allSettled([
-        ctx.runAction(api.functions.datagolf.fetchFieldUpdates, {
+        ctx.runAction(internal.functions.datagolf.fetchFieldUpdates, {
           tournament: tournamentForDataGolf,
         }),
-        ctx.runAction(api.functions.datagolf.fetchDataGolfRankings, {}),
+        ctx.runAction(internal.functions.datagolf.fetchDataGolfRankings, {}),
       ]);
       if (fieldResult.status === "rejected") {
         throw fieldResult.reason;
@@ -1805,10 +1863,71 @@ export const runCreateGroupsForNextTournament_Public: ReturnType<
   typeof action
 > = action({
   handler: async (ctx) => {
+    const actorMemberId = await requireAdminForAction(ctx);
+    await ctx.runMutation(internal.functions.syncRuns.recordAdminInvocation, {
+      memberId: actorMemberId,
+      jobName: "create_tournament_groups",
+    });
     return await ctx.runAction(
-      internal.functions.cronJobs.runCreateGroupsForNextTournament,
-      {},
+      internal.functions.cronJobs.runCreateGroupsForNextTournamentWithRetry,
+      { attempt: 0, trigger: "manual", actorMemberId },
     );
+  },
+});
+
+export const runCreateGroupsForNextTournamentWithRetry: ReturnType<
+  typeof internalAction
+> = internalAction({
+  args: {
+    attempt: v.optional(v.number()),
+    trigger: v.optional(v.union(v.literal("scheduled"), v.literal("manual"))),
+    actorMemberId: v.optional(v.id("members")),
+  },
+  handler: async (ctx, args): Promise<unknown> => {
+    const attempt = Math.min(Math.max(args.attempt ?? 0, 0), 2);
+    const lease = await ctx.runMutation(internal.functions.syncRuns.acquire, {
+      jobName: "create_tournament_groups",
+      runKey: `create_tournament_groups:${new Date().toISOString().slice(0, 10)}:${attempt}`,
+      trigger: args.trigger ?? "scheduled",
+      actorMemberId: args.actorMemberId,
+      leaseMs: 15 * 60_000,
+    });
+    if (!lease.acquired) {
+      return { ok: true, skipped: true, reason: "already_running" };
+    }
+    try {
+      const result = (await ctx.runAction(
+        internal.functions.cronJobs.runCreateGroupsForNextTournament,
+        {},
+      )) as { skipped?: boolean; reason?: string };
+      await ctx.runMutation(internal.functions.syncRuns.finalize, {
+        runId: lease.runId,
+        status: result.skipped ? "skipped" : "succeeded",
+        skipReason: result.skipped ? result.reason : undefined,
+      });
+      if (result.skipped && attempt < 2) {
+        await ctx.scheduler.runAfter(
+          60 * 60_000,
+          internal.functions.cronJobs.runCreateGroupsForNextTournamentWithRetry,
+          { attempt: attempt + 1, trigger: "scheduled" },
+        );
+      }
+      return result;
+    } catch (error) {
+      await ctx.runMutation(internal.functions.syncRuns.finalize, {
+        runId: lease.runId,
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      if (attempt < 2) {
+        await ctx.scheduler.runAfter(
+          60 * 60_000,
+          internal.functions.cronJobs.runCreateGroupsForNextTournamentWithRetry,
+          { attempt: attempt + 1, trigger: "scheduled" },
+        );
+      }
+      throw error;
+    }
   },
 });
 
@@ -1962,6 +2081,15 @@ export const recomputeStandings: ReturnType<typeof internalMutation> =
   });
 export const recomputeStandings_Public: ReturnType<typeof mutation> = mutation({
   handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const actor = await getCurrentMember(ctx);
+    await writeAuditLog(ctx, {
+      memberId: actor._id,
+      entityType: "maintenanceJob",
+      entityId: "recompute_standings",
+      action: "updated",
+      changes: { invokedAt: Date.now() },
+    });
     return await ctx.runMutation(
       internal.functions.cronJobs.recomputeStandings,
       {},
@@ -1998,6 +2126,9 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             seasonId: activeTournamentData.tournament.seasonId,
           },
           tzOffset: activeTournamentData.course.timeZoneOffset ?? -18000000,
+          includeStatic:
+            args.force === true ||
+            activeTournamentData.tournament.status !== "active",
         },
       );
       if (!tournamentStats.ok) {
@@ -2021,6 +2152,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         teams,
         golfers,
         fieldData,
+        liveData,
         historicalData,
         historicalEventData: _historicalEventData,
       } = tournamentStats;
@@ -2102,22 +2234,28 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                   return aRank - bRank;
                 });
               if (count === 2) {
-                await ctx.runMutation(api.functions.teams.updateTeamRoster, {
-                  teamId: t._id,
-                  apiIds: [
-                    ...t.golfers.map((g) => g.golfer?.apiId ?? -1),
-                    availableGolfers[0].golfer?.apiId ?? -1,
-                    availableGolfers[1].golfer?.apiId ?? -1,
-                  ],
-                });
+                await ctx.runMutation(
+                  internal.functions.teams.updateTeamRoster,
+                  {
+                    teamId: t._id,
+                    apiIds: [
+                      ...t.golfers.map((g) => g.golfer?.apiId ?? -1),
+                      availableGolfers[0].golfer?.apiId ?? -1,
+                      availableGolfers[1].golfer?.apiId ?? -1,
+                    ],
+                  },
+                );
               } else {
-                await ctx.runMutation(api.functions.teams.updateTeamRoster, {
-                  teamId: t._id,
-                  apiIds: [
-                    ...t.golfers.map((g) => g.golfer?.apiId ?? -1),
-                    availableGolfers[0].golfer?.apiId ?? -1,
-                  ],
-                });
+                await ctx.runMutation(
+                  internal.functions.teams.updateTeamRoster,
+                  {
+                    teamId: t._id,
+                    apiIds: [
+                      ...t.golfers.map((g) => g.golfer?.apiId ?? -1),
+                      availableGolfers[0].golfer?.apiId ?? -1,
+                    ],
+                  },
+                );
               }
             }
           }
@@ -2524,8 +2662,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         });
         const teamWeekendCut = isTeamWeekendCut({
           golfers: t.golfers,
-          roundNumber:
-            visibleRound !== 0 ? visibleRound : 1,
+          roundNumber: visibleRound !== 0 ? visibleRound : 1,
           allowPreStartNonStarterReplacement,
         });
         const teamVisibleRoundGolfers =
@@ -2583,10 +2720,26 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                 allowPreStartNonStarterReplacement,
               });
         const completedScoreTotal =
-          getPublishedTeamScoreToPar({ roundOne, roundTwo, roundThree, roundFour }, 1, course.par) +
-          getPublishedTeamScoreToPar({ roundOne, roundTwo, roundThree, roundFour }, 2, course.par) +
-          getPublishedTeamScoreToPar({ roundOne, roundTwo, roundThree, roundFour }, 3, course.par) +
-          getPublishedTeamScoreToPar({ roundOne, roundTwo, roundThree, roundFour }, 4, course.par);
+          getPublishedTeamScoreToPar(
+            { roundOne, roundTwo, roundThree, roundFour },
+            1,
+            course.par,
+          ) +
+          getPublishedTeamScoreToPar(
+            { roundOne, roundTwo, roundThree, roundFour },
+            2,
+            course.par,
+          ) +
+          getPublishedTeamScoreToPar(
+            { roundOne, roundTwo, roundThree, roundFour },
+            3,
+            course.par,
+          ) +
+          getPublishedTeamScoreToPar(
+            { roundOne, roundTwo, roundThree, roundFour },
+            4,
+            course.par,
+          );
         const liveScoreTotal =
           (timeline.livePlay ? (teamLiveTodayMean ?? 0) : 0) +
           (timeline.livePlay ? (overlapTodayMean ?? 0) : 0);
@@ -2765,7 +2918,11 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           _id: tournament._id,
           currentRound: tournamentCurrentRound,
           livePlay: tournamentLivePlay,
-          leaderboardLastUpdatedAt: now.getTime(),
+          dataGolfInPlayLastUpdate: liveData.info.last_update,
+          leaderboardLastUpdatedAt:
+            tournament.dataGolfInPlayLastUpdate !== liveData.info.last_update
+              ? now.getTime()
+              : tournament.leaderboardLastUpdatedAt,
           ...(lifecycleUpdates ?? {}),
         },
       });
@@ -2806,7 +2963,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             firstPlaceTiebreakSummary,
             tournamentCompleted: tournamentStatus === "completed",
           });
-          await ctx.runMutation(api.functions.teams.updateTeam, {
+          await ctx.runMutation(internal.functions.teams.updateTeam, {
             team: {
               _id: t._id,
               makeCut: t.makeCut,
@@ -2846,6 +3003,24 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         }
       }
 
+      if (
+        tournamentStatus === "completed" &&
+        tournament.status !== "completed"
+      ) {
+        await ctx.runMutation(
+          internal.functions.cronJobs.recomputeStandings,
+          {},
+        );
+        await ctx.runMutation(
+          internal.functions.readModels.rebuildMajorChampionBadgesForTournament,
+          { tournamentId: tournament._id },
+        );
+        await ctx.runMutation(
+          internal.functions.readModels.refreshAppState,
+          {},
+        );
+      }
+
       return {
         ok: true,
         skipped: false,
@@ -2858,14 +3033,133 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
       };
     },
   });
+
+export const runTournamentSyncWithLease: ReturnType<typeof internalAction> =
+  internalAction({
+    args: {
+      force: v.optional(v.boolean()),
+      trigger: v.optional(v.union(v.literal("scheduled"), v.literal("manual"))),
+      actorMemberId: v.optional(v.id("members")),
+    },
+    handler: async (ctx, args): Promise<unknown> => {
+      const now = Date.now();
+      const trigger = args.trigger ?? "scheduled";
+      const lease = await ctx.runMutation(internal.functions.syncRuns.acquire, {
+        jobName: "tournament_sync",
+        runKey: `tournament_sync:${Math.floor(now / (4 * 60_000))}`,
+        trigger,
+        actorMemberId: args.actorMemberId,
+        leaseMs: 10 * 60_000,
+      });
+      if (!lease.acquired) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: "already_running",
+          runId: lease.runId,
+        };
+      }
+      try {
+        const result = (await ctx.runAction(
+          internal.functions.cronJobs.runTournamentSync,
+          { force: args.force },
+        )) as {
+          skipped?: boolean;
+          reason?: string;
+          tournamentId?: Id<"tournaments">;
+        };
+        await ctx.runMutation(internal.functions.syncRuns.finalize, {
+          runId: lease.runId,
+          status: result.skipped ? "skipped" : "succeeded",
+          skipReason: result.skipped ? result.reason : undefined,
+        });
+        return result;
+      } catch (error) {
+        await ctx.runMutation(internal.functions.syncRuns.finalize, {
+          runId: lease.runId,
+          status: "failed",
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    },
+  });
+
+export const runAdaptiveTournamentSync: ReturnType<typeof internalAction> =
+  internalAction({
+    args: {
+      chainId: v.string(),
+      repair: v.boolean(),
+    },
+    handler: async (ctx, args): Promise<unknown> => {
+      const claim = await ctx.runMutation(
+        internal.functions.readModels.claimLiveSyncChain,
+        args,
+      );
+      if (!claim.claimed) {
+        return { ok: true, skipped: true, reason: claim.reason };
+      }
+      if (args.chainId === "repair" && !claim.activeTournamentId) {
+        await ctx.runMutation(
+          internal.functions.readModels.finishLiveSyncChain,
+          { chainId: args.chainId },
+        );
+        return {
+          ok: true,
+          skipped: true,
+          reason: "no_active_tournament",
+        };
+      }
+      const result = (await ctx.runAction(
+        internal.functions.cronJobs.runTournamentSyncWithLease,
+        { trigger: "scheduled" },
+      )) as {
+        skipped?: boolean;
+        reason?: string;
+        status?: string;
+        livePlay?: boolean;
+      };
+      const activatedTournament =
+        result.reason === "next_tournament_toggled_to_active";
+      if (activatedTournament) {
+        await ctx.runMutation(
+          internal.functions.readModels.refreshAppState,
+          {},
+        );
+      }
+      if (
+        activatedTournament ||
+        result.status === "active" ||
+        result.livePlay === true
+      ) {
+        await ctx.scheduler.runAfter(
+          4 * 60_000,
+          internal.functions.cronJobs.runAdaptiveTournamentSync,
+          { chainId: args.chainId, repair: false },
+        );
+      } else {
+        await ctx.runMutation(
+          internal.functions.readModels.finishLiveSyncChain,
+          { chainId: args.chainId },
+        );
+      }
+      return result;
+    },
+  });
+
 export const runTournamentSync_Public: ReturnType<typeof action> = action({
   args: {
     force: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
+    const actorMemberId = await requireAdminForAction(ctx);
+    await ctx.runMutation(internal.functions.syncRuns.recordAdminInvocation, {
+      memberId: actorMemberId,
+      jobName: "tournament_sync",
+    });
     return await ctx.runAction(
-      internal.functions.cronJobs.runTournamentSync,
-      { force: args.force },
+      internal.functions.cronJobs.runTournamentSyncWithLease,
+      { force: args.force, trigger: "manual", actorMemberId },
     );
   },
 });
@@ -2898,6 +3192,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             seasonId: activeTournamentData.tournament.seasonId,
           },
           tzOffset: activeTournamentData.course.timeZoneOffset ?? -18000000,
+          includeStatic: false,
         },
       );
       if (!tournamentStats.ok) {
@@ -2921,6 +3216,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         teams,
         golfers,
         fieldData,
+        liveData,
         historicalData,
         historicalEventData: _historicalEventData,
       } = tournamentStats;
@@ -2990,22 +3286,28 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                   return aRank - bRank;
                 });
               if (count === 2) {
-                await ctx.runMutation(api.functions.teams.updateTeamRoster, {
-                  teamId: t._id,
-                  apiIds: [
-                    ...t.golfers.map((g) => g.golfer?.apiId ?? -1),
-                    availableGolfers[0].golfer?.apiId ?? -1,
-                    availableGolfers[1].golfer?.apiId ?? -1,
-                  ],
-                });
+                await ctx.runMutation(
+                  internal.functions.teams.updateTeamRoster,
+                  {
+                    teamId: t._id,
+                    apiIds: [
+                      ...t.golfers.map((g) => g.golfer?.apiId ?? -1),
+                      availableGolfers[0].golfer?.apiId ?? -1,
+                      availableGolfers[1].golfer?.apiId ?? -1,
+                    ],
+                  },
+                );
               } else {
-                await ctx.runMutation(api.functions.teams.updateTeamRoster, {
-                  teamId: t._id,
-                  apiIds: [
-                    ...t.golfers.map((g) => g.golfer?.apiId ?? -1),
-                    availableGolfers[0].golfer?.apiId ?? -1,
-                  ],
-                });
+                await ctx.runMutation(
+                  internal.functions.teams.updateTeamRoster,
+                  {
+                    teamId: t._id,
+                    apiIds: [
+                      ...t.golfers.map((g) => g.golfer?.apiId ?? -1),
+                      availableGolfers[0].golfer?.apiId ?? -1,
+                    ],
+                  },
+                );
               }
             }
           }
@@ -3412,8 +3714,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         });
         const teamWeekendCut = isTeamWeekendCut({
           golfers: t.golfers,
-          roundNumber:
-            visibleRound !== 0 ? visibleRound : 1,
+          roundNumber: visibleRound !== 0 ? visibleRound : 1,
           allowPreStartNonStarterReplacement,
         });
         const teamVisibleRoundGolfers =
@@ -3471,10 +3772,26 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                 allowPreStartNonStarterReplacement,
               });
         const completedScoreTotal =
-          getPublishedTeamScoreToPar({ roundOne, roundTwo, roundThree, roundFour }, 1, course.par) +
-          getPublishedTeamScoreToPar({ roundOne, roundTwo, roundThree, roundFour }, 2, course.par) +
-          getPublishedTeamScoreToPar({ roundOne, roundTwo, roundThree, roundFour }, 3, course.par) +
-          getPublishedTeamScoreToPar({ roundOne, roundTwo, roundThree, roundFour }, 4, course.par);
+          getPublishedTeamScoreToPar(
+            { roundOne, roundTwo, roundThree, roundFour },
+            1,
+            course.par,
+          ) +
+          getPublishedTeamScoreToPar(
+            { roundOne, roundTwo, roundThree, roundFour },
+            2,
+            course.par,
+          ) +
+          getPublishedTeamScoreToPar(
+            { roundOne, roundTwo, roundThree, roundFour },
+            3,
+            course.par,
+          ) +
+          getPublishedTeamScoreToPar(
+            { roundOne, roundTwo, roundThree, roundFour },
+            4,
+            course.par,
+          );
         const liveScoreTotal =
           (timeline.livePlay ? (teamLiveTodayMean ?? 0) : 0) +
           (timeline.livePlay ? (overlapTodayMean ?? 0) : 0);
@@ -3653,7 +3970,11 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           _id: tournament._id,
           currentRound: tournamentCurrentRound,
           livePlay: tournamentLivePlay,
-          leaderboardLastUpdatedAt: now.getTime(),
+          dataGolfInPlayLastUpdate: liveData.info.last_update,
+          leaderboardLastUpdatedAt:
+            tournament.dataGolfInPlayLastUpdate !== liveData.info.last_update
+              ? now.getTime()
+              : tournament.leaderboardLastUpdatedAt,
           ...(lifecycleUpdates ?? {}),
         },
       });
@@ -3694,7 +4015,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             firstPlaceTiebreakSummary,
             tournamentCompleted: tournamentStatus === "completed",
           });
-          await ctx.runMutation(api.functions.teams.updateTeam, {
+          await ctx.runMutation(internal.functions.teams.updateTeam, {
             team: {
               _id: t._id,
               makeCut: t.makeCut,
@@ -3734,6 +4055,21 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         }
       }
 
+      if (tournamentStatus === "completed") {
+        await ctx.runMutation(
+          internal.functions.cronJobs.recomputeStandings,
+          {},
+        );
+        await ctx.runMutation(
+          internal.functions.readModels.rebuildMajorChampionBadgesForTournament,
+          { tournamentId: tournament._id },
+        );
+        await ctx.runMutation(
+          internal.functions.readModels.refreshAppState,
+          {},
+        );
+      }
+
       return {
         ok: true,
         skipped: false,
@@ -3750,6 +4086,11 @@ export const updatePreviousTournament_Public: ReturnType<typeof action> =
   action({
     args: { tournamentId: v.id("tournaments") },
     handler: async (ctx, args) => {
+      const actorMemberId = await requireAdminForAction(ctx);
+      await ctx.runMutation(internal.functions.syncRuns.recordAdminInvocation, {
+        memberId: actorMemberId,
+        jobName: "repair_tournament",
+      });
       return await ctx.runAction(
         internal.functions.cronJobs.updatePreviousTournament,
         { tournamentId: args.tournamentId },

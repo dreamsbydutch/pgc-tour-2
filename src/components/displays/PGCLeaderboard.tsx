@@ -21,7 +21,7 @@ import {
   TableBody,
   TableHeader,
   TableRow,
-} from "@/components/ui";
+} from "@/ui";
 import {
   EnhancedTournamentGolferDoc,
   EnhancedTournamentTeamDoc,
@@ -138,7 +138,9 @@ function buildTeamsWithDisplayPosition(
 
 function isTeamNonRanking(position: string | null | undefined): boolean {
   return ["CUT", "WD", "DQ"].includes(
-    String(position ?? "").trim().toUpperCase(),
+    String(position ?? "")
+      .trim()
+      .toUpperCase(),
   );
 }
 
@@ -414,14 +416,14 @@ function useTeamGolfersTable(args: {
         const aStarted = typeof a.thru === "number" && a.thru > 0;
         const bStarted = typeof b.thru === "number" && b.thru > 0;
         const aTodayValue = aStarted
-          ? (typeof a.today === "number"
-              ? a.today
-              : Number.POSITIVE_INFINITY)
+          ? typeof a.today === "number"
+            ? a.today
+            : Number.POSITIVE_INFINITY
           : 0;
         const bTodayValue = bStarted
-          ? (typeof b.today === "number"
-              ? b.today
-              : Number.POSITIVE_INFINITY)
+          ? typeof b.today === "number"
+            ? b.today
+            : Number.POSITIVE_INFINITY
           : 0;
         if (aTodayValue !== bTodayValue) return aTodayValue - bTodayValue;
 

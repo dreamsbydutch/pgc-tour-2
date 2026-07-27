@@ -109,7 +109,8 @@ export function ChampionsPopup(props: {
                     badges={
                       champ.memberId
                         ? filterMajorChampionBadges({
-                            badges: majorChampionBadgesByMemberId[champ.memberId],
+                            badges:
+                              majorChampionBadgesByMemberId[champ.memberId],
                             hiddenTournamentIds: tournamentComplete
                               ? []
                               : [model.tournament.id],

@@ -16,7 +16,6 @@ export const NAV_ITEMS: NavigationItemConfig[] = [
   { href: "/rulebook", icon: BookText, label: "RULEBOOK" },
 ] as const;
 
-
 export const TRANSACTION_TYPES: TransactionType[] = [
   "TourCardFee",
   "TournamentWinnings",

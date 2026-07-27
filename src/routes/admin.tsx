@@ -1,4 +1,4 @@
-import { HardGateAdmin } from "@/displays";
+import { HardGateAdmin } from "@/widgets";
 import { api, Id } from "@/convex";
 import { createFileRoute } from "@tanstack/react-router";
 import { useAction, useMutation, useQuery } from "convex/react";
@@ -11,13 +11,12 @@ export const Route = createFileRoute("/admin")({
 
 function AdminRoute() {
   const tournaments = useQuery(api.functions.tournaments.getAllTournaments, {});
-  const members = useQuery(api.functions.members.getMembers, {
-    options: {
-      activeOnly: true,
-      sort: { sortBy: "lastname", sortOrder: "asc" },
-      pagination: { limit: 500, offset: 0 },
-    },
-  }) as EnhancedMemberDoc[] | null;
+  const membersResult = useQuery(api.functions.members.adminListMembers, {
+    activeOnly: true,
+    sort: { sortBy: "lastname", sortOrder: "asc" },
+    pagination: { limit: 500, cursor: null },
+  });
+  const members = (membersResult?.page ?? null) as EnhancedMemberDoc[] | null;
   const seasons = useQuery(api.functions.seasons.getSeasons, {
     options: { sort: { sortBy: "year", sortOrder: "desc" } },
   }) as { _id: string; year: number; number: number }[] | null;
@@ -49,10 +48,10 @@ function AdminRoute() {
     api.functions.cronJobs.recomputeStandings_Public,
   );
   const createTransaction = useMutation(
-    api.functions.transactions.createTransactions,
+    api.functions.transactions.createPayment,
   );
   const importTeamsFromJson = useMutation(
-    api.functions.teams.importTeamsFromJson,
+    api.functions.teams.adminImportTeamsFromJson,
   );
   const [outputs, setOutputs] = useState<Record<string, string>>({});
   const [repairTournamentId, setRepairTournamentId] = useState("");
@@ -91,59 +90,6 @@ function AdminRoute() {
     } catch (err) {
       setImportOutput(err instanceof Error ? err.message : "Unknown error");
     }
-  };
-
-  const runRoundTeeTimeMigration = async () => {
-    const tables = ["teams", "tournamentGolfers"] as const;
-    const aggregate: Record<
-      (typeof tables)[number],
-      { passes: number; scanned: number; converted: number; invalid: number }
-    > = {
-      teams: { passes: 0, scanned: 0, converted: 0, invalid: 0 },
-      tournamentGolfers: { passes: 0, scanned: 0, converted: 0, invalid: 0 },
-    };
-
-    for (const table of tables) {
-      let cursor: string | null = null;
-      for (let pass = 0; pass < 100; pass += 1) {
-        const args = {
-          outputType: "number",
-          target: table,
-          cursor,
-          pageSize: 250,
-        } as unknown as Parameters<typeof runLiveSync>[0];
-
-        const result = (await runLiveSync(args)) as {
-          hasMore?: boolean;
-          nextCursor?: string;
-          summaries?: {
-            teams?: { scanned?: number; converted?: number; invalid?: number };
-            tournamentGolfers?: {
-              scanned?: number;
-              converted?: number;
-              invalid?: number;
-            };
-          };
-        };
-
-        aggregate[table].passes += 1;
-        const summary =
-          table === "teams"
-            ? result.summaries?.teams
-            : result.summaries?.tournamentGolfers;
-        aggregate[table].scanned += summary?.scanned ?? 0;
-        aggregate[table].converted += summary?.converted ?? 0;
-        aggregate[table].invalid += summary?.invalid ?? 0;
-
-        if (!result.hasMore) {
-          break;
-        }
-
-        cursor = result.nextCursor ?? null;
-      }
-    }
-
-    return aggregate;
   };
 
   return (
@@ -307,13 +253,9 @@ function AdminRoute() {
                   throw new Error("Amount must be a non-zero number");
                 }
                 return await createTransaction({
-                  data: {
-                    memberId: paymentMemberId as Id<"members">,
-                    seasonId: paymentSeasonId as Id<"seasons">,
-                    amount: cents,
-                    transactionType: "Payment",
-                    status: "completed",
-                  },
+                  memberId: paymentMemberId as Id<"members">,
+                  seasonId: paymentSeasonId as Id<"seasons">,
+                  amount: cents,
                 });
               })
             }

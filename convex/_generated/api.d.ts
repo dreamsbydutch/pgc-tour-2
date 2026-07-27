@@ -8,29 +8,29 @@
  * @module
  */
 
-import type {
-  ApiFromModules,
-  FilterApi,
-  FunctionReference,
-} from "convex/server";
 import type * as crons from "../crons.js";
 import type * as functions__constants from "../functions/_constants.js";
 import type * as functions_cronJobs from "../functions/cronJobs.js";
 import type * as functions_datagolf from "../functions/datagolf.js";
 import type * as functions_emails from "../functions/emails.js";
 import type * as functions_golfers from "../functions/golfers.js";
+import type * as functions_home from "../functions/home.js";
 import type * as functions_members from "../functions/members.js";
 import type * as functions_migrations from "../functions/migrations.js";
+import type * as functions_readModels from "../functions/readModels.js";
 import type * as functions_seasons from "../functions/seasons.js";
+import type * as functions_syncRuns from "../functions/syncRuns.js";
 import type * as functions_teams from "../functions/teams.js";
 import type * as functions_tiers from "../functions/tiers.js";
 import type * as functions_tourCards from "../functions/tourCards.js";
 import type * as functions_tournaments from "../functions/tournaments.js";
 import type * as functions_tours from "../functions/tours.js";
+import type * as functions_transactions from "../functions/transactions.js";
 import type * as functions_utils from "../functions/utils.js";
 import type * as types_datagolf from "../types/datagolf.js";
 import type * as types_emails from "../types/emails.js";
 import type * as types_types from "../types/types.js";
+import type * as utils_audit from "../utils/audit.js";
 import type * as utils_auth from "../utils/auth.js";
 import type * as utils_batchProcess from "../utils/batchProcess.js";
 import type * as utils_datagolf from "../utils/datagolf.js";
@@ -43,14 +43,12 @@ import type * as utils_tourCards from "../utils/tourCards.js";
 import type * as validators_common from "../validators/common.js";
 import type * as validators_datagolf from "../validators/datagolf.js";
 
-/**
- * A utility for referencing Convex functions in your app's API.
- *
- * Usage:
- * ```js
- * const myFunctionReference = api.myModule.myFunction;
- * ```
- */
+import type {
+  ApiFromModules,
+  FilterApi,
+  FunctionReference,
+} from "convex/server";
+
 declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   "functions/_constants": typeof functions__constants;
@@ -58,18 +56,23 @@ declare const fullApi: ApiFromModules<{
   "functions/datagolf": typeof functions_datagolf;
   "functions/emails": typeof functions_emails;
   "functions/golfers": typeof functions_golfers;
+  "functions/home": typeof functions_home;
   "functions/members": typeof functions_members;
   "functions/migrations": typeof functions_migrations;
+  "functions/readModels": typeof functions_readModels;
   "functions/seasons": typeof functions_seasons;
+  "functions/syncRuns": typeof functions_syncRuns;
   "functions/teams": typeof functions_teams;
   "functions/tiers": typeof functions_tiers;
   "functions/tourCards": typeof functions_tourCards;
   "functions/tournaments": typeof functions_tournaments;
   "functions/tours": typeof functions_tours;
+  "functions/transactions": typeof functions_transactions;
   "functions/utils": typeof functions_utils;
   "types/datagolf": typeof types_datagolf;
   "types/emails": typeof types_emails;
   "types/types": typeof types_types;
+  "utils/audit": typeof utils_audit;
   "utils/auth": typeof utils_auth;
   "utils/batchProcess": typeof utils_batchProcess;
   "utils/datagolf": typeof utils_datagolf;
@@ -82,11 +85,31 @@ declare const fullApi: ApiFromModules<{
   "validators/common": typeof validators_common;
   "validators/datagolf": typeof validators_datagolf;
 }>;
+
+/**
+ * A utility for referencing Convex functions in your app's public API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = api.myModule.myFunction;
+ * ```
+ */
 export declare const api: FilterApi<
   typeof fullApi,
   FunctionReference<any, "public">
 >;
+
+/**
+ * A utility for referencing Convex functions in your app's internal API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = internal.myModule.myFunction;
+ * ```
+ */
 export declare const internal: FilterApi<
   typeof fullApi,
   FunctionReference<any, "internal">
 >;
+
+export declare const components: {};

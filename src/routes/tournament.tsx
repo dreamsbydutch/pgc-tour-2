@@ -6,7 +6,7 @@ import {
   LeaderboardViewSkeleton,
   PreTournamentContent,
 } from "@/facilitators";
-import { api, Id, useQuery } from "@/convex";
+import { api, Id, useQuery, useViewerBootstrap } from "@/convex";
 import { useRoleAccess } from "@/hooks";
 
 export const Route = createFileRoute("/tournament")({
@@ -31,16 +31,22 @@ function TournamentRoute() {
   const { tournamentId, tourId, variant } = Route.useSearch();
   const navigate = Route.useNavigate();
   const { member } = useRoleAccess();
+  const bootstrap = useViewerBootstrap();
   const resolvedTournamentId = tournamentId || undefined;
   const data = useQuery(
     api.functions.tournaments.getTournamentLeaderboardView,
     {
       tournamentId: resolvedTournamentId as Id<"tournaments"> | undefined,
-      memberId: member?._id,
     },
   );
+  const userTourCard =
+    data?.tournament && bootstrap
+      ? (bootstrap.tourCards.find(
+          (card) => card.seasonId === data.tournament!.seasonId,
+        ) ?? null)
+      : null;
   const defaultTourId =
-    tourId || (data?.userTourCard ? String(data.userTourCard.tourId) : "");
+    tourId || (userTourCard ? String(userTourCard.tourId) : "");
 
   useEffect(() => {
     if (!tourId && defaultTourId) {
@@ -67,17 +73,29 @@ function TournamentRoute() {
 
   if (data.tournament.status === "upcoming") {
     const existingTeam = data.teams.find(
-      (t) => t.tourCardId === data.userTourCard?._id,
+      (t) => t.tourCardId === userTourCard?._id,
     );
     return (
       <PreTournamentContent
         tournament={data.tournament}
         member={member === null ? undefined : member}
-        tourCard={data.userTourCard}
+        tourCard={userTourCard}
         existingTeam={existingTeam}
         allTournaments={data.allTournaments}
         teamGolfers={data.golfers.filter((g) =>
           existingTeam?.golferIds.includes(g.apiId ?? 0),
+        )}
+        pickPool={data.pickPool.filter(
+          (
+            golfer,
+          ): golfer is {
+            golferApiId: number;
+            playerName: string;
+            group: number | null;
+            worldRank: number | null;
+            rating: number | null;
+          } =>
+            golfer.golferApiId !== undefined && golfer.playerName !== undefined,
         )}
         playoffEventIndex={data.tournament.eventIndex}
         onTournamentChange={(nextTournamentId) => {
@@ -100,7 +118,7 @@ function TournamentRoute() {
       teams={data.teams}
       golfers={data.golfers}
       allTournaments={data.allTournaments}
-      userTourCard={data.userTourCard}
+      userTourCard={userTourCard}
       viewerMember={member ?? null}
       onTournamentChange={(nextTournamentId) => {
         navigate({

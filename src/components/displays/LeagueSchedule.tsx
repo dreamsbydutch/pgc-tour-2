@@ -274,7 +274,11 @@ function useLeagueSchedule(args: {
         )
       : -1;
 
-    return { sortedTournaments, currentTournamentIndex, previousTournamentIndex };
+    return {
+      sortedTournaments,
+      currentTournamentIndex,
+      previousTournamentIndex,
+    };
   }, [args.tournaments]);
 
   if (!args.tournaments || !derived) {

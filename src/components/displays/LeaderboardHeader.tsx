@@ -1,7 +1,13 @@
 "use client";
 
-import { Dropdown } from "@/components/ui";
-import { cn, DropdownItem, DropdownSection, formatMoney, formatTournamentDateRange } from "@/lib";
+import { Dropdown } from "@/ui";
+import {
+  cn,
+  DropdownItem,
+  DropdownSection,
+  formatMoney,
+  formatTournamentDateRange,
+} from "@/lib";
 import { EnhancedTournamentDoc } from "convex/types/types";
 import { ChevronDown, RefreshCwIcon } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -278,15 +284,16 @@ function useLeaderboardHeaderDropdown(props: {
   const tournamentsForYear = useMemo(() => {
     if (!selectedYear) return [...props.allTournaments];
     return props.allTournaments
-      .filter((tournament) => tournament.season?.year ?? new Date(tournament.startDate).getFullYear() === selectedYear)
+      .filter(
+        (tournament) =>
+          tournament.season?.year ??
+          new Date(tournament.startDate).getFullYear() === selectedYear,
+      )
       .sort((a, b) => a.startDate - b.startDate);
   }, [selectedYear, props.allTournaments]);
 
   const tierGroups = useMemo(() => {
-    const groups = new Map<
-      string,
-      EnhancedTournamentDoc[]
-    >();
+    const groups = new Map<string, EnhancedTournamentDoc[]>();
     tournamentsForYear.forEach((tournament) => {
       const tierName = tournament.tier?.name ?? "Uncategorized";
       const list = groups.get(tierName) ?? [];

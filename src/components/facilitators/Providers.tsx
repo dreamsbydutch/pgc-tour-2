@@ -1,13 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
 
 import { ClerkProvider, useAuth } from "@clerk/tanstack-react-start";
 import { ConvexReactClient } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
-import posthog from "posthog-js";
-import { PostHogProvider } from "posthog-js/react";
+import { ViewerBootstrapProvider } from "@/convex";
 
 const posthogKey = import.meta.env.VITE_POSTHOG_KEY;
 const posthogHostEnv = import.meta.env.VITE_POSTHOG_HOST;
@@ -20,15 +19,39 @@ const posthogApiHost = (() => {
   return raw;
 })();
 
-if (typeof window !== "undefined" && posthogKey) {
-  posthog.init(posthogKey, {
-    api_host: posthogApiHost,
-    ui_host: posthogUiHost,
-    person_profiles: "identified_only",
-    loaded: (ph) => {
-      if (import.meta.env.DEV) ph.debug();
-    },
-  });
+function usePostHogInitialization() {
+  useEffect(() => {
+    if (!posthogKey) return;
+    let cancelled = false;
+    const initialize = () => {
+      void import("posthog-js").then(({ default: posthog }) => {
+        if (cancelled) return;
+        posthog.init(posthogKey, {
+          api_host: posthogApiHost,
+          ui_host: posthogUiHost,
+          person_profiles: "identified_only",
+          loaded: (instance) => {
+            if (import.meta.env.DEV) instance.debug();
+          },
+        });
+      });
+    };
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const handle = idleWindow.requestIdleCallback
+      ? idleWindow.requestIdleCallback(initialize)
+      : window.setTimeout(initialize, 1_000);
+    return () => {
+      cancelled = true;
+      if (idleWindow.cancelIdleCallback) {
+        idleWindow.cancelIdleCallback(handle);
+      } else {
+        window.clearTimeout(handle);
+      }
+    };
+  }, []);
 }
 
 /**
@@ -72,6 +95,7 @@ function useAuthWithConvexTokenFallback() {
  * @returns Provider-wrapped app content.
  */
 export function Providers({ children }: { children: ReactNode }) {
+  usePostHogInitialization();
   const convexUrl = import.meta.env.VITE_CONVEX_URL;
   const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -105,18 +129,14 @@ export function Providers({ children }: { children: ReactNode }) {
     );
   }
 
-  const app = (
+  return (
     <ClerkProvider publishableKey={clerkPublishableKey}>
       <ConvexProviderWithClerk
         client={convex}
         useAuth={useAuthWithConvexTokenFallback}
       >
-        {children}
+        <ViewerBootstrapProvider>{children}</ViewerBootstrapProvider>
       </ConvexProviderWithClerk>
     </ClerkProvider>
   );
-
-  if (!posthogKey) return app;
-
-  return <PostHogProvider client={posthog}>{app}</PostHogProvider>;
 }

@@ -4,12 +4,19 @@ import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 
-// Live tournament sync (DataGolf -> tournamentGolfers -> teams)
-// Self-gating: the job exits quickly if no active tournament is found.
+// Repair the adaptive live-sync chain if a scheduled link is lost.
 crons.interval(
-  "live_tournament_sync",
-  { minutes: 4 },
-  internal.functions.cronJobs.runTournamentSync,
+  "repair_live_tournament_sync_chain",
+  { minutes: 30 },
+  internal.functions.cronJobs.runAdaptiveTournamentSync,
+  { chainId: "repair", repair: true },
+);
+
+// Refresh the small timeline singleton and schedule the next exact start boundary.
+crons.interval(
+  "refresh_application_timeline",
+  { minutes: 15 },
+  internal.functions.readModels.refreshAppState,
   {},
 );
 
@@ -23,24 +30,10 @@ crons.cron(
 
 // Pre-tournament grouping (field updates + rankings -> tournamentGolfers.group)
 crons.cron(
-  "create_groups_for_next_tournament_12pm",
+  "create_groups_for_next_tournament",
   "0 17 * * 1",
-  internal.functions.cronJobs.runCreateGroupsForNextTournament,
-  {},
-);
-
-crons.cron(
-  "create_groups_for_next_tournament_1pm",
-  "0 18 * * 1",
-  internal.functions.cronJobs.runCreateGroupsForNextTournament,
-  {},
-);
-
-crons.cron(
-  "create_groups_for_next_tournament_2pm",
-  "0 19 * * 1",
-  internal.functions.cronJobs.runCreateGroupsForNextTournament,
-  {},
+  internal.functions.cronJobs.runCreateGroupsForNextTournamentWithRetry,
+  { attempt: 0, trigger: "scheduled" },
 );
 
 // Weekly golfer OWGR/country refresh (DataGolf -> golfers)
