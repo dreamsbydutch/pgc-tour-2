@@ -1,7 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-const assetsDirectory = join(process.cwd(), "dist", "client", "assets");
+const assetsDirectory = join(process.cwd(), ".output", "public", "assets");
 const maximumMainBundleBytes = 537_000;
 const files = await readdir(assetsDirectory);
 const javascriptBundles = files.filter((file) => file.endsWith(".js"));
