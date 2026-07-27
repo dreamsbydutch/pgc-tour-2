@@ -3,6 +3,17 @@ import type { EnhancedTournamentDoc } from "convex/types/types";
 import type { ComponentType, Dispatch, ReactNode, SetStateAction } from "react";
 import type { LucideIcon } from "lucide-react";
 
+export type MajorChampionBadge = {
+  tournamentId: string;
+  tournamentName: string;
+  logoUrl: string | null;
+};
+
+export type MajorChampionBadgesByMemberId = Record<
+  string,
+  MajorChampionBadge[]
+>;
+
 export type TransactionType =
   | "TourCardFee"
   | "TournamentWinnings"
@@ -42,7 +53,6 @@ export type AdminDataTableColumn<T> = {
   headClassName?: string;
   cellClassName?: string;
 };
-
 
 /**
  * Props for `TourCardChangeButton`.
@@ -87,8 +97,6 @@ export type TourCardFormButtonProps =
   | TourCardFormButtonLoadedProps
   | { loading: true };
 
-
-
 export interface LittleFuckerSkeletonProps {
   showSeasonText?: boolean;
   className?: string;
@@ -108,7 +116,6 @@ export type LeaderboardHeaderProps =
   | LeaderboardHeaderLoadedProps
   | { loading: true };
 
-
 type LeaderboardHeaderDropdownLoadedProps = {
   activeTourney: EnhancedTournamentDoc;
   tournaments: EnhancedTournamentDoc[];
@@ -123,7 +130,6 @@ type LeaderboardHeaderDropdownLoadedProps = {
 export type LeaderboardHeaderDropdownProps =
   | LeaderboardHeaderDropdownLoadedProps
   | { loading: true; className?: string };
-
 
 /**
  * View options for `HomePageListingsContainer`.
@@ -295,8 +301,6 @@ export interface FriendManagementHook {
     removeFriend: (memberId: string) => Promise<void>;
   };
 }
-
-
 
 export type LeaderboardTourToggle = {
   id: string;

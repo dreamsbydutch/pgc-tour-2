@@ -21,7 +21,7 @@ import {
   TableBody,
   TableHeader,
   TableRow,
-} from "@/components/ui";
+} from "@/ui";
 import {
   EnhancedTournamentGolferDoc,
   EnhancedTournamentTeamDoc,

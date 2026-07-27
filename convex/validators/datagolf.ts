@@ -1,7 +1,6 @@
 import { v } from "convex/values";
 import {
   DataGolfFieldPlayer,
-  DataGolfHistoricalEvent,
   DataGolfHistoricalEventDataStat,
   DataGolfHistoricalPlayer,
   DataGolfLiveModelPlayer,

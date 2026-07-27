@@ -23,7 +23,7 @@ import {
 import { DEFAULT_MAX_PARTICIPANTS } from "@/lib/constants";
 import { cn, formatMoney, formatMonthDay, getMemberDisplayName } from "@/lib";
 import { SeasonDoc, TourCardDoc } from "convex/types/types";
-import { useCurrentSeasonMajorChampionBadges } from "@/hooks";
+import { useViewerBootstrap } from "@/convex";
 
 /**
  * TourCardForm
@@ -36,7 +36,7 @@ import { useCurrentSeasonMajorChampionBadges } from "@/hooks";
  *   - `seasons.getCurrentSeason` to scope everything to the active season.
  *   - `tours.getTours` to list tours in the current season.
  *   - `tourCards.getTourCards` to compute per-tour spots remaining and detect if the member already has a tour card.
- *   - `members.getMembers` to resolve the member record by `clerkId`.
+ *   - `members.getCurrentMember` to resolve the authenticated member.
  *   - `transactions.getTransactions` to detect whether the Tour Card Fee is already paid.
  *
  * Major render states:
@@ -74,6 +74,7 @@ export function TourCardForm({
     const tours = toursWithMeta as unknown as {
       tour: Doc<"tours">;
       tourCards: TourCardDoc[];
+      registeredCount: number;
     }[];
     const currentTourCard = seasonTourCards.find(
       (card) => card.memberId === member._id,
@@ -151,6 +152,7 @@ function useTourCardForm({
       return {
         tour,
         tourCards: tc,
+        registeredCount: tour.registeredCount ?? tc.length,
       };
     });
   }, [tours, seasonTourCards]);
@@ -180,7 +182,7 @@ function useTourCardForm({
  * - Clerk: current user (`useUser`) for identity and display fallback.
  * - Convex:
  *   - `tourCards.getCurrentYearTourCard` (by clerkId + year) to load the member’s current-year tour card
- *   - `members.getMembers` (by clerkId) for account balance
+ *   - authenticated member data for account balance
  *   - `tours.getTours` (by tourId, enhanced with season) for tour/season display
  *   - `tourCards.getTourCards` (by tourId + seasonId) to derive remaining capacity
  *
@@ -195,19 +197,38 @@ function useTourCardForm({
  * <TourCardOutput />
  */
 function TourCardOutput(props: {
-  tours?: { tour: Doc<"tours">; tourCards: TourCardDoc[] }[];
+  tours?: {
+    tour: Doc<"tours">;
+    tourCards: TourCardDoc[];
+    registeredCount: number;
+  }[];
   season: SeasonDoc;
   member: Doc<"members">;
   currentTourCard: TourCardDoc;
 }) {
-  const majorChampionBadgesByMemberId = useCurrentSeasonMajorChampionBadges();
+  const bootstrap = useViewerBootstrap();
+  const majorChampionBadgesByMemberId = bootstrap?.member
+    ? {
+        [String(bootstrap.member._id)]: bootstrap.badges.map((badge) => ({
+          tournamentId: String(badge.tournamentId),
+          tournamentName: badge.tournamentName,
+          logoUrl: badge.logoUrl ?? null,
+        })),
+      }
+    : {};
   const currentTour = props.tours?.find(
     (t) => t.tour._id === props.currentTourCard.tourId,
-  ) as { tour: Doc<"tours">; tourCards: TourCardDoc[] } | undefined;
+  ) as
+    | {
+        tour: Doc<"tours">;
+        tourCards: TourCardDoc[];
+        registeredCount: number;
+      }
+    | undefined;
   if (!currentTour) return null;
   const spotsRemaining =
     +(currentTour?.tour.maxParticipants ?? DEFAULT_MAX_PARTICIPANTS) -
-    (currentTour?.tourCards.length ?? 0);
+    (currentTour?.registeredCount ?? 0);
   return (
     <div className="mt-2 flex flex-col items-center justify-center">
       <h2 className="max-w-xl text-center font-varela text-lg text-slate-600">
@@ -285,7 +306,11 @@ function TourCardChangeButton({
   currentTourCard,
 }: {
   currentSeason: SeasonDoc;
-  tours: { tour: Doc<"tours">; tourCards: TourCardDoc[] }[];
+  tours: {
+    tour: Doc<"tours">;
+    tourCards: TourCardDoc[];
+    registeredCount: number;
+  }[];
   currentTourCard: TourCardDoc;
 }) {
   const {
@@ -357,7 +382,7 @@ function TourCardChangeButton({
                     .map((t) => {
                       const spotsRemaining =
                         +(t.tour.maxParticipants ?? DEFAULT_MAX_PARTICIPANTS) -
-                        t.tourCards.length;
+                        t.registeredCount;
                       const isFull = spotsRemaining <= 0;
                       const isSelected = selectedTourId === t.tour._id;
                       return (
@@ -583,7 +608,7 @@ function useTourCardChangeButton({
  * Renders a single selectable “tour card” option used by `TourCardForm`.
  *
  * Data sources:
- * - Convex mutation: `tourCards.createTourCards`.
+ * - Convex mutation: `tourCards.createMyTourCard`.
  *
  * Major render states:
  * - `loading`: renders a local skeleton matching the button size.
@@ -609,7 +634,11 @@ function useTourCardChangeButton({
  * />
  */
 function TourCardFormButton(props: {
-  tour: { tour: Doc<"tours">; tourCards: TourCardDoc[] };
+  tour: {
+    tour: Doc<"tours">;
+    tourCards: TourCardDoc[];
+    registeredCount: number;
+  };
   season: SeasonDoc;
   member: Doc<"members">;
   isCreatingTourCard: boolean;
@@ -689,7 +718,11 @@ function useTourCardFormButton({
   isCreatingTourCard,
   setIsCreatingTourCard,
 }: {
-  tour: { tour: Doc<"tours">; tourCards: TourCardDoc[] };
+  tour: {
+    tour: Doc<"tours">;
+    tourCards: TourCardDoc[];
+    registeredCount: number;
+  };
   season: SeasonDoc;
   member: Doc<"members">;
   isCreatingTourCard: boolean;
@@ -697,8 +730,8 @@ function useTourCardFormButton({
 }) {
   const spotsRemaining =
     (tour.tour.maxParticipants ?? DEFAULT_MAX_PARTICIPANTS) -
-    tour.tourCards.length;
-  const createTourCard = useMutation(api.functions.tourCards.createTourCards);
+    tour.registeredCount;
+  const createTourCard = useMutation(api.functions.tourCards.createMyTourCard);
   const [isLoading, setIsLoading] = useState(false);
   const [effect, setEffect] = useState(false);
 
@@ -712,18 +745,9 @@ function useTourCardFormButton({
 
     try {
       await createTourCard({
-        data: {
-          displayName: getMemberDisplayName(member, undefined),
-          tourId: tour.tour._id,
-          seasonId: season._id,
-          earnings: 0,
-          points: 0,
-          wins: 0,
-          topTen: 0,
-          topFive: 0,
-          madeCut: 0,
-          appearances: 0,
-        },
+        displayName: getMemberDisplayName(member, undefined),
+        tourId: tour.tour._id,
+        seasonId: season._id,
       });
     } catch (error) {
       console.error("Error creating tour card:", error);

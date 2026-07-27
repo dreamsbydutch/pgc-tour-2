@@ -1,36 +1,25 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { Link as RouterLink } from "@tanstack/react-router";
-
+import { createFileRoute, Link as RouterLink } from "@tanstack/react-router";
 import { Shield, Star } from "lucide-react";
+import { api, useQuery, useViewerBootstrap } from "@/convex";
+import { LeagueSchedule, TournamentCountdown } from "@/displays";
+import { TourCardForm } from "@/widgets";
+import { Skeleton } from "@/ui";
 import { formatMoney } from "@/lib";
-import { Skeleton } from "@/components/ui";
-import { useRoleAccess } from "@/hooks";
-import { useQuery } from "convex/react";
-import { api } from "@/convex";
-import {
-  LeagueSchedule,
-  TourCardForm,
-  TournamentCountdown,
-} from "@/components/displays";
-import {
+import type {
   EnhancedTournamentDoc,
   MemberDoc,
   SeasonDoc,
   TourCardDoc,
   TourDoc,
-  TournamentDoc,
 } from "convex/types/types";
 
 export const Route = createFileRoute("/")({
-  component: App,
+  component: HomeRoute,
 });
 
-function App() {
+function HomeRoute() {
   const model = useHomePage();
-
-  if (model.kind === "loading") {
-    return <HomePageSkeleton />;
-  }
+  if (model.kind === "loading") return <HomePageSkeleton />;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -42,37 +31,47 @@ function App() {
           {model.roleBadge}
         </div>
 
-        {model.member && <TourCardForm {...model} member={model.member} />}
-        <TournamentCountdown {...model.nextTournament} />
-        {model.accountAlert}
-        <LeagueSchedule tournaments={model.seasonTournaments} />
+        {model.kind === "noSeason" ? (
+          <div className="rounded-lg border bg-white p-6 text-center text-slate-600">
+            No season is currently available.
+          </div>
+        ) : (
+          <>
+            {model.member ? (
+              <TourCardForm
+                currentSeason={model.currentSeason}
+                tours={model.tours}
+                member={model.member}
+                seasonTourCards={model.seasonTourCards}
+              />
+            ) : null}
+            {model.nextTournament ? (
+              <TournamentCountdown {...model.nextTournament} />
+            ) : (
+              <div className="rounded-lg border bg-white p-6 text-center text-slate-600">
+                This season is complete. Final results remain available in the
+                standings and leaderboard.
+              </div>
+            )}
+            {model.accountAlert}
+            <LeagueSchedule tournaments={model.seasonTournaments} />
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-/**
- * Fetches and derives all home page view state.
- *
- * Sources:
- * - `useRoleAccess()` for role/admin status
- * - `api.functions.seasons.getCurrentSeason` for the current season
- * - `api.functions.tournaments.getTournaments` (limited to 1) for the first tournament
- *
- * Returns booleans that drive conditional rendering (registration state, pre-tournament state)
- * plus a prebuilt role badge element.
- */
 function useHomePage():
+  | { kind: "loading" }
   | {
-      kind: "loading";
+      kind: "noSeason";
+      roleBadge: React.ReactNode;
     }
   | {
       kind: "ready";
-      registrationOpen: boolean;
-      beforeFirstTournament: boolean;
       currentSeason: SeasonDoc;
-      firstTournament: TournamentDoc;
-      nextTournament: TournamentDoc;
+      nextTournament: EnhancedTournamentDoc | null;
       seasonTournaments: EnhancedTournamentDoc[];
       member: MemberDoc | null;
       tours: TourDoc[];
@@ -80,72 +79,38 @@ function useHomePage():
       roleBadge: React.ReactNode;
       accountAlert: React.ReactNode;
     } {
-  const { role, member, isLoading } = useRoleAccess();
+  const dashboard = useQuery(api.functions.home.getPublicHomeDashboard);
+  const bootstrap = useViewerBootstrap();
+  if (dashboard === undefined || bootstrap === undefined)
+    return { kind: "loading" };
 
-  const currentSeason = useQuery(api.functions.seasons.getCurrentSeason);
-  const tours =
-    useQuery(api.functions.tours.getTours, {
-      options: {
-        filter: { seasonId: currentSeason?._id },
-        sort: { sortBy: "name", sortOrder: "asc" },
-      },
-    }) || [];
-  const seasonTourCards =
-    useQuery(api.functions.tourCards.getTourCards, {
-      options: { seasonId: currentSeason?._id },
-    }) || [];
-  const seasonTournaments = useQuery(
-    api.functions.tournaments.getTournaments,
-    currentSeason
-      ? {
-          options: {
-            filter: { seasonId: currentSeason._id },
-            sort: { sortBy: "startDate", sortOrder: "asc" },
-            enhance: { includeCourse: true, includeTier: true },
-          },
-        }
-      : "skip",
-  ) as EnhancedTournamentDoc[] | undefined;
+  const member = bootstrap.member as MemberDoc | null;
+  const normalizedRole = member?.role?.trim() ?? "";
+  const roleBadge = normalizedRole ? (
+    <div className="flex items-center justify-center gap-2">
+      {normalizedRole === "admin" ? (
+        <RouterLink
+          to="/admin"
+          search={{ view: "seasons" }}
+          className="inline-flex items-center gap-1 rounded-full bg-red-100 px-3 py-1 text-sm font-medium text-red-800"
+        >
+          <Shield className="h-4 w-4" />
+          Administrator
+        </RouterLink>
+      ) : null}
+      {normalizedRole === "moderator" ? (
+        <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-800">
+          <Star className="h-4 w-4" />
+          Moderator
+        </span>
+      ) : null}
+    </div>
+  ) : null;
 
-  const now = Date.now();
-  const registrationOpen = currentSeason?.registrationDeadline
-    ? now < currentSeason.registrationDeadline
-    : Boolean(currentSeason);
-
-  const firstTournament: TournamentDoc | null = seasonTournaments?.[0] ?? null;
-  const nextTournament: TournamentDoc | null =
-    seasonTournaments?.find((t) => t.startDate > now) ?? null;
-
-  const beforeFirstTournament = firstTournament?.startDate
-    ? now < firstTournament.startDate
-    : false;
-
-  const normalizedRole = typeof role === "string" ? role.trim() : "";
-
-  const roleBadge =
-    !isLoading && normalizedRole ? (
-      <div className="flex items-center justify-center gap-2">
-        {normalizedRole === "admin" ? (
-          <RouterLink
-            to="/admin"
-            search={{ view: "seasons" }}
-            className="inline-flex items-center gap-1 rounded-full bg-red-100 px-3 py-1 text-sm font-medium text-red-800"
-          >
-            <Shield className="h-4 w-4" />
-            Administrator
-          </RouterLink>
-        ) : null}
-        {normalizedRole === "moderator" ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-800">
-            <Star className="h-4 w-4" />
-            Moderator
-          </span>
-        ) : null}
-      </div>
-    ) : null;
+  if (!dashboard.season) return { kind: "noSeason", roleBadge };
 
   const accountAlert =
-    typeof member?.account === "number" && member?.account > 0 ? (
+    typeof member?.account === "number" && member.account > 0 ? (
       <RouterLink
         to="/account"
         className="block rounded-lg border bg-amber-50 p-4 text-sm"
@@ -157,10 +122,10 @@ function useHomePage():
           Go to Account to request an e-transfer or donate.
         </div>
       </RouterLink>
-    ) : typeof member?.account === "number" && member?.account < 0 ? (
+    ) : typeof member?.account === "number" && member.account < 0 ? (
       <div className="block rounded-lg border bg-red-100 p-4 text-sm">
         <div className="font-medium text-amber-900">
-          You owe {formatMoney(member.account, true)} for this season.
+          You owe {formatMoney(Math.abs(member.account), true)} for this season.
         </div>
         <div className="mt-1 text-amber-900/80">
           Send e-transfer to puregolfcollectivetour@gmail.com to unlock your
@@ -168,37 +133,23 @@ function useHomePage():
         </div>
       </div>
     ) : null;
-
-  if (
-    isLoading ||
-    currentSeason === undefined ||
-    firstTournament === undefined ||
-    firstTournament === null ||
-    nextTournament === undefined ||
-    nextTournament === null
-  ) {
-    return { kind: "loading" };
-  }
+  const tournaments = dashboard.tournaments as EnhancedTournamentDoc[];
+  const now = Date.now();
 
   return {
     kind: "ready",
-    registrationOpen,
-    beforeFirstTournament,
-    currentSeason: currentSeason as SeasonDoc,
-    firstTournament: firstTournament as TournamentDoc,
-    nextTournament: nextTournament as TournamentDoc,
-    seasonTournaments: seasonTournaments as EnhancedTournamentDoc[],
-    member: member as MemberDoc | null,
-    tours: tours as unknown as TourDoc[],
-    seasonTourCards: seasonTourCards as TourCardDoc[],
+    currentSeason: dashboard.season as SeasonDoc,
+    nextTournament:
+      tournaments.find((tournament) => tournament.startDate > now) ?? null,
+    seasonTournaments: tournaments,
+    member,
+    tours: dashboard.tours as TourDoc[],
+    seasonTourCards: bootstrap.tourCards as TourCardDoc[],
     roleBadge,
     accountAlert,
   };
 }
 
-/**
- * Skeleton UI for the home page while role/season data is loading.
- */
 function HomePageSkeleton() {
   return (
     <div className="container mx-auto px-4 py-8">

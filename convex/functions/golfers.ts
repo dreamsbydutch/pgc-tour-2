@@ -58,6 +58,17 @@ export const applyGolfersWorldRankFromDataGolfInput = internalMutation({
       const keys = Object.keys(patch);
       if (keys.length > 1) {
         await ctx.db.patch(golfer._id, patch);
+        const tournamentRows = await ctx.db
+          .query("tournamentGolfers")
+          .withIndex("by_golfer", (q) => q.eq("golferId", golfer._id))
+          .take(100);
+        for (const row of tournamentRows) {
+          await ctx.db.patch(row._id, {
+            golferApiId: golfer.apiId,
+            playerName: patch.playerName ?? golfer.playerName,
+            country: patch.country ?? golfer.country,
+          });
+        }
         golfersUpdated += 1;
       }
     }
@@ -146,9 +157,15 @@ export const createTournamentGolfers = internalMutation({
         );
 
         if (!existingTG) {
+          const playerName =
+            existingGolfer?.playerName ??
+            normalizePlayerNameFromDataGolf(g.playerName);
           await ctx.db.insert("tournamentGolfers", {
             golferId,
             tournamentId: args.tournamentId,
+            golferApiId: g.dgId,
+            playerName,
+            country: g.country ?? existingGolfer?.country,
             group: group.groupNumber,
             worldRank: g.worldRank ?? 501,
             rating,
@@ -214,9 +231,15 @@ export const createMissingTournamentGolfers = internalMutation({
         .first();
 
       if (!existingTG) {
+        const playerName =
+          existingGolfer?.playerName ??
+          normalizePlayerNameFromDataGolf(g.player_name);
         await ctx.db.insert("tournamentGolfers", {
           golferId,
           tournamentId: args.tournamentId,
+          golferApiId: g.dg_id,
+          playerName,
+          country: g.country ?? existingGolfer?.country,
           worldRank: g.worldRank ?? 501,
           group: 0,
           usage: 0,
@@ -270,9 +293,30 @@ export const updateTournamentGolfer = internalMutation({
     }),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.tournamentGolfer._id, {
-      ...args.tournamentGolfer,
+    const existing = await ctx.db.get(args.tournamentGolfer._id);
+    if (!existing) {
+      return { changed: false } as const;
+    }
+
+    const {
+      _id,
+      golferId: _golferId,
+      tournamentId: _tournamentId,
+      ...candidate
+    } = args.tournamentGolfer;
+    const patch = Object.fromEntries(
+      Object.entries(candidate).filter(
+        ([key, value]) => existing[key as keyof typeof existing] !== value,
+      ),
+    );
+    if (Object.keys(patch).length === 0) {
+      return { changed: false } as const;
+    }
+
+    await ctx.db.patch(_id, {
+      ...patch,
       updatedAt: Date.now(),
     });
+    return { changed: true } as const;
   },
 });

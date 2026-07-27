@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { LeagueSchedule } from "@/components/displays";
-import { TierDistributionsTable } from "@/components/displays";
+import { LeagueSchedule, TierDistributionsTable } from "@/displays";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn, ruleList, TierPayoutsRow, TierPointsRow } from "@/lib";
 import { useMemo, useState } from "react";
@@ -125,23 +124,11 @@ function useRulebookPage():
       isLoading: boolean;
     }
   | { kind: "loading" } {
-  const season = useQuery(api.functions.seasons.getCurrentSeason);
-  const tiers = useQuery(
-    api.functions.tiers.getTiers,
-    season ? { options: { filter: { seasonId: season._id } } } : "skip",
-  ) as TierDoc[] | undefined;
-  const seasonTournaments = useQuery(
-    api.functions.tournaments.getTournaments,
-    season
-      ? {
-          options: {
-            filter: { seasonId: season._id },
-            sort: { sortBy: "startDate", sortOrder: "asc" },
-            enhance: { includeCourse: true, includeTier: true },
-          },
-        }
-      : "skip",
-  ) as EnhancedTournamentDoc[] | undefined;
+  const view = useQuery(api.functions.seasons.getRulebookView);
+  const tiers = view?.tiers as TierDoc[] | undefined;
+  const seasonTournaments = view?.tournaments as
+    | EnhancedTournamentDoc[]
+    | undefined;
   const sections = useMemo(() => ruleList, []);
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
@@ -204,7 +191,7 @@ function useRulebookPage():
     seasonTournaments,
     pointsTiers,
     payoutsTiers,
-    isLoading: tiers === undefined,
+    isLoading: view === undefined,
   };
 }
 

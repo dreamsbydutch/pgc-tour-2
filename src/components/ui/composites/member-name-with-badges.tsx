@@ -1,7 +1,7 @@
 "use client";
 
 import { cn, isNonEmptyString } from "@/lib";
-import type { MajorChampionBadge } from "@/hooks";
+import type { MajorChampionBadge } from "@/lib";
 
 export function MemberNameWithBadges(props: {
   name: string;

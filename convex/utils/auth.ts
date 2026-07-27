@@ -6,11 +6,14 @@
  */
 
 import { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 
 type AuthContext = QueryCtx | MutationCtx;
 
-export async function requireAdminForAction(ctx: ActionCtx): Promise<void> {
+export async function requireAdminForAction(
+  ctx: ActionCtx,
+): Promise<Id<"members">> {
   const identity = await ctx.auth.getUserIdentity();
   const passedClerkId = undefined;
   const effectiveClerkId = (identity?.subject ?? passedClerkId ?? "").trim();
@@ -24,9 +27,10 @@ export async function requireAdminForAction(ctx: ActionCtx): Promise<void> {
     { clerkId: effectiveClerkId },
   );
 
-  if (!adminCheck.isAdmin) {
+  if (!adminCheck.isAdmin || !adminCheck.memberId) {
     throw new Error("Forbidden: Admin access required");
   }
+  return adminCheck.memberId;
 }
 
 export async function requireAdminForActionWithClerkId(

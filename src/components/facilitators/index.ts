@@ -6,3 +6,4 @@ export { StandingsView } from "./StandingsView";
 export { LeaderboardView, LeaderboardViewSkeleton } from "./LeaderboardView";
 export { NavigationContainer } from "./NavigationContainer";
 export { PreTournamentContent } from "./PreTournamentContent";
+export { Providers } from "./Providers";

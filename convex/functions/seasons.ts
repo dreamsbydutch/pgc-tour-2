@@ -118,6 +118,157 @@ export const getStandingsViewData = query({
   },
 });
 
+export const getStandingsIndex = query({
+  args: {
+    seasonId: v.optional(v.id("seasons")),
+  },
+  handler: async (ctx, args) => {
+    const [appState, seasons] = await Promise.all([
+      ctx.db
+        .query("appState")
+        .withIndex("by_key", (q) => q.eq("key", "primary"))
+        .unique(),
+      ctx.db.query("seasons").order("desc").take(50),
+    ]);
+    const seasonId =
+      args.seasonId ?? appState?.currentSeasonId ?? seasons[0]?._id;
+    if (!seasonId) {
+      return {
+        seasons,
+        currentSeason: null,
+        tours: [],
+        tiers: [],
+        tournaments: [],
+        tourCards: [],
+        teams: [],
+      };
+    }
+    const [tours, tiers, tournaments, tourCards] = await Promise.all([
+      ctx.db
+        .query("tours")
+        .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
+        .take(20),
+      ctx.db
+        .query("tiers")
+        .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
+        .take(30),
+      ctx.db
+        .query("tournaments")
+        .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
+        .take(100),
+      ctx.db
+        .query("tourCards")
+        .withIndex("by_season_points", (q) => q.eq("seasonId", seasonId))
+        .order("desc")
+        .take(500),
+    ]);
+    let teams = await ctx.db
+      .query("teams")
+      .withIndex("by_season", (q) => q.eq("seasonId", seasonId))
+      .take(10_000);
+    if (teams.length === 0 && tournaments.length > 0) {
+      teams = (
+        await Promise.all(
+          tournaments.map((tournament) =>
+            ctx.db
+              .query("teams")
+              .withIndex("by_tournament", (q) =>
+                q.eq("tournamentId", tournament._id),
+              )
+              .take(500),
+          ),
+        )
+      ).flat();
+    }
+    return {
+      seasons,
+      currentSeason:
+        seasons.find((season) => season._id === seasonId) ??
+        (await ctx.db.get(seasonId)),
+      tours,
+      tiers,
+      tournaments,
+      tourCards,
+      teams,
+    };
+  },
+});
+
+export const getTourCardTournamentHistory = query({
+  args: {
+    tourCardId: v.id("tourCards"),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.min(Math.max(args.limit ?? 25, 1), 50);
+    const page = await ctx.db
+      .query("teams")
+      .withIndex("by_tour_card", (q) => q.eq("tourCardId", args.tourCardId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: limit,
+        maximumRowsRead: limit,
+        maximumBytesRead: 512_000,
+      });
+    const tournaments = await Promise.all(
+      page.page.map((team) => ctx.db.get(team.tournamentId)),
+    );
+    return {
+      ...page,
+      page: page.page.map((team, index) => ({
+        ...team,
+        tournament: tournaments[index] ?? undefined,
+      })),
+    };
+  },
+});
+
+export const getRulebookView = query({
+  args: {},
+  handler: async (ctx) => {
+    const state = await ctx.db
+      .query("appState")
+      .withIndex("by_key", (q) => q.eq("key", "primary"))
+      .unique();
+    const season = state?.currentSeasonId
+      ? await ctx.db.get(state.currentSeasonId)
+      : await ctx.db.query("seasons").order("desc").first();
+    if (!season) return { season: null, tiers: [], tournaments: [] };
+    const [tiers, tournaments] = await Promise.all([
+      ctx.db
+        .query("tiers")
+        .withIndex("by_season", (q) => q.eq("seasonId", season._id))
+        .take(30),
+      ctx.db
+        .query("tournaments")
+        .withIndex("by_season", (q) => q.eq("seasonId", season._id))
+        .take(100),
+    ]);
+    const courses = await Promise.all(
+      [...new Set(tournaments.map((item) => item.courseId))].map((id) =>
+        ctx.db.get(id),
+      ),
+    );
+    const courseById = new Map(
+      courses.filter(Boolean).map((item) => [item!._id, item!] as const),
+    );
+    const tierById = new Map(tiers.map((tier) => [tier._id, tier] as const));
+    return {
+      season,
+      tiers,
+      tournaments: tournaments
+        .sort((a, b) => a.startDate - b.startDate)
+        .map((tournament) => ({
+          ...tournament,
+          course: courseById.get(tournament.courseId),
+          tier: tierById.get(tournament.tierId),
+        })),
+    };
+  },
+});
+
 export const getCurrentSeasonMajorChampionBadges = query({
   args: {},
   handler: async (ctx) => {
@@ -218,12 +369,45 @@ export const getCurrentSeasonMajorChampionBadges = query({
           tournamentName: tournament.name,
           logoUrl: isCanadianOpenTournament(tournament.name)
             ? CANADIAN_OPEN_BADGE_LOGO_URL
-            : tournament.logoUrl ?? null,
+            : (tournament.logoUrl ?? null),
         });
         badgesByMemberId[memberId] = currentBadges;
       }
     }
 
     return badgesByMemberId;
+  },
+});
+
+export const getMajorChampionBadgesReadModel = query({
+  args: {},
+  handler: async (ctx) => {
+    const state = await ctx.db
+      .query("appState")
+      .withIndex("by_key", (q) => q.eq("key", "primary"))
+      .unique();
+    if (!state?.currentSeasonId) return {};
+    const badges = await ctx.db
+      .query("majorChampionBadges")
+      .withIndex("by_season", (q) => q.eq("seasonId", state.currentSeasonId!))
+      .take(500);
+    return badges.reduce<
+      Record<
+        string,
+        Array<{
+          tournamentId: string;
+          tournamentName: string;
+          logoUrl: string | null;
+        }>
+      >
+    >((result, badge) => {
+      const memberId = String(badge.memberId);
+      (result[memberId] ??= []).push({
+        tournamentId: String(badge.tournamentId),
+        tournamentName: badge.tournamentName,
+        logoUrl: badge.logoUrl ?? null,
+      });
+      return result;
+    }, {});
   },
 });

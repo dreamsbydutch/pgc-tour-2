@@ -1,6 +1,6 @@
 "use client";
 
-import { SignedOut, SignInButton } from "@clerk/tanstack-react-start";
+import { Show, SignInButton } from "@clerk/tanstack-react-start";
 
 import { Button } from "@/ui";
 import { Card, CardContent } from "@/ui";
@@ -13,7 +13,7 @@ import { Card, CardContent } from "@/ui";
  * authenticate.
  *
  * Data sources:
- * - Clerk (`SignedOut`) for sign-in state.
+ * - Clerk (`Show`) for sign-in state.
  *
  * Major render states:
  * - Signed out: visible CTA banner with a Clerk `SignInButton`.
@@ -23,7 +23,7 @@ import { Card, CardContent } from "@/ui";
  */
 export function SignedOutPersistentSignIn() {
   return (
-    <SignedOut>
+    <Show when="signed-out">
       <div className="app-sign-in-prompt fixed left-4 right-4 z-50 lg:left-4 lg:right-auto lg:w-80">
         <Card className="shadow-lg">
           <CardContent className="flex items-center justify-between gap-3 p-3">
@@ -34,6 +34,6 @@ export function SignedOutPersistentSignIn() {
           </CardContent>
         </Card>
       </div>
-    </SignedOut>
+    </Show>
   );
 }

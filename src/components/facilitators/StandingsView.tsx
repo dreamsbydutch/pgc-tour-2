@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { useUser } from "@clerk/clerk-react";
+import { useUser } from "@clerk/tanstack-react-start";
 
 import { PointsAndPayoutsDetails, ToursToggle } from "@/displays";
 import { useCurrentSeasonMajorChampionBadges } from "@/hooks";
@@ -14,6 +14,7 @@ import {
 } from "@/ui";
 import type { MajorChampionBadgesByMemberId } from "@/hooks";
 import { useFriendManagement } from "@/hooks";
+import { useViewerBootstrap } from "@/convex";
 import type {
   ExtendedStandingsTourCard,
   StandingsTeam,
@@ -378,30 +379,23 @@ function useStandingsView(props: StandingsViewProps) {
 
   const { user } = useUser();
   const clerkId = user?.id;
+  const bootstrap = useViewerBootstrap();
   const initialSeasonId = props.initialSeasonId;
   const initialTourId = props.initialTourId;
   const onSeasonChange = props.onSeasonChange;
   const onTourChange = props.onTourChange;
 
-  const currentSeason = useQuery(api.functions.seasons.getCurrentSeason);
-
-  const seasons = useQuery(api.functions.seasons.getSeasons, {
-    options: {
-      sort: { sortBy: "year", sortOrder: "desc" },
-    },
-  });
-
   const selectedSeasonId = useMemo(() => {
     if (initialSeasonId) return initialSeasonId as Id<"seasons">;
-    if (currentSeason) return currentSeason._id;
-    return null;
-  }, [currentSeason, initialSeasonId]);
+    return bootstrap?.appState.currentSeasonId ?? null;
+  }, [bootstrap?.appState.currentSeasonId, initialSeasonId]);
 
-  const standingsData = useQuery(
-    api.functions.seasons.getStandingsViewData,
-    selectedSeasonId ? { seasonId: selectedSeasonId } : "skip",
-  ) as
+  const standingsData = useQuery(api.functions.seasons.getStandingsIndex, {
+    seasonId: selectedSeasonId ?? undefined,
+  }) as
     | {
+        seasons: Doc<"seasons">[];
+        currentSeason: Doc<"seasons"> | null;
         tours: Doc<"tours">[];
         tiers: Doc<"tiers">[];
         tournaments: Doc<"tournaments">[];
@@ -410,10 +404,7 @@ function useStandingsView(props: StandingsViewProps) {
       }
     | undefined;
 
-  const currentMember = useQuery(
-    api.functions.members.getMembers,
-    clerkId ? { options: { clerkId } } : "skip",
-  );
+  const currentMember = clerkId ? bootstrap?.member : undefined;
 
   const lastCurrentMemberRef = useRef<typeof currentMember>(undefined);
   useEffect(() => {
@@ -428,29 +419,21 @@ function useStandingsView(props: StandingsViewProps) {
   const currentMemberDoc = isStandingsMember(currentMemberStable)
     ? currentMemberStable
     : null;
-
-  const needsCurrentSeason = !initialSeasonId;
+  const resolvedSeasonId =
+    selectedSeasonId ?? standingsData?.currentSeason?._id ?? null;
 
   const isLoading =
-    (needsCurrentSeason && currentSeason === undefined) ||
-    (selectedSeasonId ? standingsData === undefined : false) ||
+    standingsData === undefined ||
     (clerkId ? currentMemberStable === undefined : false);
 
   const error = useMemo(() => {
     if (isLoading) return null;
-    if (!selectedSeasonId) {
-      return new Error(
-        needsCurrentSeason ? "No active season found" : "Season not found",
-      );
+    if (!resolvedSeasonId) {
+      return new Error("No active season found");
     }
     if (!standingsData?.tours?.length) return new Error("No tours found");
     return null;
-  }, [
-    isLoading,
-    needsCurrentSeason,
-    selectedSeasonId,
-    standingsData?.tours?.length,
-  ]);
+  }, [isLoading, resolvedSeasonId, standingsData?.tours?.length]);
 
   const data = useMemo(() => {
     if (isLoading) return null;
@@ -516,9 +499,9 @@ function useStandingsView(props: StandingsViewProps) {
       currentMember: currentMemberDoc,
       teams,
       tournaments,
-      currentSeason: currentSeason ?? null,
+      currentSeason: standingsData.currentSeason,
     };
-  }, [currentMemberDoc, currentSeason, isLoading, standingsData]);
+  }, [currentMemberDoc, isLoading, standingsData]);
 
   const [friendsOnly, setFriendsOnly] = useState(false);
   const friendManagement = useFriendManagement(
@@ -578,18 +561,13 @@ function useStandingsView(props: StandingsViewProps) {
   };
 
   const seasonOptions = useMemo(() => {
-    if (!Array.isArray(seasons)) return [];
-    const safeSeasons = seasons.filter(
-      (s): s is NonNullable<(typeof seasons)[number]> => s !== null,
-    );
-
-    return safeSeasons.map((s) => {
+    return (standingsData?.seasons ?? []).map((s) => {
       const label = `${s.year}`;
       return { id: String(s._id), label };
     });
-  }, [seasons]);
+  }, [standingsData?.seasons]);
 
-  const activeSeasonId = selectedSeasonId ? String(selectedSeasonId) : null;
+  const activeSeasonId = resolvedSeasonId ? String(resolvedSeasonId) : null;
 
   const setActiveSeasonId = (nextSeasonId: string) => {
     onSeasonChange?.(nextSeasonId);

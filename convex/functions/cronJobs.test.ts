@@ -13,21 +13,26 @@ import {
   isRoundPublishedForTimeline,
 } from "./cronJobs";
 
-type TestSyncTeam = Parameters<typeof buildFirstPlaceTiebreakSummary>[0]["teams"][number];
+type TestSyncTeam = Parameters<
+  typeof buildFirstPlaceTiebreakSummary
+>[0]["teams"][number];
 
-function makeGolfer(args: {
-  golfer?: Partial<NonNullable<EnhancedGolfer["golfer"]>>;
-  live?: Partial<NonNullable<EnhancedGolfer["live"]>>;
-  historical?: Partial<NonNullable<EnhancedGolfer["historical"]>>;
-  historicalEvent?: Partial<NonNullable<EnhancedGolfer["historicalEvent"]>>;
-  tournamentGolfer?: Partial<NonNullable<EnhancedGolfer["tournamentGolfer"]>>;
-} = {}): EnhancedGolfer {
+function makeGolfer(
+  args: {
+    golfer?: Partial<NonNullable<EnhancedGolfer["golfer"]>>;
+    live?: Partial<NonNullable<EnhancedGolfer["live"]>>;
+    historical?: Partial<NonNullable<EnhancedGolfer["historical"]>>;
+    historicalEvent?: Partial<NonNullable<EnhancedGolfer["historicalEvent"]>>;
+    tournamentGolfer?: Partial<NonNullable<EnhancedGolfer["tournamentGolfer"]>>;
+  } = {},
+): EnhancedGolfer {
   return {
     golfer: args.golfer as EnhancedGolfer["golfer"],
     live: args.live as EnhancedGolfer["live"],
     historical: args.historical as EnhancedGolfer["historical"],
     historicalEvent: args.historicalEvent as EnhancedGolfer["historicalEvent"],
-    tournamentGolfer: args.tournamentGolfer as EnhancedGolfer["tournamentGolfer"],
+    tournamentGolfer:
+      args.tournamentGolfer as EnhancedGolfer["tournamentGolfer"],
   } as EnhancedGolfer;
 }
 
@@ -511,7 +516,9 @@ describe("getTeamRoundWindowGolfers", () => {
     });
 
     expect(selected).toHaveLength(5);
-    expect(selected.map((golfer) => golfer.golfer?.apiId)).toEqual([3, 4, 7, 2, 6]);
+    expect(selected.map((golfer) => golfer.golfer?.apiId)).toEqual([
+      3, 4, 7, 2, 6,
+    ]);
     expect(selected.some((golfer) => golfer.golfer?.apiId === 1)).toBe(false);
     expect(selected.some((golfer) => golfer.golfer?.apiId === 8)).toBe(false);
   });

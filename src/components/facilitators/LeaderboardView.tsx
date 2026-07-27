@@ -114,7 +114,9 @@ export function LeaderboardView(props: {
             variant={props.variant}
             currentTourCardId={props.userTourCard?._id ?? null}
             friendIds={viewerFriendIds}
-            majorChampionBadgesByMemberId={filteredMajorChampionBadgesByMemberId}
+            majorChampionBadgesByMemberId={
+              filteredMajorChampionBadgesByMemberId
+            }
           />
         ) : (
           <>
@@ -221,7 +223,7 @@ export function LeaderboardViewSkeleton() {
           <div className="col-span-3 row-span-4 place-self-center px-1 py-2">
             <Skeleton className="mx-auto h-24 w-24 rounded-2xl sm:h-28 sm:w-28" />
           </div>
-          <div className="col-span-5 row-span-2 place-self-center space-y-3 text-center">
+          <div className="col-span-5 row-span-2 space-y-3 place-self-center text-center">
             <Skeleton className="mx-auto h-8 w-48 sm:h-10 sm:w-64" />
             <Skeleton className="mx-auto h-4 w-36 sm:w-44" />
           </div>

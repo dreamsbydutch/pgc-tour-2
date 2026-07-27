@@ -6,3 +6,7 @@ export {
   usePaginatedQuery,
   useQuery,
 } from "convex/react";
+export {
+  ViewerBootstrapProvider,
+  useViewerBootstrap,
+} from "./ViewerBootstrapProvider";

@@ -10,6 +10,7 @@ import { internalMutation } from "../_generated/server";
 import { v } from "convex/values";
 import { query } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
+import { PRE_TOURNAMENT_PICK_WINDOW_MS } from "./_constants";
 
 const TOURNAMENT_DEFAULT_HANDOFF_WINDOW_MS = 72 * 60 * 60 * 1000;
 
@@ -134,6 +135,9 @@ export const duplicateFromPreviousPlayoff = internalMutation({
       await ctx.db.insert("tournamentGolfers", {
         golferId: tg.golferId,
         tournamentId: args.currentTournamentId,
+        golferApiId: tg.golferApiId,
+        playerName: tg.playerName,
+        country: tg.country,
         group: tg.group,
         rating: tg.rating,
         worldRank: tg.worldRank,
@@ -157,6 +161,11 @@ export const duplicateFromPreviousPlayoff = internalMutation({
         tournamentId: args.currentTournamentId,
         tourCardId: team.tourCardId,
         golferIds: team.golferIds,
+        seasonId: team.seasonId,
+        tourId: team.tourId,
+        memberId: team.memberId,
+        displayName: team.displayName,
+        playoff: team.playoff,
         score: team.score,
         position: team.position,
         pastPosition: team.pastPosition,
@@ -303,16 +312,34 @@ export const getTournaments = query({
 export const getTournamentLeaderboardView = query({
   args: {
     tournamentId: v.optional(v.id("tournaments")),
-    memberId: v.optional(v.id("members")),
   },
   handler: async (ctx, args) => {
-    const allTournaments = await ctx.db.query("tournaments").collect();
-    const now = Date.now();
+    const state = await ctx.db
+      .query("appState")
+      .withIndex("by_key", (q) => q.eq("key", "primary"))
+      .unique();
+    const now = state?.updatedAt ?? Date.now();
     const explicitTournament = args.tournamentId
       ? await ctx.db.get(args.tournamentId)
       : null;
+    const stateTournamentId =
+      state?.activeTournamentId ?? state?.nextTournamentId;
+    const stateTournament =
+      !explicitTournament && stateTournamentId
+        ? await ctx.db.get(stateTournamentId)
+        : null;
+    const candidate = explicitTournament ?? stateTournament;
+    const allTournaments = candidate
+      ? await ctx.db
+          .query("tournaments")
+          .withIndex("by_season", (q) => q.eq("seasonId", candidate.seasonId))
+          .take(100)
+      : await ctx.db.query("tournaments").take(500);
 
-    const nextUpcoming = getNextUpcomingTournament(allTournaments, now);
+    const nextUpcoming = state?.nextTournamentId
+      ? (allTournaments.find((item) => item._id === state.nextTournamentId) ??
+        null)
+      : getNextUpcomingTournament(allTournaments, now);
     const nextUpcomingHasGroups = nextUpcoming
       ? hasRealTournamentGroups(
           await ctx.db
@@ -320,12 +347,12 @@ export const getTournamentLeaderboardView = query({
             .withIndex("by_tournament", (q) =>
               q.eq("tournamentId", nextUpcoming._id),
             )
-            .collect(),
+            .take(500),
         )
       : false;
 
     const tournament = selectTournamentLeaderboardDefault({
-      explicitTournament,
+      explicitTournament: candidate,
       tournaments: allTournaments,
       now,
       nextUpcomingHasGroups,
@@ -339,6 +366,7 @@ export const getTournamentLeaderboardView = query({
         golfers: [],
         allTournaments: [],
         userTourCard: null,
+        pickPool: [],
       };
     }
 
@@ -360,81 +388,114 @@ export const getTournamentLeaderboardView = query({
       Promise.all(courseIds.map((courseId) => ctx.db.get(courseId))),
     ]);
     const seasonById = new Map(
-      seasonDocs.filter(Boolean).map((season) => [season!._id, season!] as const),
+      seasonDocs
+        .filter(Boolean)
+        .map((season) => [season!._id, season!] as const),
     );
     const tierById = new Map(
       tierDocs.filter(Boolean).map((tier) => [tier!._id, tier!] as const),
     );
     const courseById = new Map(
-      courseDocs.filter(Boolean).map((course) => [course!._id, course!] as const),
+      courseDocs
+        .filter(Boolean)
+        .map((course) => [course!._id, course!] as const),
     );
+    const playoffTournaments = seasonTournaments
+      .filter((seasonTournament) =>
+        (tierById.get(seasonTournament.tierId)?.name ?? "")
+          .toLowerCase()
+          .includes("playoff"),
+      )
+      .sort((a, b) => a.startDate - b.startDate);
+    const getEventIndex = (tournamentId: Doc<"tournaments">["_id"]) => {
+      const index = playoffTournaments.findIndex(
+        (playoffTournament) => playoffTournament._id === tournamentId,
+      );
+      return index < 0 ? 0 : index + 1;
+    };
+    const eventIndex = getEventIndex(tournament._id);
     const enhancedTournament = {
       ...tournament,
       season: seasonById.get(tournament.seasonId),
       tier: tierById.get(tournament.tierId),
       course: courseById.get(tournament.courseId),
+      isPlayoff: eventIndex > 0,
+      eventIndex,
+      pickWindow: {
+        opensAt: tournament.startDate - PRE_TOURNAMENT_PICK_WINDOW_MS,
+        closesAt: tournament.startDate,
+        isOpen: state
+          ? state.pickWindowTournamentId === tournament._id
+          : now >= tournament.startDate - PRE_TOURNAMENT_PICK_WINDOW_MS &&
+            now < tournament.startDate &&
+            tournament.status !== "active" &&
+            tournament.status !== "completed" &&
+            tournament.status !== "cancelled",
+      },
     };
-    const enhancedSeasonTournaments = seasonTournaments.map((seasonTournament) => ({
-      ...seasonTournament,
-      season: seasonById.get(seasonTournament.seasonId),
-      tier: tierById.get(seasonTournament.tierId),
-      course: courseById.get(seasonTournament.courseId),
-    }));
+    const enhancedSeasonTournaments = seasonTournaments.map(
+      (seasonTournament) => ({
+        ...seasonTournament,
+        season: seasonById.get(seasonTournament.seasonId),
+        tier: tierById.get(seasonTournament.tierId),
+        course: courseById.get(seasonTournament.courseId),
+        isPlayoff: getEventIndex(seasonTournament._id) > 0,
+        eventIndex: getEventIndex(seasonTournament._id),
+      }),
+    );
 
     const tours = await ctx.db
       .query("tours")
       .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-      .collect();
+      .take(20);
 
     const teams = await ctx.db
       .query("teams")
       .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
-      .collect();
+      .take(500);
 
     const tournamentGolfers = await ctx.db
       .query("tournamentGolfers")
       .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
-      .collect();
+      .take(500);
 
     const teamTourCards = await Promise.all(
-      teams.map((team) => ctx.db.get(team.tourCardId)),
+      teams.map((team) =>
+        team.tourId && team.memberId && team.displayName
+          ? Promise.resolve(null)
+          : ctx.db.get(team.tourCardId),
+      ),
     );
 
     const enhancedTeams = teams.map((team, index) => {
       const card = teamTourCards[index];
       return {
         ...team,
-        tourId: card?.tourId,
-        displayName: card?.displayName,
-        memberId: card?.memberId,
-        playoff: card?.playoff,
+        tourId: team.tourId ?? card?.tourId,
+        displayName: team.displayName ?? card?.displayName,
+        memberId: team.memberId ?? card?.memberId,
+        playoff: team.playoff ?? card?.playoff,
       };
     });
 
     const golferDocs = await Promise.all(
-      tournamentGolfers.map((tg) => ctx.db.get(tg.golferId)),
+      tournamentGolfers.map((tg) =>
+        tg.golferApiId !== undefined && tg.playerName
+          ? Promise.resolve(null)
+          : ctx.db.get(tg.golferId),
+      ),
     );
 
     const enhancedGolfers = tournamentGolfers.map((tg, index) => {
       const golfer = golferDocs[index];
       return {
         ...tg,
-        apiId: golfer?.apiId,
-        playerName: golfer?.playerName,
-        country: golfer?.country,
+        apiId: tg.golferApiId ?? golfer?.apiId,
+        playerName: tg.playerName ?? golfer?.playerName,
+        country: tg.country ?? golfer?.country,
         worldRank: tg.worldRank ?? golfer?.worldRank,
       };
     });
-
-    let userTourCard = null;
-    if (args.memberId) {
-      userTourCard = await ctx.db
-        .query("tourCards")
-        .withIndex("by_member_season", (q) =>
-          q.eq("memberId", args.memberId!).eq("seasonId", tournament.seasonId),
-        )
-        .first();
-    }
 
     return {
       tournament: enhancedTournament,
@@ -442,7 +503,22 @@ export const getTournamentLeaderboardView = query({
       teams: enhancedTeams,
       golfers: enhancedGolfers,
       allTournaments: enhancedSeasonTournaments,
-      userTourCard,
+      userTourCard: null,
+      pickPool: enhancedTournament.pickWindow.isOpen
+        ? enhancedGolfers
+            .map((golfer) => ({
+              golferApiId: golfer.apiId,
+              playerName: golfer.playerName,
+              group: golfer.group ?? null,
+              worldRank: golfer.worldRank ?? null,
+              rating: golfer.rating ?? null,
+            }))
+            .filter(
+              (golfer) =>
+                golfer.golferApiId !== undefined &&
+                golfer.playerName !== undefined,
+            )
+        : [],
     };
   },
 });
@@ -454,8 +530,10 @@ export const getTournamentPickPool = query({
   handler: async (ctx, args) => {
     const tournamentGolfers = await ctx.db
       .query("tournamentGolfers")
-      .withIndex("by_tournament", (q) => q.eq("tournamentId", args.tournamentId))
-      .collect();
+      .withIndex("by_tournament", (q) =>
+        q.eq("tournamentId", args.tournamentId),
+      )
+      .take(500);
 
     const pickPool = await Promise.all(
       tournamentGolfers.map(async (tournamentGolfer) => {

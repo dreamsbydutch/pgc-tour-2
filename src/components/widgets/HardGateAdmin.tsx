@@ -1,6 +1,6 @@
 "use client";
 
-import { SignedIn, SignedOut, SignInButton } from "@clerk/tanstack-react-start";
+import { Show, SignInButton } from "@clerk/tanstack-react-start";
 
 import { useRoleAccess } from "@/hooks";
 import { Button } from "@/ui";
@@ -25,7 +25,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/ui";
 export function HardGateAdmin(props: { children: React.ReactNode }) {
   return (
     <>
-      <SignedOut>
+      <Show when="signed-out">
         <div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8">
           <Card className="w-full max-w-md">
             <CardHeader>
@@ -38,11 +38,11 @@ export function HardGateAdmin(props: { children: React.ReactNode }) {
             </CardContent>
           </Card>
         </div>
-      </SignedOut>
+      </Show>
 
-      <SignedIn>
+      <Show when="signed-in">
         <AdminGateContent>{props.children}</AdminGateContent>
-      </SignedIn>
+      </Show>
     </>
   );
 }

@@ -57,6 +57,9 @@ const schema = defineSchema({
     .index("by_email", ["email"])
     .index("by_clerk_id", ["clerkId"])
     .index("by_role", ["role"])
+    .index("by_active", ["isActive"])
+    .index("by_lastname", ["lastname"])
+    .index("by_active_lastname", ["isActive", "lastname"])
     .index("by_last_login", ["lastLoginAt"])
     .index("by_account", ["account"]),
 
@@ -90,6 +93,7 @@ const schema = defineSchema({
     buyIn: v.number(), // Buy-in amount in cents
     playoffSpots: v.array(v.number()),
     maxParticipants: v.optional(v.number()),
+    registeredCount: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
     .index("by_season", ["seasonId"])
@@ -214,6 +218,11 @@ const schema = defineSchema({
     tournamentId: v.id("tournaments"),
     tourCardId: v.id("tourCards"),
     golferIds: v.array(v.number()), // Array of golfer API IDs
+    seasonId: v.optional(v.id("seasons")),
+    tourId: v.optional(v.id("tours")),
+    memberId: v.optional(v.id("members")),
+    displayName: v.optional(v.string()),
+    playoff: v.optional(v.number()),
 
     // Tournament results
     earnings: v.optional(v.number()), // Earnings in cents
@@ -249,6 +258,8 @@ const schema = defineSchema({
   })
     .index("by_tournament", ["tournamentId"])
     .index("by_tour_card", ["tourCardId"])
+    .index("by_tour_card_tournament", ["tourCardId", "tournamentId"])
+    .index("by_season", ["seasonId"])
     .index("by_tournament_tour_card", ["tournamentId", "tourCardId"])
     .index("by_tournament_points", ["tournamentId", "points"])
     .index("by_tournament_position", ["tournamentId", "position"])
@@ -280,6 +291,9 @@ const schema = defineSchema({
   tournamentGolfers: defineTable({
     golferId: v.id("golfers"), // Reference to the golfer
     tournamentId: v.id("tournaments"), // Reference to the tournament
+    golferApiId: v.optional(v.number()),
+    playerName: v.optional(v.string()),
+    country: v.optional(v.string()),
 
     // Tournament performance
     position: v.optional(v.string()),
@@ -425,7 +439,7 @@ const schema = defineSchema({
    * Audit Logs - Track important system changes for compliance and debugging
    */
   auditLogs: defineTable({
-    memberId: v.id("members"),
+    memberId: v.optional(v.id("members")),
     entityType: v.string(), // Type of entity changed
     entityId: v.string(), // ID of the entity changed
     action: v.union(
@@ -434,13 +448,73 @@ const schema = defineSchema({
       v.literal("deleted"),
       v.literal("restored"),
     ),
-    changes: v.optional(v.object({})), // JSON object of what changed
+    changes: v.optional(v.any()),
     ipAddress: v.optional(v.string()),
     userAgent: v.optional(v.string()),
   })
     .index("by_member", ["memberId"])
     .index("by_entity", ["entityType", "entityId"])
     .index("by_action", ["action"]),
+
+  syncRuns: defineTable({
+    jobName: v.string(),
+    runKey: v.string(),
+    trigger: v.union(v.literal("scheduled"), v.literal("manual")),
+    status: v.union(
+      v.literal("running"),
+      v.literal("succeeded"),
+      v.literal("skipped"),
+      v.literal("failed"),
+      v.literal("abandoned"),
+    ),
+    actorMemberId: v.optional(v.id("members")),
+    tournamentId: v.optional(v.id("tournaments")),
+    startedAt: v.number(),
+    finishedAt: v.optional(v.number()),
+    leaseExpiresAt: v.number(),
+    upstreamUpdatedAt: v.optional(v.number()),
+    changedRows: v.optional(v.number()),
+    skipReason: v.optional(v.string()),
+    durationMs: v.optional(v.number()),
+    error: v.optional(v.string()),
+  })
+    .index("by_job_status", ["jobName", "status"])
+    .index("by_job_started", ["jobName", "startedAt"])
+    .index("by_run_key", ["runKey"]),
+
+  appState: defineTable({
+    key: v.literal("primary"),
+    currentSeasonId: v.optional(v.id("seasons")),
+    activeTournamentId: v.optional(v.id("tournaments")),
+    nextTournamentId: v.optional(v.id("tournaments")),
+    seasonPhase: v.union(
+      v.literal("no-season"),
+      v.literal("registration"),
+      v.literal("in-season"),
+      v.literal("completed"),
+    ),
+    publicVersion: v.number(),
+    pickWindowTournamentId: v.optional(v.id("tournaments")),
+    pickWindowOpensAt: v.optional(v.number()),
+    pickWindowClosesAt: v.optional(v.number()),
+    pickWindowScheduledTournamentId: v.optional(v.id("tournaments")),
+    liveSyncChainId: v.optional(v.string()),
+    liveSyncLeaseUntil: v.optional(v.number()),
+    liveSyncScheduledTournamentId: v.optional(v.id("tournaments")),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+
+  majorChampionBadges: defineTable({
+    seasonId: v.id("seasons"),
+    memberId: v.id("members"),
+    tournamentId: v.id("tournaments"),
+    tournamentName: v.string(),
+    logoUrl: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_season", ["seasonId"])
+    .index("by_season_member", ["seasonId", "memberId"])
+    .index("by_tournament_member", ["tournamentId", "memberId"]),
 });
 
 export default schema;

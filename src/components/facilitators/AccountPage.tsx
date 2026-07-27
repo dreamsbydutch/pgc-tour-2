@@ -1,22 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 
-import {
-  SignedIn,
-  SignedOut,
-  useClerk,
-  useUser,
-} from "@clerk/tanstack-react-start";
-import { api, useMutation, useQuery } from "@/convex";
-import type { Doc, Id } from "@/convex";
+import { Show, useClerk, useUser } from "@clerk/tanstack-react-start";
+import { api, useMutation } from "@/convex";
+import type { Doc } from "@/convex";
 
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/ui";
-import {
-  formatDateTime,
-  formatMoney,
-  isMemberForAccountValue,
-  isSeasonForLabelValue,
-  toggleSort,
-} from "@/lib";
+import { formatMoney, isMemberForAccountValue } from "@/lib";
+import { useViewerBootstrap } from "@/convex";
 
 /**
  * Renders the `/account` screen.
@@ -28,7 +18,7 @@ import {
  * - Listing and filtering the signed-in member’s tournament history
  *
  * Data sources:
- * - `api.functions.members.getMembers` (member record by Clerk id)
+ * - `api.functions.members.getCurrentMember` (authenticated member record)
  * - `api.functions.members.updateMembers` (profile updates)
  * - `api.functions.seasons.getSeasons` (season labels)
  * - `api.functions.membersViews.getMyTournamentHistory` (history rows)
@@ -51,17 +41,17 @@ export function AccountPage() {
             </p>
           </div>
 
-          <SignedIn>
+          <Show when="signed-in">
             <Button
               variant="destructive"
               onClick={() => vm.signOut({ redirectUrl: "/" })}
             >
               Log out
             </Button>
-          </SignedIn>
+          </Show>
         </div>
 
-        <SignedOut>
+        <Show when="signed-out">
           <Card>
             <CardHeader>
               <CardTitle>Sign in</CardTitle>
@@ -70,9 +60,9 @@ export function AccountPage() {
               <Button onClick={() => vm.openSignIn()}>Sign In</Button>
             </CardContent>
           </Card>
-        </SignedOut>
+        </Show>
 
-        <SignedIn>
+        <Show when="signed-in">
           <Card>
             <CardHeader>
               <CardTitle>Profile</CardTitle>
@@ -125,7 +115,7 @@ export function AccountPage() {
               </div>
             </CardContent>
           </Card>
-        </SignedIn>
+        </Show>
       </div>
     </div>
   );
@@ -139,29 +129,16 @@ export function AccountPage() {
  * and sorted history table rows along with sort toggling helpers.
  */
 function useAccountPage() {
-  type SortDir = "asc" | "desc";
-  type SortKey =
-    | "start"
-    | "season"
-    | "tournament"
-    | "points"
-    | "earnings"
-    | "position";
-
   type MemberForAccount = Pick<
     Doc<"members">,
     "_id" | "firstname" | "lastname" | "account"
   >;
   const isMemberForAccount = isMemberForAccountValue;
-  const isSeasonForLabel = isSeasonForLabelValue;
 
   const { openSignIn, signOut } = useClerk();
   const { user: clerkUser } = useUser();
-
-  const memberRaw = useQuery(
-    api.functions.members.getMembers,
-    clerkUser ? { options: { clerkId: clerkUser.id } } : "skip",
-  );
+  const bootstrap = useViewerBootstrap();
+  const memberRaw = clerkUser ? bootstrap?.member : undefined;
 
   const updateMember = useMutation(api.functions.members.updateMembers);
 
@@ -182,33 +159,6 @@ function useAccountPage() {
   }, [memberForAccount]);
 
   const memberAccountCents = memberForAccount?.account;
-
-  const seasons = useQuery(api.functions.seasons.getSeasons, {
-    options: {
-      sort: { sortBy: "year", sortOrder: "desc" },
-    },
-  });
-
-  const seasonLabelById = useMemo(() => {
-    const map = new Map<Id<"seasons">, string>();
-    if (!Array.isArray(seasons)) return map;
-    for (const s of seasons) {
-      if (!isSeasonForLabel(s)) continue;
-      map.set(s._id, `${s.year} #${s.number}`);
-    }
-    return map;
-  }, [isSeasonForLabel, seasons]);
-
-  const [tSeasonFilter, setTSeasonFilter] = useState<Id<"seasons"> | "all">(
-    "all",
-  );
-  const [tTourCardFilter, setTTourCardFilter] = useState<
-    Id<"tourCards"> | "all"
-  >("all");
-  const [tSort, setTSort] = useState<{ key: SortKey; dir: SortDir } | null>({
-    key: "start",
-    dir: "desc",
-  });
 
   async function onSaveProfile() {
     if (!memberForAccount) return;
@@ -248,15 +198,6 @@ function useAccountPage() {
     saveError,
     saveSuccess,
     memberAccountCents,
-    seasonLabelById,
-    tSeasonFilter,
-    setTSeasonFilter,
-    tTourCardFilter,
-    setTTourCardFilter,
-    tSort,
-    setTSort,
-    toggleSort,
     onSaveProfile,
-    formatDateTime,
   };
 }

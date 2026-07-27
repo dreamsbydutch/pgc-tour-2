@@ -35,7 +35,7 @@ export function PointsAndPayoutsDetails(props: {
             <div className="text-muted-foreground">{i + 1}</div>
             <div className="text-muted-foreground">{props.points[i]}</div>
             <div className="text-muted-foreground">
-              {formatMoney(props.payouts[i] ?? 0,true)}
+              {formatMoney(props.payouts[i] ?? 0, true)}
             </div>
           </div>
         ))}

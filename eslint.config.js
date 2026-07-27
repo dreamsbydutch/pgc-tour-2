@@ -115,11 +115,47 @@ export default [
       "no-var": "error",
       "no-undef": "off", // TypeScript handles this
       "no-empty-pattern": "off",
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/components", "@/components/*", "@/components/**"],
+              message:
+                "Import components through @/ui, @/displays, @/widgets, or @/facilitators.",
+            },
+          ],
+        },
+      ],
     },
     settings: {
       react: {
         version: "detect",
       },
+    },
+  },
+  {
+    files: ["src/components/ui/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "convex",
+                "convex/*",
+                "@clerk/*",
+                "@tanstack/react-router",
+                "@/hooks",
+                "@/convex",
+              ],
+              message:
+                "UI primitives cannot depend on data, authentication, or routing.",
+            },
+          ],
+        },
+      ],
     },
   },
 ];
