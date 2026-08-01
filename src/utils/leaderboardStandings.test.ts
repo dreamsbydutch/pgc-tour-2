@@ -4,6 +4,7 @@ import {
   buildCompetitionRanks,
   buildLeaderboardStandingsProjections,
   buildPlayoffStartingStrokes,
+  formatStandingsPosition,
   getPlayoffDestination,
 } from "./leaderboardStandings";
 
@@ -46,14 +47,14 @@ describe("leaderboard standings projections", () => {
 
     expect(projection.get("a-2")?.live).toMatchObject({
       points: 110,
-      position: "1",
+      position: "1st",
       destination: "gold",
     });
     expect(projection.get("a-1")?.beforeTournament).toMatchObject({
       points: 100,
-      position: "1",
+      position: "1st",
     });
-    expect(projection.get("b-1")?.live?.position).toBe("1");
+    expect(projection.get("b-1")?.live?.position).toBe("1st");
   });
 
   it("shares ranks, skips the next position, and qualifies boundary ties", () => {
@@ -65,14 +66,25 @@ describe("leaderboard standings projections", () => {
     ];
     const ranks = buildCompetitionRanks(cards);
 
-    expect(ranks.get("two")?.position).toBe("T2");
-    expect(ranks.get("four")?.position).toBe("4");
+    expect(ranks.get("two")?.position).toBe("T2nd");
+    expect(ranks.get("four")?.position).toBe("4th");
     expect(
       getPlayoffDestination({ betterCount: 1, playoffSpots: [1, 1] }),
     ).toBe("silver");
     expect(
       getPlayoffDestination({ betterCount: 0, playoffSpots: [1, 1] }),
     ).toBe("gold");
+  });
+
+  it("formats ordinary, teen, and tied positions with ordinal suffixes", () => {
+    expect(formatStandingsPosition(1)).toBe("1st");
+    expect(formatStandingsPosition(2)).toBe("2nd");
+    expect(formatStandingsPosition(3)).toBe("3rd");
+    expect(formatStandingsPosition(11)).toBe("11th");
+    expect(formatStandingsPosition(12)).toBe("12th");
+    expect(formatStandingsPosition(13)).toBe("13th");
+    expect(formatStandingsPosition(21)).toBe("21st");
+    expect(formatStandingsPosition(22, true)).toBe("T22nd");
   });
 
   it("keeps a card without a tournament team at its official points", () => {

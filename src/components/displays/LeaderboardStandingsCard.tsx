@@ -66,32 +66,11 @@ function SnapshotColumn(props: StandingsSnapshotColumnProps) {
   );
 }
 
-function formatSnapshotTime(value: number | null): string {
-  if (value === null) return "Awaiting leaderboard timestamp";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Awaiting leaderboard timestamp";
-  return `Updated ${new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date)}`;
-}
-
 export function LeaderboardStandingsCard(props: LeaderboardStandingsCardProps) {
   return (
     <Card className="mx-2 my-1 overflow-hidden border-slate-200/70 bg-slate-50/30 shadow-none">
       <CardContent className="px-2 py-1.5 sm:px-3 sm:py-2">
-        <div className="flex min-w-0 items-center justify-between gap-2 font-varela">
-          <div className="shrink-0 text-[10px] font-medium text-slate-600 sm:text-xs">
-            Standings
-          </div>
-          <div className="min-w-0 truncate text-right text-[9px] text-muted-foreground sm:text-[10px]">
-            Unofficial <span aria-hidden="true">·</span>{" "}
-            {formatSnapshotTime(props.snapshot.lastUpdatedAt)}
-          </div>
-        </div>
-        <div className="mt-1 grid grid-cols-2 divide-x divide-slate-200/80">
+        <div className="grid grid-cols-2 divide-x divide-slate-200/80">
           <SnapshotColumn
             label="Before tournament"
             value={props.snapshot.beforeTournament}

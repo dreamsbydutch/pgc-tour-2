@@ -16,6 +16,21 @@ function roundToOneDecimal(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+export function formatStandingsPosition(rank: number, tied = false): string {
+  const lastTwoDigits = rank % 100;
+  const suffix =
+    lastTwoDigits >= 11 && lastTwoDigits <= 13
+      ? "th"
+      : rank % 10 === 1
+        ? "st"
+        : rank % 10 === 2
+          ? "nd"
+          : rank % 10 === 3
+            ? "rd"
+            : "th";
+  return `${tied ? "T" : ""}${rank}${suffix}`;
+}
+
 export function buildCompetitionRanks(
   cards: StandingsProjectionTourCard[],
 ): Map<string, CompetitionRank> {
@@ -31,7 +46,7 @@ export function buildCompetitionRanks(
 
   for (const points of pointValues) {
     const tiedCount = pointCounts.get(points) ?? 0;
-    const position = `${tiedCount > 1 ? "T" : ""}${betterCount + 1}`;
+    const position = formatStandingsPosition(betterCount + 1, tiedCount > 1);
     for (const card of cards) {
       if (card.points === points) {
         rankById.set(card.id, { position, betterCount });
