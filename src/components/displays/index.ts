@@ -4,6 +4,7 @@ export { ChampionsPopup } from "./standings/ChampionsPopup";
 
 // COMPLETED
 export { LeaderboardHeader } from "./LeaderboardHeader";
+export { LeaderboardStandingsCard } from "./LeaderboardStandingsCard";
 export { LeagueSchedule } from "./LeagueSchedule";
 export { LittleFucker } from "./LittleFucker";
 export { PGALeaderboard } from "./PGALeaderboard";

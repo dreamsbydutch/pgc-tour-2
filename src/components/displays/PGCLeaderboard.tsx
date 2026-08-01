@@ -30,6 +30,8 @@ import {
 import { calculateScoreForSorting } from "convex/utils";
 import { api, Id, useQuery } from "@/convex";
 import { PGAHoleScorecard } from "./PGALeaderboard";
+import { LeaderboardStandingsCard } from "./LeaderboardStandingsCard";
+import type { LeaderboardStandingsSnapshot } from "@/types";
 
 /**
  * Renders the PGC leaderboard listing for the active tour (or playoff bracket).
@@ -57,6 +59,7 @@ export function PGCLeaderboard(props: {
   variant: "regular" | "playoff";
   currentTourCardId?: string | null;
   friendIds?: ReadonlySet<string>;
+  standingsSnapshots?: ReadonlyMap<string, LeaderboardStandingsSnapshot>;
   majorChampionBadgesByMemberId?: MajorChampionBadgesByMemberId;
 }) {
   if (!props.teams || props.teams.length === 0) {
@@ -98,6 +101,9 @@ export function PGCLeaderboard(props: {
             team={team}
             currentTourCardId={props.currentTourCardId}
             friendIds={props.friendIds}
+            standingsSnapshot={props.standingsSnapshots?.get(
+              String(team.tourCardId),
+            )}
             majorChampionBadgesByMemberId={props.majorChampionBadgesByMemberId}
           />
         </>
@@ -172,6 +178,7 @@ function LeaderboardListing({
   team,
   currentTourCardId,
   friendIds,
+  standingsSnapshot,
   majorChampionBadgesByMemberId,
 }: {
   tournament: {
@@ -187,6 +194,7 @@ function LeaderboardListing({
   };
   currentTourCardId?: string | null;
   friendIds?: ReadonlySet<string>;
+  standingsSnapshot?: LeaderboardStandingsSnapshot;
   majorChampionBadgesByMemberId?: MajorChampionBadgesByMemberId;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -245,6 +253,9 @@ function LeaderboardListing({
 
       {isOpen ? (
         <div className="col-span-10 mx-auto mb-2 w-full max-w-4xl rounded-md border border-gray-300 bg-white shadow-md">
+          {standingsSnapshot ? (
+            <LeaderboardStandingsCard snapshot={standingsSnapshot} />
+          ) : null}
           <TeamGolfersTable
             tournament={tournament}
             teamGolfers={team.teamGolfers}
