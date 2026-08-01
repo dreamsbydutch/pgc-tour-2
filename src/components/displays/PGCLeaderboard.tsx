@@ -31,7 +31,10 @@ import { calculateScoreForSorting } from "convex/utils";
 import { api, Id, useQuery } from "@/convex";
 import { PGAHoleScorecard } from "./PGALeaderboard";
 import { LeaderboardStandingsCard } from "./LeaderboardStandingsCard";
-import type { LeaderboardStandingsSnapshot } from "@/types";
+import type {
+  LeaderboardStandingsSnapshot,
+  TeamSourceScorecard,
+} from "@/types";
 
 /**
  * Renders the PGC leaderboard listing for the active tour (or playoff bracket).
@@ -443,19 +446,6 @@ function TeamGolfersTable(props: {
     </>
   );
 }
-
-type TeamSourceScorecard = {
-  golferId: Id<"golfers">;
-  rounds: Array<{
-    round: number;
-    totalStrokes?: number;
-    holes: Array<{
-      hole: number;
-      strokes: number;
-      relativeToPar: number;
-    }>;
-  }>;
-};
 
 type TeamAverageGolfer = Pick<
   EnhancedTournamentGolferDoc,

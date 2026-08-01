@@ -19,6 +19,7 @@ import {
 import { MoveDown, MoveHorizontal, MoveUp } from "lucide-react";
 import { calculateScoreForSorting } from "convex/utils";
 import { api, Id, useQuery } from "@/convex";
+import type { EspnHoleScore, EspnHoleScorecard } from "@/types";
 
 /**
  * Renders the PGA leaderboard listing for the current tournament.
@@ -368,23 +369,9 @@ function PGADropdown(props: {
   );
 }
 
-type HoleScore = {
-  hole: number;
-  strokes: number;
-  relativeToPar: number;
-};
-
-type HoleScorecard = {
-  rounds: Array<{
-    round: number;
-    totalStrokes?: number;
-    holes: HoleScore[];
-  }>;
-};
-
 /** Minimal, horizontally scrollable four-round PGA scorecard. */
 export function PGAHoleScorecard(props: {
-  scorecard: HoleScorecard | null | undefined;
+  scorecard: EspnHoleScorecard | null | undefined;
   caption?: string;
 }) {
   if (props.scorecard === undefined) {
@@ -436,7 +423,7 @@ export function PGAHoleScorecard(props: {
         <thead>
           <tr className="text-muted-foreground">
             <th
-              className="w-6 border border-gray-300 border-r-2 border-r-gray-400 bg-gray-50/70 py-0.5 font-medium sm:w-8"
+              className="w-6 border border-r-2 border-gray-300 border-r-gray-400 bg-gray-50/70 py-0.5 font-medium sm:w-8"
               scope="col"
             >
               Rd
@@ -465,7 +452,7 @@ export function PGAHoleScorecard(props: {
           </tr>
           <tr className="bg-gray-50/70 text-[7px] text-muted-foreground sm:text-[9px]">
             <th
-              className="border border-gray-300 border-r-2 border-r-gray-400 py-0.5 font-normal"
+              className="border border-r-2 border-gray-300 border-r-gray-400 py-0.5 font-normal"
               scope="row"
             >
               Par
@@ -511,7 +498,7 @@ export function PGAHoleScorecard(props: {
             return (
               <tr key={roundNumber}>
                 <th
-                  className="border border-gray-300 border-r-2 border-r-gray-400 bg-gray-50/60 py-1 font-medium text-muted-foreground sm:py-1.5"
+                  className="border border-r-2 border-gray-300 border-r-gray-400 bg-gray-50/60 py-1 font-medium text-muted-foreground sm:py-1.5"
                   scope="row"
                 >
                   R{roundNumber}
@@ -580,7 +567,7 @@ function formatScorecardNumber(value: number | undefined) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
-function HoleScoreMark(props: { score?: HoleScore }) {
+function HoleScoreMark(props: { score?: EspnHoleScore }) {
   if (!props.score) {
     return <span className="text-gray-300">-</span>;
   }
@@ -613,12 +600,20 @@ function HoleScoreMark(props: { score?: HoleScore }) {
   const isCircle = shape === "circle" || shape === "double-circle";
   return (
     <span
-      aria-label={`${props.score.strokes} strokes, ${description}`}
+      aria-label={`${props.score.strokes} strokes, ${description}${props.score.synthetic ? ", estimated WD penalty score" : ""}`}
       data-score-shape={shape}
+      data-synthetic={props.score.synthetic ? "true" : undefined}
+      title={
+        props.score.synthetic
+          ? "Estimated score added for the WD/DQ +8 penalty"
+          : undefined
+      }
       className={cn(
         "mx-auto inline-flex h-4 w-4 items-center justify-center text-[8px] leading-none text-foreground sm:h-5 sm:w-5 sm:text-[10px]",
         shape !== "none" && "border border-current",
         isCircle && "rounded-full",
+        props.score.synthetic &&
+          "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300",
       )}
     >
       {isDouble ? (

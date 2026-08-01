@@ -66,4 +66,38 @@ describe("PGAHoleScorecard", () => {
     rerender(<PGAHoleScorecard scorecard={null} />);
     expect(screen.getByText("Hole-by-hole scoring unavailable.")).toBeTruthy();
   });
+
+  it("marks invented WD penalty holes without changing normal holes", () => {
+    render(
+      <PGAHoleScorecard
+        scorecard={{
+          rounds: [
+            {
+              round: 1,
+              holes: [
+                { hole: 1, strokes: 4, relativeToPar: 0 },
+                {
+                  hole: 2,
+                  strokes: 5,
+                  relativeToPar: 1,
+                  synthetic: true,
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(
+      screen
+        .getAllByLabelText("4 strokes, par")
+        .every((score) => score.dataset.synthetic === undefined),
+    ).toBe(true);
+    const invented = screen.getByLabelText(
+      "5 strokes, bogey, estimated WD penalty score",
+    );
+    expect(invented.dataset.synthetic).toBe("true");
+    expect(invented.className).toContain("text-red-700");
+  });
 });

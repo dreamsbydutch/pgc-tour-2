@@ -125,4 +125,34 @@ describe("buildTeamAverageScorecard", () => {
       { hole: 1, strokes: 4, relativeToPar: 0 },
     ]);
   });
+
+  it("uses synthetic WD holes in the average without carrying their marker", () => {
+    const scorecard = buildTeamAverageScorecard({
+      teamGolfers: buildGolfers(),
+      currentRound: 2,
+      tournamentCompleted: false,
+      scorecards: Array.from({ length: 10 }, (_, index) => ({
+        golferId: golferId(index + 1),
+        rounds: [
+          {
+            round: 1,
+            holes: [
+              {
+                hole: 1,
+                strokes: 5,
+                relativeToPar: 1,
+                synthetic: index === 0,
+              },
+            ],
+          },
+        ],
+      })),
+    });
+
+    expect(scorecard.rounds[0]?.holes[0]).toEqual({
+      hole: 1,
+      strokes: 5,
+      relativeToPar: 1,
+    });
+  });
 });
