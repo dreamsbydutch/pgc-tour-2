@@ -2,6 +2,7 @@ export type EspnHoleScore = {
   hole: number;
   strokes: number;
   relativeToPar: number;
+  synthetic?: boolean;
 };
 
 export type EspnRoundScore = {

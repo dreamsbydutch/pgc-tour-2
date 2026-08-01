@@ -1,45 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  collectAvailableTeamScorecards,
+  completeWithdrawnEspnRounds,
   findEspnGolferMatch,
+  inferEspnRoundHolePars,
   mergeEspnRounds,
   normalizeEspnIdentityName,
   parseEspnGolfScoreboard,
   parseRelativeToPar,
   selectEspnGolfEvent,
 } from "./espnGolf";
-
-describe("collectAvailableTeamScorecards", () => {
-  it("keeps confirmed scorecards when another team golfer is unavailable", () => {
-    const scorecards = collectAvailableTeamScorecards(
-      ["golfer-1", "golfer-2", "golfer-3"],
-      [
-        {
-          espnRounds: [
-            {
-              round: 1,
-              holes: [{ hole: 1, strokes: 4, relativeToPar: 0 }],
-            },
-          ],
-        },
-        null,
-        {},
-      ],
-    );
-
-    expect(scorecards).toEqual([
-      {
-        golferId: "golfer-1",
-        rounds: [
-          {
-            round: 1,
-            holes: [{ hole: 1, strokes: 4, relativeToPar: 0 }],
-          },
-        ],
-      },
-    ]);
-  });
-});
 
 function scoreboardFixture() {
   return {
@@ -135,6 +104,12 @@ describe("ESPN golf scorecard parsing", () => {
   it("normalizes accents, punctuation, and suffixes for exact matching", () => {
     expect(normalizeEspnIdentityName("José Smith, Jr.")).toBe("jose smith");
     expect(normalizeEspnIdentityName("JOSE  SMITH")).toBe("jose smith");
+    expect(normalizeEspnIdentityName("Rasmus Højgaard")).toBe(
+      "rasmus hojgaard",
+    );
+    expect(normalizeEspnIdentityName("Thorbjørn Olesen")).toBe(
+      "thorbjorn olesen",
+    );
   });
 
   it("parses ESPN par differentials", () => {
@@ -175,6 +150,132 @@ describe("mergeEspnRounds", () => {
       { hole: 3, strokes: 3, relativeToPar: -1 },
     ]);
   });
+
+  it("retains stored holes when a withdrawn player disappears from the feed", () => {
+    const existing = [
+      {
+        round: 1,
+        holes: [{ hole: 1, strokes: 4, relativeToPar: 0 }],
+      },
+    ];
+    expect(mergeEspnRounds(existing, [])).toEqual(existing);
+  });
+});
+
+describe("withdrawn ESPN scorecard completion", () => {
+  const holePars = Array.from({ length: 18 }, () => 4);
+
+  it("keeps real holes and fills an unfinished published round to eight over", () => {
+    const result = completeWithdrawnEspnRounds({
+      existing: [
+        {
+          round: 1,
+          holes: [
+            { hole: 1, strokes: 3, relativeToPar: -1 },
+            { hole: 2, strokes: 5, relativeToPar: 1 },
+          ],
+        },
+      ],
+      position: "WD",
+      roundScores: [80, undefined],
+      coursePar: 72,
+      holeParsByRound: new Map([[1, holePars]]),
+    });
+
+    expect(result.completedPenaltyRounds).toEqual([1]);
+    expect(result.rounds[0]?.holes).toHaveLength(18);
+    expect(result.rounds[0]?.holes.slice(0, 2)).toEqual([
+      { hole: 1, strokes: 3, relativeToPar: -1 },
+      { hole: 2, strokes: 5, relativeToPar: 1 },
+    ]);
+    expect(
+      result.rounds[0]?.holes.reduce(
+        (sum, hole) => sum + hole.relativeToPar,
+        0,
+      ),
+    ).toBe(8);
+    expect(result.rounds[0]?.totalStrokes).toBe(80);
+
+    const refreshed = completeWithdrawnEspnRounds({
+      existing: mergeEspnRounds(result.rounds, [
+        {
+          round: 1,
+          holes: [{ hole: 3, strokes: 3, relativeToPar: -1 }],
+        },
+      ]),
+      position: "WD",
+      roundScores: [80, undefined],
+      coursePar: 72,
+      holeParsByRound: new Map([[1, holePars]]),
+    });
+    expect(refreshed.rounds[0]?.holes.find((hole) => hole.hole === 3)).toEqual({
+      hole: 3,
+      strokes: 3,
+      relativeToPar: -1,
+    });
+    expect(
+      refreshed.rounds[0]?.holes.reduce(
+        (sum, hole) => sum + hole.relativeToPar,
+        0,
+      ),
+    ).toBe(8);
+  });
+
+  it("creates missing penalty rounds but leaves completed rounds unchanged", () => {
+    const existing = [
+      {
+        round: 1,
+        totalStrokes: 69,
+        holes: Array.from({ length: 18 }, (_, index) => ({
+          hole: index + 1,
+          strokes: index < 3 ? 3 : 4,
+          relativeToPar: index < 3 ? -1 : 0,
+        })),
+      },
+    ];
+    const result = completeWithdrawnEspnRounds({
+      existing,
+      position: "DQ",
+      roundScores: [69, 80],
+      coursePar: 72,
+      holeParsByRound: new Map([
+        [1, holePars],
+        [2, holePars],
+      ]),
+    });
+
+    expect(result.completedPenaltyRounds).toEqual([2]);
+    expect(result.rounds[0]).toEqual(existing[0]);
+    expect(result.rounds[1]?.holes).toHaveLength(18);
+    expect(
+      result.rounds[1]?.holes.reduce(
+        (sum, hole) => sum + hole.relativeToPar,
+        0,
+      ),
+    ).toBe(8);
+  });
+
+  it("infers a complete par map from real cells and course-nine totals", () => {
+    const inferred = inferEspnRoundHolePars({
+      scorecards: [
+        [
+          {
+            round: 1,
+            holes: Array.from({ length: 17 }, (_, index) => ({
+              hole: index + 1,
+              strokes: 4,
+              relativeToPar: 0,
+            })),
+          },
+        ],
+      ],
+      roundNumber: 1,
+      frontPar: 36,
+      backPar: 36,
+    });
+
+    expect(inferred).toEqual(holePars);
+  });
 });
 
 describe("findEspnGolferMatch", () => {
@@ -214,6 +315,10 @@ describe("findEspnGolferMatch", () => {
       ["Tom Kim", "Joohyung Kim", "name_variant"],
       ["Jose Garcia", "Jose Garcia Rodriguez", "name_variant"],
       ["Rory McIlroy", "Rory Mc Ilroy", "name_variant"],
+      ["Rasmus Højgaard", "Rasmus Hojgaard", "exact_name"],
+      ["Kristoffer Ventura", "Kris Ventura", "name_variant"],
+      ["Thorbjørn Olesen", "Thorbjorn Olesen", "exact_name"],
+      ["Nicolai Højgaard", "Nicolai Hojgaard", "exact_name"],
     ] as const;
     for (const [espnName, localName, matchMethod] of cases) {
       expect(

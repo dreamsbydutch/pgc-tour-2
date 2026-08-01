@@ -10,6 +10,7 @@ const espnRoundsValidator = v.array(
         hole: v.number(),
         strokes: v.number(),
         relativeToPar: v.number(),
+        synthetic: v.optional(v.boolean()),
       }),
     ),
   }),

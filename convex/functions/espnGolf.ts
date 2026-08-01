@@ -9,8 +9,9 @@ import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import { fetchWithRetry } from "../utils/externalFetch";
 import {
-  collectAvailableTeamScorecards,
+  completeWithdrawnEspnRounds,
   findEspnGolferMatch,
+  inferEspnRoundHolePars,
   mergeEspnRounds,
   parseEspnGolfScoreboard,
   selectEspnGolfEvent,
@@ -23,6 +24,7 @@ const holeValidator = v.object({
   hole: v.number(),
   strokes: v.number(),
   relativeToPar: v.number(),
+  synthetic: v.optional(v.boolean()),
 });
 
 const roundValidator = v.object({
@@ -65,7 +67,7 @@ export const getPlayerHoleScorecard = query({
   },
 });
 
-/** Returns every available confirmed ESPN scorecard for a ten-golfer team. */
+/** Returns a team only when all ten scorecard identities are available. */
 export const getTeamHoleScorecards = query({
   args: {
     tournamentId: v.id("tournaments"),
@@ -84,11 +86,34 @@ export const getTeamHoleScorecards = query({
           .first(),
       ),
     );
-    const scorecards = collectAvailableTeamScorecards(
-      uniqueGolferIds,
-      tournamentGolfers,
-    );
-    return scorecards.length > 0 ? scorecards : null;
+    if (
+      tournamentGolfers.some(
+        (tournamentGolfer) => !Array.isArray(tournamentGolfer?.espnRounds),
+      )
+    ) {
+      return null;
+    }
+    const tournament = await ctx.db.get(args.tournamentId);
+    const course = tournament ? await ctx.db.get(tournament.courseId) : null;
+    if (
+      course &&
+      tournamentGolfers.some((golfer) => {
+        const position = golfer?.position?.trim().toUpperCase();
+        if (position !== "WD" && position !== "DQ") return false;
+        return [golfer?.roundOne, golfer?.roundTwo].some(
+          (score, index) =>
+            score === course.par + 8 &&
+            golfer?.espnRounds?.find((round) => round.round === index + 1)
+              ?.holes.length !== 18,
+        );
+      })
+    ) {
+      return null;
+    }
+    return tournamentGolfers.map((tournamentGolfer, index) => ({
+      golferId: uniqueGolferIds[index]!,
+      rounds: tournamentGolfer!.espnRounds!,
+    }));
   },
 });
 
@@ -272,6 +297,59 @@ export const applyScorecardChunk = internalMutation({
   },
 });
 
+/** Persists exact eight-over hole rows for published, unfinished WD/DQ rounds. */
+export const completeWithdrawnScorecards = internalMutation({
+  args: {
+    tournamentId: v.id("tournaments"),
+    fetchedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const tournament = await ctx.db.get(args.tournamentId);
+    if (!tournament) return { scorecardsUpdated: 0, roundsCompleted: 0 };
+    const course = await ctx.db.get(tournament.courseId);
+    if (!course) return { scorecardsUpdated: 0, roundsCompleted: 0 };
+    const tournamentGolfers = await ctx.db
+      .query("tournamentGolfers")
+      .withIndex("by_tournament", (q) =>
+        q.eq("tournamentId", args.tournamentId),
+      )
+      .collect();
+    const scorecards = tournamentGolfers.flatMap((golfer) =>
+      Array.isArray(golfer.espnRounds) ? [golfer.espnRounds] : [],
+    );
+    const holeParsByRound = new Map<number, number[]>();
+    for (const roundNumber of [1, 2]) {
+      const holePars = inferEspnRoundHolePars({
+        scorecards,
+        roundNumber,
+        frontPar: course.front,
+        backPar: course.back,
+      });
+      if (holePars) holeParsByRound.set(roundNumber, holePars);
+    }
+
+    let scorecardsUpdated = 0;
+    let roundsCompleted = 0;
+    for (const golfer of tournamentGolfers) {
+      const completed = completeWithdrawnEspnRounds({
+        existing: golfer.espnRounds ?? [],
+        position: golfer.position,
+        roundScores: [golfer.roundOne, golfer.roundTwo],
+        coursePar: course.par,
+        holeParsByRound,
+      });
+      if (completed.completedPenaltyRounds.length === 0) continue;
+      await ctx.db.patch(golfer._id, {
+        espnRounds: completed.rounds,
+        espnScorecardUpdatedAt: args.fetchedAt,
+      });
+      scorecardsUpdated += 1;
+      roundsCompleted += completed.completedPenaltyRounds.length;
+    }
+    return { scorecardsUpdated, roundsCompleted };
+  },
+});
+
 export const recordEventSyncSuccess = internalMutation({
   args: {
     tournamentId: v.id("tournaments"),
@@ -407,6 +485,11 @@ export const syncTournamentScorecards: ReturnType<typeof internalAction> =
           unmatched += summary.unmatched;
           scorecardsUpdated += summary.scorecardsUpdated;
         }
+        const withdrawnSummary = await ctx.runMutation(
+          internal.functions.espnGolf.completeWithdrawnScorecards,
+          { tournamentId: args.tournamentId, fetchedAt },
+        );
+        scorecardsUpdated += withdrawnSummary.scorecardsUpdated;
         await ctx.runMutation(
           internal.functions.espnGolf.recordEventSyncSuccess,
           {

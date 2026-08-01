@@ -34,6 +34,12 @@ export function normalizeEspnIdentityName(name: string): string {
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
+    .replace(/ø/g, "o")
+    .replace(/æ/g, "ae")
+    .replace(/œ/g, "oe")
+    .replace(/ł/g, "l")
+    .replace(/ð/g, "d")
+    .replace(/þ/g, "th")
     .replace(/\b(junior)\b/g, "jr")
     .replace(/\b(senior)\b/g, "sr")
     .replace(/[’']/g, "")
@@ -55,6 +61,7 @@ const GIVEN_NAME_ALIASES = [
   ["dave", "david"],
   ["joe", "joseph"],
   ["jon", "jonathan"],
+  ["kris", "kristoffer"],
   ["matt", "matthew"],
   ["nick", "nicholas"],
   ["pat", "patrick"],
@@ -353,22 +360,152 @@ export function mergeEspnRounds(
     .sort((a, b) => a.round - b.round);
 }
 
-export function collectAvailableTeamScorecards<TGolferId>(
-  golferIds: readonly TGolferId[],
-  tournamentGolfers: readonly (
-    | { espnRounds?: EspnRoundScore[] }
-    | null
-    | undefined
-  )[],
-) {
-  return tournamentGolfers.flatMap((tournamentGolfer, index) =>
-    Array.isArray(tournamentGolfer?.espnRounds)
-      ? [
-          {
-            golferId: golferIds[index]!,
-            rounds: tournamentGolfer.espnRounds,
-          },
-        ]
-      : [],
+/**
+ * Infers one round's hole pars from confirmed ESPN cells. The course totals are
+ * used only to fill a hole that has not appeared in the feed yet.
+ */
+export function inferEspnRoundHolePars(args: {
+  scorecards: readonly EspnRoundScore[][];
+  roundNumber: number;
+  frontPar: number;
+  backPar: number;
+}): number[] | null {
+  const votes = Array.from({ length: 18 }, () => new Map<number, number>());
+  for (const rounds of args.scorecards) {
+    const round = rounds.find(
+      (candidate) => candidate.round === args.roundNumber,
+    );
+    for (const hole of round?.holes ?? []) {
+      if (hole.synthetic) continue;
+      const par = hole.strokes - hole.relativeToPar;
+      if (!Number.isInteger(par) || par < 2 || par > 6) continue;
+      const holeVotes = votes[hole.hole - 1];
+      if (!holeVotes) continue;
+      holeVotes.set(par, (holeVotes.get(par) ?? 0) + 1);
+    }
+  }
+
+  const pars = votes.map(
+    (holeVotes) =>
+      [...holeVotes.entries()].sort(
+        ([parA, votesA], [parB, votesB]) => votesB - votesA || parA - parB,
+      )[0]?.[0],
   );
+
+  for (const [start, target] of [
+    [0, args.frontPar],
+    [9, args.backPar],
+  ] as const) {
+    const missing = Array.from(
+      { length: 9 },
+      (_, index) => start + index,
+    ).filter((index) => pars[index] === undefined);
+    let total = Array.from(
+      { length: 9 },
+      (_, index) => pars[start + index] ?? 4,
+    ).reduce((sum, par) => sum + par, 0);
+    for (const index of missing) pars[index] = 4;
+
+    while (total !== target) {
+      const direction = target > total ? 1 : -1;
+      const adjustable = missing.find((index) => {
+        const next = (pars[index] ?? 4) + direction;
+        return next >= 3 && next <= 5;
+      });
+      if (adjustable === undefined) return null;
+      pars[adjustable] = (pars[adjustable] ?? 4) + direction;
+      total += direction;
+    }
+  }
+
+  return pars.every((par): par is number => typeof par === "number")
+    ? pars
+    : null;
+}
+
+/**
+ * Completes published WD/DQ penalty rounds without changing any real ESPN hole.
+ * A completed penalty round always sums to eight over par.
+ */
+export function completeWithdrawnEspnRounds(args: {
+  existing: EspnRoundScore[];
+  position?: string;
+  roundScores: readonly [number | undefined, number | undefined];
+  coursePar: number;
+  holeParsByRound: ReadonlyMap<number, readonly number[]>;
+}): { rounds: EspnRoundScore[]; completedPenaltyRounds: number[] } {
+  if (!["WD", "DQ"].includes(args.position?.trim().toUpperCase() ?? "")) {
+    return { rounds: args.existing, completedPenaltyRounds: [] };
+  }
+
+  let rounds = args.existing;
+  const completedPenaltyRounds: number[] = [];
+  for (const roundNumber of [1, 2] as const) {
+    if (args.roundScores[roundNumber - 1] !== args.coursePar + 8) continue;
+    const holePars = args.holeParsByRound.get(roundNumber);
+    if (!holePars || holePars.length !== 18) continue;
+
+    const existingRound = rounds.find((round) => round.round === roundNumber);
+    const actualHoles = new Map(
+      (existingRound?.holes ?? [])
+        .filter((hole) => !hole.synthetic)
+        .map((hole) => [hole.hole, hole]),
+    );
+    const missingHoleNumbers = Array.from(
+      { length: 18 },
+      (_, index) => index + 1,
+    ).filter((hole) => !actualHoles.has(hole));
+    if (missingHoleNumbers.length === 0) continue;
+
+    const actualRelativeToPar = [...actualHoles.values()].reduce(
+      (sum, hole) => sum + hole.relativeToPar,
+      0,
+    );
+    let remainingRelativeToPar = 8 - actualRelativeToPar;
+    const inventedRelativeToPar = missingHoleNumbers.map(() => 0);
+
+    if (remainingRelativeToPar < 0) {
+      while (remainingRelativeToPar < 0) {
+        const adjustableIndex = missingHoleNumbers.findIndex(
+          (hole, index) =>
+            inventedRelativeToPar[index]! > 1 - holePars[hole - 1]!,
+        );
+        if (adjustableIndex === -1) break;
+        inventedRelativeToPar[adjustableIndex]! -= 1;
+        remainingRelativeToPar += 1;
+      }
+    } else {
+      let index = 0;
+      while (remainingRelativeToPar > 0) {
+        inventedRelativeToPar[index % inventedRelativeToPar.length]! += 1;
+        remainingRelativeToPar -= 1;
+        index += 1;
+      }
+    }
+
+    // Keeping a real hole is more important than forcing an impossible total.
+    // In that exceptional case, leave the round partial so the UI can withhold it.
+    if (remainingRelativeToPar !== 0) continue;
+
+    const inventedHoles = missingHoleNumbers.map((hole, index) => {
+      const relativeToPar = inventedRelativeToPar[index]!;
+      return {
+        hole,
+        strokes: holePars[hole - 1]! + relativeToPar,
+        relativeToPar,
+        synthetic: true,
+      };
+    });
+    const completedRound: EspnRoundScore = {
+      round: roundNumber,
+      totalStrokes: args.coursePar + 8,
+      holes: [...actualHoles.values(), ...inventedHoles].sort(
+        (a, b) => a.hole - b.hole,
+      ),
+    };
+    rounds = mergeEspnRounds(rounds, [completedRound]);
+    completedPenaltyRounds.push(roundNumber);
+  }
+
+  return { rounds, completedPenaltyRounds };
 }
