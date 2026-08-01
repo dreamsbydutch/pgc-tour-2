@@ -169,6 +169,42 @@ function buildSnapshotValues(args: {
   return values;
 }
 
+function buildSnapshotStartingStrokes(
+  cards: StandingsProjectionTourCard[],
+  values: Map<string, StandingsSnapshotValue>,
+) {
+  const goldCards: PlayoffStartingStrokeCard[] = [];
+  const silverCards: PlayoffStartingStrokeCard[] = [];
+
+  for (const card of cards) {
+    const value = values.get(card.id);
+    if (value?.destination === "gold") {
+      goldCards.push({ id: card.id, points: card.points });
+    } else if (value?.destination === "silver") {
+      silverCards.push({ id: card.id, points: card.points });
+    }
+  }
+
+  return {
+    gold: buildPlayoffStartingStrokes(goldCards, "gold"),
+    silver: buildPlayoffStartingStrokes(silverCards, "silver"),
+  };
+}
+
+function getSnapshotStartingStrokes(
+  cardId: string,
+  value: StandingsSnapshotValue,
+  strokes: ReturnType<typeof buildSnapshotStartingStrokes>,
+): number | null {
+  if (value.destination === "gold") {
+    return strokes.gold.get(cardId) ?? null;
+  }
+  if (value.destination === "silver") {
+    return strokes.silver.get(cardId) ?? null;
+  }
+  return null;
+}
+
 export function buildLeaderboardStandingsProjections(
   args: BuildLeaderboardStandingsProjectionArgs,
 ): Map<string, LeaderboardStandingsSnapshot> {
@@ -182,6 +218,10 @@ export function buildLeaderboardStandingsProjections(
     toursById,
     cards: args.tourCards,
   });
+  const officialStrokes = buildSnapshotStartingStrokes(
+    args.tourCards,
+    officialValues,
+  );
   const cardById = new Map(args.tourCards.map((card) => [card.id, card]));
   const teamByTourCardId = new Map(
     args.teams.map((team) => [team.tourCardId, team]),
@@ -209,22 +249,9 @@ export function buildLeaderboardStandingsProjections(
     cards: projectedCards,
   });
   const allToursAvailable = unavailableTourIds.size === 0;
-  const goldCards: PlayoffStartingStrokeCard[] = [];
-  const silverCards: PlayoffStartingStrokeCard[] = [];
-
-  if (allToursAvailable) {
-    for (const card of projectedCards) {
-      const value = projectedValues.get(card.id);
-      if (value?.destination === "gold") {
-        goldCards.push({ id: card.id, points: card.points });
-      } else if (value?.destination === "silver") {
-        silverCards.push({ id: card.id, points: card.points });
-      }
-    }
-  }
-
-  const goldStrokes = buildPlayoffStartingStrokes(goldCards, "gold");
-  const silverStrokes = buildPlayoffStartingStrokes(silverCards, "silver");
+  const projectedStrokes = allToursAvailable
+    ? buildSnapshotStartingStrokes(projectedCards, projectedValues)
+    : { gold: new Map<string, number>(), silver: new Map<string, number>() };
 
   for (const card of args.tourCards) {
     const beforeTournament = officialValues.get(card.id);
@@ -232,16 +259,22 @@ export function buildLeaderboardStandingsProjections(
     const projected = projectedValues.get(card.id);
     snapshots.set(card.id, {
       tourCardId: card.id,
-      beforeTournament,
+      beforeTournament: {
+        ...beforeTournament,
+        startingStrokes: getSnapshotStartingStrokes(
+          card.id,
+          beforeTournament,
+          officialStrokes,
+        ),
+      },
       live: projected
         ? {
             ...projected,
-            startingStrokes:
-              projected.destination === "gold"
-                ? (goldStrokes.get(card.id) ?? null)
-                : projected.destination === "silver"
-                  ? (silverStrokes.get(card.id) ?? null)
-                  : null,
+            startingStrokes: getSnapshotStartingStrokes(
+              card.id,
+              projected,
+              projectedStrokes,
+            ),
           }
         : null,
       lastUpdatedAt: args.lastUpdatedAt ?? null,

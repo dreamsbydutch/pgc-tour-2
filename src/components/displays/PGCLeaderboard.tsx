@@ -253,14 +253,14 @@ function LeaderboardListing({
 
       {isOpen ? (
         <div className="col-span-10 mx-auto mb-2 w-full max-w-4xl rounded-md border border-gray-300 bg-white shadow-md">
-          {standingsSnapshot ? (
-            <LeaderboardStandingsCard snapshot={standingsSnapshot} />
-          ) : null}
           <TeamGolfersTable
             tournament={tournament}
             teamGolfers={team.teamGolfers}
             teamHoleScorecards={teamHoleScorecards}
           />
+          {standingsSnapshot ? (
+            <LeaderboardStandingsCard snapshot={standingsSnapshot} />
+          ) : null}
         </div>
       ) : null}
     </div>

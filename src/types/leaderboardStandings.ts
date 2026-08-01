@@ -8,7 +8,9 @@ export interface StandingsSnapshotValue {
 
 export interface LeaderboardStandingsSnapshot {
   tourCardId: string;
-  beforeTournament: StandingsSnapshotValue;
+  beforeTournament: StandingsSnapshotValue & {
+    startingStrokes: number | null;
+  };
   live:
     | (StandingsSnapshotValue & {
         startingStrokes: number | null;

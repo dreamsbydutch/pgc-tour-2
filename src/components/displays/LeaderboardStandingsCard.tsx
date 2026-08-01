@@ -54,7 +54,7 @@ function SnapshotColumn(props: StandingsSnapshotColumnProps) {
       </div>
       {props.startingStrokes !== undefined ? (
         <div className="mt-0.5 truncate font-varela text-[9px] leading-none text-muted-foreground sm:text-[10px]">
-          Projected start:{" "}
+          Playoff start:{" "}
           <span className={cn("font-semibold", presentation.textClass)}>
             {props.startingStrokes === null
               ? "—"
@@ -74,6 +74,11 @@ export function LeaderboardStandingsCard(props: LeaderboardStandingsCardProps) {
           <SnapshotColumn
             label="Before tournament"
             value={props.snapshot.beforeTournament}
+            startingStrokes={
+              props.snapshot.beforeTournament.destination === "out"
+                ? undefined
+                : props.snapshot.beforeTournament.startingStrokes
+            }
           />
           {props.snapshot.live ? (
             <SnapshotColumn

@@ -53,6 +53,7 @@ describe("leaderboard standings projections", () => {
     expect(projection.get("a-1")?.beforeTournament).toMatchObject({
       points: 100,
       position: "1st",
+      startingStrokes: 0,
     });
     expect(projection.get("b-1")?.live?.position).toBe("1st");
   });
@@ -114,6 +115,7 @@ describe("leaderboard standings projections", () => {
     expect(projection.get("a-2")?.live).toBeNull();
     expect(projection.get("b-1")?.live).not.toBeNull();
     expect(projection.get("b-1")?.live?.startingStrokes).toBeNull();
+    expect(projection.get("b-1")?.beforeTournament.startingStrokes).toBe(-10);
   });
 
   it("does not build cards outside an active regular tournament", () => {

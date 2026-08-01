@@ -8,7 +8,7 @@ import { LeaderboardStandingsCard } from "./LeaderboardStandingsCard";
 afterEach(cleanup);
 
 describe("LeaderboardStandingsCard", () => {
-  it("renders the official and live snapshots with projected strokes", () => {
+  it("renders the official and live snapshots with playoff starting strokes", () => {
     render(
       <LeaderboardStandingsCard
         snapshot={{
@@ -17,6 +17,7 @@ describe("LeaderboardStandingsCard", () => {
             position: "12th",
             points: 1_200,
             destination: "silver",
+            startingStrokes: -2.5,
           },
           live: {
             position: "T8th",
@@ -37,7 +38,9 @@ describe("LeaderboardStandingsCard", () => {
     expect(screen.getByText("T8th").className).toContain("text-amber-700");
     expect(screen.getByText("1,200 pts")).toBeTruthy();
     expect(screen.getByText("1,350 pts")).toBeTruthy();
+    expect(screen.getByText("-2.5")).toBeTruthy();
     expect(screen.getByText("-4.6")).toBeTruthy();
+    expect(screen.getAllByText(/Playoff start/)).toHaveLength(2);
     expect(screen.queryByText("Standings")).toBeNull();
     expect(screen.queryByText(/Updated/)).toBeNull();
   });
@@ -51,6 +54,7 @@ describe("LeaderboardStandingsCard", () => {
             position: "30th",
             points: 300,
             destination: "out",
+            startingStrokes: null,
           },
           live: {
             position: "28th",
@@ -65,7 +69,7 @@ describe("LeaderboardStandingsCard", () => {
 
     expect(screen.getAllByText("Out")).toHaveLength(2);
     expect(screen.getByText("28th").className).toContain("text-red-600");
-    expect(screen.queryByText(/Projected start/)).toBeNull();
+    expect(screen.queryByText(/Playoff start/)).toBeNull();
     expect(screen.queryByText(/Awaiting leaderboard timestamp/)).toBeNull();
   });
 
@@ -78,6 +82,7 @@ describe("LeaderboardStandingsCard", () => {
             position: "5th",
             points: 800,
             destination: "gold",
+            startingStrokes: -7.5,
           },
           live: null,
           lastUpdatedAt: null,
@@ -86,5 +91,6 @@ describe("LeaderboardStandingsCard", () => {
     );
 
     expect(screen.getByText("Awaiting live update")).toBeTruthy();
+    expect(screen.getByText("-7.5")).toBeTruthy();
   });
 });
