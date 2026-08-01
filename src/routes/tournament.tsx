@@ -115,6 +115,7 @@ function TournamentRoute() {
     <LeaderboardView
       tournament={data.tournament}
       tours={data.tours}
+      tourCards={data.tourCards ?? []}
       teams={data.teams}
       golfers={data.golfers}
       allTournaments={data.allTournaments}

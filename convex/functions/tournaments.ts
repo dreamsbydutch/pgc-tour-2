@@ -362,6 +362,7 @@ export const getTournamentLeaderboardView = query({
       return {
         tournament: null,
         tours: [],
+        tourCards: [],
         teams: [],
         golfers: [],
         allTournaments: [],
@@ -449,6 +450,14 @@ export const getTournamentLeaderboardView = query({
       .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
       .take(20);
 
+    const tourCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_season_points", (q) =>
+        q.eq("seasonId", tournament.seasonId),
+      )
+      .order("desc")
+      .take(500);
+
     const teams = await ctx.db
       .query("teams")
       .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
@@ -500,6 +509,7 @@ export const getTournamentLeaderboardView = query({
     return {
       tournament: enhancedTournament,
       tours,
+      tourCards,
       teams: enhancedTeams,
       golfers: enhancedGolfers,
       allTournaments: enhancedSeasonTournaments,

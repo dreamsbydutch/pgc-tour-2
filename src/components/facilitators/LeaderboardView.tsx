@@ -9,15 +9,16 @@ import {
 import {
   filterMajorChampionBadgesByMemberId,
   useCurrentSeasonMajorChampionBadges,
+  useLeaderboardStandingsProjection,
 } from "@/hooks";
 import { Skeleton } from "@/ui";
 import {
   EnhancedTournamentGolferDoc,
+  EnhancedTournamentDoc,
   MemberDoc,
   EnhancedTournamentTeamDoc,
   TourCardDoc,
   TourDoc,
-  TournamentDoc,
 } from "convex/types/types";
 
 /**
@@ -35,11 +36,12 @@ import {
  * @returns A responsive leaderboard view.
  */
 export function LeaderboardView(props: {
-  tournament: TournamentDoc;
+  tournament: EnhancedTournamentDoc;
   tours: TourDoc[];
+  tourCards: TourCardDoc[];
   teams: EnhancedTournamentTeamDoc[];
   golfers: EnhancedTournamentGolferDoc[];
-  allTournaments: TournamentDoc[];
+  allTournaments: EnhancedTournamentDoc[];
   userTourCard?: TourCardDoc | null;
   viewerMember?: MemberDoc | null;
   onTournamentChange: (tournamentId: string) => void;
@@ -54,6 +56,13 @@ export function LeaderboardView(props: {
     (props.viewerMember?.friends ?? []).map((friendId) => String(friendId)),
   );
   const majorChampionBadgesByMemberId = useCurrentSeasonMajorChampionBadges();
+  const standingsSnapshots = useLeaderboardStandingsProjection({
+    tournament: props.tournament,
+    variant: props.variant,
+    tours: props.tours,
+    tourCards: props.tourCards,
+    teams: props.teams,
+  });
 
   const tournamentOver = props.tournament.status === "completed";
   const filteredMajorChampionBadgesByMemberId =
@@ -114,6 +123,7 @@ export function LeaderboardView(props: {
             variant={props.variant}
             currentTourCardId={props.userTourCard?._id ?? null}
             friendIds={viewerFriendIds}
+            standingsSnapshots={standingsSnapshots}
             majorChampionBadgesByMemberId={
               filteredMajorChampionBadgesByMemberId
             }
