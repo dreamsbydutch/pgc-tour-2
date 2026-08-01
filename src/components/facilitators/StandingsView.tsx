@@ -40,6 +40,7 @@ import { api, useQuery } from "@/convex";
 import type { Doc, Id } from "@/convex";
 import { Loader2, MoveDown, MoveHorizontal, MoveUp, Star } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { buildPlayoffStartingStrokes } from "@/utils";
 
 /**
  * Displays the standings screen (tour standings + playoff view) with friend filtering.
@@ -752,37 +753,20 @@ function useStandingsView(props: StandingsViewProps) {
 
   const playoffStrokesGold = useMemo(() => {
     const teams = playoffGroups.goldTeams;
-    if (!teams.length) return [];
-
-    const highPoints = teams[0]!.points;
-    const lowPoints = teams[teams.length - 1]!.points;
-    const denom = highPoints - lowPoints;
-    if (!Number.isFinite(denom) || denom <= 0) return teams.map(() => 0);
-
-    return teams.map((tc) => {
-      const percentile = (tc.points - lowPoints) / denom;
-      const strokes = -10 * percentile;
-      return Math.round(strokes * 10) / 10;
-    });
+    const strokesById = buildPlayoffStartingStrokes(
+      teams.map((team) => ({ id: String(team._id), points: team.points })),
+      "gold",
+    );
+    return teams.map((team) => strokesById.get(String(team._id)) ?? 0);
   }, [playoffGroups.goldTeams]);
 
   const playoffStrokesSilver = useMemo(() => {
     const teams = playoffGroups.silverTeams;
-    if (!teams.length) return [];
-
-    const floorIndex = Math.min(35, teams.length - 1);
-
-    const highPoints = teams[0]!.points;
-    const floorPoints = teams[floorIndex]!.points;
-    const denom = highPoints - floorPoints;
-
-    return teams.map((tc, idx) => {
-      if (idx >= floorIndex) return 0;
-      if (!Number.isFinite(denom) || denom <= 0) return 0;
-      const percentile = (tc.points - floorPoints) / denom;
-      const strokes = -10 * percentile;
-      return Math.round(strokes * 10) / 10;
-    });
+    const strokesById = buildPlayoffStartingStrokes(
+      teams.map((team) => ({ id: String(team._id), points: team.points })),
+      "silver",
+    );
+    return teams.map((team) => strokesById.get(String(team._id)) ?? 0);
   }, [playoffGroups.silverTeams]);
 
   if (isLoading) return { status: "loading" } as const satisfies Model;
