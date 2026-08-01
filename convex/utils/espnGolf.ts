@@ -352,3 +352,23 @@ export function mergeEspnRounds(
     .filter((round) => round.round >= 1 && round.round <= 4)
     .sort((a, b) => a.round - b.round);
 }
+
+export function collectAvailableTeamScorecards<TGolferId>(
+  golferIds: readonly TGolferId[],
+  tournamentGolfers: readonly (
+    | { espnRounds?: EspnRoundScore[] }
+    | null
+    | undefined
+  )[],
+) {
+  return tournamentGolfers.flatMap((tournamentGolfer, index) =>
+    Array.isArray(tournamentGolfer?.espnRounds)
+      ? [
+          {
+            golferId: golferIds[index]!,
+            rounds: tournamentGolfer.espnRounds,
+          },
+        ]
+      : [],
+  );
+}

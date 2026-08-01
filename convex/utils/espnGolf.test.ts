@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  collectAvailableTeamScorecards,
   findEspnGolferMatch,
   mergeEspnRounds,
   normalizeEspnIdentityName,
@@ -7,6 +8,38 @@ import {
   parseRelativeToPar,
   selectEspnGolfEvent,
 } from "./espnGolf";
+
+describe("collectAvailableTeamScorecards", () => {
+  it("keeps confirmed scorecards when another team golfer is unavailable", () => {
+    const scorecards = collectAvailableTeamScorecards(
+      ["golfer-1", "golfer-2", "golfer-3"],
+      [
+        {
+          espnRounds: [
+            {
+              round: 1,
+              holes: [{ hole: 1, strokes: 4, relativeToPar: 0 }],
+            },
+          ],
+        },
+        null,
+        {},
+      ],
+    );
+
+    expect(scorecards).toEqual([
+      {
+        golferId: "golfer-1",
+        rounds: [
+          {
+            round: 1,
+            holes: [{ hole: 1, strokes: 4, relativeToPar: 0 }],
+          },
+        ],
+      },
+    ]);
+  });
+});
 
 function scoreboardFixture() {
   return {

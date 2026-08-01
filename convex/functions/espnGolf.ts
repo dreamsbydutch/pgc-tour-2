@@ -9,6 +9,7 @@ import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import { fetchWithRetry } from "../utils/externalFetch";
 import {
+  collectAvailableTeamScorecards,
   findEspnGolferMatch,
   mergeEspnRounds,
   parseEspnGolfScoreboard,
@@ -64,7 +65,7 @@ export const getPlayerHoleScorecard = query({
   },
 });
 
-/** Returns a team only when all ten ESPN identities were confirmed. */
+/** Returns every available confirmed ESPN scorecard for a ten-golfer team. */
 export const getTeamHoleScorecards = query({
   args: {
     tournamentId: v.id("tournaments"),
@@ -83,17 +84,11 @@ export const getTeamHoleScorecards = query({
           .first(),
       ),
     );
-    if (
-      tournamentGolfers.some(
-        (tournamentGolfer) => !Array.isArray(tournamentGolfer?.espnRounds),
-      )
-    ) {
-      return null;
-    }
-    return tournamentGolfers.map((tournamentGolfer, index) => ({
-      golferId: uniqueGolferIds[index]!,
-      rounds: tournamentGolfer!.espnRounds!,
-    }));
+    const scorecards = collectAvailableTeamScorecards(
+      uniqueGolferIds,
+      tournamentGolfers,
+    );
+    return scorecards.length > 0 ? scorecards : null;
   },
 });
 

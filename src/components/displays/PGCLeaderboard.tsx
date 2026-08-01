@@ -429,9 +429,6 @@ function TeamGolfersTable(props: {
         </TableBody>
       </Table>
       <div className="px-2 pb-2" onClick={(event) => event.stopPropagation()}>
-        <div className="pt-2 text-center font-varela text-[10px] text-muted-foreground sm:text-xs">
-          Team hole averages
-        </div>
         <PGAHoleScorecard
           caption="Team average scores for holes 1 through 18"
           scorecard={
