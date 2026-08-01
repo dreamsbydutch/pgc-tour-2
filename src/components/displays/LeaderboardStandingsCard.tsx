@@ -1,60 +1,59 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui";
 import { cn } from "@/lib";
 import type {
   LeaderboardStandingsCardProps,
   PlayoffDestination,
   StandingsSnapshotColumnProps,
 } from "@/types";
+import { Card, CardContent } from "@/ui";
 
 const destinationPresentation: Record<
   PlayoffDestination,
-  { label: string; textClass: string; badgeClass: string }
+  { label: string; textClass: string }
 > = {
   gold: {
     label: "Gold",
-    textClass: "text-amber-600",
-    badgeClass: "border-amber-300 bg-amber-50 text-amber-800",
+    textClass: "text-amber-700",
   },
   silver: {
     label: "Silver",
     textClass: "text-slate-500",
-    badgeClass: "border-slate-300 bg-slate-100 text-slate-700",
   },
   out: {
     label: "Out",
     textClass: "text-red-600",
-    badgeClass: "border-red-200 bg-red-50 text-red-700",
   },
 };
 
 function SnapshotColumn(props: StandingsSnapshotColumnProps) {
   const presentation = destinationPresentation[props.value.destination];
   return (
-    <div className="flex min-w-0 flex-1 flex-col items-center rounded-md bg-slate-50 px-2 py-3 text-center">
-      <div className="font-varela text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:text-xs">
+    <div className="min-w-0 px-2 first:pl-0 last:pr-0">
+      <div className="font-varela text-[9px] font-medium uppercase tracking-wide text-muted-foreground sm:text-[10px]">
         {props.label}
       </div>
-      <div
-        className={cn(
-          "mt-1 font-varela text-3xl font-bold sm:text-4xl",
-          presentation.textClass,
-        )}
-      >
-        {props.value.position}
+      <div className="mt-0.5 flex min-w-0 items-baseline gap-1.5">
+        <span
+          className={cn(
+            "shrink-0 font-varela text-lg font-semibold leading-none sm:text-xl",
+            presentation.textClass,
+          )}
+        >
+          {props.value.position}
+        </span>
+        <span
+          className={cn(
+            "shrink-0 font-varela text-[9px] font-semibold uppercase tracking-wide sm:text-[10px]",
+            presentation.textClass,
+          )}
+        >
+          {presentation.label}
+        </span>
+        <span className="ml-auto truncate font-varela text-[10px] text-muted-foreground sm:text-xs">
+          {props.value.points.toLocaleString()} pts
+        </span>
       </div>
-      <div className="font-varela text-xs text-muted-foreground sm:text-sm">
-        {props.value.points.toLocaleString()} pts
-      </div>
-      <span
-        className={cn(
-          "mt-2 rounded-full border px-2 py-0.5 font-varela text-[10px] font-semibold uppercase tracking-wide",
-          presentation.badgeClass,
-        )}
-      >
-        {presentation.label}
-      </span>
       {props.startingStrokes !== undefined ? (
-        <div className="mt-2 font-varela text-xs text-muted-foreground">
+        <div className="mt-0.5 truncate font-varela text-[9px] leading-none text-muted-foreground sm:text-[10px]">
           Projected start:{" "}
           <span className={cn("font-semibold", presentation.textClass)}>
             {props.startingStrokes === null
@@ -81,14 +80,18 @@ function formatSnapshotTime(value: number | null): string {
 
 export function LeaderboardStandingsCard(props: LeaderboardStandingsCardProps) {
   return (
-    <Card className="m-2 overflow-hidden border-slate-200 shadow-none">
-      <CardHeader className="space-y-0 px-3 pb-2 pt-3 text-center">
-        <CardTitle className="font-varela text-sm sm:text-base">
-          Standings snapshot
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="px-3 pb-3 pt-0">
-        <div className="flex gap-2">
+    <Card className="mx-2 my-1 overflow-hidden border-slate-200/70 bg-slate-50/30 shadow-none">
+      <CardContent className="px-2 py-1.5 sm:px-3 sm:py-2">
+        <div className="flex min-w-0 items-center justify-between gap-2 font-varela">
+          <div className="shrink-0 text-[10px] font-medium text-slate-600 sm:text-xs">
+            Standings
+          </div>
+          <div className="min-w-0 truncate text-right text-[9px] text-muted-foreground sm:text-[10px]">
+            Unofficial <span aria-hidden="true">·</span>{" "}
+            {formatSnapshotTime(props.snapshot.lastUpdatedAt)}
+          </div>
+        </div>
+        <div className="mt-1 grid grid-cols-2 divide-x divide-slate-200/80">
           <SnapshotColumn
             label="Before tournament"
             value={props.snapshot.beforeTournament}
@@ -104,18 +107,15 @@ export function LeaderboardStandingsCard(props: LeaderboardStandingsCardProps) {
               }
             />
           ) : (
-            <div className="flex min-w-0 flex-1 flex-col items-center justify-center rounded-md bg-slate-50 px-2 py-3 text-center">
-              <div className="font-varela text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:text-xs">
+            <div className="min-w-0 px-2 last:pr-0">
+              <div className="font-varela text-[9px] font-medium uppercase tracking-wide text-muted-foreground sm:text-[10px]">
                 Live projection
               </div>
-              <div className="mt-2 font-varela text-sm font-semibold text-muted-foreground">
+              <div className="mt-1 truncate font-varela text-[10px] font-medium text-muted-foreground sm:text-xs">
                 Awaiting live update
               </div>
             </div>
           )}
-        </div>
-        <div className="mt-2 text-center font-varela text-[10px] text-muted-foreground sm:text-xs">
-          Unofficial · {formatSnapshotTime(props.snapshot.lastUpdatedAt)}
         </div>
       </CardContent>
     </Card>

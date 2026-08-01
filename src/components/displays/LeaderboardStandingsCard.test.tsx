@@ -29,11 +29,13 @@ describe("LeaderboardStandingsCard", () => {
       />,
     );
 
-    expect(screen.getByText("Standings snapshot")).toBeTruthy();
+    expect(screen.getByText("Standings")).toBeTruthy();
     expect(screen.getByText("Before tournament")).toBeTruthy();
     expect(screen.getByText("Live projection")).toBeTruthy();
     expect(screen.getByText("12").className).toContain("text-slate-500");
-    expect(screen.getByText("T8").className).toContain("text-amber-600");
+    expect(screen.getByText("12").className).toContain("text-lg");
+    expect(screen.getByText("12").className).not.toContain("text-3xl");
+    expect(screen.getByText("T8").className).toContain("text-amber-700");
     expect(screen.getByText("1,200 pts")).toBeTruthy();
     expect(screen.getByText("1,350 pts")).toBeTruthy();
     expect(screen.getByText("-4.6")).toBeTruthy();
