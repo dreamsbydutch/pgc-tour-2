@@ -1,7 +1,5 @@
 {
   "node": {
-    "externalPackages": [
-      "@clerk/tanstack-react-start"
-    ]
+    "externalPackages": ["@clerk/tanstack-react-start"]
   }
 }
