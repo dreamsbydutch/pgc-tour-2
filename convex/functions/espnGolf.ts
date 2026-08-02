@@ -3,10 +3,13 @@ import {
   internalAction,
   internalMutation,
   internalQuery,
+  mutation,
   query,
 } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
+import type { Id } from "../_generated/dataModel";
 import { fetchWithRetry } from "../utils/externalFetch";
 import {
   completeWithdrawnEspnRounds,
@@ -16,6 +19,7 @@ import {
   parseEspnGolfScoreboard,
   selectEspnGolfEvent,
 } from "../utils/espnGolf";
+import { requireAdmin } from "../utils/auth";
 
 const ESPN_SCOREBOARD_URL =
   "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard";
@@ -48,13 +52,56 @@ function formatEspnDate(timestamp: number): string {
   return new Date(timestamp).toISOString().slice(0, 10).replace(/-/g, "");
 }
 
-/** Lazily reads one scorecard directly from the tournament-golfer record. */
+async function getStoredScorecard(
+  ctx: QueryCtx | MutationCtx,
+  tournamentId: Id<"tournaments">,
+  golferId: Id<"golfers">,
+) {
+  return await ctx.db
+    .query("tournamentGolferScorecards")
+    .withIndex("by_golfer_tournament", (q) =>
+      q.eq("golferId", golferId).eq("tournamentId", tournamentId),
+    )
+    .unique();
+}
+
+async function upsertStoredScorecard(
+  ctx: MutationCtx,
+  args: {
+    tournamentId: Id<"tournaments">;
+    golferId: Id<"golfers">;
+    rounds: Doc<"tournamentGolferScorecards">["rounds"];
+    updatedAt: number;
+  },
+) {
+  const existing = await getStoredScorecard(
+    ctx,
+    args.tournamentId,
+    args.golferId,
+  );
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      rounds: args.rounds,
+      updatedAt: args.updatedAt,
+    });
+    return existing._id;
+  }
+  return await ctx.db.insert("tournamentGolferScorecards", args);
+}
+
+/** Lazily reads one scorecard with a legacy fallback during migration. */
 export const getPlayerHoleScorecard = query({
   args: {
     tournamentId: v.id("tournaments"),
     golferId: v.id("golfers"),
   },
   handler: async (ctx, args) => {
+    const stored = await getStoredScorecard(
+      ctx,
+      args.tournamentId,
+      args.golferId,
+    );
+    if (stored) return { golferId: args.golferId, rounds: stored.rounds };
     const tournamentGolfer = await ctx.db
       .query("tournamentGolfers")
       .withIndex("by_golfer_tournament", (q) =>
@@ -86,33 +133,39 @@ export const getTeamHoleScorecards = query({
           .first(),
       ),
     );
-    if (
-      tournamentGolfers.some(
-        (tournamentGolfer) => !Array.isArray(tournamentGolfer?.espnRounds),
-      )
-    ) {
+    const storedScorecards = await Promise.all(
+      uniqueGolferIds.map((golferId) =>
+        getStoredScorecard(ctx, args.tournamentId, golferId),
+      ),
+    );
+    const roundsByIndex = tournamentGolfers.map(
+      (tournamentGolfer, index) =>
+        storedScorecards[index]?.rounds ?? tournamentGolfer?.espnRounds,
+    );
+    if (roundsByIndex.some((rounds) => !Array.isArray(rounds))) {
       return null;
     }
     const tournament = await ctx.db.get(args.tournamentId);
     const course = tournament ? await ctx.db.get(tournament.courseId) : null;
     if (
       course &&
-      tournamentGolfers.some((golfer) => {
+      tournamentGolfers.some((golfer, golferIndex) => {
         const position = golfer?.position?.trim().toUpperCase();
         if (position !== "WD" && position !== "DQ") return false;
         return [golfer?.roundOne, golfer?.roundTwo].some(
           (score, index) =>
             score === course.par + 8 &&
-            golfer?.espnRounds?.find((round) => round.round === index + 1)
-              ?.holes.length !== 18,
+            roundsByIndex[golferIndex]?.find(
+              (round) => round.round === index + 1,
+            )?.holes.length !== 18,
         );
       })
     ) {
       return null;
     }
-    return tournamentGolfers.map((tournamentGolfer, index) => ({
-      golferId: uniqueGolferIds[index]!,
-      rounds: tournamentGolfer!.espnRounds!,
+    return uniqueGolferIds.map((golferId, index) => ({
+      golferId,
+      rounds: roundsByIndex[index]!,
     }));
   },
 });
@@ -125,7 +178,7 @@ export const getTournamentSyncContext = internalQuery({
     const auditRows = await ctx.db
       .query("espnIdentityAudit")
       .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
-      .collect();
+      .take(20);
     const manualAudit = auditRows.find(
       (row) =>
         row.entityType === "tournament" &&
@@ -155,7 +208,7 @@ export const recordEventSyncFailure = internalMutation({
       .withIndex("by_tournament", (q) =>
         q.eq("tournamentId", args.tournamentId),
       )
-      .collect();
+      .take(20);
     const existing = rows.find((row) => row.entityType === "tournament");
     const value = {
       entityType: "tournament" as const,
@@ -187,7 +240,7 @@ export const applyScorecardChunk = internalMutation({
       .withIndex("by_tournament", (q) =>
         q.eq("tournamentId", args.tournamentId),
       )
-      .collect();
+      .take(500);
     const golferDocs = await Promise.all(
       tournamentGolfers.map((entry) => ctx.db.get(entry.golferId)),
     );
@@ -195,7 +248,7 @@ export const applyScorecardChunk = internalMutation({
       (golfer): golfer is Doc<"golfers"> => golfer !== null,
     );
     const golferAudits = (
-      await ctx.db.query("espnIdentityAudit").collect()
+      await ctx.db.query("espnIdentityAudit").take(500)
     ).filter(
       (row) =>
         row.entityType === "golfer" &&
@@ -283,12 +336,19 @@ export const applyScorecardChunk = internalMutation({
 
       const tournamentGolfer = tournamentGolferByGolferId.get(golfer._id);
       if (!tournamentGolfer) continue;
-      await ctx.db.patch(tournamentGolfer._id, {
-        espnRounds: mergeEspnRounds(
-          tournamentGolfer.espnRounds ?? [],
+      const storedScorecard = await getStoredScorecard(
+        ctx,
+        args.tournamentId,
+        golfer._id,
+      );
+      await upsertStoredScorecard(ctx, {
+        tournamentId: args.tournamentId,
+        golferId: golfer._id,
+        rounds: mergeEspnRounds(
+          storedScorecard?.rounds ?? tournamentGolfer.espnRounds ?? [],
           player.rounds,
         ),
-        espnScorecardUpdatedAt: args.fetchedAt,
+        updatedAt: args.fetchedAt,
       });
       scorecardsUpdated += 1;
     }
@@ -313,9 +373,16 @@ export const completeWithdrawnScorecards = internalMutation({
       .withIndex("by_tournament", (q) =>
         q.eq("tournamentId", args.tournamentId),
       )
-      .collect();
-    const scorecards = tournamentGolfers.flatMap((golfer) =>
-      Array.isArray(golfer.espnRounds) ? [golfer.espnRounds] : [],
+      .take(500);
+    const storedScorecards = await Promise.all(
+      tournamentGolfers.map((golfer) =>
+        getStoredScorecard(ctx, args.tournamentId, golfer.golferId),
+      ),
+    );
+    const scorecards = tournamentGolfers.flatMap((golfer, index) =>
+      Array.isArray(storedScorecards[index]?.rounds ?? golfer.espnRounds)
+        ? [storedScorecards[index]?.rounds ?? golfer.espnRounds!]
+        : [],
     );
     const holeParsByRound = new Map<number, number[]>();
     for (const roundNumber of [1, 2]) {
@@ -330,18 +397,20 @@ export const completeWithdrawnScorecards = internalMutation({
 
     let scorecardsUpdated = 0;
     let roundsCompleted = 0;
-    for (const golfer of tournamentGolfers) {
+    for (const [index, golfer] of tournamentGolfers.entries()) {
       const completed = completeWithdrawnEspnRounds({
-        existing: golfer.espnRounds ?? [],
+        existing: storedScorecards[index]?.rounds ?? golfer.espnRounds ?? [],
         position: golfer.position,
         roundScores: [golfer.roundOne, golfer.roundTwo],
         coursePar: course.par,
         holeParsByRound,
       });
       if (completed.completedPenaltyRounds.length === 0) continue;
-      await ctx.db.patch(golfer._id, {
-        espnRounds: completed.rounds,
-        espnScorecardUpdatedAt: args.fetchedAt,
+      await upsertStoredScorecard(ctx, {
+        tournamentId: args.tournamentId,
+        golferId: golfer.golferId,
+        rounds: completed.rounds,
+        updatedAt: args.fetchedAt,
       });
       scorecardsUpdated += 1;
       roundsCompleted += completed.completedPenaltyRounds.length;
@@ -367,7 +436,7 @@ export const recordEventSyncSuccess = internalMutation({
       .withIndex("by_tournament", (q) =>
         q.eq("tournamentId", args.tournamentId),
       )
-      .collect();
+      .take(20);
     for (const audit of tournamentAudits.filter(
       (row) => row.entityType === "tournament",
     )) {
@@ -386,15 +455,21 @@ export const recordEventSyncSuccess = internalMutation({
       .withIndex("by_tournament", (q) =>
         q.eq("tournamentId", args.tournamentId),
       )
-      .collect();
+      .take(500);
     for (const tournamentGolfer of tournamentGolfers) {
-      if (Array.isArray(tournamentGolfer.espnRounds)) continue;
+      const storedScorecard = await getStoredScorecard(
+        ctx,
+        args.tournamentId,
+        tournamentGolfer.golferId,
+      );
+      if (storedScorecard || Array.isArray(tournamentGolfer.espnRounds))
+        continue;
       const golfer = await ctx.db.get(tournamentGolfer.golferId);
       if (!golfer) continue;
       const golferAuditRows = await ctx.db
         .query("espnIdentityAudit")
         .withIndex("by_golfer", (q) => q.eq("golferId", golfer._id))
-        .collect();
+        .take(20);
       const existing = golferAuditRows.find(
         (row) => row.entityType === "golfer" && row.status !== "resolved",
       );
@@ -414,6 +489,85 @@ export const recordEventSyncSuccess = internalMutation({
           firstSeenAt: args.fetchedAt,
         });
     }
+  },
+});
+
+export const adminMigrateLegacyScorecards = mutation({
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const limit = Math.min(Math.max(args.limit ?? 100, 1), 250);
+    const page = await ctx.db.query("tournamentGolfers").paginate({
+      cursor: args.cursor ?? null,
+      numItems: limit,
+      maximumRowsRead: limit,
+      maximumBytesRead: 2_000_000,
+    });
+    let changed = 0;
+    for (const golfer of page.page) {
+      if (!Array.isArray(golfer.espnRounds)) continue;
+      const existing = await getStoredScorecard(
+        ctx,
+        golfer.tournamentId,
+        golfer.golferId,
+      );
+      if (existing) continue;
+      await ctx.db.insert("tournamentGolferScorecards", {
+        tournamentId: golfer.tournamentId,
+        golferId: golfer.golferId,
+        rounds: golfer.espnRounds,
+        updatedAt:
+          golfer.espnScorecardUpdatedAt ?? golfer.updatedAt ?? Date.now(),
+      });
+      changed += 1;
+    }
+    return {
+      processed: page.page.length,
+      changed,
+      isDone: page.isDone,
+      continueCursor: page.continueCursor,
+    };
+  },
+});
+
+export const adminClearMigratedLegacyScorecards = mutation({
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    const limit = Math.min(Math.max(args.limit ?? 100, 1), 250);
+    const page = await ctx.db.query("tournamentGolfers").paginate({
+      cursor: args.cursor ?? null,
+      numItems: limit,
+      maximumRowsRead: limit,
+      maximumBytesRead: 2_000_000,
+    });
+    let changed = 0;
+    for (const golfer of page.page) {
+      if (!Array.isArray(golfer.espnRounds)) continue;
+      const stored = await getStoredScorecard(
+        ctx,
+        golfer.tournamentId,
+        golfer.golferId,
+      );
+      if (!stored) continue;
+      await ctx.db.patch(golfer._id, {
+        espnRounds: undefined,
+        espnScorecardUpdatedAt: undefined,
+      });
+      changed += 1;
+    }
+    return {
+      processed: page.page.length,
+      changed,
+      isDone: page.isDone,
+      continueCursor: page.continueCursor,
+    };
   },
 });
 

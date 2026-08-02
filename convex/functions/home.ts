@@ -1,4 +1,11 @@
 import { query } from "../_generated/server";
+import {
+  projectPublicSeason,
+  projectPublicTour,
+  projectPublicTourCard,
+  projectPublicTournament,
+  projectViewerMember,
+} from "../utils/publicDtos";
 
 export const getPublicHomeDashboard = query({
   args: {},
@@ -40,15 +47,17 @@ export const getPublicHomeDashboard = query({
       tiers.filter(Boolean).map((item) => [item!._id, item!] as const),
     );
     return {
-      season,
-      tours,
+      season: projectPublicSeason(season),
+      tours: tours.map(projectPublicTour),
       tournaments: tournaments
         .sort((a, b) => a.startDate - b.startDate)
-        .map((tournament) => ({
-          ...tournament,
-          course: courseById.get(tournament.courseId),
-          tier: tierById.get(tournament.tierId),
-        })),
+        .map((tournament) =>
+          projectPublicTournament({
+            tournament,
+            course: courseById.get(tournament.courseId),
+            tier: tierById.get(tournament.tierId),
+          }),
+        ),
     };
   },
 });
@@ -78,32 +87,34 @@ export const getHomeDashboard = query({
       ctx.db
         .query("tours")
         .withIndex("by_season", (q) => q.eq("seasonId", season._id))
-        .collect(),
+        .take(20),
       ctx.db
         .query("tournaments")
         .withIndex("by_season", (q) => q.eq("seasonId", season._id))
-        .collect(),
+        .take(100),
       ctx.db
         .query("tourCards")
         .withIndex("by_season", (q) => q.eq("seasonId", season._id))
-        .collect(),
+        .take(500),
     ]);
     const enhancedTournaments = await Promise.all(
       tournaments
         .sort((a, b) => a.startDate - b.startDate)
-        .map(async (tournament) => ({
-          ...tournament,
-          course: (await ctx.db.get(tournament.courseId)) ?? undefined,
-          tier: (await ctx.db.get(tournament.tierId)) ?? undefined,
-        })),
+        .map(async (tournament) =>
+          projectPublicTournament({
+            tournament,
+            course: await ctx.db.get(tournament.courseId),
+            tier: await ctx.db.get(tournament.tierId),
+          }),
+        ),
     );
 
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
       return {
-        season,
-        tours,
-        tourCards,
+        season: projectPublicSeason(season),
+        tours: tours.map(projectPublicTour),
+        tourCards: tourCards.map(projectPublicTourCard),
         tournaments: enhancedTournaments,
         member: null,
       };
@@ -113,11 +124,11 @@ export const getHomeDashboard = query({
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .first();
     return {
-      season,
-      tours,
-      tourCards,
+      season: projectPublicSeason(season),
+      tours: tours.map(projectPublicTour),
+      tourCards: tourCards.map(projectPublicTourCard),
       tournaments: enhancedTournaments,
-      member,
+      member: member ? projectViewerMember(member) : null,
     };
   },
 });

@@ -468,6 +468,7 @@ export const getExternalDataForTournament = internalAction({
     }),
     tzOffset: v.optional(v.number()),
     includeStatic: v.optional(v.boolean()),
+    includeHistorical: v.optional(v.boolean()),
   },
   handler: async (
     ctx,
@@ -510,33 +511,33 @@ export const getExternalDataForTournament = internalAction({
       Date.now(),
       args.tournament.endDate,
     );
-    const historicalData =
-      args.tournament.endDate < Date.now()
-        ? await ctx.runAction(
-            internal.functions.datagolf.fetchHistoricalRoundData,
-            {
-              tournament: tournamentForDataGolf,
-              options: {
-                tour: "pga",
-                year: new Date().getFullYear(),
-                tzOffset: args.tzOffset,
-              },
+    const includeHistorical =
+      args.includeHistorical ?? args.tournament.endDate < Date.now();
+    const historicalData = includeHistorical
+      ? await ctx.runAction(
+          internal.functions.datagolf.fetchHistoricalRoundData,
+          {
+            tournament: tournamentForDataGolf,
+            options: {
+              tour: "pga",
+              year: new Date().getFullYear(),
+              tzOffset: args.tzOffset,
             },
-          )
-        : undefined;
-    const historicalEventData =
-      args.tournament.endDate < Date.now()
-        ? await ctx.runAction(
-            internal.functions.datagolf.fetchHistoricalEventDataEvents,
-            {
-              tournament: tournamentForDataGolf,
-              options: {
-                tour: "pga",
-                year: new Date().getFullYear(),
-              },
+          },
+        )
+      : undefined;
+    const historicalEventData = includeHistorical
+      ? await ctx.runAction(
+          internal.functions.datagolf.fetchHistoricalEventDataEvents,
+          {
+            tournament: tournamentForDataGolf,
+            options: {
+              tour: "pga",
+              year: new Date().getFullYear(),
             },
-          )
-        : undefined;
+          },
+        )
+      : undefined;
     if ("ok" in fieldData && !rankingData && "ok" in liveData) {
       return {
         ok: false,
@@ -568,6 +569,7 @@ export const getAllDataForTournament = internalAction({
     }),
     tzOffset: v.optional(v.number()),
     includeStatic: v.optional(v.boolean()),
+    includeHistorical: v.optional(v.boolean()),
   },
   handler: async (
     ctx,
@@ -602,6 +604,7 @@ export const getAllDataForTournament = internalAction({
         tournament: args.tournament,
         tzOffset: args.tzOffset,
         includeStatic: args.includeStatic,
+        includeHistorical: args.includeHistorical,
       },
     );
     if (!databaseData.ok || !externalData.ok) {

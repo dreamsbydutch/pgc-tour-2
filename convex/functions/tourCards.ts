@@ -10,11 +10,13 @@ import {
   hasTourCardFeeForSeason,
   isCompletedTourCardFee,
   requireTourCardOwner,
+  requireTourCardSelfServiceOpen,
 } from "../utils/tourCards";
 import { DEFAULT_MAX_PARTICIPANTS } from "./_constants";
 import { getCurrentMember } from "../utils/auth";
 import { writeAuditLog } from "../utils/audit";
 import { v } from "convex/values";
+import { projectPublicTourCard } from "../utils/publicDtos";
 
 export const createMyTourCard = mutation({
   args: {
@@ -115,7 +117,8 @@ export const createMyTourCard = mutation({
       action: "created",
       changes: { tourId: String(tour._id), seasonId: String(season._id) },
     });
-    return await ctx.db.get(tourCardId);
+    const created = await ctx.db.get(tourCardId);
+    return created ? projectPublicTourCard(created) : null;
   },
 });
 
@@ -126,7 +129,7 @@ export const getTourCards = query({
 
     if (options.id) {
       const card = await ctx.db.get(options.id);
-      return card ? [card] : [];
+      return card ? [projectPublicTourCard(card)] : [];
     }
 
     let memberId = options.memberId;
@@ -140,45 +143,52 @@ export const getTourCards = query({
     }
 
     if (memberId && options.seasonId) {
-      return await ctx.db
+      const cards = await ctx.db
         .query("tourCards")
         .withIndex("by_member_season", (q) =>
           q.eq("memberId", memberId!).eq("seasonId", options.seasonId!),
         )
-        .collect();
+        .take(500);
+      return cards.map(projectPublicTourCard);
     }
 
     if (memberId) {
-      return await ctx.db
+      const cards = await ctx.db
         .query("tourCards")
         .withIndex("by_member", (q) => q.eq("memberId", memberId!))
-        .collect();
+        .take(500);
+      return cards.map(projectPublicTourCard);
     }
 
     if (options.tourId && options.seasonId) {
-      return await ctx.db
+      const cards = await ctx.db
         .query("tourCards")
         .withIndex("by_tour_season", (q) =>
           q.eq("tourId", options.tourId!).eq("seasonId", options.seasonId!),
         )
-        .collect();
+        .take(500);
+      return cards.map(projectPublicTourCard);
     }
 
     if (options.tourId) {
-      return await ctx.db
+      const cards = await ctx.db
         .query("tourCards")
         .withIndex("by_tour", (q) => q.eq("tourId", options.tourId!))
-        .collect();
+        .take(500);
+      return cards.map(projectPublicTourCard);
     }
 
     if (options.seasonId) {
-      return await ctx.db
+      const cards = await ctx.db
         .query("tourCards")
         .withIndex("by_season", (q) => q.eq("seasonId", options.seasonId!))
-        .collect();
+        .take(500);
+      return cards.map(projectPublicTourCard);
     }
 
-    return await ctx.db.query("tourCards").collect();
+    return (await ctx.db.query("tourCards").take(500)).map(
+      projectPublicTourCard,
+    );
   },
 });
 
@@ -192,9 +202,10 @@ export const switchTourCards = mutation({
     }
 
     await requireTourCardOwner(ctx, tourCard);
+    await requireTourCardSelfServiceOpen(ctx, tourCard.seasonId);
 
     if (tourCard.tourId === args.tourId) {
-      return tourCard;
+      return projectPublicTourCard(tourCard);
     }
 
     const tour = await ctx.db.get(args.tourId);
@@ -255,11 +266,37 @@ export const switchTourCards = mutation({
       .query("teams")
       .withIndex("by_tour_card", (q) => q.eq("tourCardId", tourCard._id))
       .take(100);
-    for (const team of teams) {
+    const now = Date.now();
+    const teamTournaments = await Promise.all(
+      teams.map((team) => ctx.db.get(team.tournamentId)),
+    );
+    const upcomingTeams = teams.filter((_, index) => {
+      const tournament = teamTournaments[index];
+      return (
+        tournament !== null &&
+        tournament.startDate > now &&
+        tournament.status !== "cancelled" &&
+        tournament.status !== "completed"
+      );
+    });
+    for (const team of upcomingTeams) {
       await ctx.db.patch(team._id, { tourId: args.tourId });
     }
 
-    return await ctx.db.get(args.id);
+    await writeAuditLog(ctx, {
+      memberId: tourCard.memberId,
+      entityType: "tourCard",
+      entityId: String(tourCard._id),
+      action: "updated",
+      changes: {
+        previousTourId: tourCard.tourId,
+        destinationTourId: args.tourId,
+        affectedTeamIds: upcomingTeams.map((team) => team._id),
+      },
+    });
+
+    const updated = await ctx.db.get(args.id);
+    return updated ? projectPublicTourCard(updated) : null;
   },
 });
 
@@ -273,6 +310,7 @@ export const deleteTourCardAndFee = mutation({
     }
 
     await requireTourCardOwner(ctx, tourCard);
+    await requireTourCardSelfServiceOpen(ctx, tourCard.seasonId);
 
     const member = await ctx.db.get(tourCard.memberId);
     if (!member) {
@@ -289,6 +327,8 @@ export const deleteTourCardAndFee = mutation({
     const hasOtherTourCardsInSeason = tourCardsInSeason.some(
       (doc) => doc._id !== tourCard._id,
     );
+    const deletedFeeTransactionIds: string[] = [];
+    let accountAdjustment = 0;
 
     const teams = await ctx.db
       .query("teams")
@@ -333,10 +373,12 @@ export const deleteTourCardAndFee = mutation({
         .reduce((sum, tx) => sum + tx.amount, 0);
 
       for (const tx of feeTransactions) {
+        deletedFeeTransactionIds.push(String(tx._id));
         await ctx.db.delete(tx._id);
       }
 
       if (completedFeeTotal !== 0) {
+        accountAdjustment = -completedFeeTotal;
         const updatedAt = Date.now();
         await ctx.db.patch(member._id, {
           account: member.account - completedFeeTotal,
@@ -345,6 +387,20 @@ export const deleteTourCardAndFee = mutation({
       }
     }
 
-    return tourCard;
+    await writeAuditLog(ctx, {
+      memberId: member._id,
+      entityType: "tourCard",
+      entityId: String(tourCard._id),
+      action: "deleted",
+      changes: {
+        seasonId: tourCard.seasonId,
+        tourId: tourCard.tourId,
+        deletedTeamIds: teams.map((team) => team._id),
+        deletedFeeTransactionIds,
+        accountAdjustment,
+      },
+    });
+
+    return projectPublicTourCard(tourCard);
   },
 });

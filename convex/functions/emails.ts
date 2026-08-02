@@ -46,7 +46,7 @@ export const getActiveTourCardRecipientsForTournament = internalQuery({
     const tournaments = await ctx.db
       .query("tournaments")
       .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-      .collect();
+      .take(500);
 
     const previous = findPreviousCompletedTournament({
       tournaments,
@@ -83,7 +83,7 @@ export const getActiveTourCardRecipientsForTournament = internalQuery({
     const tourCards = await ctx.db
       .query("tourCards")
       .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-      .collect();
+      .take(500);
 
     const byMemberId = new Map<Id<"members">, Doc<"tourCards">>();
     for (const tc of tourCards) {
@@ -268,7 +268,7 @@ export const markGroupsEmailSent = internalMutation({
 export const getActiveMemberEmailRecipients = internalQuery({
   args: emailsValidators.args.getActiveMemberEmailRecipients,
   handler: async (ctx) => {
-    const members = await ctx.db.query("members").collect();
+    const members = await ctx.db.query("members").take(500);
 
     const byEmail = new Map<string, { email: string; name?: string }>();
 
@@ -354,7 +354,7 @@ export const adminGetGroupsEmailPreview: ReturnType<typeof query> = query({
     const tournaments = await ctx.db
       .query("tournaments")
       .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-      .collect();
+      .take(100);
 
     const previous = findPreviousCompletedTournament({
       tournaments,
@@ -366,7 +366,7 @@ export const adminGetGroupsEmailPreview: ReturnType<typeof query> = query({
     const tourCards = await ctx.db
       .query("tourCards")
       .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-      .collect();
+      .take(500);
 
     const byMemberId = new Map<Id<"members">, true>();
     for (const tc of tourCards) {
@@ -915,7 +915,7 @@ export const adminGetSeasonStartEmailPreview = query({
   handler: async (ctx) => {
     await requireAdminForQuery(ctx);
 
-    const members = await ctx.db.query("members").collect();
+    const members = await ctx.db.query("members").take(500);
     const activeMemberCount = members.filter(
       (m) => m.isActive !== false,
     ).length;

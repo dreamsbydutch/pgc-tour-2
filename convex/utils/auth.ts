@@ -11,6 +11,48 @@ import { internal } from "../_generated/api";
 
 type AuthContext = QueryCtx | MutationCtx;
 
+const MEMBER_NAME_MAX_LENGTH = 80;
+
+function readIdentityStringClaim(
+  identity: Record<string, unknown>,
+  ...keys: string[]
+): string | undefined {
+  for (const key of keys) {
+    const value = identity[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+export function normalizeMemberName(value: string | undefined) {
+  const normalized = value?.trim().slice(0, MEMBER_NAME_MAX_LENGTH);
+  return normalized || undefined;
+}
+
+export async function getAuthenticatedIdentityProfile(ctx: AuthContext) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    throw new Error("Unauthorized: You must be signed in");
+  }
+
+  const claims = identity as unknown as Record<string, unknown>;
+  const emailVerified =
+    claims.email_verified === true || claims.emailVerified === true;
+  const emailClaim = readIdentityStringClaim(claims, "email", "email_address");
+
+  return {
+    subject: identity.subject,
+    email: emailVerified && emailClaim ? emailClaim.toLowerCase() : undefined,
+    emailVerified,
+    firstname: normalizeMemberName(
+      readIdentityStringClaim(claims, "given_name", "givenName"),
+    ),
+    lastname: normalizeMemberName(
+      readIdentityStringClaim(claims, "family_name", "familyName"),
+    ),
+  };
+}
+
 export async function requireAdminForAction(
   ctx: ActionCtx,
 ): Promise<Id<"members">> {

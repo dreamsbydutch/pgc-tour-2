@@ -22,11 +22,18 @@ import {
   awardTeamPlayoffPoints,
   buildUsageRateByGolferApiId,
   earliestTimeStr,
-  parsePositionNumber,
   roundToDecimalPlace,
 } from "../utils";
+import {
+  recomputeStandingsRanksForSeason,
+  recomputeStandingsRowForCard,
+  upsertStandingsContributionForTeam,
+} from "../utils/standings";
+export { buildTourCardStandingsTotals } from "../utils/standings";
 import { determineGroupIndex } from "../utils/golfers";
 import { EnhancedGolfer } from "../types/types";
+import type { TournamentGolferUpdate } from "./golfers";
+import type { TeamUpdate } from "./teams";
 import { v } from "convex/values";
 import {
   getCurrentMember,
@@ -64,6 +71,35 @@ type TeamRoundWindowMetrics = {
 };
 
 const TOURNAMENT_ROUNDS: RoundNumber[] = [1, 2, 3, 4];
+const SYNC_WRITE_BATCH_SIZE = 25;
+
+export function chunkSyncUpdates<T>(
+  updates: T[],
+  size = SYNC_WRITE_BATCH_SIZE,
+) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < updates.length; index += size) {
+    chunks.push(updates.slice(index, index + size));
+  }
+  return chunks;
+}
+
+export function getAdaptiveSyncDelayMs(args: {
+  livePlay?: boolean;
+  status?: string;
+  activatedTournament?: boolean;
+  failureCount?: number;
+}): number | null {
+  if ((args.failureCount ?? 0) > 0) {
+    const retryMinutes = [8, 16, 30][Math.min((args.failureCount ?? 1) - 1, 2)];
+    return retryMinutes * 60_000;
+  }
+  if (args.livePlay === true) return 4 * 60_000;
+  if (args.activatedTournament || args.status === "active") {
+    return 12 * 60_000;
+  }
+  return null;
+}
 
 /**
  * Refreshes ESPN only after Data Golf has successfully persisted the same
@@ -231,92 +267,6 @@ function isNonRankingTeamPosition(
       .trim()
       .toUpperCase(),
   );
-}
-
-function includesPlayoffLabel(value: string | null | undefined): boolean {
-  return typeof value === "string" && value.toLowerCase().includes("playoff");
-}
-
-type StandingsAggregationTeam = Pick<
-  Doc<"teams">,
-  "tournamentId" | "points" | "earnings" | "position"
->;
-
-type StandingsAggregationTournament = Pick<
-  Doc<"tournaments">,
-  "_id" | "tierId" | "name" | "status"
->;
-
-type StandingsAggregationTier = Pick<Doc<"tiers">, "_id" | "name">;
-
-export function buildTourCardStandingsTotals(args: {
-  teams: StandingsAggregationTeam[];
-  tournaments: StandingsAggregationTournament[];
-  tiers: StandingsAggregationTier[];
-}) {
-  const tournamentById = new Map(
-    args.tournaments.map((tournament) => [tournament._id, tournament] as const),
-  );
-  const tierNameById = new Map(
-    args.tiers.map((tier) => [tier._id, tier.name] as const),
-  );
-
-  const completed = args.teams.filter(
-    (team) => tournamentById.get(team.tournamentId)?.status === "completed",
-  );
-
-  const regularSeasonCompleted = completed.filter((team) => {
-    const tournament = tournamentById.get(team.tournamentId);
-    if (!tournament) return false;
-
-    const tierName = tierNameById.get(tournament.tierId) ?? null;
-    return (
-      !includesPlayoffLabel(tierName) && !includesPlayoffLabel(tournament.name)
-    );
-  });
-
-  const regularSeasonPoints = regularSeasonCompleted.reduce(
-    (sum, team) => sum + Math.round(team.points ?? 0),
-    0,
-  );
-  const completedEarnings = completed.reduce(
-    (sum, team) => sum + (team.earnings ?? 0),
-    0,
-  );
-
-  return {
-    wins: regularSeasonCompleted.filter((team) => {
-      const posNum = parsePositionNumber(team.position ?? null);
-      return posNum !== null && posNum === 1;
-    }).length,
-    topFive: regularSeasonCompleted.filter((team) => {
-      const posNum = parsePositionNumber(team.position ?? null);
-      return posNum !== null && posNum <= 5;
-    }).length,
-    topTen: regularSeasonCompleted.filter((team) => {
-      const posNum = parsePositionNumber(team.position ?? null);
-      return posNum !== null && posNum <= 10;
-    }).length,
-    madeCut: regularSeasonCompleted.filter((team) => team.position !== "CUT")
-      .length,
-    appearances: regularSeasonCompleted.length,
-    points: Math.round(regularSeasonPoints),
-    earnings: Math.round(completedEarnings),
-    pastPoints: Math.round(
-      regularSeasonPoints -
-        (regularSeasonCompleted[regularSeasonCompleted.length - 1]?.points ??
-          0),
-    ),
-    pastEarnings: Math.round(
-      completedEarnings - (completed[completed.length - 1]?.earnings ?? 0),
-    ),
-    totalPoints: Math.round(
-      args.teams.reduce((sum, team) => sum + (team.points ?? 0), 0),
-    ),
-    totalEarnings: Math.round(
-      args.teams.reduce((sum, team) => sum + Math.round(team.earnings ?? 0), 0),
-    ),
-  };
 }
 
 export function buildFirstPlaceTiebreakSummary(args: {
@@ -2163,20 +2113,12 @@ export const recomputeStandings: ReturnType<typeof internalMutation> =
           reason: "no_current_season",
         } as const;
       }
-      const tournaments = await ctx.db
-        .query("tournaments")
-        .withIndex("by_season", (q) => q.eq("seasonId", season._id))
-        .collect();
-      const tiers = await ctx.db
-        .query("tiers")
-        .withIndex("by_season", (q) => q.eq("seasonId", season._id))
-        .collect();
       const tourCards = await ctx.db
         .query("tourCards")
         .withIndex("by_season", (q) =>
           q.eq("seasonId", season._id as Id<"seasons">),
         )
-        .collect();
+        .take(500);
       if (tourCards.length === 0) {
         return {
           ok: true,
@@ -2185,76 +2127,31 @@ export const recomputeStandings: ReturnType<typeof internalMutation> =
           seasonId: season._id,
         } as const;
       }
-      const calculations = await Promise.all(
-        tourCards.map(async (tc) => {
+      for (const tourCard of tourCards) {
+        const existingContribution = await ctx.db
+          .query("standingsContributions")
+          .withIndex("by_tour_card_season", (q) =>
+            q.eq("tourCardId", tourCard._id).eq("seasonId", season._id),
+          )
+          .first();
+        if (!existingContribution) {
           const teams = await ctx.db
             .query("teams")
-            .withIndex("by_tour_card", (q) => q.eq("tourCardId", tc._id))
-            .collect();
-          const totals = buildTourCardStandingsTotals({
-            teams,
-            tournaments,
-            tiers,
-          });
-
-          return {
-            tourCardId: tc._id,
-            tourId: tc.tourId,
-            ...totals,
-          };
-        }),
-      );
-
-      const byTour = new Map<Id<"tours">, typeof calculations>();
-      for (const calc of calculations) {
-        const list = byTour.get(calc.tourId) ?? [];
-        list.push(calc);
-        byTour.set(calc.tourId, list);
-      }
-
-      let updated = 0;
-
-      for (const list of byTour.values()) {
-        const tour = await ctx.db.get(list[0].tourId);
-        if (!tour) continue;
-        for (const calc of list) {
-          const samePointsCount = list.filter(
-            (a) => a.points === calc.points,
-          ).length;
-          const betterPointsCount = list.filter(
-            (a) => a.points > calc.points,
-          ).length;
-          const position = `${samePointsCount > 1 ? "T" : ""}${betterPointsCount + 1}`;
-
-          const playoff =
-            betterPointsCount < tour.playoffSpots[0]
-              ? 1
-              : betterPointsCount < tour.playoffSpots[1] + tour.playoffSpots[0]
-                ? 2
-                : 0;
-
-          await ctx.db.patch(calc.tourCardId, {
-            points: calc.points,
-            earnings: calc.earnings,
-            wins: calc.wins,
-            topFive: calc.topFive,
-            topTen: calc.topTen,
-            madeCut: calc.madeCut,
-            appearances: calc.appearances,
-            currentPosition: position,
-            playoff,
-            updatedAt: Date.now(),
-          });
-
-          updated += 1;
+            .withIndex("by_tour_card", (q) => q.eq("tourCardId", tourCard._id))
+            .take(100);
+          for (const team of teams) {
+            await upsertStandingsContributionForTeam(ctx, team);
+          }
         }
+        await recomputeStandingsRowForCard(ctx, tourCard._id);
       }
+      await recomputeStandingsRanksForSeason(ctx, season._id);
 
       return {
         ok: true,
         skipped: false,
         seasonId: season._id,
-        tourCardsUpdated: updated,
+        tourCardsUpdated: tourCards.length,
       } as const;
     },
   });
@@ -2310,6 +2207,61 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           reason: "no_active_tournament",
         } as const;
       }
+      const syncState = await ctx.runQuery(
+        internal.functions.tournamentSyncState.get,
+        { tournamentId: activeTournamentData.tournament._id },
+      );
+      await ctx.runMutation(
+        internal.functions.tournamentSyncState.recordAttempt,
+        { tournamentId: activeTournamentData.tournament._id },
+      );
+      const previousDataGolfMarker =
+        syncState?.dataGolfInPlayLastUpdate ??
+        activeTournamentData.tournament.dataGolfInPlayLastUpdate;
+      if (
+        args.force !== true &&
+        activeTournamentData.type !== "next" &&
+        previousDataGolfMarker !== undefined
+      ) {
+        const liveProbe = await ctx.runAction(
+          internal.functions.datagolf.fetchLiveModelPredictions,
+          {
+            tournament: {
+              _id: activeTournamentData.tournament._id,
+              name: activeTournamentData.tournament.name,
+              apiId: activeTournamentData.tournament.apiId,
+              seasonId: activeTournamentData.tournament.seasonId,
+            },
+          },
+        );
+        if (
+          "info" in liveProbe &&
+          liveProbe.info.last_update === previousDataGolfMarker
+        ) {
+          await syncEspnAfterDataGolfUpdate(
+            ctx,
+            activeTournamentData.tournament._id,
+          );
+          await ctx.runMutation(
+            internal.functions.tournamentSyncState.recordSuccess,
+            {
+              tournamentId: activeTournamentData.tournament._id,
+              dataGolfInPlayLastUpdate: liveProbe.info.last_update,
+              skipReason: "data_golf_unchanged",
+            },
+          );
+          return {
+            ok: true,
+            skipped: true,
+            reason: "data_golf_unchanged",
+            tournamentId: activeTournamentData.tournament._id,
+            tournamentName: activeTournamentData.tournament.name,
+            currentRound: activeTournamentData.tournament.currentRound,
+            livePlay: activeTournamentData.tournament.livePlay ?? false,
+            status: activeTournamentData.tournament.status,
+          } as const;
+        }
+      }
       const tournamentStats = await ctx.runAction(
         internal.functions.utils.getAllDataForTournament,
         {
@@ -2324,6 +2276,9 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           includeStatic:
             args.force === true ||
             activeTournamentData.tournament.status !== "active",
+          includeHistorical:
+            activeTournamentData.tournament.endDate < Date.now() &&
+            syncState?.finalDataComplete !== true,
         },
       );
       if (!tournamentStats.ok) {
@@ -2599,6 +2554,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             ? 4
             : 0;
       const usageMap = buildUsageRateByGolferApiId({ teams });
+      const golferUpdates: TournamentGolferUpdate[] = [];
 
       for (const g of golfers) {
         if (g.golfer?._id && g.tournamentGolfer?._id) {
@@ -2644,139 +2600,139 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
               golfers,
               allowPreStartNonStarterReplacement,
             });
-          await ctx.runMutation(
-            internal.functions.golfers.updateTournamentGolfer,
-            {
-              tournamentGolfer: {
-                _id: g.tournamentGolfer._id,
-                tournamentId: tournament._id,
-                golferId: g.golfer._id,
-                position: golferIsPreStartNonStarter
-                  ? "WD"
-                  : isNonRankingTournamentPosition(golferPosition)
-                    ? golferPosition
-                    : tiedGolfers > 1
-                      ? `T${betterGolfers + 1}`
-                      : `${betterGolfers + 1}`,
-                posChange: betterGolfersPast - betterGolfers,
-                score: golferIsPreStartNonStarter
-                  ? undefined
-                  : getEffectiveGolferLeaderboardScore(g),
-                endHole:
-                  g.live?.end_hole ?? g.tournamentGolfer?.endHole ?? undefined,
-                makeCut:
-                  g.live?.make_cut ?? g.tournamentGolfer?.makeCut ?? undefined,
-                topTen:
-                  g.live?.top_10 ?? g.tournamentGolfer?.topTen ?? undefined,
-                win: g.live?.win ?? g.tournamentGolfer?.win ?? undefined,
-                today:
-                  visibleRound === 0
-                    ? undefined
-                    : getTournamentRoundWindowMetrics({
-                        golfer: g,
-                        roundNumber: visibleRound,
-                        roundStarted: timeline.rounds[visibleRound].started,
-                        timeline,
-                        coursePar: course.par,
-                        allowPreStartNonStarterReplacement,
-                      }).today,
-                thru:
-                  visibleRound === 0
-                    ? undefined
-                    : getTournamentRoundWindowMetrics({
-                        golfer: g,
-                        roundNumber: visibleRound,
-                        roundStarted: timeline.rounds[visibleRound].started,
-                        timeline,
-                        coursePar: course.par,
-                        allowPreStartNonStarterReplacement,
-                      }).thru,
-                roundOne: roundOneScore,
-                roundTwo: roundTwoScore,
-                roundThree: roundThreeScore,
-                roundFour: roundFourScore,
-                roundOneTeeTime:
-                  g.field?.teetimes.find(
-                    (tt: {
-                      course_code: string;
-                      course_name: string;
-                      course_num: number;
-                      round_num: number;
-                      start_hole: number;
-                      teetime: number | undefined;
-                      wave: "early" | "late";
-                    }) => tt.round_num === 1,
-                  )?.teetime ??
-                  (g.historical?.round_1?.teetime
-                    ? g.historical?.round_1?.teetime
-                    : typeof g.tournamentGolfer?.roundOneTeeTime === "number"
-                      ? g.tournamentGolfer?.roundOneTeeTime
-                      : (parseDataGolfTeeTimeToMs(
-                          g.tournamentGolfer?.roundOneTeeTime as string,
-                        ) ?? undefined)),
-                roundTwoTeeTime:
-                  g.field?.teetimes.find(
-                    (tt: {
-                      course_code: string;
-                      course_name: string;
-                      course_num: number;
-                      round_num: number;
-                      start_hole: number;
-                      teetime: number | undefined;
-                      wave: "early" | "late";
-                    }) => tt.round_num === 2,
-                  )?.teetime ??
-                  (g.historical?.round_2?.teetime
-                    ? g.historical?.round_2?.teetime
-                    : typeof g.tournamentGolfer?.roundTwoTeeTime === "number"
-                      ? g.tournamentGolfer?.roundTwoTeeTime
-                      : (parseDataGolfTeeTimeToMs(
-                          g.tournamentGolfer?.roundTwoTeeTime as string,
-                        ) ?? undefined)),
-                roundThreeTeeTime:
-                  g.field?.teetimes.find(
-                    (tt: {
-                      course_code: string;
-                      course_name: string;
-                      course_num: number;
-                      round_num: number;
-                      start_hole: number;
-                      teetime: number | undefined;
-                      wave: "early" | "late";
-                    }) => tt.round_num === 3,
-                  )?.teetime ??
-                  (g.historical?.round_3?.teetime
-                    ? g.historical?.round_3?.teetime
-                    : typeof g.tournamentGolfer?.roundThreeTeeTime === "number"
-                      ? g.tournamentGolfer?.roundThreeTeeTime
-                      : (parseDataGolfTeeTimeToMs(
-                          g.tournamentGolfer?.roundThreeTeeTime as string,
-                        ) ?? undefined)),
-                roundFourTeeTime:
-                  g.field?.teetimes.find(
-                    (tt: {
-                      course_code: string;
-                      course_name: string;
-                      course_num: number;
-                      round_num: number;
-                      start_hole: number;
-                      teetime: number | undefined;
-                      wave: "early" | "late";
-                    }) => tt.round_num === 4,
-                  )?.teetime ??
-                  (g.historical?.round_4?.teetime
-                    ? g.historical?.round_4?.teetime
-                    : typeof g.tournamentGolfer?.roundFourTeeTime === "number"
-                      ? g.tournamentGolfer?.roundFourTeeTime
-                      : (parseDataGolfTeeTimeToMs(
-                          g.tournamentGolfer?.roundFourTeeTime as string,
-                        ) ?? undefined)),
-                usage: usageMap.get(g.golfer?.apiId ?? -1) ?? 0,
-                round: visibleRound,
-              },
-            },
-          );
+          golferUpdates.push({
+            _id: g.tournamentGolfer._id,
+            tournamentId: tournament._id,
+            golferId: g.golfer._id,
+            position: golferIsPreStartNonStarter
+              ? "WD"
+              : isNonRankingTournamentPosition(golferPosition)
+                ? golferPosition
+                : tiedGolfers > 1
+                  ? `T${betterGolfers + 1}`
+                  : `${betterGolfers + 1}`,
+            posChange: betterGolfersPast - betterGolfers,
+            score: golferIsPreStartNonStarter
+              ? undefined
+              : getEffectiveGolferLeaderboardScore(g),
+            endHole:
+              g.live?.end_hole ?? g.tournamentGolfer?.endHole ?? undefined,
+            makeCut:
+              g.live?.make_cut ?? g.tournamentGolfer?.makeCut ?? undefined,
+            topTen: g.live?.top_10 ?? g.tournamentGolfer?.topTen ?? undefined,
+            win: g.live?.win ?? g.tournamentGolfer?.win ?? undefined,
+            today:
+              visibleRound === 0
+                ? undefined
+                : getTournamentRoundWindowMetrics({
+                    golfer: g,
+                    roundNumber: visibleRound,
+                    roundStarted: timeline.rounds[visibleRound].started,
+                    timeline,
+                    coursePar: course.par,
+                    allowPreStartNonStarterReplacement,
+                  }).today,
+            thru:
+              visibleRound === 0
+                ? undefined
+                : getTournamentRoundWindowMetrics({
+                    golfer: g,
+                    roundNumber: visibleRound,
+                    roundStarted: timeline.rounds[visibleRound].started,
+                    timeline,
+                    coursePar: course.par,
+                    allowPreStartNonStarterReplacement,
+                  }).thru,
+            roundOne: roundOneScore,
+            roundTwo: roundTwoScore,
+            roundThree: roundThreeScore,
+            roundFour: roundFourScore,
+            roundOneTeeTime:
+              g.field?.teetimes.find(
+                (tt: {
+                  course_code: string;
+                  course_name: string;
+                  course_num: number;
+                  round_num: number;
+                  start_hole: number;
+                  teetime: number | undefined;
+                  wave: "early" | "late";
+                }) => tt.round_num === 1,
+              )?.teetime ??
+              (g.historical?.round_1?.teetime
+                ? g.historical?.round_1?.teetime
+                : typeof g.tournamentGolfer?.roundOneTeeTime === "number"
+                  ? g.tournamentGolfer?.roundOneTeeTime
+                  : (parseDataGolfTeeTimeToMs(
+                      g.tournamentGolfer?.roundOneTeeTime as string,
+                    ) ?? undefined)),
+            roundTwoTeeTime:
+              g.field?.teetimes.find(
+                (tt: {
+                  course_code: string;
+                  course_name: string;
+                  course_num: number;
+                  round_num: number;
+                  start_hole: number;
+                  teetime: number | undefined;
+                  wave: "early" | "late";
+                }) => tt.round_num === 2,
+              )?.teetime ??
+              (g.historical?.round_2?.teetime
+                ? g.historical?.round_2?.teetime
+                : typeof g.tournamentGolfer?.roundTwoTeeTime === "number"
+                  ? g.tournamentGolfer?.roundTwoTeeTime
+                  : (parseDataGolfTeeTimeToMs(
+                      g.tournamentGolfer?.roundTwoTeeTime as string,
+                    ) ?? undefined)),
+            roundThreeTeeTime:
+              g.field?.teetimes.find(
+                (tt: {
+                  course_code: string;
+                  course_name: string;
+                  course_num: number;
+                  round_num: number;
+                  start_hole: number;
+                  teetime: number | undefined;
+                  wave: "early" | "late";
+                }) => tt.round_num === 3,
+              )?.teetime ??
+              (g.historical?.round_3?.teetime
+                ? g.historical?.round_3?.teetime
+                : typeof g.tournamentGolfer?.roundThreeTeeTime === "number"
+                  ? g.tournamentGolfer?.roundThreeTeeTime
+                  : (parseDataGolfTeeTimeToMs(
+                      g.tournamentGolfer?.roundThreeTeeTime as string,
+                    ) ?? undefined)),
+            roundFourTeeTime:
+              g.field?.teetimes.find(
+                (tt: {
+                  course_code: string;
+                  course_name: string;
+                  course_num: number;
+                  round_num: number;
+                  start_hole: number;
+                  teetime: number | undefined;
+                  wave: "early" | "late";
+                }) => tt.round_num === 4,
+              )?.teetime ??
+              (g.historical?.round_4?.teetime
+                ? g.historical?.round_4?.teetime
+                : typeof g.tournamentGolfer?.roundFourTeeTime === "number"
+                  ? g.tournamentGolfer?.roundFourTeeTime
+                  : (parseDataGolfTeeTimeToMs(
+                      g.tournamentGolfer?.roundFourTeeTime as string,
+                    ) ?? undefined)),
+            usage: usageMap.get(g.golfer?.apiId ?? -1) ?? 0,
+            round: visibleRound,
+          });
         }
+      }
+      for (const updates of chunkSyncUpdates(golferUpdates)) {
+        await ctx.runMutation(
+          internal.functions.golfers.applyTournamentGolferUpdatesBatch,
+          { updates },
+        );
       }
       const updatedTeams: TournamentSyncTeam[] = [];
       for (const t of teams) {
@@ -3066,15 +3022,10 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           _id: tournament._id,
           currentRound: tournamentCurrentRound,
           livePlay: tournamentLivePlay,
-          dataGolfInPlayLastUpdate: liveData.info.last_update,
-          leaderboardLastUpdatedAt:
-            tournament.dataGolfInPlayLastUpdate !== liveData.info.last_update
-              ? now.getTime()
-              : tournament.leaderboardLastUpdatedAt,
           ...(lifecycleUpdates ?? {}),
         },
       });
-
+      const teamUpdates: TeamUpdate[] = [];
       for (const t of teamsWithComputedPositions) {
         if (t._id) {
           const teamsAheadPast = teamsWithComputedPositions.filter(
@@ -3111,51 +3062,72 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             firstPlaceTiebreakSummary,
             tournamentCompleted: tournamentStatus === "completed",
           });
-          await ctx.runMutation(internal.functions.teams.updateTeam, {
-            team: {
-              _id: t._id,
-              makeCut: t.makeCut,
-              score: t.score,
-              topTen: t.topTen,
-              topFive: t.topFive,
-              topThree: t.topThree,
-              win: t.win,
-              today: t.today ?? null,
-              thru: t.thru ?? null,
-              round: t.round,
-              roundOneTeeTime: t.roundOneTeeTime ?? null,
-              roundOne: t.roundOne ?? null,
-              roundTwoTeeTime: t.roundTwoTeeTime ?? null,
-              roundTwo: t.roundTwo ?? null,
-              roundThreeTeeTime: t.roundThreeTeeTime ?? null,
-              roundThree: t.roundThree ?? null,
-              roundFourTeeTime: t.roundFourTeeTime ?? null,
-              roundFour: t.roundFour ?? null,
-              earnings: awardTeamEarnings(
-                tier,
-                teamRank.teamsAhead,
-                teamRank.teamsTied,
-              ),
-              points: awardTeamPlayoffPoints(
-                tier,
-                teamRank.teamsAhead,
-                teamRank.teamsTied,
-              ),
-              position: teamRank.position,
-              pastPosition:
-                teamsTiedPast > 1
-                  ? `T${teamsAheadPast + 1}`
-                  : `${teamsAheadPast + 1}`,
-            },
+          teamUpdates.push({
+            _id: t._id,
+            makeCut: t.makeCut,
+            score: t.score,
+            topTen: t.topTen,
+            topFive: t.topFive,
+            topThree: t.topThree,
+            win: t.win,
+            today: t.today ?? null,
+            thru: t.thru ?? null,
+            round: t.round,
+            roundOneTeeTime: t.roundOneTeeTime ?? null,
+            roundOne: t.roundOne ?? null,
+            roundTwoTeeTime: t.roundTwoTeeTime ?? null,
+            roundTwo: t.roundTwo ?? null,
+            roundThreeTeeTime: t.roundThreeTeeTime ?? null,
+            roundThree: t.roundThree ?? null,
+            roundFourTeeTime: t.roundFourTeeTime ?? null,
+            roundFour: t.roundFour ?? null,
+            earnings: awardTeamEarnings(
+              tier,
+              teamRank.teamsAhead,
+              teamRank.teamsTied,
+            ),
+            points: awardTeamPlayoffPoints(
+              tier,
+              teamRank.teamsAhead,
+              teamRank.teamsTied,
+            ),
+            position: teamRank.position,
+            pastPosition:
+              teamsTiedPast > 1
+                ? `T${teamsAheadPast + 1}`
+                : `${teamsAheadPast + 1}`,
           });
         }
       }
+      for (const updates of chunkSyncUpdates(teamUpdates)) {
+        await ctx.runMutation(internal.functions.teams.applyTeamUpdatesBatch, {
+          updates,
+        });
+      }
 
       await syncEspnAfterDataGolfUpdate(ctx, tournament._id);
+      await ctx.runMutation(
+        internal.functions.tournamentSyncState.recordSuccess,
+        {
+          tournamentId: tournament._id,
+          dataGolfInPlayLastUpdate: liveData.info.last_update,
+          leaderboardLastUpdatedAt:
+            previousDataGolfMarker !== liveData.info.last_update
+              ? now.getTime()
+              : undefined,
+          finalDataComplete:
+            tournamentStatus === "completed" &&
+            historicalData !== undefined &&
+            _historicalEventData !== undefined,
+        },
+      );
       if (
         tournamentStatus === "completed" &&
         tournament.status !== "completed"
       ) {
+        await ctx.runMutation(internal.functions.standings.refreshTournament, {
+          tournamentId: tournament._id,
+        });
         await ctx.runMutation(
           internal.functions.cronJobs.recomputeStandings,
           {},
@@ -3259,15 +3231,44 @@ export const runAdaptiveTournamentSync: ReturnType<typeof internalAction> =
           reason: "no_active_tournament",
         };
       }
-      const result = (await ctx.runAction(
-        internal.functions.cronJobs.runTournamentSyncWithLease,
-        { trigger: "scheduled" },
-      )) as {
+      let result: {
         skipped?: boolean;
         reason?: string;
         status?: string;
         livePlay?: boolean;
       };
+      try {
+        result = (await ctx.runAction(
+          internal.functions.cronJobs.runTournamentSyncWithLease,
+          { trigger: "scheduled" },
+        )) as typeof result;
+      } catch (error) {
+        if (!claim.activeTournamentId) {
+          await ctx.runMutation(
+            internal.functions.readModels.finishLiveSyncChain,
+            { chainId: args.chainId },
+          );
+          throw error;
+        }
+        const failureCount = await ctx.runMutation(
+          internal.functions.tournamentSyncState.recordFailure,
+          {
+            tournamentId: claim.activeTournamentId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
+        const delay = getAdaptiveSyncDelayMs({ failureCount });
+        await ctx.scheduler.runAfter(
+          delay ?? 30 * 60_000,
+          internal.functions.cronJobs.runAdaptiveTournamentSync,
+          { chainId: args.chainId, repair: false },
+        );
+        return {
+          ok: false,
+          reason: "sync_failed_retry_scheduled",
+          failureCount,
+        };
+      }
       const activatedTournament =
         result.reason === "next_tournament_toggled_to_active";
       if (activatedTournament) {
@@ -3276,13 +3277,14 @@ export const runAdaptiveTournamentSync: ReturnType<typeof internalAction> =
           {},
         );
       }
-      if (
-        activatedTournament ||
-        result.status === "active" ||
-        result.livePlay === true
-      ) {
+      const nextDelay = getAdaptiveSyncDelayMs({
+        activatedTournament,
+        status: result.status,
+        livePlay: result.livePlay,
+      });
+      if (nextDelay !== null) {
         await ctx.scheduler.runAfter(
-          4 * 60_000,
+          nextDelay,
           internal.functions.cronJobs.runAdaptiveTournamentSync,
           { chainId: args.chainId, repair: false },
         );
@@ -3330,6 +3332,14 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           reason: "no_active_tournament",
         } as const;
       }
+      const syncState = await ctx.runQuery(
+        internal.functions.tournamentSyncState.get,
+        { tournamentId: activeTournamentData.tournament._id },
+      );
+      await ctx.runMutation(
+        internal.functions.tournamentSyncState.recordAttempt,
+        { tournamentId: activeTournamentData.tournament._id },
+      );
       const tournamentStats = await ctx.runAction(
         internal.functions.utils.getAllDataForTournament,
         {
@@ -3342,6 +3352,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           },
           tzOffset: activeTournamentData.course.timeZoneOffset ?? -18000000,
           includeStatic: false,
+          includeHistorical: syncState?.finalDataComplete !== true,
         },
       );
       if (!tournamentStats.ok) {
@@ -3605,6 +3616,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             ? 4
             : 0;
       const usageMap = buildUsageRateByGolferApiId({ teams });
+      const golferUpdates: TournamentGolferUpdate[] = [];
 
       for (const g of golfers) {
         if (g.golfer?._id && g.tournamentGolfer?._id) {
@@ -3650,139 +3662,139 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
               golfers,
               allowPreStartNonStarterReplacement,
             });
-          await ctx.runMutation(
-            internal.functions.golfers.updateTournamentGolfer,
-            {
-              tournamentGolfer: {
-                _id: g.tournamentGolfer._id,
-                tournamentId: tournament._id,
-                golferId: g.golfer._id,
-                position: golferIsPreStartNonStarter
-                  ? "WD"
-                  : isNonRankingTournamentPosition(golferPosition)
-                    ? golferPosition
-                    : tiedGolfers > 1
-                      ? `T${betterGolfers + 1}`
-                      : `${betterGolfers + 1}`,
-                posChange: betterGolfersPast - betterGolfers,
-                score: golferIsPreStartNonStarter
-                  ? undefined
-                  : getEffectiveGolferLeaderboardScore(g),
-                endHole:
-                  g.live?.end_hole ?? g.tournamentGolfer?.endHole ?? undefined,
-                makeCut:
-                  g.live?.make_cut ?? g.tournamentGolfer?.makeCut ?? undefined,
-                topTen:
-                  g.live?.top_10 ?? g.tournamentGolfer?.topTen ?? undefined,
-                win: g.live?.win ?? g.tournamentGolfer?.win ?? undefined,
-                today:
-                  visibleRound === 0
-                    ? undefined
-                    : getTournamentRoundWindowMetrics({
-                        golfer: g,
-                        roundNumber: visibleRound,
-                        roundStarted: timeline.rounds[visibleRound].started,
-                        timeline,
-                        coursePar: course.par,
-                        allowPreStartNonStarterReplacement,
-                      }).today,
-                thru:
-                  visibleRound === 0
-                    ? undefined
-                    : getTournamentRoundWindowMetrics({
-                        golfer: g,
-                        roundNumber: visibleRound,
-                        roundStarted: timeline.rounds[visibleRound].started,
-                        timeline,
-                        coursePar: course.par,
-                        allowPreStartNonStarterReplacement,
-                      }).thru,
-                roundOne: roundOneScore,
-                roundTwo: roundTwoScore,
-                roundThree: roundThreeScore,
-                roundFour: roundFourScore,
-                roundOneTeeTime:
-                  g.field?.teetimes.find(
-                    (tt: {
-                      course_code: string;
-                      course_name: string;
-                      course_num: number;
-                      round_num: number;
-                      start_hole: number;
-                      teetime: number | undefined;
-                      wave: "early" | "late";
-                    }) => tt.round_num === 1,
-                  )?.teetime ??
-                  (g.historical?.round_1?.teetime
-                    ? g.historical?.round_1?.teetime
-                    : typeof g.tournamentGolfer?.roundOneTeeTime === "number"
-                      ? g.tournamentGolfer?.roundOneTeeTime
-                      : (parseDataGolfTeeTimeToMs(
-                          g.tournamentGolfer?.roundOneTeeTime as string,
-                        ) ?? undefined)),
-                roundTwoTeeTime:
-                  g.field?.teetimes.find(
-                    (tt: {
-                      course_code: string;
-                      course_name: string;
-                      course_num: number;
-                      round_num: number;
-                      start_hole: number;
-                      teetime: number | undefined;
-                      wave: "early" | "late";
-                    }) => tt.round_num === 2,
-                  )?.teetime ??
-                  (g.historical?.round_2?.teetime
-                    ? g.historical?.round_2?.teetime
-                    : typeof g.tournamentGolfer?.roundTwoTeeTime === "number"
-                      ? g.tournamentGolfer?.roundTwoTeeTime
-                      : (parseDataGolfTeeTimeToMs(
-                          g.tournamentGolfer?.roundTwoTeeTime as string,
-                        ) ?? undefined)),
-                roundThreeTeeTime:
-                  g.field?.teetimes.find(
-                    (tt: {
-                      course_code: string;
-                      course_name: string;
-                      course_num: number;
-                      round_num: number;
-                      start_hole: number;
-                      teetime: number | undefined;
-                      wave: "early" | "late";
-                    }) => tt.round_num === 3,
-                  )?.teetime ??
-                  (g.historical?.round_3?.teetime
-                    ? g.historical?.round_3?.teetime
-                    : typeof g.tournamentGolfer?.roundThreeTeeTime === "number"
-                      ? g.tournamentGolfer?.roundThreeTeeTime
-                      : (parseDataGolfTeeTimeToMs(
-                          g.tournamentGolfer?.roundThreeTeeTime as string,
-                        ) ?? undefined)),
-                roundFourTeeTime:
-                  g.field?.teetimes.find(
-                    (tt: {
-                      course_code: string;
-                      course_name: string;
-                      course_num: number;
-                      round_num: number;
-                      start_hole: number;
-                      teetime: number | undefined;
-                      wave: "early" | "late";
-                    }) => tt.round_num === 4,
-                  )?.teetime ??
-                  (g.historical?.round_4?.teetime
-                    ? g.historical?.round_4?.teetime
-                    : typeof g.tournamentGolfer?.roundFourTeeTime === "number"
-                      ? g.tournamentGolfer?.roundFourTeeTime
-                      : (parseDataGolfTeeTimeToMs(
-                          g.tournamentGolfer?.roundFourTeeTime as string,
-                        ) ?? undefined)),
-                usage: usageMap.get(g.golfer?.apiId ?? -1) ?? 0,
-                round: visibleRound,
-              },
-            },
-          );
+          golferUpdates.push({
+            _id: g.tournamentGolfer._id,
+            tournamentId: tournament._id,
+            golferId: g.golfer._id,
+            position: golferIsPreStartNonStarter
+              ? "WD"
+              : isNonRankingTournamentPosition(golferPosition)
+                ? golferPosition
+                : tiedGolfers > 1
+                  ? `T${betterGolfers + 1}`
+                  : `${betterGolfers + 1}`,
+            posChange: betterGolfersPast - betterGolfers,
+            score: golferIsPreStartNonStarter
+              ? undefined
+              : getEffectiveGolferLeaderboardScore(g),
+            endHole:
+              g.live?.end_hole ?? g.tournamentGolfer?.endHole ?? undefined,
+            makeCut:
+              g.live?.make_cut ?? g.tournamentGolfer?.makeCut ?? undefined,
+            topTen: g.live?.top_10 ?? g.tournamentGolfer?.topTen ?? undefined,
+            win: g.live?.win ?? g.tournamentGolfer?.win ?? undefined,
+            today:
+              visibleRound === 0
+                ? undefined
+                : getTournamentRoundWindowMetrics({
+                    golfer: g,
+                    roundNumber: visibleRound,
+                    roundStarted: timeline.rounds[visibleRound].started,
+                    timeline,
+                    coursePar: course.par,
+                    allowPreStartNonStarterReplacement,
+                  }).today,
+            thru:
+              visibleRound === 0
+                ? undefined
+                : getTournamentRoundWindowMetrics({
+                    golfer: g,
+                    roundNumber: visibleRound,
+                    roundStarted: timeline.rounds[visibleRound].started,
+                    timeline,
+                    coursePar: course.par,
+                    allowPreStartNonStarterReplacement,
+                  }).thru,
+            roundOne: roundOneScore,
+            roundTwo: roundTwoScore,
+            roundThree: roundThreeScore,
+            roundFour: roundFourScore,
+            roundOneTeeTime:
+              g.field?.teetimes.find(
+                (tt: {
+                  course_code: string;
+                  course_name: string;
+                  course_num: number;
+                  round_num: number;
+                  start_hole: number;
+                  teetime: number | undefined;
+                  wave: "early" | "late";
+                }) => tt.round_num === 1,
+              )?.teetime ??
+              (g.historical?.round_1?.teetime
+                ? g.historical?.round_1?.teetime
+                : typeof g.tournamentGolfer?.roundOneTeeTime === "number"
+                  ? g.tournamentGolfer?.roundOneTeeTime
+                  : (parseDataGolfTeeTimeToMs(
+                      g.tournamentGolfer?.roundOneTeeTime as string,
+                    ) ?? undefined)),
+            roundTwoTeeTime:
+              g.field?.teetimes.find(
+                (tt: {
+                  course_code: string;
+                  course_name: string;
+                  course_num: number;
+                  round_num: number;
+                  start_hole: number;
+                  teetime: number | undefined;
+                  wave: "early" | "late";
+                }) => tt.round_num === 2,
+              )?.teetime ??
+              (g.historical?.round_2?.teetime
+                ? g.historical?.round_2?.teetime
+                : typeof g.tournamentGolfer?.roundTwoTeeTime === "number"
+                  ? g.tournamentGolfer?.roundTwoTeeTime
+                  : (parseDataGolfTeeTimeToMs(
+                      g.tournamentGolfer?.roundTwoTeeTime as string,
+                    ) ?? undefined)),
+            roundThreeTeeTime:
+              g.field?.teetimes.find(
+                (tt: {
+                  course_code: string;
+                  course_name: string;
+                  course_num: number;
+                  round_num: number;
+                  start_hole: number;
+                  teetime: number | undefined;
+                  wave: "early" | "late";
+                }) => tt.round_num === 3,
+              )?.teetime ??
+              (g.historical?.round_3?.teetime
+                ? g.historical?.round_3?.teetime
+                : typeof g.tournamentGolfer?.roundThreeTeeTime === "number"
+                  ? g.tournamentGolfer?.roundThreeTeeTime
+                  : (parseDataGolfTeeTimeToMs(
+                      g.tournamentGolfer?.roundThreeTeeTime as string,
+                    ) ?? undefined)),
+            roundFourTeeTime:
+              g.field?.teetimes.find(
+                (tt: {
+                  course_code: string;
+                  course_name: string;
+                  course_num: number;
+                  round_num: number;
+                  start_hole: number;
+                  teetime: number | undefined;
+                  wave: "early" | "late";
+                }) => tt.round_num === 4,
+              )?.teetime ??
+              (g.historical?.round_4?.teetime
+                ? g.historical?.round_4?.teetime
+                : typeof g.tournamentGolfer?.roundFourTeeTime === "number"
+                  ? g.tournamentGolfer?.roundFourTeeTime
+                  : (parseDataGolfTeeTimeToMs(
+                      g.tournamentGolfer?.roundFourTeeTime as string,
+                    ) ?? undefined)),
+            usage: usageMap.get(g.golfer?.apiId ?? -1) ?? 0,
+            round: visibleRound,
+          });
         }
+      }
+      for (const updates of chunkSyncUpdates(golferUpdates)) {
+        await ctx.runMutation(
+          internal.functions.golfers.applyTournamentGolferUpdatesBatch,
+          { updates },
+        );
       }
       const updatedTeams: TournamentSyncTeam[] = [];
       for (const t of teams) {
@@ -4072,15 +4084,11 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           _id: tournament._id,
           currentRound: tournamentCurrentRound,
           livePlay: tournamentLivePlay,
-          dataGolfInPlayLastUpdate: liveData.info.last_update,
-          leaderboardLastUpdatedAt:
-            tournament.dataGolfInPlayLastUpdate !== liveData.info.last_update
-              ? now.getTime()
-              : tournament.leaderboardLastUpdatedAt,
           ...(lifecycleUpdates ?? {}),
         },
       });
 
+      const teamUpdates: TeamUpdate[] = [];
       for (const t of teamsWithComputedPositions) {
         if (t._id) {
           const teamsAheadPast = teamsWithComputedPositions.filter(
@@ -4117,48 +4125,70 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             firstPlaceTiebreakSummary,
             tournamentCompleted: tournamentStatus === "completed",
           });
-          await ctx.runMutation(internal.functions.teams.updateTeam, {
-            team: {
-              _id: t._id,
-              makeCut: t.makeCut,
-              score: t.score,
-              topTen: t.topTen,
-              topFive: t.topFive,
-              topThree: t.topThree,
-              win: t.win,
-              today: t.today ?? null,
-              thru: t.thru ?? null,
-              round: t.round,
-              roundOneTeeTime: t.roundOneTeeTime ?? null,
-              roundOne: t.roundOne ?? null,
-              roundTwoTeeTime: t.roundTwoTeeTime ?? null,
-              roundTwo: t.roundTwo ?? null,
-              roundThreeTeeTime: t.roundThreeTeeTime ?? null,
-              roundThree: t.roundThree ?? null,
-              roundFourTeeTime: t.roundFourTeeTime ?? null,
-              roundFour: t.roundFour ?? null,
-              earnings: awardTeamEarnings(
-                tier,
-                teamRank.teamsAhead,
-                teamRank.teamsTied,
-              ),
-              points: awardTeamPlayoffPoints(
-                tier,
-                teamRank.teamsAhead,
-                teamRank.teamsTied,
-              ),
-              position: teamRank.position,
-              pastPosition:
-                teamsTiedPast > 1
-                  ? `T${teamsAheadPast + 1}`
-                  : `${teamsAheadPast + 1}`,
-            },
+          teamUpdates.push({
+            _id: t._id,
+            makeCut: t.makeCut,
+            score: t.score,
+            topTen: t.topTen,
+            topFive: t.topFive,
+            topThree: t.topThree,
+            win: t.win,
+            today: t.today ?? null,
+            thru: t.thru ?? null,
+            round: t.round,
+            roundOneTeeTime: t.roundOneTeeTime ?? null,
+            roundOne: t.roundOne ?? null,
+            roundTwoTeeTime: t.roundTwoTeeTime ?? null,
+            roundTwo: t.roundTwo ?? null,
+            roundThreeTeeTime: t.roundThreeTeeTime ?? null,
+            roundThree: t.roundThree ?? null,
+            roundFourTeeTime: t.roundFourTeeTime ?? null,
+            roundFour: t.roundFour ?? null,
+            earnings: awardTeamEarnings(
+              tier,
+              teamRank.teamsAhead,
+              teamRank.teamsTied,
+            ),
+            points: awardTeamPlayoffPoints(
+              tier,
+              teamRank.teamsAhead,
+              teamRank.teamsTied,
+            ),
+            position: teamRank.position,
+            pastPosition:
+              teamsTiedPast > 1
+                ? `T${teamsAheadPast + 1}`
+                : `${teamsAheadPast + 1}`,
           });
         }
       }
+      for (const updates of chunkSyncUpdates(teamUpdates)) {
+        await ctx.runMutation(internal.functions.teams.applyTeamUpdatesBatch, {
+          updates,
+        });
+      }
 
       await syncEspnAfterDataGolfUpdate(ctx, tournament._id);
+      await ctx.runMutation(
+        internal.functions.tournamentSyncState.recordSuccess,
+        {
+          tournamentId: tournament._id,
+          dataGolfInPlayLastUpdate: liveData.info.last_update,
+          leaderboardLastUpdatedAt:
+            (syncState?.dataGolfInPlayLastUpdate ??
+              tournament.dataGolfInPlayLastUpdate) !== liveData.info.last_update
+              ? now.getTime()
+              : undefined,
+          finalDataComplete:
+            tournamentStatus === "completed" &&
+            historicalData !== undefined &&
+            _historicalEventData !== undefined,
+        },
+      );
       if (tournamentStatus === "completed") {
+        await ctx.runMutation(internal.functions.standings.refreshTournament, {
+          tournamentId: tournament._id,
+        });
         await ctx.runMutation(
           internal.functions.cronJobs.recomputeStandings,
           {},

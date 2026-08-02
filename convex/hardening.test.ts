@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { convexTest } from "convex-test";
 import schema from "./schema";
 import { api, internal } from "./_generated/api";
@@ -16,7 +16,13 @@ async function ensureMember(
   t: ReturnType<typeof createTestBackend>,
   subject: string,
 ) {
-  const authenticated = t.withIdentity({ subject });
+  const authenticated = t.withIdentity({
+    subject,
+    email: `${subject}@example.com`,
+    email_verified: true,
+    given_name: "Test",
+    family_name: "Member",
+  });
   const member = await authenticated.mutation(
     api.functions.members.ensureCurrentMember,
     {
@@ -30,6 +36,11 @@ async function ensureMember(
   if (!member) throw new Error("Expected member");
   return { authenticated, member };
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 async function seedCompetition(t: ReturnType<typeof createTestBackend>) {
   return await t.run(async (ctx) => {
@@ -116,6 +127,518 @@ describe("member privacy and identity", () => {
     expect(members[0]).not.toHaveProperty("account");
     expect(members[0]).not.toHaveProperty("clerkId");
     expect(members[0]).not.toHaveProperty("friends");
+  });
+
+  it("ignores client identity fields and skips unchanged provisioning writes", async () => {
+    const authenticated = t.withIdentity({
+      subject: "identity-source",
+      email: "REAL@EXAMPLE.COM",
+      email_verified: true,
+      given_name: "Real",
+      family_name: "Person",
+    });
+    const created = await authenticated.mutation(
+      api.functions.members.ensureCurrentMember,
+      {
+        profile: {
+          email: "forged@example.com",
+          firstname: "Forged",
+          lastname: "Identity",
+        },
+      },
+    );
+    expect(created).toMatchObject({
+      email: "real@example.com",
+      firstname: "Real",
+      lastname: "Person",
+    });
+    expect(created).not.toHaveProperty("clerkId");
+    const updatedAt = created
+      ? await t.run(async (ctx) => (await ctx.db.get(created._id))?.updatedAt)
+      : undefined;
+    const repeated = await authenticated.mutation(
+      api.functions.members.ensureCurrentMember,
+      {},
+    );
+    const repeatedUpdatedAt = repeated
+      ? await t.run(async (ctx) => (await ctx.db.get(repeated._id))?.updatedAt)
+      : undefined;
+    expect(repeatedUpdatedAt).toBe(updatedAt);
+  });
+
+  it("allows existing members without profile claims but rejects new ones", async () => {
+    const existing = await ensureMember(t, "existing-claims");
+    const missingClaims = t.withIdentity({ subject: "existing-claims" });
+    const result = await missingClaims.mutation(
+      api.functions.members.ensureCurrentMember,
+      {},
+    );
+    expect(result?._id).toBe(existing.member._id);
+
+    await expect(
+      t
+        .withIdentity({ subject: "new-missing-claims" })
+        .mutation(api.functions.members.ensureCurrentMember, {}),
+    ).rejects.toThrow("verified email claim");
+  });
+
+  it("restricts profile and friend changes to narrow self-service mutations", async () => {
+    const first = await ensureMember(t, "narrow-first");
+    const second = await ensureMember(t, "narrow-second");
+
+    await expect(
+      first.authenticated.mutation(api.functions.members.updateMembers, {
+        memberId: first.member._id,
+        data: { email: "changed@example.com" },
+      }),
+    ).rejects.toThrow("only updates names");
+    await expect(
+      first.authenticated.mutation(api.functions.members.updateMembers, {
+        memberId: second.member._id,
+        data: { firstname: "Nope" },
+      }),
+    ).rejects.toThrow("your own profile");
+
+    await first.authenticated.mutation(api.functions.members.addMyFriend, {
+      memberId: second.member._id,
+    });
+    await first.authenticated.mutation(api.functions.members.addMyFriend, {
+      memberId: second.member._id,
+    });
+    let stored = await t.run((ctx) => ctx.db.get(first.member._id));
+    expect(stored?.friends.map(String)).toEqual([String(second.member._id)]);
+
+    await first.authenticated.mutation(api.functions.members.removeMyFriend, {
+      memberId: second.member._id,
+    });
+    await first.authenticated.mutation(api.functions.members.removeMyFriend, {
+      memberId: second.member._id,
+    });
+    stored = await t.run((ctx) => ctx.db.get(first.member._id));
+    expect(stored?.friends).toEqual([]);
+  });
+
+  it("prevents an admin from deactivating their own account", async () => {
+    const admin = await ensureMember(t, "self-deactivate-admin");
+    await t.run((ctx) => ctx.db.patch(admin.member._id, { role: "admin" }));
+    await expect(
+      admin.authenticated.mutation(
+        api.functions.members.adminUpdateMemberStatus,
+        { memberId: admin.member._id, isActive: false },
+      ),
+    ).rejects.toThrow("cannot deactivate");
+  });
+});
+
+describe("admin dashboard authorization", () => {
+  let t: ReturnType<typeof createTestBackend>;
+
+  beforeEach(() => {
+    t = createTestBackend();
+  });
+
+  it("rejects non-admin dashboard and tournament-list access", async () => {
+    await seedCompetition(t);
+    const regular = await ensureMember(t, "dashboard-regular");
+    const moderator = await ensureMember(t, "dashboard-moderator");
+    await t.run((ctx) =>
+      ctx.db.patch(moderator.member._id, { role: "moderator" }),
+    );
+
+    await expect(
+      t.query(api.functions.readModels.adminGetDashboard, {}),
+    ).rejects.toThrow("Unauthorized");
+    await expect(
+      regular.authenticated.query(
+        api.functions.readModels.adminGetDashboard,
+        {},
+      ),
+    ).rejects.toThrow("Admin");
+    await expect(
+      moderator.authenticated.query(
+        api.functions.readModels.adminGetDashboard,
+        {},
+      ),
+    ).rejects.toThrow("Admin");
+    await expect(
+      regular.authenticated.query(
+        api.functions.tournaments.getAllTournaments,
+        {},
+      ),
+    ).rejects.toThrow("Admin");
+  });
+
+  it("returns bounded explicit DTOs to admins", async () => {
+    await seedCompetition(t);
+    const admin = await ensureMember(t, "dashboard-admin");
+    await t.run((ctx) => ctx.db.patch(admin.member._id, { role: "admin" }));
+    const dashboard = await admin.authenticated.query(
+      api.functions.readModels.adminGetDashboard,
+      {},
+    );
+
+    expect(dashboard.members).toHaveLength(1);
+    expect(dashboard.members[0]).not.toHaveProperty("clerkId");
+    expect(dashboard.members[0]).not.toHaveProperty("friends");
+    expect(dashboard.members[0]).not.toHaveProperty("updatedAt");
+    expect(dashboard.tournaments[0]).not.toHaveProperty("apiId");
+    expect(dashboard.tournaments[0]).not.toHaveProperty(
+      "leaderboardLastUpdatedAt",
+    );
+  });
+});
+
+describe("pre-start tournament roster privacy", () => {
+  let t: ReturnType<typeof createTestBackend>;
+
+  beforeEach(() => {
+    t = createTestBackend();
+  });
+
+  it("returns only the caller's indexed team before the server start time", async () => {
+    const seeded = await seedCompetition(t);
+    const owner = await ensureMember(t, "roster-owner");
+    const other = await ensureMember(t, "roster-other");
+    const admin = await ensureMember(t, "roster-admin");
+    const otherCardId = await t.run(async (ctx) => {
+      await ctx.db.patch(admin.member._id, { role: "admin" });
+      const ownerCardId = await ctx.db.insert("tourCards", {
+        displayName: "Owner",
+        memberId: owner.member._id,
+        seasonId: seeded.seasonId,
+        tourId: seeded.tourId,
+        earnings: 0,
+        points: 0,
+        topTen: 0,
+        madeCut: 0,
+        appearances: 0,
+      });
+      const otherCardId = await ctx.db.insert("tourCards", {
+        displayName: "Other",
+        memberId: other.member._id,
+        seasonId: seeded.seasonId,
+        tourId: seeded.tourId,
+        earnings: 0,
+        points: 0,
+        topTen: 0,
+        madeCut: 0,
+        appearances: 0,
+      });
+      await ctx.db.insert("teams", {
+        tournamentId: seeded.tournamentId,
+        tourCardId: ownerCardId,
+        memberId: owner.member._id,
+        seasonId: seeded.seasonId,
+        tourId: seeded.tourId,
+        displayName: "Owner",
+        golferIds: seeded.golferApiIds,
+      });
+      await ctx.db.insert("teams", {
+        tournamentId: seeded.tournamentId,
+        tourCardId: otherCardId,
+        memberId: other.member._id,
+        seasonId: seeded.seasonId,
+        tourId: seeded.tourId,
+        displayName: "Other",
+        golferIds: [...seeded.golferApiIds].reverse(),
+      });
+      await ctx.db.insert("teams", {
+        tournamentId: seeded.tournamentId,
+        tourCardId: otherCardId,
+        golferIds: seeded.golferApiIds,
+      });
+      await ctx.db.insert("appState", {
+        key: "primary",
+        currentSeasonId: seeded.seasonId,
+        nextTournamentId: seeded.tournamentId,
+        seasonPhase: "registration",
+        publicVersion: 1,
+        updatedAt: Date.now() + 365 * 24 * 60 * 60 * 1000,
+      });
+      return otherCardId;
+    });
+
+    const anonymous = await t.query(
+      api.functions.tournaments.getTournamentLeaderboardView,
+      { tournamentId: seeded.tournamentId },
+    );
+    const ownerView = await owner.authenticated.query(
+      api.functions.tournaments.getTournamentLeaderboardView,
+      { tournamentId: seeded.tournamentId },
+    );
+    const adminView = await admin.authenticated.query(
+      api.functions.tournaments.getTournamentLeaderboardView,
+      { tournamentId: seeded.tournamentId },
+    );
+    const anonymousScoped = await t.query(
+      api.functions.tournaments.getPgcLeaderboard,
+      {
+        tournamentId: seeded.tournamentId,
+        tourId: String(seeded.tourId),
+        variant: "regular",
+      },
+    );
+    const ownerScoped = await owner.authenticated.query(
+      api.functions.tournaments.getPgcLeaderboard,
+      {
+        tournamentId: seeded.tournamentId,
+        tourId: String(seeded.tourId),
+        variant: "regular",
+      },
+    );
+    const adminScoped = await admin.authenticated.query(
+      api.functions.tournaments.getPgcLeaderboard,
+      {
+        tournamentId: seeded.tournamentId,
+        tourId: String(seeded.tourId),
+        variant: "regular",
+      },
+    );
+    const standings = await t.query(api.functions.seasons.getStandingsIndex, {
+      seasonId: seeded.seasonId,
+    });
+    const legacyStandings = await t.query(
+      api.functions.seasons.getStandingsViewData,
+      { seasonId: seeded.seasonId },
+    );
+    const history = await t.query(
+      api.functions.seasons.getTourCardTournamentHistory,
+      { tourCardId: otherCardId },
+    );
+
+    expect(anonymous.teams).toEqual([]);
+    expect(ownerView.teams).toHaveLength(1);
+    expect(ownerView.teams[0]?.memberId).toBe(owner.member._id);
+    expect(adminView.teams).toEqual([]);
+    expect(anonymousScoped.teams).toEqual([]);
+    expect(ownerScoped.teams).toHaveLength(1);
+    expect(ownerScoped.teams[0]?.memberId).toBe(owner.member._id);
+    expect(adminScoped.teams).toEqual([]);
+    expect(standings.standingsRows).toEqual([]);
+    expect(legacyStandings.teams).toEqual([]);
+    expect(history.page).toEqual([]);
+  });
+
+  it("reveals all teams at the exact start boundary", async () => {
+    const seeded = await seedCompetition(t);
+    const owner = await ensureMember(t, "boundary-owner");
+    const startDate = Date.now() + 60_000;
+    await t.run(async (ctx) => {
+      await ctx.db.patch(seeded.tournamentId, { startDate });
+      const cardId = await ctx.db.insert("tourCards", {
+        displayName: "Boundary",
+        memberId: owner.member._id,
+        seasonId: seeded.seasonId,
+        tourId: seeded.tourId,
+        earnings: 0,
+        points: 0,
+        topTen: 0,
+        madeCut: 0,
+        appearances: 0,
+      });
+      await ctx.db.insert("teams", {
+        tournamentId: seeded.tournamentId,
+        tourCardId: cardId,
+        memberId: owner.member._id,
+        golferIds: seeded.golferApiIds,
+      });
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(startDate - 1);
+    const before = await t.query(
+      api.functions.tournaments.getTournamentLeaderboardView,
+      { tournamentId: seeded.tournamentId },
+    );
+    vi.setSystemTime(startDate);
+    const atStart = await t.query(
+      api.functions.tournaments.getTournamentLeaderboardView,
+      { tournamentId: seeded.tournamentId },
+    );
+
+    expect(before.teams).toEqual([]);
+    expect(atStart.teams).toHaveLength(1);
+  });
+});
+
+describe("tour-card self-service cutoff", () => {
+  let t: ReturnType<typeof createTestBackend>;
+
+  beforeEach(() => {
+    t = createTestBackend();
+  });
+
+  it("ignores a cancelled event and audits a switch before the next event", async () => {
+    const seeded = await seedCompetition(t);
+    const owner = await ensureMember(t, "switch-owner");
+    const { cardId, destinationTourId } = await t.run(async (ctx) => {
+      await ctx.db.patch(seeded.tournamentId, {
+        status: "cancelled",
+        startDate: Date.now() - 60_000,
+      });
+      const destinationTourId = await ctx.db.insert("tours", {
+        name: "Destination Tour",
+        shortForm: "DEST",
+        logoUrl: "https://example.com/destination.png",
+        seasonId: seeded.seasonId,
+        buyIn: 10_000,
+        playoffSpots: [],
+        maxParticipants: 75,
+      });
+      const sourceTournament = await ctx.db.get(seeded.tournamentId);
+      if (!sourceTournament) throw new Error("Expected tournament");
+      await ctx.db.insert("tournaments", {
+        name: "First Active Event",
+        startDate: Date.now() + 60_000,
+        endDate: Date.now() + 120_000,
+        tierId: sourceTournament.tierId,
+        courseId: sourceTournament.courseId,
+        seasonId: seeded.seasonId,
+        status: "upcoming",
+      });
+      const cardId = await ctx.db.insert("tourCards", {
+        displayName: "Switch Owner",
+        memberId: owner.member._id,
+        seasonId: seeded.seasonId,
+        tourId: seeded.tourId,
+        earnings: 0,
+        points: 0,
+        topTen: 0,
+        madeCut: 0,
+        appearances: 0,
+      });
+      return { cardId, destinationTourId };
+    });
+
+    const switched = await owner.authenticated.mutation(
+      api.functions.tourCards.switchTourCards,
+      { id: cardId, tourId: destinationTourId },
+    );
+    expect(switched?.tourId).toBe(destinationTourId);
+    const audits = await t.run((ctx) =>
+      ctx.db
+        .query("auditLogs")
+        .withIndex("by_entity", (q) =>
+          q.eq("entityType", "tourCard").eq("entityId", String(cardId)),
+        )
+        .collect(),
+    );
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ action: "updated" });
+  });
+
+  it("blocks owners at the exact boundary and gives admins no bypass", async () => {
+    const seeded = await seedCompetition(t);
+    const owner = await ensureMember(t, "locked-owner");
+    const admin = await ensureMember(t, "locked-admin");
+    const startDate = Date.now() + 60_000;
+    const { cardId, destinationTourId, teamId } = await t.run(async (ctx) => {
+      await ctx.db.patch(admin.member._id, { role: "admin" });
+      await ctx.db.patch(seeded.tournamentId, { startDate });
+      const destinationTourId = await ctx.db.insert("tours", {
+        name: "Locked Destination",
+        shortForm: "LOCK",
+        logoUrl: "https://example.com/locked.png",
+        seasonId: seeded.seasonId,
+        buyIn: 10_000,
+        playoffSpots: [],
+        maxParticipants: 75,
+      });
+      const cardId = await ctx.db.insert("tourCards", {
+        displayName: "Locked Owner",
+        memberId: owner.member._id,
+        seasonId: seeded.seasonId,
+        tourId: seeded.tourId,
+        earnings: 0,
+        points: 0,
+        topTen: 0,
+        madeCut: 0,
+        appearances: 0,
+      });
+      const teamId = await ctx.db.insert("teams", {
+        tournamentId: seeded.tournamentId,
+        tourCardId: cardId,
+        memberId: owner.member._id,
+        tourId: seeded.tourId,
+        golferIds: seeded.golferApiIds,
+      });
+      return { cardId, destinationTourId, teamId };
+    });
+
+    await expect(
+      admin.authenticated.mutation(api.functions.tourCards.switchTourCards, {
+        id: cardId,
+        tourId: destinationTourId,
+      }),
+    ).rejects.toThrow("your own tour card");
+
+    vi.useFakeTimers();
+    vi.setSystemTime(startDate);
+    await expect(
+      owner.authenticated.mutation(api.functions.tourCards.switchTourCards, {
+        id: cardId,
+        tourId: destinationTourId,
+      }),
+    ).rejects.toThrow("first event started");
+    await expect(
+      owner.authenticated.mutation(
+        api.functions.tourCards.deleteTourCardAndFee,
+        { id: cardId },
+      ),
+    ).rejects.toThrow("first event started");
+
+    const unchanged = await t.run(async (ctx) => ({
+      card: await ctx.db.get(cardId),
+      team: await ctx.db.get(teamId),
+      audits: await ctx.db.query("auditLogs").collect(),
+    }));
+    expect(unchanged.card?.tourId).toBe(seeded.tourId);
+    expect(unchanged.team?.tourId).toBe(seeded.tourId);
+    expect(unchanged.audits).toEqual([]);
+  });
+
+  it("allows deletion when all events are cancelled and audits financial cleanup", async () => {
+    const seeded = await seedCompetition(t);
+    const owner = await ensureMember(t, "delete-owner");
+    await t.run(async (ctx) => {
+      await ctx.db.patch(seeded.tournamentId, {
+        status: "cancelled",
+        startDate: Date.now() - 60_000,
+      });
+    });
+    const card = await owner.authenticated.mutation(
+      api.functions.tourCards.createMyTourCard,
+      {
+        displayName: "Delete Owner",
+        tourId: seeded.tourId,
+        seasonId: seeded.seasonId,
+      },
+    );
+    if (!card) throw new Error("Expected tour card");
+
+    await owner.authenticated.mutation(
+      api.functions.tourCards.deleteTourCardAndFee,
+      { id: card._id },
+    );
+    const state = await t.run(async (ctx) => ({
+      card: await ctx.db.get(card._id),
+      member: await ctx.db.get(owner.member._id),
+      transactions: await ctx.db
+        .query("transactions")
+        .withIndex("by_member", (q) => q.eq("memberId", owner.member._id))
+        .collect(),
+      audits: await ctx.db
+        .query("auditLogs")
+        .withIndex("by_entity", (q) =>
+          q.eq("entityType", "tourCard").eq("entityId", String(card._id)),
+        )
+        .collect(),
+    }));
+    expect(state.card).toBeNull();
+    expect(state.member?.account).toBe(0);
+    expect(state.transactions).toEqual([]);
+    expect(state.audits).toHaveLength(2);
+    expect(state.audits.at(-1)).toMatchObject({ action: "deleted" });
   });
 });
 
@@ -264,6 +787,18 @@ describe("registration, picks, payments, and leases", () => {
         madeCut: 0,
         appearances: 0,
       });
+      await ctx.db.insert("appState", {
+        key: "primary",
+        currentSeasonId: seeded.seasonId,
+        nextTournamentId: seeded.tournamentId,
+        seasonPhase: "in-season",
+        publicVersion: 1,
+        liveSyncChainId: "private-chain",
+        liveSyncLeaseUntil: Date.now() + 60_000,
+        liveSyncScheduledTournamentId: seeded.tournamentId,
+        pickWindowScheduledTournamentId: seeded.tournamentId,
+        updatedAt: Date.now(),
+      });
     });
     const dashboard = await t.query(
       api.functions.home.getPublicHomeDashboard,
@@ -272,6 +807,10 @@ describe("registration, picks, payments, and leases", () => {
     expect(dashboard).not.toHaveProperty("member");
     expect(dashboard).not.toHaveProperty("tourCards");
     expect(dashboard.tours).toHaveLength(1);
+    expect(dashboard.tournaments[0]).not.toHaveProperty("groupsEmailSentAt");
+    expect(dashboard.tournaments[0]).not.toHaveProperty(
+      "dataGolfInPlayLastUpdate",
+    );
   });
 
   it("maintains registration counts and denormalized team metadata", async () => {
@@ -333,6 +872,18 @@ describe("registration, picks, payments, and leases", () => {
         madeCut: 0,
         appearances: 0,
       });
+      await ctx.db.insert("appState", {
+        key: "primary",
+        currentSeasonId: seeded.seasonId,
+        nextTournamentId: seeded.tournamentId,
+        seasonPhase: "in-season",
+        publicVersion: 1,
+        liveSyncChainId: "private-bootstrap-chain",
+        liveSyncLeaseUntil: Date.now() + 60_000,
+        liveSyncScheduledTournamentId: seeded.tournamentId,
+        pickWindowScheduledTournamentId: seeded.tournamentId,
+        updatedAt: Date.now(),
+      });
     });
     const bootstrap = await first.authenticated.query(
       api.functions.readModels.getViewerBootstrap,
@@ -342,6 +893,13 @@ describe("registration, picks, payments, and leases", () => {
     expect(bootstrap.tourCards.map((card) => card.displayName)).toEqual([
       "One",
     ]);
+    expect(bootstrap.appState).not.toHaveProperty("liveSyncChainId");
+    expect(bootstrap.appState).not.toHaveProperty("liveSyncLeaseUntil");
+    expect(bootstrap.appState).not.toHaveProperty(
+      "pickWindowScheduledTournamentId",
+    );
+    expect(bootstrap.member).not.toHaveProperty("clerkId");
+    expect(bootstrap.tourCards[0]).not.toHaveProperty("updatedAt");
   });
 
   it("does not patch unchanged live-sync rows", async () => {
@@ -450,5 +1008,216 @@ describe("registration, picks, payments, and leases", () => {
     expect(first.changed).toBe(1);
     expect(second.changed).toBe(0);
     expect(badges).toHaveLength(1);
+    const [shell, standings] = await Promise.all([
+      t.query(api.functions.tournaments.getTournamentShell, {
+        tournamentId: seeded.tournamentId,
+      }),
+      t.query(api.functions.seasons.getStandingsIndex, {
+        seasonId: seeded.seasonId,
+      }),
+    ]);
+    const memberId = String(member._id);
+    expect(shell.majorChampionBadgesByMemberId[memberId]).toHaveLength(1);
+    expect(standings.majorChampionBadgesByMemberId[memberId]).toHaveLength(1);
+    expect(
+      shell.majorChampionBadgesByMemberId[memberId]?.[0],
+    ).not.toHaveProperty("updatedAt");
+  });
+});
+
+describe("phase two bounded tournament reads", () => {
+  let t: ReturnType<typeof createTestBackend>;
+
+  beforeEach(() => {
+    t = createTestBackend();
+  });
+
+  it("returns scoped leaderboard DTOs and loads team details on demand", async () => {
+    const seeded = await seedCompetition(t);
+    const owner = await ensureMember(t, "phase-two-owner");
+    const { teamId, golferId } = await t.run(async (ctx) => {
+      await ctx.db.patch(seeded.tournamentId, {
+        status: "active",
+        startDate: Date.now() - 60_000,
+        dataGolfInPlayLastUpdate: "legacy-marker",
+      });
+      const cardId = await ctx.db.insert("tourCards", {
+        displayName: "Scoped Team",
+        memberId: owner.member._id,
+        seasonId: seeded.seasonId,
+        tourId: seeded.tourId,
+        earnings: 0,
+        points: 0,
+        topTen: 0,
+        madeCut: 0,
+        appearances: 0,
+      });
+      const teamId = await ctx.db.insert("teams", {
+        tournamentId: seeded.tournamentId,
+        tourCardId: cardId,
+        golferIds: seeded.golferApiIds,
+        seasonId: seeded.seasonId,
+        tourId: seeded.tourId,
+        memberId: owner.member._id,
+        displayName: "Scoped Team",
+        score: -4,
+      });
+      const tournamentGolfer = await ctx.db
+        .query("tournamentGolfers")
+        .withIndex("by_tournament", (q) =>
+          q.eq("tournamentId", seeded.tournamentId),
+        )
+        .first();
+      if (!tournamentGolfer) throw new Error("Expected golfer");
+      await ctx.db.patch(tournamentGolfer._id, {
+        espnRounds: [
+          {
+            round: 1,
+            holes: [{ hole: 1, strokes: 4, relativeToPar: 0 }],
+          },
+        ],
+      });
+      await ctx.db.insert("tournamentSyncState", {
+        tournamentId: seeded.tournamentId,
+        leaderboardLastUpdatedAt: 12345,
+        failureCount: 0,
+        updatedAt: Date.now(),
+      });
+      return { teamId, golferId: tournamentGolfer.golferId };
+    });
+
+    const shell = await t.query(api.functions.tournaments.getTournamentShell, {
+      tournamentId: seeded.tournamentId,
+    });
+    const pgc = await t.query(api.functions.tournaments.getPgcLeaderboard, {
+      tournamentId: seeded.tournamentId,
+      tourId: String(seeded.tourId),
+      variant: "regular",
+    });
+    const pga = await owner.authenticated.query(
+      api.functions.tournaments.getPgaLeaderboard,
+      { tournamentId: seeded.tournamentId },
+    );
+    const detail = await t.query(api.functions.tournaments.getTeamDetail, {
+      teamId,
+    });
+
+    expect(shell.tournament?.leaderboardLastUpdatedAt).toBe(12345);
+    expect(shell.tournament).not.toHaveProperty("apiId");
+    expect(shell.tournament).not.toHaveProperty("dataGolfInPlayLastUpdate");
+    expect(pgc.teams).toHaveLength(1);
+    expect(pgc.teams[0]).not.toHaveProperty("golferIds");
+    expect(pgc.teams[0]).not.toHaveProperty("updatedAt");
+    expect(pga.golfers).toHaveLength(10);
+    expect(pga.golfers[0]).not.toHaveProperty("espnRounds");
+    expect(pga.viewerTeam?.golferIds).toEqual(seeded.golferApiIds);
+    expect(detail?.golfers).toHaveLength(10);
+    expect(detail?.golferIds).toEqual(seeded.golferApiIds);
+
+    const legacyScorecard = await t.query(
+      api.functions.espnGolf.getPlayerHoleScorecard,
+      { tournamentId: seeded.tournamentId, golferId },
+    );
+    expect(legacyScorecard?.rounds[0]?.holes[0]?.strokes).toBe(4);
+  });
+
+  it("prefers isolated scorecards while preserving the legacy fallback", async () => {
+    const seeded = await seedCompetition(t);
+    const golfer = await t.run((ctx) =>
+      ctx.db
+        .query("tournamentGolfers")
+        .withIndex("by_tournament", (q) =>
+          q.eq("tournamentId", seeded.tournamentId),
+        )
+        .first(),
+    );
+    if (!golfer) throw new Error("Expected golfer");
+    await t.run(async (ctx) => {
+      await ctx.db.patch(golfer._id, {
+        espnRounds: [
+          {
+            round: 1,
+            holes: [{ hole: 1, strokes: 5, relativeToPar: 1 }],
+          },
+        ],
+      });
+      await ctx.db.insert("tournamentGolferScorecards", {
+        tournamentId: seeded.tournamentId,
+        golferId: golfer.golferId,
+        rounds: [
+          {
+            round: 1,
+            holes: [{ hole: 1, strokes: 3, relativeToPar: -1 }],
+          },
+        ],
+        updatedAt: Date.now(),
+      });
+    });
+    const scorecard = await t.query(
+      api.functions.espnGolf.getPlayerHoleScorecard,
+      { tournamentId: seeded.tournamentId, golferId: golfer.golferId },
+    );
+    expect(scorecard?.rounds[0]?.holes[0]?.strokes).toBe(3);
+  });
+
+  it("applies golfer and team updates in bounded batches", async () => {
+    const seeded = await seedCompetition(t);
+    const rows = await t.run((ctx) =>
+      ctx.db
+        .query("tournamentGolfers")
+        .withIndex("by_tournament", (q) =>
+          q.eq("tournamentId", seeded.tournamentId),
+        )
+        .take(2),
+    );
+    const golferResult = await t.mutation(
+      internal.functions.golfers.applyTournamentGolferUpdatesBatch,
+      {
+        updates: rows.map((row, index) => ({
+          _id: row._id,
+          golferId: row.golferId,
+          tournamentId: row.tournamentId,
+          group: row.group,
+          score: index === 0 ? -2 : undefined,
+        })),
+      },
+    );
+    expect(golferResult).toEqual({ seen: 2, changed: 1 });
+
+    const { member } = await ensureMember(t, "batch-owner");
+    const teamId = await t.run(async (ctx) => {
+      const cardId = await ctx.db.insert("tourCards", {
+        displayName: "Batch",
+        memberId: member._id,
+        seasonId: seeded.seasonId,
+        tourId: seeded.tourId,
+        earnings: 0,
+        points: 0,
+        topTen: 0,
+        madeCut: 0,
+        appearances: 0,
+      });
+      return await ctx.db.insert("teams", {
+        tournamentId: seeded.tournamentId,
+        tourCardId: cardId,
+        golferIds: seeded.golferApiIds,
+        score: 0,
+      });
+    });
+    const teamResult = await t.mutation(
+      internal.functions.teams.applyTeamUpdatesBatch,
+      {
+        updates: [
+          { _id: teamId, score: -5 },
+          { _id: teamId, score: -5 },
+        ],
+      },
+    );
+    expect(teamResult).toEqual({ seen: 2, changed: 1 });
+    await expect(
+      t.mutation(internal.functions.teams.applyTeamUpdatesBatch, {
+        updates: Array.from({ length: 26 }, () => ({ _id: teamId })),
+      }),
+    ).rejects.toThrow("Batch limit is 25 teams");
   });
 });

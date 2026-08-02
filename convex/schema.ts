@@ -176,6 +176,7 @@ const schema = defineSchema({
     .index("by_status", ["status"])
     .index("by_espn_id", ["espnId"])
     .index("by_season_status", ["seasonId", "status"])
+    .index("by_season_start_date", ["seasonId", "startDate"])
     .index("by_season_end_date", ["seasonId", "endDate"])
     .index("by_dates", ["startDate", "endDate"]),
 
@@ -258,6 +259,9 @@ const schema = defineSchema({
     updatedRosterAt: v.optional(v.number()), // Timestamp for last roster change (golferIds update)
   })
     .index("by_tournament", ["tournamentId"])
+    .index("by_tournament_member", ["tournamentId", "memberId"])
+    .index("by_tournament_tour", ["tournamentId", "tourId"])
+    .index("by_tournament_playoff", ["tournamentId", "playoff"])
     .index("by_tour_card", ["tourCardId"])
     .index("by_tour_card_tournament", ["tourCardId", "tournamentId"])
     .index("by_season", ["seasonId"])
@@ -265,6 +269,71 @@ const schema = defineSchema({
     .index("by_tournament_points", ["tournamentId", "points"])
     .index("by_tournament_position", ["tournamentId", "position"])
     .index("by_tournament_updated_roster", ["tournamentId", "updatedRosterAt"]),
+
+  standingsContributions: defineTable({
+    seasonId: v.id("seasons"),
+    tourId: v.id("tours"),
+    tourCardId: v.id("tourCards"),
+    tournamentId: v.id("tournaments"),
+    memberId: v.id("members"),
+    displayName: v.string(),
+    tournamentName: v.string(),
+    tournamentLogoUrl: v.optional(v.string()),
+    tournamentStartDate: v.number(),
+    tournamentEndDate: v.number(),
+    tournamentStatus: v.optional(
+      v.union(
+        v.literal("upcoming"),
+        v.literal("active"),
+        v.literal("completed"),
+        v.literal("cancelled"),
+      ),
+    ),
+    tierId: v.id("tiers"),
+    tierName: v.string(),
+    isPlayoff: v.boolean(),
+    points: v.optional(v.number()),
+    earnings: v.optional(v.number()),
+    position: v.optional(v.string()),
+    score: v.optional(v.number()),
+    roundOne: v.optional(v.number()),
+    roundTwo: v.optional(v.number()),
+    roundThree: v.optional(v.number()),
+    roundFour: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_tour_card_tournament", ["tourCardId", "tournamentId"])
+    .index("by_tour_card_season", ["tourCardId", "seasonId"])
+    .index("by_tour_card_start_date", ["tourCardId", "tournamentStartDate"])
+    .index("by_tournament", ["tournamentId"])
+    .index("by_season_tour", ["seasonId", "tourId"]),
+
+  standingsRows: defineTable({
+    seasonId: v.id("seasons"),
+    tourId: v.id("tours"),
+    tourCardId: v.id("tourCards"),
+    memberId: v.id("members"),
+    displayName: v.string(),
+    variant: v.literal("regular"),
+    points: v.number(),
+    earnings: v.number(),
+    wins: v.number(),
+    topFive: v.number(),
+    topTen: v.number(),
+    madeCut: v.number(),
+    appearances: v.number(),
+    pastPoints: v.number(),
+    rank: v.number(),
+    currentPosition: v.string(),
+    playoff: v.number(),
+    posChange: v.number(),
+    posChangePO: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_card_season_variant", ["tourCardId", "seasonId", "variant"])
+    .index("by_season_variant", ["seasonId", "variant"])
+    .index("by_season_tour_variant", ["seasonId", "tourId", "variant"])
+    .index("by_season_tour_rank", ["seasonId", "tourId", "rank"]),
 
   // =========================================================================
   // GOLFER DATA
@@ -341,6 +410,27 @@ const schema = defineSchema({
     .index("by_tournament_score", ["tournamentId", "score"])
     .index("by_earnings", ["earnings"])
     .index("by_tournament_round", ["tournamentId", "round"]),
+
+  tournamentGolferScorecards: defineTable({
+    tournamentId: v.id("tournaments"),
+    golferId: v.id("golfers"),
+    rounds: espnRoundsValidator,
+    updatedAt: v.number(),
+  })
+    .index("by_golfer_tournament", ["golferId", "tournamentId"])
+    .index("by_tournament", ["tournamentId"]),
+
+  tournamentSyncState: defineTable({
+    tournamentId: v.id("tournaments"),
+    dataGolfInPlayLastUpdate: v.optional(v.union(v.string(), v.number())),
+    leaderboardLastUpdatedAt: v.optional(v.number()),
+    finalDataComplete: v.optional(v.boolean()),
+    lastAttemptAt: v.optional(v.number()),
+    lastSuccessAt: v.optional(v.number()),
+    failureCount: v.optional(v.number()),
+    skipReason: v.optional(v.string()),
+    updatedAt: v.number(),
+  }).index("by_tournament", ["tournamentId"]),
 
   /**
    * Operator-facing audit queue for ESPN identities that could not be safely

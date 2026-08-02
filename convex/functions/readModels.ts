@@ -4,7 +4,13 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { requireAdmin } from "../utils/auth";
+import { getTourCardSelfServiceDeadline } from "../utils/tourCards";
 import { PRE_TOURNAMENT_PICK_WINDOW_MS } from "./_constants";
+import {
+  projectPublicAppState,
+  projectPublicTourCard,
+  projectViewerMember,
+} from "../utils/publicDtos";
 
 const APP_STATE_KEY = "primary" as const;
 
@@ -104,9 +110,22 @@ export const getViewerBootstrap = query({
   args: {},
   handler: async (ctx) => {
     const appState = await loadOrDeriveAppState(ctx);
+    const publicAppState = projectPublicAppState(appState);
+    const selfServiceDeadline = appState.currentSeasonId
+      ? await getTourCardSelfServiceDeadline(ctx, appState.currentSeasonId)
+      : null;
+    const tourCardSelfService = {
+      closesAt: selfServiceDeadline?.startDate ?? null,
+    };
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
-      return { appState, member: null, tourCards: [], badges: [] };
+      return {
+        appState: publicAppState,
+        member: null,
+        tourCards: [],
+        badges: [],
+        tourCardSelfService,
+      };
     }
 
     const member = await ctx.db
@@ -114,7 +133,13 @@ export const getViewerBootstrap = query({
       .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
       .unique();
     if (!member) {
-      return { appState, member: null, tourCards: [], badges: [] };
+      return {
+        appState: publicAppState,
+        member: null,
+        tourCards: [],
+        badges: [],
+        tourCardSelfService,
+      };
     }
 
     const [tourCards, badges] = await Promise.all([
@@ -139,7 +164,63 @@ export const getViewerBootstrap = query({
             .take(20)
         : Promise.resolve([]),
     ]);
-    return { appState, member, tourCards, badges };
+    return {
+      appState: publicAppState,
+      member: projectViewerMember(member),
+      tourCards: tourCards.map(projectPublicTourCard),
+      badges: badges.map((badge) => ({
+        tournamentId: badge.tournamentId,
+        tournamentName: badge.tournamentName,
+        logoUrl: badge.logoUrl,
+      })),
+      tourCardSelfService,
+    };
+  },
+});
+
+export const adminGetDashboard = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const [members, tournaments, seasons] = await Promise.all([
+      ctx.db
+        .query("members")
+        .withIndex("by_active", (q) => q.eq("isActive", true))
+        .take(500),
+      ctx.db.query("tournaments").take(500),
+      ctx.db.query("seasons").take(100),
+    ]);
+
+    return {
+      members: members.map((member) => ({
+        _id: member._id,
+        firstname: member.firstname,
+        lastname: member.lastname,
+        fullName:
+          [member.firstname, member.lastname]
+            .filter(Boolean)
+            .join(" ")
+            .trim() || member.email,
+        email: member.email,
+        account: member.account,
+        isActive: member.isActive,
+      })),
+      tournaments: tournaments.map((tournament) => ({
+        _id: tournament._id,
+        name: tournament.name,
+        startDate: tournament.startDate,
+        endDate: tournament.endDate,
+        status: tournament.status,
+        seasonId: tournament.seasonId,
+        courseId: tournament.courseId,
+        tierId: tournament.tierId,
+      })),
+      seasons: seasons.map((season) => ({
+        _id: season._id,
+        year: season.year,
+        number: season.number,
+      })),
+    };
   },
 });
 

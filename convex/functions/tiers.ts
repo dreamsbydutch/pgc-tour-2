@@ -1,6 +1,7 @@
 import { query } from "../_generated/server";
 import { v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
+import { projectPublicTier } from "../utils/publicDtos";
 
 export const getTiers = query({
   args: {
@@ -58,9 +59,9 @@ export const getTiers = query({
       tiers = await ctx.db
         .query("tiers")
         .withIndex("by_season", (q) => q.eq("seasonId", filter.seasonId!))
-        .collect();
+        .take(500);
     } else {
-      tiers = await ctx.db.query("tiers").collect();
+      tiers = await ctx.db.query("tiers").take(500);
     }
 
     const filtered = tiers.filter((tier) => {
@@ -112,9 +113,9 @@ export const getTiers = query({
     const offset = Math.max(0, pagination.offset ?? 0);
     const limit =
       pagination.limit && pagination.limit > 0
-        ? pagination.limit
-        : sorted.length;
+        ? Math.min(pagination.limit, 500)
+        : 500;
 
-    return sorted.slice(offset, offset + limit);
+    return sorted.slice(offset, offset + limit).map(projectPublicTier);
   },
 });

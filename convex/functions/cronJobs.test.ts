@@ -3,15 +3,40 @@ import type { EnhancedGolfer } from "../types/types";
 import {
   buildTourCardStandingsTotals,
   buildFirstPlaceTiebreakSummary,
+  chunkSyncUpdates,
   derivePersistedTournamentState,
   deriveTournamentTimelineState,
   getEffectiveGolferLeaderboardScore,
+  getAdaptiveSyncDelayMs,
   getGolferLeaderboardRankMetrics,
   getTeamRoundWindowGolfers,
   getTournamentRoundWindowMetrics,
   getTeamTournamentRank,
   isRoundPublishedForTimeline,
 } from "./cronJobs";
+
+describe("sync batching and adaptive cadence", () => {
+  it("chunks writes at the configured boundary without losing order", () => {
+    const updates = Array.from({ length: 57 }, (_, index) => index);
+    const chunks = chunkSyncUpdates(updates);
+    expect(chunks.map((chunk) => chunk.length)).toEqual([25, 25, 7]);
+    expect(chunks.flat()).toEqual(updates);
+  });
+
+  it("uses 4/12 minute live cadence and bounded failure backoff", () => {
+    expect(getAdaptiveSyncDelayMs({ livePlay: true, status: "active" })).toBe(
+      4 * 60_000,
+    );
+    expect(getAdaptiveSyncDelayMs({ status: "active" })).toBe(12 * 60_000);
+    expect(getAdaptiveSyncDelayMs({ activatedTournament: true })).toBe(
+      12 * 60_000,
+    );
+    expect(getAdaptiveSyncDelayMs({ status: "completed" })).toBeNull();
+    expect(getAdaptiveSyncDelayMs({ failureCount: 1 })).toBe(8 * 60_000);
+    expect(getAdaptiveSyncDelayMs({ failureCount: 2 })).toBe(16 * 60_000);
+    expect(getAdaptiveSyncDelayMs({ failureCount: 9 })).toBe(30 * 60_000);
+  });
+});
 
 type TestSyncTeam = Parameters<
   typeof buildFirstPlaceTiebreakSummary

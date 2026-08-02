@@ -1,7 +1,10 @@
 import { internalMutation, mutation } from "../_generated/server";
-import { v } from "convex/values";
+import type { MutationCtx } from "../_generated/server";
+import { v, type Infer } from "convex/values";
 import { getCurrentMember, requireAdmin } from "../utils/auth";
 import { writeAuditLog } from "../utils/audit";
+import { refreshStandingsForTeams } from "../utils/standings";
+import { projectPublicTeamWithRoster } from "../utils/publicDtos";
 import { PRE_TOURNAMENT_PICK_WINDOW_MS } from "./_constants";
 
 function toOptionalNumber(
@@ -41,62 +44,113 @@ export const updateTeamRoster = internalMutation({
   },
 });
 
+const teamUpdateValidator = v.object({
+  _id: v.id("teams"),
+  earnings: v.optional(v.number()),
+  points: v.optional(v.number()),
+  makeCut: v.optional(v.number()),
+  position: v.optional(v.string()),
+  pastPosition: v.optional(v.string()),
+  score: v.optional(v.number()),
+  topTen: v.optional(v.number()),
+  topFive: v.optional(v.number()),
+  topThree: v.optional(v.number()),
+  win: v.optional(v.number()),
+  today: v.optional(v.union(v.number(), v.null())),
+  thru: v.optional(v.union(v.number(), v.null())),
+  round: v.optional(v.number()),
+  roundOneTeeTime: v.optional(v.union(v.number(), v.string(), v.null())),
+  roundOne: v.optional(v.union(v.number(), v.null())),
+  roundTwoTeeTime: v.optional(v.union(v.number(), v.string(), v.null())),
+  roundTwo: v.optional(v.union(v.number(), v.null())),
+  roundThreeTeeTime: v.optional(v.union(v.number(), v.string(), v.null())),
+  roundThree: v.optional(v.union(v.number(), v.null())),
+  roundFourTeeTime: v.optional(v.union(v.number(), v.string(), v.null())),
+  roundFour: v.optional(v.union(v.number(), v.null())),
+});
+
+export type TeamUpdate = Infer<typeof teamUpdateValidator>;
+
+async function applyTeamUpdate(ctx: MutationCtx, teamUpdate: TeamUpdate) {
+  const { _id, ...team } = teamUpdate;
+  const existing = await ctx.db.get(_id);
+  if (!existing) {
+    return { document: null, changed: false, canonicalChanged: false } as const;
+  }
+  const candidate = {
+    ...team,
+    today: toOptionalNumber(team.today),
+    thru: toOptionalNumber(team.thru),
+    roundOneTeeTime: toOptionalRoundTeeTime(team.roundOneTeeTime),
+    roundOne: toOptionalNumber(team.roundOne),
+    roundTwoTeeTime: toOptionalRoundTeeTime(team.roundTwoTeeTime),
+    roundTwo: toOptionalNumber(team.roundTwo),
+    roundThreeTeeTime: toOptionalRoundTeeTime(team.roundThreeTeeTime),
+    roundThree: toOptionalNumber(team.roundThree),
+    roundFourTeeTime: toOptionalRoundTeeTime(team.roundFourTeeTime),
+    roundFour: toOptionalNumber(team.roundFour),
+  };
+  const patch = Object.fromEntries(
+    Object.entries(candidate).filter(
+      ([key, value]) => existing[key as keyof typeof existing] !== value,
+    ),
+  );
+  if (Object.keys(patch).length === 0) {
+    return {
+      document: existing,
+      changed: false,
+      canonicalChanged: false,
+    } as const;
+  }
+  await ctx.db.patch(_id, { ...patch, updatedAt: Date.now() });
+  const document = await ctx.db.get(_id);
+  const canonicalFields = new Set([
+    "earnings",
+    "points",
+    "position",
+    "score",
+    "roundOne",
+    "roundTwo",
+    "roundThree",
+    "roundFour",
+  ]);
+  return {
+    document,
+    changed: true,
+    canonicalChanged: Object.keys(patch).some((key) =>
+      canonicalFields.has(key),
+    ),
+  } as const;
+}
+
 export const updateTeam = internalMutation({
-  args: {
-    team: v.object({
-      _id: v.id("teams"),
-      earnings: v.optional(v.number()),
-      points: v.optional(v.number()),
-      makeCut: v.optional(v.number()),
-      position: v.optional(v.string()),
-      pastPosition: v.optional(v.string()),
-      score: v.optional(v.number()),
-      topTen: v.optional(v.number()),
-      topFive: v.optional(v.number()),
-      topThree: v.optional(v.number()),
-      win: v.optional(v.number()),
-      today: v.optional(v.union(v.number(), v.null())),
-      thru: v.optional(v.union(v.number(), v.null())),
-      round: v.optional(v.number()),
-      roundOneTeeTime: v.optional(v.union(v.number(), v.string(), v.null())),
-      roundOne: v.optional(v.union(v.number(), v.null())),
-      roundTwoTeeTime: v.optional(v.union(v.number(), v.string(), v.null())),
-      roundTwo: v.optional(v.union(v.number(), v.null())),
-      roundThreeTeeTime: v.optional(v.union(v.number(), v.string(), v.null())),
-      roundThree: v.optional(v.union(v.number(), v.null())),
-      roundFourTeeTime: v.optional(v.union(v.number(), v.string(), v.null())),
-      roundFour: v.optional(v.union(v.number(), v.null())),
-    }),
-  },
+  args: { team: teamUpdateValidator },
   handler: async (ctx, args) => {
-    const { _id, ...team } = args.team;
-    const existing = await ctx.db.get(_id);
-    if (!existing) {
-      return null;
+    const result = await applyTeamUpdate(ctx, args.team);
+    if (result.canonicalChanged && result.document) {
+      await refreshStandingsForTeams(ctx, [result.document]);
     }
-    const candidate = {
-      ...team,
-      today: toOptionalNumber(team.today),
-      thru: toOptionalNumber(team.thru),
-      roundOneTeeTime: toOptionalRoundTeeTime(team.roundOneTeeTime),
-      roundOne: toOptionalNumber(team.roundOne),
-      roundTwoTeeTime: toOptionalRoundTeeTime(team.roundTwoTeeTime),
-      roundTwo: toOptionalNumber(team.roundTwo),
-      roundThreeTeeTime: toOptionalRoundTeeTime(team.roundThreeTeeTime),
-      roundThree: toOptionalNumber(team.roundThree),
-      roundFourTeeTime: toOptionalRoundTeeTime(team.roundFourTeeTime),
-      roundFour: toOptionalNumber(team.roundFour),
-    };
-    const patch = Object.fromEntries(
-      Object.entries(candidate).filter(
-        ([key, value]) => existing[key as keyof typeof existing] !== value,
-      ),
-    );
-    if (Object.keys(patch).length === 0) {
-      return existing;
+    return result.document;
+  },
+});
+
+export const applyTeamUpdatesBatch = internalMutation({
+  args: { updates: v.array(teamUpdateValidator) },
+  handler: async (ctx, args) => {
+    if (args.updates.length > 25) throw new Error("Batch limit is 25 teams");
+    let changed = 0;
+    const canonicalChanges = [];
+    for (const update of args.updates) {
+      const result = await applyTeamUpdate(ctx, update);
+      if (result.changed) changed += 1;
+      if (result.canonicalChanged && result.document) {
+        canonicalChanges.push(result.document);
+      }
     }
-    await ctx.db.patch(_id, { ...patch, updatedAt: Date.now() });
-    return await ctx.db.get(_id);
+    if (canonicalChanges.length > 0) {
+      await refreshStandingsForTeams(ctx, canonicalChanges);
+    }
+    return { seen: args.updates.length, changed };
   },
 });
 
@@ -152,7 +206,7 @@ export const saveMyTournamentTeam = mutation({
       ctx.db
         .query("tournamentGolfers")
         .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
-        .collect(),
+        .take(500),
     ]);
     const isPlayoff = (tier?.name ?? "").toLowerCase().includes("playoff");
     if (isPlayoff && (tourCard.playoff ?? 0) < 1) {
@@ -162,7 +216,7 @@ export const saveMyTournamentTeam = mutation({
       const seasonTournaments = await ctx.db
         .query("tournaments")
         .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-        .collect();
+        .take(100);
       const tierById = new Map(
         await Promise.all(
           [...new Set(seasonTournaments.map((item) => item.tierId))].map(
@@ -224,7 +278,8 @@ export const saveMyTournamentTeam = mutation({
         action: "updated",
         changes: { tournamentId: String(tournament._id) },
       });
-      return await ctx.db.get(existing._id);
+      const updated = await ctx.db.get(existing._id);
+      return updated ? projectPublicTeamWithRoster(updated) : null;
     }
 
     const teamId = await ctx.db.insert("teams", {
@@ -246,7 +301,8 @@ export const saveMyTournamentTeam = mutation({
       action: "created",
       changes: { tournamentId: String(tournament._id) },
     });
-    return await ctx.db.get(teamId);
+    const created = await ctx.db.get(teamId);
+    return created ? projectPublicTeamWithRoster(created) : null;
   },
 });
 

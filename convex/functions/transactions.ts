@@ -2,6 +2,7 @@ import { mutation, query } from "../_generated/server";
 import { v } from "convex/values";
 import { getCurrentMember, requireAdmin } from "../utils/auth";
 import { writeAuditLog } from "../utils/audit";
+import { projectMyTransaction } from "../utils/publicDtos";
 
 export const getMyTransactions = query({
   args: {
@@ -10,17 +11,19 @@ export const getMyTransactions = query({
   handler: async (ctx, args) => {
     const member = await getCurrentMember(ctx);
     if (args.seasonId) {
-      return await ctx.db
+      const transactions = await ctx.db
         .query("transactions")
         .withIndex("by_member_season", (q) =>
           q.eq("memberId", member._id).eq("seasonId", args.seasonId!),
         )
-        .collect();
+        .take(500);
+      return transactions.map(projectMyTransaction);
     }
-    return await ctx.db
+    const transactions = await ctx.db
       .query("transactions")
       .withIndex("by_member", (q) => q.eq("memberId", member._id))
-      .collect();
+      .take(500);
+    return transactions.map(projectMyTransaction);
   },
 });
 
@@ -71,6 +74,7 @@ export const createPayment = mutation({
         transactionType: "Payment",
       },
     });
-    return await ctx.db.get(transactionId);
+    const transaction = await ctx.db.get(transactionId);
+    return transaction ? projectMyTransaction(transaction) : null;
   },
 });
