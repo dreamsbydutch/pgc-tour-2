@@ -1,4 +1,5 @@
 import type { Doc } from "../_generated/dataModel";
+import { resolveChampionBadgeLogoUrl } from "./tournamentBadges";
 
 export function projectPublicSeason(season: Doc<"seasons">) {
   return {
@@ -273,7 +274,9 @@ export function projectMajorChampionBadgesByMemberId(
     (result[memberId] ??= []).push({
       tournamentId: String(badge.tournamentId),
       tournamentName: badge.tournamentName,
-      logoUrl: badge.logoUrl ?? null,
+      logoUrl:
+        resolveChampionBadgeLogoUrl(badge.tournamentName, badge.logoUrl) ??
+        null,
     });
     return result;
   }, {});

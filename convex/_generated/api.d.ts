@@ -47,6 +47,7 @@ import type * as utils_misc from "../utils/misc.js";
 import type * as utils_publicDtos from "../utils/publicDtos.js";
 import type * as utils_standings from "../utils/standings.js";
 import type * as utils_tourCards from "../utils/tourCards.js";
+import type * as utils_tournamentBadges from "../utils/tournamentBadges.js";
 import type * as validators_common from "../validators/common.js";
 import type * as validators_datagolf from "../validators/datagolf.js";
 
@@ -96,6 +97,7 @@ declare const fullApi: ApiFromModules<{
   "utils/publicDtos": typeof utils_publicDtos;
   "utils/standings": typeof utils_standings;
   "utils/tourCards": typeof utils_tourCards;
+  "utils/tournamentBadges": typeof utils_tournamentBadges;
   "validators/common": typeof validators_common;
   "validators/datagolf": typeof validators_datagolf;
 }>;

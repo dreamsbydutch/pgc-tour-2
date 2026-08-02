@@ -427,7 +427,7 @@ export function StandingsListingRow(props: {
         setIsOpen((v) => !v);
       }}
       className={cn(
-        "grid min-h-11 cursor-pointer grid-flow-row grid-cols-16 rounded-lg py-[1px] text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        "grid cursor-pointer grid-flow-row grid-cols-16 rounded-lg py-[1px] text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         getMemberRowHighlightClass({
           isCurrent,
           isFriend,
@@ -506,7 +506,7 @@ export function StandingsListingRow(props: {
       ) : null}
 
       <div
-        className="col-span-1 flex h-11 w-11 items-center justify-center place-self-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="col-span-1 flex h-8 w-8 items-center justify-center place-self-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         onClick={(e) => {
           if (!canFriend) return;
           e.stopPropagation();

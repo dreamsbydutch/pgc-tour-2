@@ -9,18 +9,10 @@ import {
   projectPublicTour,
   projectPublicTournament,
 } from "../utils/publicDtos";
-
-const CANADIAN_OPEN_BADGE_LOGO_URL =
-  "https://jn9n1jxo7g.ufs.sh/f/3f3580a5-8a7f-4bc3-a16c-53188869acb2-x8pl2f.png";
-
-function normalizeTournamentName(name: string | null | undefined) {
-  return (name ?? "").trim().toLowerCase();
-}
-
-function isCanadianOpenTournament(name: string | null | undefined) {
-  const normalizedName = normalizeTournamentName(name);
-  return normalizedName.includes("canadian open");
-}
+import {
+  isCanadianOpenTournament,
+  resolveChampionBadgeLogoUrl,
+} from "../utils/tournamentBadges";
 
 export const getCurrentSeason = query({
   args: {},
@@ -354,9 +346,9 @@ export const getCurrentSeasonMajorChampionBadges = query({
         currentBadges.push({
           tournamentId: String(tournament._id),
           tournamentName: tournament.name,
-          logoUrl: isCanadianOpenTournament(tournament.name)
-            ? CANADIAN_OPEN_BADGE_LOGO_URL
-            : (tournament.logoUrl ?? null),
+          logoUrl:
+            resolveChampionBadgeLogoUrl(tournament.name, tournament.logoUrl) ??
+            null,
         });
         badgesByMemberId[memberId] = currentBadges;
       }

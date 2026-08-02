@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Doc } from "../_generated/dataModel";
 import {
+  projectMajorChampionBadgesByMemberId,
   projectPublicAppState,
   projectPublicTournament,
   projectPublicTournamentGolfer,
   projectViewerMember,
 } from "./publicDtos";
+import { CANADIAN_OPEN_BADGE_LOGO_URL } from "./tournamentBadges";
 
 const sensitiveFields = [
   "clerkId",
@@ -104,5 +106,28 @@ describe("public DTO projectors", () => {
     expect(dto).not.toHaveProperty("clerkId");
     expect(dto).not.toHaveProperty("updatedAt");
     expect(dto).not.toHaveProperty("futureSensitiveField");
+  });
+
+  it("protects the Canadian Open champion badge from tournament-logo data", () => {
+    const badge = {
+      _id: "badge",
+      _creationTime: 1,
+      seasonId: "season",
+      memberId: "member",
+      tournamentId: "tournament",
+      tournamentName: "RBC Canadian Open",
+      logoUrl: "https://example.com/canadian-open.png",
+      updatedAt: 1,
+    } as unknown as Doc<"majorChampionBadges">;
+
+    expect(projectMajorChampionBadgesByMemberId([badge])).toEqual({
+      member: [
+        {
+          tournamentId: "tournament",
+          tournamentName: "RBC Canadian Open",
+          logoUrl: CANADIAN_OPEN_BADGE_LOGO_URL,
+        },
+      ],
+    });
   });
 });

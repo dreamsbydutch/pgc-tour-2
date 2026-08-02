@@ -11,6 +11,10 @@ import {
   projectPublicTourCard,
   projectViewerMember,
 } from "../utils/publicDtos";
+import {
+  isCanadianOpenTournament,
+  resolveChampionBadgeLogoUrl,
+} from "../utils/tournamentBadges";
 
 const APP_STATE_KEY = "primary" as const;
 
@@ -536,7 +540,7 @@ async function rebuildMajorChampionBadges(
   for (const tournament of tournaments) {
     const isBadgeTournament =
       majorTierIds.has(tournament.tierId) ||
-      tournament.name.toLowerCase().includes("canadian open");
+      isCanadianOpenTournament(tournament.name);
     if (!isBadgeTournament) continue;
     const teams = await ctx.db
       .query("teams")
@@ -561,7 +565,10 @@ async function rebuildMajorChampionBadges(
         memberId,
         tournamentId: tournament._id,
         tournamentName: tournament.name,
-        logoUrl: tournament.logoUrl,
+        logoUrl: resolveChampionBadgeLogoUrl(
+          tournament.name,
+          tournament.logoUrl,
+        ),
         updatedAt: Date.now(),
       };
       if (existing) await ctx.db.patch(existing._id, value);
@@ -602,7 +609,7 @@ export const rebuildMajorChampionBadgesForTournament = internalMutation({
     const tier = await ctx.db.get(tournament.tierId);
     const isBadgeTournament =
       tier?.name.trim().toLowerCase() === "major" ||
-      tournament.name.toLowerCase().includes("canadian open");
+      isCanadianOpenTournament(tournament.name);
     if (!isBadgeTournament) {
       return { changed: 0, skipped: true } as const;
     }
@@ -632,7 +639,10 @@ export const rebuildMajorChampionBadgesForTournament = internalMutation({
         memberId,
         tournamentId: tournament._id,
         tournamentName: tournament.name,
-        logoUrl: tournament.logoUrl,
+        logoUrl: resolveChampionBadgeLogoUrl(
+          tournament.name,
+          tournament.logoUrl,
+        ),
         updatedAt: Date.now(),
       };
       if (
