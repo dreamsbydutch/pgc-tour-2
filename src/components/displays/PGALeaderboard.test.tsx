@@ -130,4 +130,40 @@ describe("PGAHoleScorecard", () => {
       "rgba(148, 163, 184, 0.12) 30%",
     );
   });
+
+  it("withholds team OUT, IN, and TOT until their holes are fully complete", () => {
+    const buildHoles = (frontCompleted: number, backCompleted: number) =>
+      Array.from({ length: 18 }, (_, index) => ({
+        hole: index + 1,
+        strokes: 4,
+        relativeToPar: 0,
+        completion: {
+          completed: index < 9 ? frontCompleted : backCompleted,
+          total: 10,
+        },
+      }));
+    const scorecard = (frontCompleted: number, backCompleted: number) => ({
+      rounds: [
+        {
+          round: 1,
+          holes: buildHoles(frontCompleted, backCompleted),
+        },
+      ],
+    });
+    const { container, rerender } = render(
+      <PGAHoleScorecard scorecard={scorecard(9, 9)} />,
+    );
+    const summaryValues = () => {
+      const cells = container.querySelectorAll("tbody tr:first-child td");
+      return [cells[9], cells[19], cells[20]].map((cell) => cell?.textContent);
+    };
+
+    expect(summaryValues()).toEqual(["-", "-", "-"]);
+
+    rerender(<PGAHoleScorecard scorecard={scorecard(10, 9)} />);
+    expect(summaryValues()).toEqual(["36", "-", "-"]);
+
+    rerender(<PGAHoleScorecard scorecard={scorecard(10, 10)} />);
+    expect(summaryValues()).toEqual(["36", "36", "72"]);
+  });
 });

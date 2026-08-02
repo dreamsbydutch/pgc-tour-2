@@ -1,5 +1,32 @@
 import { isPlayerCut } from "@/lib";
-import type { BuildTeamAverageScorecardArgs, TeamAverageGolfer } from "@/types";
+import type {
+  BuildTeamAverageScorecardArgs,
+  EspnHoleScore,
+  TeamAverageGolfer,
+} from "@/types";
+
+/** Returns a segment total only after every counting golfer finished every hole. */
+export function getCompletedHoleSegmentTotal(
+  scores: Array<EspnHoleScore | undefined>,
+): number | undefined {
+  if (
+    scores.length === 0 ||
+    scores.some(
+      (score) =>
+        !score ||
+        (score.completion !== undefined &&
+          (score.completion.total <= 0 ||
+            score.completion.completed < score.completion.total)),
+    )
+  ) {
+    return undefined;
+  }
+
+  return (scores as EspnHoleScore[]).reduce(
+    (total, score) => total + score.strokes,
+    0,
+  );
+}
 
 /**
  * Builds hole values using the same denominator as the live team score.

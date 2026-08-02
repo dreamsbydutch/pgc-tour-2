@@ -20,6 +20,7 @@ import { MoveDown, MoveHorizontal, MoveUp } from "lucide-react";
 import { calculateScoreForSorting } from "convex/utils";
 import { api, Id, useQuery } from "@/convex";
 import type { EspnHoleScore, EspnHoleScorecard } from "@/types";
+import { getCompletedHoleSegmentTotal } from "@/utils";
 
 /**
  * Renders the PGA leaderboard listing for the current tournament.
@@ -478,16 +479,16 @@ export function PGAHoleScorecard(props: {
             const holes = new Map(
               round?.holes.map((hole) => [hole.hole, hole]) ?? [],
             );
-            const frontTotal = totalWhenComplete(
+            const frontTotal = getCompletedHoleSegmentTotal(
               Array.from(
                 { length: 9 },
-                (_, index) => holes.get(index + 1)?.strokes,
+                (_, index) => holes.get(index + 1),
               ),
             );
-            const backTotal = totalWhenComplete(
+            const backTotal = getCompletedHoleSegmentTotal(
               Array.from(
                 { length: 9 },
-                (_, index) => holes.get(index + 10)?.strokes,
+                (_, index) => holes.get(index + 10),
               ),
             );
             const roundTotal =
