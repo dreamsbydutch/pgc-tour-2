@@ -35,6 +35,7 @@ import type {
   LeaderboardStandingsSnapshot,
   TeamSourceScorecard,
 } from "@/types";
+import { buildTeamAverageScorecard } from "@/utils";
 
 /**
  * Renders the PGC leaderboard listing for the active tour (or playoff bracket).
@@ -448,138 +449,6 @@ function TeamGolfersTable(props: {
       </div>
     </>
   );
-}
-
-type TeamAverageGolfer = Pick<
-  EnhancedTournamentGolferDoc,
-  | "golferId"
-  | "apiId"
-  | "position"
-  | "today"
-  | "thru"
-  | "roundOne"
-  | "roundTwo"
-  | "roundThree"
-  | "roundFour"
->;
-
-/**
- * Builds the team scorecard from only the golfers contributing to each round.
- * A hole average includes a selected golfer only after that golfer has a score
- * for the hole, so live averages expand from one golfer up to five or ten.
- */
-export function buildTeamAverageScorecard(args: {
-  teamGolfers: TeamAverageGolfer[];
-  scorecards: TeamSourceScorecard[] | null | undefined;
-  currentRound: number;
-  tournamentCompleted: boolean;
-}) {
-  const scorecards = Array.isArray(args.scorecards) ? args.scorecards : [];
-  const scorecardByGolferId = new Map(
-    scorecards.map((scorecard) => [String(scorecard.golferId), scorecard]),
-  );
-
-  return {
-    rounds: [1, 2, 3, 4].map((roundNumber) => {
-      const countingGolfers = selectCountingGolfersForRound({
-        ...args,
-        roundNumber,
-      });
-      const holes = Array.from({ length: 18 }, (_, index) => {
-        const holeNumber = index + 1;
-        const completedScores = countingGolfers.flatMap((golfer) => {
-          const scorecard = scorecardByGolferId.get(String(golfer.golferId));
-          const score = scorecard?.rounds
-            .find((round) => round.round === roundNumber)
-            ?.holes.find((hole) => hole.hole === holeNumber);
-          return score ? [score] : [];
-        });
-        if (completedScores.length === 0) return [];
-        return [
-          {
-            hole: holeNumber,
-            strokes:
-              completedScores.reduce((sum, score) => sum + score.strokes, 0) /
-              completedScores.length,
-            relativeToPar:
-              completedScores.reduce(
-                (sum, score) => sum + score.relativeToPar,
-                0,
-              ) / completedScores.length,
-            completion: {
-              completed: completedScores.length,
-              total: countingGolfers.length,
-            },
-          },
-        ];
-      }).flat();
-      return { round: roundNumber, holes };
-    }),
-  };
-}
-
-function selectCountingGolfersForRound(args: {
-  teamGolfers: TeamAverageGolfer[];
-  roundNumber: number;
-  currentRound: number;
-  tournamentCompleted: boolean;
-}) {
-  if (args.roundNumber <= 2) return args.teamGolfers.slice(0, 10);
-  if (!args.tournamentCompleted && args.roundNumber > args.currentRound) {
-    return [];
-  }
-
-  const eligible = args.teamGolfers.filter(
-    (golfer) => !isPlayerCut(golfer.position),
-  );
-  if (eligible.length < 5) return [];
-  const isCompletedRound =
-    args.tournamentCompleted || args.roundNumber < args.currentRound;
-  if (isCompletedRound) {
-    const withRoundScores = eligible.filter(
-      (golfer) =>
-        typeof getGolferRoundScore(golfer, args.roundNumber) === "number",
-    );
-    if (withRoundScores.length < 5) return [];
-    return withRoundScores
-      .sort((a, b) => {
-        const scoreDifference =
-          getGolferRoundScore(a, args.roundNumber)! -
-          getGolferRoundScore(b, args.roundNumber)!;
-        return scoreDifference !== 0
-          ? scoreDifference
-          : (a.apiId ?? Number.POSITIVE_INFINITY) -
-              (b.apiId ?? Number.POSITIVE_INFINITY);
-      })
-      .slice(0, 5);
-  }
-
-  return [...eligible]
-    .sort((a, b) => {
-      const todayDifference =
-        (a.today ?? Number.POSITIVE_INFINITY) -
-        (b.today ?? Number.POSITIVE_INFINITY);
-      if (todayDifference !== 0) return todayDifference;
-      const thruDifference =
-        (a.thru ?? Number.POSITIVE_INFINITY) -
-        (b.thru ?? Number.POSITIVE_INFINITY);
-      if (thruDifference !== 0) return thruDifference;
-      return (
-        (a.apiId ?? Number.POSITIVE_INFINITY) -
-        (b.apiId ?? Number.POSITIVE_INFINITY)
-      );
-    })
-    .slice(0, 5);
-}
-
-function getGolferRoundScore(golfer: TeamAverageGolfer, roundNumber: number) {
-  return roundNumber === 1
-    ? golfer.roundOne
-    : roundNumber === 2
-      ? golfer.roundTwo
-      : roundNumber === 3
-        ? golfer.roundThree
-        : golfer.roundFour;
 }
 
 /**

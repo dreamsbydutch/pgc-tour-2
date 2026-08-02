@@ -1,4 +1,5 @@
 import type { Id } from "convex/_generated/dataModel";
+import type { EnhancedTournamentGolferDoc } from "convex/types/types";
 
 export type EspnHoleScore = {
   hole: number;
@@ -23,4 +24,24 @@ export type EspnHoleScorecard = {
 
 export type TeamSourceScorecard = EspnHoleScorecard & {
   golferId: Id<"golfers">;
+};
+
+export type TeamAverageGolfer = Pick<
+  EnhancedTournamentGolferDoc,
+  | "golferId"
+  | "apiId"
+  | "position"
+  | "today"
+  | "thru"
+  | "roundOne"
+  | "roundTwo"
+  | "roundThree"
+  | "roundFour"
+>;
+
+export type BuildTeamAverageScorecardArgs = {
+  teamGolfers: TeamAverageGolfer[];
+  scorecards: TeamSourceScorecard[] | null | undefined;
+  currentRound: number;
+  tournamentCompleted: boolean;
 };

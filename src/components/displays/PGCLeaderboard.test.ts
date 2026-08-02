@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Id } from "convex/_generated/dataModel";
-import { buildTeamAverageScorecard } from "./PGCLeaderboard";
+import { buildTeamAverageScorecard } from "@/utils/teamHoleScorecard";
 
 function golferId(value: number) {
   return `golfer-${value}` as Id<"golfers">;
@@ -34,7 +34,7 @@ describe("buildTeamAverageScorecard", () => {
     );
   });
 
-  it("averages only counting golfers who have completed each hole", () => {
+  it("weights live holes across every counting golfer", () => {
     const scorecard = buildTeamAverageScorecard({
       teamGolfers: buildGolfers(),
       currentRound: 3,
@@ -93,8 +93,8 @@ describe("buildTeamAverageScorecard", () => {
     expect(scorecard.rounds[0]?.holes).toEqual([
       {
         hole: 1,
-        strokes: 3.5,
-        relativeToPar: -0.5,
+        strokes: 3.9,
+        relativeToPar: -0.1,
         completion: { completed: 2, total: 10 },
       },
       {
@@ -112,6 +112,63 @@ describe("buildTeamAverageScorecard", () => {
         completion: { completed: 3, total: 5 },
       },
     ]);
+  });
+
+  it("makes live weekend hole values add up to the team Today score", () => {
+    const scorecard = buildTeamAverageScorecard({
+      teamGolfers: buildGolfers(),
+      currentRound: 4,
+      tournamentCompleted: false,
+      scorecards: [
+        {
+          golferId: golferId(1),
+          rounds: [
+            {
+              round: 4,
+              holes: [
+                { hole: 1, strokes: 3, relativeToPar: -1 },
+                { hole: 2, strokes: 2, relativeToPar: -1 },
+                { hole: 3, strokes: 4, relativeToPar: 0 },
+                { hole: 4, strokes: 5, relativeToPar: 1 },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(scorecard.rounds[3]?.holes).toEqual([
+      {
+        hole: 1,
+        strokes: 3.8,
+        relativeToPar: -0.2,
+        completion: { completed: 1, total: 5 },
+      },
+      {
+        hole: 2,
+        strokes: 2.8,
+        relativeToPar: -0.2,
+        completion: { completed: 1, total: 5 },
+      },
+      {
+        hole: 3,
+        strokes: 4,
+        relativeToPar: 0,
+        completion: { completed: 1, total: 5 },
+      },
+      {
+        hole: 4,
+        strokes: 4.2,
+        relativeToPar: 0.2,
+        completion: { completed: 1, total: 5 },
+      },
+    ]);
+    expect(
+      scorecard.rounds[3]?.holes.reduce(
+        (sum, hole) => sum + hole.relativeToPar,
+        0,
+      ),
+    ).toBeCloseTo(-0.2);
   });
 
   it("uses the five lowest completed round scores for a past weekend round", () => {
