@@ -224,6 +224,15 @@ describe("standings read model", () => {
           updatedAt: Date.now(),
         });
       }
+      await ctx.db.insert("tournaments", {
+        name: "Did Not Play",
+        startDate: Date.now() - 2 * 86_400_000,
+        endDate: Date.now() - 86_400_000,
+        tierId: fixture.regularTierId,
+        courseId: tournament.courseId,
+        seasonId: fixture.seasonId,
+        status: "completed",
+      });
     });
 
     const index = await t.query(api.functions.seasons.getStandingsIndex, {
@@ -241,6 +250,15 @@ describe("standings read model", () => {
     expect(history.page[0]).not.toHaveProperty("golferIds");
     expect(history.page[0]).not.toHaveProperty("memberId");
     expect(history.page[0].tournament).not.toHaveProperty("courseId");
+    expect(
+      history.tournaments.some((item) => item.name === "Did Not Play"),
+    ).toBe(true);
+    expect(
+      history.page.some((item) => item.tournament.name === "Did Not Play"),
+    ).toBe(false);
+    expect(
+      history.tournaments.some((item) => item.name === "Gold Playoff"),
+    ).toBe(false);
   });
 
   it("keeps a representative 500-row response below 250 KiB", async () => {

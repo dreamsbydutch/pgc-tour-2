@@ -257,6 +257,24 @@ export function projectPublicStandingsHistory(
   };
 }
 
+export function projectPublicStandingsTournament(
+  tournament: Doc<"tournaments">,
+  tier?: Doc<"tiers"> | null,
+) {
+  const tierName = tier?.name;
+  return {
+    _id: tournament._id,
+    name: tournament.name,
+    logoUrl: tournament.logoUrl,
+    startDate: tournament.startDate,
+    endDate: tournament.endDate,
+    tierId: tournament.tierId,
+    status: tournament.status,
+    tierName,
+    isPlayoff: (tierName ?? "").toLowerCase().includes("playoff"),
+  };
+}
+
 export function projectMajorChampionBadgesByMemberId(
   badges: Doc<"majorChampionBadges">[],
 ) {

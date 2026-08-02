@@ -134,6 +134,17 @@ const representativeFixtures = {
       })),
       isDone: false,
       continueCursor: "cursor",
+      tournaments: Array.from({ length: 20 }, (_, index) => ({
+        _id: `tournament-${index}`,
+        name: `Tournament ${index}`,
+        logoUrl: "https://example.com/tournament.png",
+        startDate: index,
+        endDate: index + 1,
+        tierId: "tier",
+        status: "completed",
+        tierName: "Standard",
+        isPlayoff: false,
+      })),
     },
   },
 };

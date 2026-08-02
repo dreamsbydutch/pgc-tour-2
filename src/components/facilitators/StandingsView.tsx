@@ -392,10 +392,7 @@ export function StandingsListingRow(props: {
     props.mode === "regular" && !!props.currentMemberId && !isCurrent;
 
   const teamsForCard = history.items;
-  const nonPlayoffTournaments = history.items
-    .filter((item) => !item.isPlayoff)
-    .map((item) => item.tournament)
-    .sort((a, b) => a.startDate - b.startDate);
+  const nonPlayoffTournaments = history.tournaments;
 
   const count = Math.max(1, nonPlayoffTournaments.length);
   const desktopGridStyle = {
@@ -605,8 +602,7 @@ export function StandingsListingRow(props: {
                 <div className="grid sm:hidden" style={mobileGridStyle}>
                   {nonPlayoffTournaments.map((t) => {
                     const isMajor =
-                      teamsForCard.find((x) => x.tournamentId === t._id)
-                        ?.tierName === "Major";
+                      t.tierName?.trim().toLowerCase() === "major";
                     const team = teamsForCard.find(
                       (x) => x.tournamentId === t._id,
                     );
@@ -671,8 +667,7 @@ export function StandingsListingRow(props: {
                 <div className="hidden sm:grid" style={desktopGridStyle}>
                   {nonPlayoffTournaments.map((t) => {
                     const isMajor =
-                      teamsForCard.find((x) => x.tournamentId === t._id)
-                        ?.tierName === "Major";
+                      t.tierName?.trim().toLowerCase() === "major";
                     const team = teamsForCard.find(
                       (x) => x.tournamentId === t._id,
                     );
@@ -734,17 +729,6 @@ export function StandingsListingRow(props: {
                     );
                   })}
                 </div>
-                {history.canLoadMore ? (
-                  <div className="border-t p-2 text-center">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={history.loadMore}
-                    >
-                      Load more
-                    </Button>
-                  </div>
-                ) : null}
               </div>
             )}
           </div>

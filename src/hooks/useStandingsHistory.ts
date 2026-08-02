@@ -18,6 +18,15 @@ export function useStandingsHistory(
       >
     >["page"]
   >([]);
+  const [tournaments, setTournaments] = useState<
+    NonNullable<
+      ReturnType<
+        typeof useQuery<
+          typeof api.functions.seasons.getTourCardTournamentHistory
+        >
+      >
+    >["tournaments"]
+  >([]);
   const result = useQuery(
     api.functions.seasons.getTourCardTournamentHistory,
     enabled ? { tourCardId, cursor, limit: 25 } : "skip",
@@ -26,10 +35,12 @@ export function useStandingsHistory(
   useEffect(() => {
     setCursor(null);
     setItems([]);
+    setTournaments([]);
   }, [enabled, tourCardId]);
 
   useEffect(() => {
     if (!result) return;
+    setTournaments(result.tournaments);
     setItems((current) => {
       const byId = new Map(current.map((item) => [String(item._id), item]));
       for (const item of result.page) byId.set(String(item._id), item);
@@ -37,14 +48,12 @@ export function useStandingsHistory(
         (a, b) => b.tournament.startDate - a.tournament.startDate,
       );
     });
+    if (!result.isDone) setCursor(result.continueCursor);
   }, [result]);
 
   return {
     items,
-    isLoading: enabled && result === undefined,
-    canLoadMore: result?.isDone === false,
-    loadMore: () => {
-      if (result && !result.isDone) setCursor(result.continueCursor);
-    },
+    tournaments,
+    isLoading: enabled && result?.isDone !== true,
   };
 }

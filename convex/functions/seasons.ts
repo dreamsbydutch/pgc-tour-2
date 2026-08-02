@@ -5,6 +5,7 @@ import {
   projectPublicSeason,
   projectPublicStandingsHistory,
   projectPublicStandingsRow,
+  projectPublicStandingsTournament,
   projectPublicTier,
   projectPublicTour,
   projectPublicTournament,
@@ -178,18 +179,38 @@ export const getTourCardTournamentHistory = query({
   },
   handler: async (ctx, args) => {
     const limit = Math.min(Math.max(args.limit ?? 25, 1), 50);
-    const page = await ctx.db
-      .query("standingsContributions")
-      .withIndex("by_tour_card_start_date", (q) =>
-        q.eq("tourCardId", args.tourCardId),
-      )
-      .order("desc")
-      .paginate({
-        cursor: args.cursor ?? null,
-        numItems: limit,
-        maximumRowsRead: limit,
-        maximumBytesRead: 512_000,
-      });
+    const tourCard = await ctx.db.get(args.tourCardId);
+    if (!tourCard) {
+      return {
+        continueCursor: "",
+        isDone: true,
+        page: [],
+        tournaments: [],
+      };
+    }
+    const [page, tournaments, tiers] = await Promise.all([
+      ctx.db
+        .query("standingsContributions")
+        .withIndex("by_tour_card_start_date", (q) =>
+          q.eq("tourCardId", args.tourCardId),
+        )
+        .order("desc")
+        .paginate({
+          cursor: args.cursor ?? null,
+          numItems: limit,
+          maximumRowsRead: limit,
+          maximumBytesRead: 512_000,
+        }),
+      ctx.db
+        .query("tournaments")
+        .withIndex("by_season", (q) => q.eq("seasonId", tourCard.seasonId))
+        .take(100),
+      ctx.db
+        .query("tiers")
+        .withIndex("by_season", (q) => q.eq("seasonId", tourCard.seasonId))
+        .take(30),
+    ]);
+    const tierById = new Map(tiers.map((tier) => [tier._id, tier] as const));
     const now = Date.now();
     return {
       continueCursor: page.continueCursor,
@@ -198,6 +219,15 @@ export const getTourCardTournamentHistory = query({
         if (item.tournamentStartDate > now) return [];
         return [projectPublicStandingsHistory(item)];
       }),
+      tournaments: tournaments
+        .map((tournament) =>
+          projectPublicStandingsTournament(
+            tournament,
+            tierById.get(tournament.tierId),
+          ),
+        )
+        .filter((tournament) => !tournament.isPlayoff)
+        .sort((a, b) => a.startDate - b.startDate),
     };
   },
 });
