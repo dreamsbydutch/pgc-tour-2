@@ -1,10 +1,19 @@
 import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
-import { TanStackDevtools } from "@tanstack/react-devtools";
+import { lazy, Suspense } from "react";
 
-import { NavigationContainer, Providers } from "@/facilitators";
+import { NavigationContainer } from "@/facilitators/NavigationContainer";
+import { Providers } from "@/facilitators/Providers";
 
 import "../styles.css";
-import { SignedOutPersistentSignIn } from "@/widgets";
+import { SignedOutPersistentSignIn } from "@/widgets/SignedOutPersistentSignIn";
+
+const DevelopmentTools = import.meta.env.DEV
+  ? lazy(() =>
+      import("../components/facilitators/DevelopmentTools").then((module) => ({
+        default: module.DevelopmentTools,
+      })),
+    )
+  : null;
 
 export const Route = createRootRoute({
   head: () => ({
@@ -118,12 +127,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           <NavigationContainer />
           <main className="app-main">{children}</main>
           <SignedOutPersistentSignIn />
-          {import.meta.env.DEV ? (
-            <TanStackDevtools
-              config={{
-                position: "bottom-left",
-              }}
-            />
+          {DevelopmentTools ? (
+            <Suspense fallback={null}>
+              <DevelopmentTools />
+            </Suspense>
           ) : null}
         </Providers>
         <Scripts />

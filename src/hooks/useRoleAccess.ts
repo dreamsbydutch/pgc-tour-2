@@ -3,33 +3,12 @@
  * Provides utilities for checking user roles and permissions in the UI
  */
 
-import { useEffect, useMemo, useRef } from "react";
-import { useConvexAuth, useMutation } from "convex/react";
+import { useMemo } from "react";
+import { useConvexAuth } from "convex/react";
 import { useUser } from "@clerk/tanstack-react-start";
-import { api } from "@/convex";
-import type { MemberDoc } from "../../convex/types/types";
 import { useViewerBootstrap } from "@/convex";
-
-export type UserRole = "admin" | "moderator" | "regular" | null;
-
-export interface UseRoleAccessReturn {
-  /** Current user's role */
-  role: UserRole;
-  /** True if user is an admin */
-  isAdmin: boolean;
-  /** True if user is a moderator or admin */
-  isModerator: boolean;
-  /** True if user is a regular user (not admin/moderator) */
-  isRegular: boolean;
-  /** True if user is authenticated */
-  isAuthenticated: boolean;
-  /** True if role data is loading */
-  isLoading: boolean;
-  /** Clerk user object (if signed in) */
-  clerkUser: ReturnType<typeof useUser>["user"];
-  /** Current member data */
-  member: MemberDoc | null | undefined;
-}
+import type { UseRoleAccessReturn, UserRole, ViewerMemberDto } from "@/types";
+export type { UserRole } from "@/types";
 
 /**
  * Hook to check current user's role and permissions
@@ -51,33 +30,9 @@ export function useRoleAccess(): UseRoleAccessReturn {
   const { user, isLoaded: isClerkLoaded } = useUser();
   const convexAuth = useConvexAuth();
 
-  const ensureMember = useMutation(api.functions.members.ensureCurrentMember);
-  const ensuredOnceRef = useRef(false);
-
   const bootstrap = useViewerBootstrap();
   const member =
     user && convexAuth.isAuthenticated ? bootstrap?.member : undefined;
-
-  useEffect(() => {
-    if (!isClerkLoaded) return;
-    if (!user) return;
-    if (!convexAuth.isAuthenticated) return;
-    if (ensuredOnceRef.current) return;
-
-    const email = user.primaryEmailAddress?.emailAddress;
-    if (!email) return;
-
-    ensuredOnceRef.current = true;
-    void ensureMember({
-      profile: {
-        email,
-        firstname: user.firstName ?? undefined,
-        lastname: user.lastName ?? undefined,
-      },
-    }).catch(() => {
-      ensuredOnceRef.current = false;
-    });
-  }, [ensureMember, convexAuth.isAuthenticated, isClerkLoaded, user]);
 
   const role = useMemo<UserRole>(() => {
     if (!member || typeof member !== "object" || Array.isArray(member))
@@ -123,7 +78,7 @@ export function useRoleAccess(): UseRoleAccessReturn {
       typeof member === "object" &&
       !Array.isArray(member) &&
       "_id" in member
-        ? (member as MemberDoc)
+        ? (member as ViewerMemberDto)
         : null,
   };
 }

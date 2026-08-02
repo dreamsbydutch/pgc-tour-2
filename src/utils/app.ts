@@ -1,8 +1,4 @@
 import type { ReactNode } from "react";
-import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
-import isoCountries from "i18n-iso-countries/index.js";
-import isoCountriesEn from "i18n-iso-countries/langs/en.json";
 import type { Id } from "@/convex";
 import type {
   AdminDataTableColumn,
@@ -10,8 +6,8 @@ import type {
   ArticleModule,
   ErrorResponse,
   NavigationError,
-} from "./types";
-import type { LeaderboardTeamRow } from "./types";
+} from "@/types";
+import type { LeaderboardTeamRow } from "@/types";
 import type {
   ExtendedStandingsTourCard,
   StandingsMember,
@@ -20,11 +16,13 @@ import type {
   StandingsTour,
   StandingsTourCard,
   StandingsTournament,
-} from "./types";
+} from "@/types";
+import { cn } from "./classNames";
+import { isNonEmptyString } from "./strings";
 
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+export { cn } from "./classNames";
+export { formatUserDisplayName, isNavItemActive } from "./navigation";
+export { isNonEmptyString };
 
 export function getMemberRowHighlightClass(args: {
   isCurrent?: boolean | null;
@@ -584,22 +582,6 @@ export function formatRank(position: number): string {
   return `${position}${suffix}`;
 }
 
-export function isNavItemActive(href: string, pathname: string): boolean {
-  if (!href || !pathname) return false;
-  return href === "/" ? pathname === href : pathname.startsWith(href);
-}
-
-export function formatUserDisplayName(
-  firstName: string | null,
-  lastName: string | null,
-): string {
-  const first = firstName?.trim() || "";
-  const last = lastName?.trim() || "";
-
-  if (!first && !last) return "User";
-  return `${first} ${last}`.trim();
-}
-
 export function createNavigationError(
   code: string,
   message: string,
@@ -728,12 +710,6 @@ export function formatMonthDay(
     month: "short",
     day: "numeric",
   }).format(date);
-}
-
-export function isNonEmptyString(
-  str: string | null | undefined,
-): str is string {
-  return typeof str === "string" && str.trim().length > 0;
 }
 
 /**
@@ -963,7 +939,9 @@ export function computeStandingsPositionChangeByTour(args: {
  * @returns Average score rounded to 1 decimal.
  */
 export function calculateAverageScore(
-  teams: StandingsTeam[] = [],
+  teams: Array<
+    Pick<StandingsTeam, "roundOne" | "roundTwo" | "roundThree" | "roundFour">
+  > = [],
   type: "weekday" | "weekend",
 ): number {
   const rounds =
@@ -1092,130 +1070,6 @@ export function formatMoneyUsd(amount: number | null | undefined): string {
     return `$${Math.round(amount / 100)}`;
   }
 }
-
-// -------------- COUNTRY FLAGS -----------------------------------------------------------------------------------------
-const EMOJI_FLAGS: Record<string, string> = {
-  USA: "🇺🇸",
-  CAN: "🇨🇦",
-  ENG: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}",
-  SCO: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}",
-  WAL: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}",
-  ENGLAND: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}",
-  SCOTLAND: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}",
-  WALES: "\u{1F3F4}\u{E0067}\u{E0062}\u{E0077}\u{E006C}\u{E0073}\u{E007F}",
-  "NORTHERN IRELAND": "🇬🇧",
-  IRL: "🇮🇪",
-  GER: "🇩🇪",
-  FRA: "🇫🇷",
-  ITA: "🇮🇹",
-  SWE: "🇸🇪",
-  NOR: "🇳🇴",
-  DEN: "🇩🇰",
-  FIN: "🇫🇮",
-  JPN: "🇯🇵",
-  KOR: "🇰🇷",
-  AUS: "🇦🇺",
-  RSA: "🇿🇦",
-  ARG: "🇦🇷",
-  COL: "🇨🇴",
-  CHI: "🇨🇳",
-  TPE: "🇹🇼",
-  BEL: "🇧🇪",
-  AUT: "🇦🇹",
-  PHI: "🇵🇭",
-  PUR: "🇵🇷",
-  VEN: "🇻🇪",
-};
-const COUNTRY_NAME_ALIASES: Record<string, string> = {
-  US: "United States",
-  "U.S.": "United States",
-  "U.S.A.": "United States",
-  USA: "United States",
-  UK: "United Kingdom",
-  "U.K.": "United Kingdom",
-  UAE: "United Arab Emirates",
-  "SOUTH KOREA": "Korea, Republic of",
-  "NORTH KOREA": "Korea, Democratic People's Republic of",
-  RUSSIA: "Russian Federation",
-  BOLIVIA: "Bolivia, Plurinational State of",
-  VENEZUELA: "Venezuela, Bolivarian Republic of",
-  VIETNAM: "Viet Nam",
-  LAOS: "Lao People's Democratic Republic",
-  SYRIA: "Syrian Arab Republic",
-  IRAN: "Iran, Islamic Republic of",
-  TANZANIA: "Tanzania, United Republic of",
-  BRUNEI: "Brunei Darussalam",
-  MOLDOVA: "Moldova, Republic of",
-  BOSNIA: "Bosnia and Herzegovina",
-  "CAPE VERDE": "Cabo Verde",
-  "CZECH REPUBLIC": "Czechia",
-};
-let isoCountriesLocaleReady = false;
-function ensureIsoCountriesLocaleReady() {
-  if (isoCountriesLocaleReady) return;
-  isoCountries.registerLocale(isoCountriesEn);
-  isoCountriesLocaleReady = true;
-}
-function iso2ToFlagEmoji(iso2: string): string | null {
-  const upper = iso2.toUpperCase();
-  if (!/^[A-Z]{2}$/.test(upper)) return null;
-  const base = 0x1f1e6;
-  const a = "A".charCodeAt(0);
-  const codePoints = [
-    base + (upper.charCodeAt(0) - a),
-    base + (upper.charCodeAt(1) - a),
-  ];
-  return String.fromCodePoint(...codePoints);
-}
-function toIsoAlpha2(country: string): string | null {
-  ensureIsoCountriesLocaleReady();
-
-  const normalized = country
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/\s*\([^)]*\)\s*/g, " ")
-    .trim();
-  const upper = normalized.toUpperCase();
-
-  if (/^[A-Z]{2}$/.test(upper)) return upper;
-
-  if (/^[A-Z]{3}$/.test(upper)) {
-    const alpha2 = isoCountries.alpha3ToAlpha2(upper);
-    return alpha2 ? alpha2.toUpperCase() : null;
-  }
-
-  const aliased = COUNTRY_NAME_ALIASES[upper] ?? normalized;
-
-  const alpha2 = isoCountries.getAlpha2Code(aliased, "en");
-  if (alpha2) return alpha2.toUpperCase();
-
-  const retry = isoCountries.getAlpha2Code(
-    aliased.replace(/\./g, "").replace(/&/g, "and"),
-    "en",
-  );
-  return retry ? retry.toUpperCase() : null;
-}
-export function getCountryFlagEmoji(
-  country: string | null | undefined,
-): string | null {
-  if (!country) return null;
-
-  const normalized = country
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/\s*\([^)]*\)\s*/g, " ")
-    .trim();
-  if (!normalized) return null;
-
-  const upper = normalized.toUpperCase();
-  const direct = EMOJI_FLAGS[upper];
-  if (direct) return direct;
-
-  const iso2 = toIsoAlpha2(normalized);
-  if (!iso2) return null;
-  return iso2ToFlagEmoji(iso2);
-}
-//
 
 const SCORE_PENALTIES = {
   DQ: 999,

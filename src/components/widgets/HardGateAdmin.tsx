@@ -4,7 +4,7 @@ import { Show, SignInButton } from "@clerk/tanstack-react-start";
 
 import { useRoleAccess } from "@/hooks";
 import { Button } from "@/ui";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui";
+import { Card, CardContent, CardHeader } from "@/ui";
 
 /**
  * Hard-gates a page behind Clerk authentication and an admin role.
@@ -29,7 +29,7 @@ export function HardGateAdmin(props: { children: React.ReactNode }) {
         <div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8">
           <Card className="w-full max-w-md">
             <CardHeader>
-              <CardTitle>Sign in required</CardTitle>
+              <h1 className="text-2xl font-semibold">Sign in required</h1>
             </CardHeader>
             <CardContent className="flex items-center justify-end">
               <SignInButton>
@@ -55,7 +55,7 @@ function AdminGateContent(props: { children: React.ReactNode }) {
       <div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle>Loading…</CardTitle>
+            <h1 className="text-2xl font-semibold">Loading admin dashboard…</h1>
           </CardHeader>
         </Card>
       </div>
@@ -67,7 +67,7 @@ function AdminGateContent(props: { children: React.ReactNode }) {
       <div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle>Forbidden</CardTitle>
+            <h1 className="text-2xl font-semibold">Admin access required</h1>
           </CardHeader>
         </Card>
       </div>

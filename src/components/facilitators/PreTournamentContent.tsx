@@ -11,24 +11,15 @@ import {
   DialogTitle,
 } from "@/ui";
 import { LeaderboardHeader, TournamentCountdown } from "@/displays";
-import { cn, formatMoney } from "@/lib";
-import { useMutation } from "convex/react";
-import { api } from "@/convex";
-import type { Id } from "@/convex";
+import { cn, formatMoney } from "@/utils/app";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import {
-  EnhancedTournamentDoc,
-  EnhancedTournamentTeamDoc,
-} from "convex/types/types";
+import type {
+  PreTournamentDto,
+  PreTournamentTeamDto,
+  TournamentPickPoolRow,
+} from "@/types";
 import { Show, useClerk } from "@clerk/tanstack-react-start";
-
-type TournamentPickPoolRow = {
-  golferApiId: number;
-  playerName: string;
-  group: number | null;
-  worldRank: number | null;
-  rating: number | null;
-};
+import { useAnalytics, useTournamentTeam } from "@/hooks";
 
 /**
  * Renders the pre-tournament pick experience.
@@ -55,7 +46,7 @@ type TournamentPickPoolRow = {
  * @returns The pre-tournament content UI.
  */
 export function PreTournamentContent(props: {
-  tournament: EnhancedTournamentDoc;
+  tournament: PreTournamentDto;
   member?: {
     firstname?: string | undefined;
     lastname?: string | undefined;
@@ -70,8 +61,8 @@ export function PreTournamentContent(props: {
     points: number;
     earnings: number;
   } | null;
-  allTournaments: EnhancedTournamentDoc[];
-  existingTeam?: EnhancedTournamentTeamDoc;
+  allTournaments: PreTournamentDto[];
+  existingTeam?: PreTournamentTeamDto;
   teamGolfers: {
     apiId?: number | undefined;
     _id: string;
@@ -193,7 +184,7 @@ function usePreTournamentContentModel(props: {
     points: number;
     earnings: number;
   } | null;
-  existingTeam?: EnhancedTournamentTeamDoc;
+  existingTeam?: PreTournamentTeamDto;
   teamGolfers: {
     apiId?: number | undefined;
     _id: string;
@@ -366,7 +357,7 @@ function IneligiblePlayoffsMessage() {
 function TeamPickCard(props: {
   tournamentId: string;
   tourCardId: string;
-  existingTeam: EnhancedTournamentTeamDoc | null;
+  existingTeam: PreTournamentTeamDto | null;
   teamGolfers: {
     apiId?: number | undefined;
     _id: string;
@@ -474,7 +465,9 @@ function TournamentTeamPickerDialog(props: {
     tournamentId,
     tourCardId,
   } = props;
-  const saveTeam = useMutation(api.functions.teams.saveMyTournamentTeam);
+  const { saveTeam } = useTournamentTeam();
+  const { trackTeamSubmissionFailed, trackTeamSubmissionSucceeded } =
+    useAnalytics();
 
   const pickPool = props.pickPool;
 
@@ -617,17 +610,16 @@ function TournamentTeamPickerDialog(props: {
       setErrorMessage(null);
 
       try {
-        const tournamentIdValue = tournamentId as unknown as Id<"tournaments">;
-        const tourCardIdValue = tourCardId as unknown as Id<"tourCards">;
-
         await saveTeam({
-          tournamentId: tournamentIdValue,
-          tourCardId: tourCardIdValue,
+          tournamentId,
+          tourCardId,
           golferIds: selectedApiIds,
         });
 
+        trackTeamSubmissionSucceeded(existingTeam ? "update" : "create");
         onOpenChange(false);
       } catch (e) {
+        trackTeamSubmissionFailed(existingTeam ? "update" : "create", e);
         const message = e instanceof Error ? e.message : "Failed to save team.";
         setErrorMessage(message);
       } finally {
@@ -667,6 +659,9 @@ function TournamentTeamPickerDialog(props: {
     tournamentId,
     tourCardId,
     selectedApiIds,
+    existingTeam,
+    trackTeamSubmissionFailed,
+    trackTeamSubmissionSucceeded,
   ]);
 
   const [expandedCompletedGroups, setExpandedCompletedGroups] = useState<

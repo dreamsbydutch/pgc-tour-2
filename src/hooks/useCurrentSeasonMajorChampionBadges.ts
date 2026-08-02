@@ -1,8 +1,11 @@
-"use client";
-
-import { api, useQuery } from "@/convex";
-import type { MajorChampionBadge, MajorChampionBadgesByMemberId } from "@/lib";
-export type { MajorChampionBadge, MajorChampionBadgesByMemberId } from "@/lib";
+import type {
+  MajorChampionBadge,
+  MajorChampionBadgesByMemberId,
+} from "@/types";
+export type {
+  MajorChampionBadge,
+  MajorChampionBadgesByMemberId,
+} from "@/types";
 
 export function filterMajorChampionBadges(args: {
   badges?: MajorChampionBadge[] | null;
@@ -37,8 +40,4 @@ export function filterMajorChampionBadgesByMemberId(args: {
     });
     return accumulator;
   }, {});
-}
-
-export function useCurrentSeasonMajorChampionBadges(): MajorChampionBadgesByMemberId {
-  return useQuery(api.functions.seasons.getMajorChampionBadgesReadModel) ?? {};
 }

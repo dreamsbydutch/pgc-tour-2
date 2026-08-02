@@ -1,7 +1,7 @@
 "use client";
 
-import type { TierDistributionsTableProps } from "@/lib";
-import { cn, formatMoney, formatNumber, formatRank } from "@/lib";
+import type { TierDistributionsTableProps } from "@/types";
+import { cn, formatMoney, formatNumber, formatRank } from "@/utils/app";
 
 import {
   Table,

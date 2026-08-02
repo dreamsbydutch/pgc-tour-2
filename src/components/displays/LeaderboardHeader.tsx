@@ -1,14 +1,9 @@
 "use client";
 
 import { Dropdown } from "@/ui";
-import {
-  cn,
-  DropdownItem,
-  DropdownSection,
-  formatMoney,
-  formatTournamentDateRange,
-} from "@/lib";
-import { EnhancedTournamentDoc } from "convex/types/types";
+import type { DropdownItem, DropdownSection } from "@/types";
+import { cn, formatMoney, formatTournamentDateRange } from "@/utils/app";
+import type { TournamentHeaderModel } from "@/types";
 import { ChevronDown, RefreshCwIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -37,8 +32,8 @@ import { useMemo, useState } from "react";
  * />
  */
 export function LeaderboardHeader(props: {
-  tournament: EnhancedTournamentDoc;
-  allTournaments: EnhancedTournamentDoc[];
+  tournament: TournamentHeaderModel;
+  allTournaments: TournamentHeaderModel[];
   onTournamentChange: (tournamentId: string) => void;
 }) {
   return (
@@ -59,9 +54,9 @@ export function LeaderboardHeader(props: {
           )}
         </div>
 
-        <div className="col-span-5 row-span-2 place-self-center text-center text-xl font-bold xs:text-2xl sm:text-3xl lg:text-4xl">
+        <h1 className="col-span-5 row-span-2 place-self-center text-center text-xl font-bold xs:text-2xl sm:text-3xl lg:text-4xl">
           {props.tournament.name}
-        </div>
+        </h1>
 
         <div className="col-span-2 row-span-1 place-self-center text-center text-xs xs:text-sm sm:text-base md:text-lg">
           <LeaderboardHeaderDropdown
@@ -121,8 +116,8 @@ export function LeaderboardHeader(props: {
  * @param props - `LeaderboardHeaderDropdownProps`.
  */
 function LeaderboardHeaderDropdown(props: {
-  tournament: EnhancedTournamentDoc;
-  allTournaments: EnhancedTournamentDoc[];
+  tournament: TournamentHeaderModel;
+  allTournaments: TournamentHeaderModel[];
   onTournamentChange: (tournamentId: string) => void;
 }) {
   const {
@@ -174,6 +169,7 @@ function LeaderboardHeaderDropdown(props: {
     <Dropdown
       open={isOpen}
       onOpenChange={setIsOpen}
+      triggerLabel="Switch tournament"
       triggerContent={
         <>
           <RefreshCwIcon className="h-4 w-4 sm:h-5 sm:w-5 md:hidden" />
@@ -251,8 +247,8 @@ function LeaderboardHeaderDropdown(props: {
  * @returns Dropdown state (open, year, grouping) plus derived lists and handlers.
  */
 function useLeaderboardHeaderDropdown(props: {
-  tournament: EnhancedTournamentDoc;
-  allTournaments: EnhancedTournamentDoc[];
+  tournament: TournamentHeaderModel;
+  allTournaments: TournamentHeaderModel[];
   onTournamentChange: (tournamentId: string) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -293,7 +289,7 @@ function useLeaderboardHeaderDropdown(props: {
   }, [selectedYear, props.allTournaments]);
 
   const tierGroups = useMemo(() => {
-    const groups = new Map<string, EnhancedTournamentDoc[]>();
+    const groups = new Map<string, TournamentHeaderModel[]>();
     tournamentsForYear.forEach((tournament) => {
       const tierName = tournament.tier?.name ?? "Uncategorized";
       const list = groups.get(tierName) ?? [];

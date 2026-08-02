@@ -7,10 +7,10 @@ import type {
   StandingsSnapshotValue,
 } from "@/types";
 
-interface CompetitionRank {
+type CompetitionRank = {
   position: string;
   betterCount: number;
-}
+};
 
 function roundToOneDecimal(value: number): number {
   return Math.round(value * 10) / 10;

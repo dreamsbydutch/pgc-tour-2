@@ -1,6 +1,6 @@
 import { ChevronDown } from "lucide-react";
 
-import { formatMoney } from "@/lib";
+import { formatMoney } from "@/utils/app";
 
 /**
  * Renders a compact, collapsible table that shows a rank → points/payouts mapping.

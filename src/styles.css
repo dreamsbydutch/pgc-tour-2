@@ -48,6 +48,11 @@
   h6 {
     overflow-wrap: break-word;
   }
+
+  :where(a, button, input, select, textarea, [role="button"]):focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
@@ -178,10 +183,6 @@ code {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-.app-sign-in-prompt {
-  bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
-}
-
 .app-install-prompt {
   bottom: calc(8rem + env(safe-area-inset-bottom, 0px));
 }
@@ -197,7 +198,6 @@ code {
     padding-bottom: 0;
   }
 
-  .app-sign-in-prompt,
   .app-install-prompt {
     bottom: 1rem;
   }

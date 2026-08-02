@@ -1,21 +1,15 @@
 "use client";
 
-import { Show, useClerk, useUser } from "@clerk/tanstack-react-start";
-import { Link, useLocation } from "@tanstack/react-router";
+import { Show } from "@clerk/tanstack-react-start";
+import { Link } from "@tanstack/react-router";
 import { LogIn, UserRound } from "lucide-react";
-import { useMemo } from "react";
 
-import { Button, MemberNameWithBadges, Skeleton } from "@/ui";
-import { NAV_ITEMS } from "@/lib";
-import type { NavigationContainerProps } from "@/lib";
-import { cn, formatUserDisplayName, isNavItemActive } from "@/lib";
-import { useViewerBootstrap } from "@/convex";
-
-const keepParams = <TParams extends Record<string, string>>(current: TParams) =>
-  current;
-const keepSearch = <TSearch extends Record<string, unknown>>(
-  current: TSearch,
-) => current;
+import { MemberNameWithBadges } from "@/components/ui/composites/member-name-with-badges";
+import { Button } from "@/components/ui/primitives/button";
+import { Skeleton } from "@/components/ui/primitives/skeleton";
+import type { NavigationContainerProps } from "@/types";
+import { useNavigationContainer } from "@/hooks/useNavigationContainer";
+import { cn } from "@/utils/classNames";
 
 /**
  * Main app navigation with responsive layout and a Clerk-powered account affordance.
@@ -31,7 +25,7 @@ const keepSearch = <TSearch extends Record<string, unknown>>(
  * @returns A fixed navigation bar for mobile and desktop.
  */
 export function NavigationContainer(props: NavigationContainerProps) {
-  const model = useNavigationContainer(props);
+  const model = useNavigationContainer();
 
   return (
     <nav
@@ -49,14 +43,12 @@ export function NavigationContainer(props: NavigationContainerProps) {
           <div className="flex lg:hidden">
             <Link
               to={href}
-              params={keepParams}
-              search={keepSearch}
+              search={{}}
               className={cn(
-                "relative flex items-center justify-center rounded-md p-2",
-                "focus:outline-none",
+                "relative flex h-11 w-11 items-center justify-center rounded-md",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 "transition-colors duration-200 ease-in-out",
                 isActive && "bg-gray-300 shadow-emboss",
-                "p-1",
               )}
               aria-label={`Navigate to ${label}`}
               aria-current={isActive ? "page" : undefined}
@@ -77,11 +69,10 @@ export function NavigationContainer(props: NavigationContainerProps) {
           <div className="hidden lg:flex">
             <Link
               to={href}
-              params={keepParams}
-              search={keepSearch}
+              search={{}}
               className={cn(
                 "relative flex items-center justify-center rounded-md p-2",
-                "focus:outline-none",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 "transition-colors duration-200 ease-in-out",
                 isActive && "bg-gray-300 shadow-emboss",
               )}
@@ -121,9 +112,10 @@ export function NavigationContainer(props: NavigationContainerProps) {
               <div className="flex lg:hidden">
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="relative p-1"
+                  size="icon"
+                  className="relative"
                   onClick={() => model.openSignIn()}
+                  aria-label="Sign in"
                 >
                   <LogIn
                     size={32}
@@ -180,7 +172,7 @@ export function NavigationContainer(props: NavigationContainerProps) {
                   size="icon"
                   className="relative"
                 >
-                  <Link to="/account" aria-label="Open account">
+                  <Link to="/account" search={{}} aria-label="Open account">
                     {model.avatarUrl ? (
                       <img
                         src={model.avatarUrl}
@@ -203,104 +195,6 @@ export function NavigationContainer(props: NavigationContainerProps) {
       </div>
     </nav>
   );
-}
-
-/**
- * Derives the `NavigationContainer` render model.
- *
- * Responsibilities:
- * - Computes active nav state from TanStack Router location + `NAV_ITEMS`.
- * - Bridges the Clerk sign-in modal (`useClerk().openSignIn`) to button clicks.
- * - Fetches Clerk user identity + the Convex member record to produce the display
- *   name, avatar URL, and member account cents for the signed-in account area.
- *
- * @param _props - Incoming component props (currently unused).
- * @returns A view model with `navItems`, `openSignIn`, and account display fields.
- */
-function useNavigationContainer(_props: NavigationContainerProps) {
-  const location = useLocation();
-  const { openSignIn } = useClerk();
-  const { user: clerkUser, isLoaded: isClerkLoaded } = useUser();
-
-  const bootstrap = useViewerBootstrap();
-  const memberData = bootstrap?.member ?? null;
-  const majorChampionBadgesByMemberId =
-    memberData && bootstrap
-      ? {
-          [String(memberData._id)]: bootstrap.badges.map((badge) => ({
-            tournamentId: String(badge.tournamentId),
-            tournamentName: badge.tournamentName,
-            logoUrl: badge.logoUrl ?? null,
-          })),
-        }
-      : {};
-
-  const navItems = useMemo(() => {
-    return NAV_ITEMS.map(({ href, icon: Icon, label }) => {
-      const isActive = isNavItemActive(href, location.pathname);
-      return {
-        href,
-        Icon,
-        label,
-        isActive,
-      };
-    });
-  }, [location.pathname]);
-
-  const displayName = useMemo(() => {
-    if (!clerkUser) return "User";
-    if (!memberData) {
-      return formatUserDisplayName(clerkUser.firstName, clerkUser.lastName);
-    }
-
-    if (
-      typeof memberData !== "object" ||
-      Array.isArray(memberData) ||
-      !("firstname" in memberData)
-    ) {
-      return formatUserDisplayName(clerkUser.firstName, clerkUser.lastName);
-    }
-
-    return formatUserDisplayName(
-      memberData.firstname || clerkUser.firstName,
-      memberData.lastname || clerkUser.lastName,
-    );
-  }, [clerkUser, memberData]);
-
-  const isAccountLoading =
-    !isClerkLoaded || (clerkUser && bootstrap === undefined);
-
-  const accountCents = useMemo(() => {
-    if (!clerkUser || !memberData) return undefined;
-
-    if (
-      typeof memberData !== "object" ||
-      Array.isArray(memberData) ||
-      !("account" in memberData)
-    )
-      return undefined;
-
-    return typeof memberData.account === "number"
-      ? memberData.account
-      : undefined;
-  }, [clerkUser, memberData]);
-
-  return {
-    navItems,
-    openSignIn: () => openSignIn(),
-    isAccountLoading,
-    displayName,
-    memberId:
-      memberData &&
-      typeof memberData === "object" &&
-      !Array.isArray(memberData) &&
-      "_id" in memberData
-        ? String(memberData._id)
-        : null,
-    majorChampionBadgesByMemberId,
-    avatarUrl: clerkUser?.imageUrl,
-    accountCents,
-  };
 }
 
 /**

@@ -1,6 +1,9 @@
 import { BookText, Home, List, Trophy } from "lucide-react";
-import type { NavigationItemConfig } from "./types";
-import type { TransactionStatus, TransactionType } from "./types";
+import type {
+  NavigationItemConfig,
+  TransactionStatus,
+  TransactionType,
+} from "@/types";
 
 export const DEFAULT_MAX_PARTICIPANTS = 75;
 

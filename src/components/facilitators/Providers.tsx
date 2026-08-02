@@ -1,58 +1,13 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import type { ReactNode } from "react";
 
 import { ClerkProvider, useAuth } from "@clerk/tanstack-react-start";
 import { ConvexReactClient } from "convex/react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
-import { ViewerBootstrapProvider } from "@/convex";
-
-const posthogKey = import.meta.env.VITE_POSTHOG_KEY;
-const posthogHostEnv = import.meta.env.VITE_POSTHOG_HOST;
-const posthogUiHost = "https://app.posthog.com";
-
-const posthogApiHost = (() => {
-  const raw = (posthogHostEnv ?? "").trim();
-  if (!raw) return "https://us.i.posthog.com";
-  if (raw.includes("app.posthog.com")) return "https://us.i.posthog.com";
-  return raw;
-})();
-
-function usePostHogInitialization() {
-  useEffect(() => {
-    if (!posthogKey) return;
-    let cancelled = false;
-    const initialize = () => {
-      void import("posthog-js").then(({ default: posthog }) => {
-        if (cancelled) return;
-        posthog.init(posthogKey, {
-          api_host: posthogApiHost,
-          ui_host: posthogUiHost,
-          person_profiles: "identified_only",
-          loaded: (instance) => {
-            if (import.meta.env.DEV) instance.debug();
-          },
-        });
-      });
-    };
-    const idleWindow = window as Window & {
-      requestIdleCallback?: (callback: () => void) => number;
-      cancelIdleCallback?: (handle: number) => void;
-    };
-    const handle = idleWindow.requestIdleCallback
-      ? idleWindow.requestIdleCallback(initialize)
-      : window.setTimeout(initialize, 1_000);
-    return () => {
-      cancelled = true;
-      if (idleWindow.cancelIdleCallback) {
-        idleWindow.cancelIdleCallback(handle);
-      } else {
-        window.clearTimeout(handle);
-      }
-    };
-  }, []);
-}
+import { ViewerBootstrapProvider } from "@/convex/ViewerBootstrapProvider";
+import { usePageViewAnalytics } from "@/hooks/useAnalytics";
 
 /**
  * Wraps Clerk auth to always request the Convex JWT template.
@@ -77,7 +32,7 @@ function useAuthWithConvexTokenFallback() {
 }
 
 /**
- * App-wide provider composition (PostHog + Clerk + Convex).
+ * App-wide provider composition (analytics + Clerk + Convex).
  *
  * Usage:
  * - Mounted once at the root route shell.
@@ -88,14 +43,14 @@ function useAuthWithConvexTokenFallback() {
  * Behavior:
  * - Creates a single `ConvexReactClient` for the configured Convex URL.
  * - Wraps the app in `ClerkProvider` and `ConvexProviderWithClerk`.
- * - If `VITE_POSTHOG_KEY` is set, also wraps the app in `PostHogProvider`.
+ * - If `VITE_POSTHOG_KEY` is set, emits sanitized explicit page-view events.
  * - If required env vars are missing, renders a diagnostic UI instead of crashing.
  *
  * @param props.children - App content.
  * @returns Provider-wrapped app content.
  */
 export function Providers({ children }: { children: ReactNode }) {
-  usePostHogInitialization();
+  usePageViewAnalytics();
   const convexUrl = import.meta.env.VITE_CONVEX_URL;
   const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 

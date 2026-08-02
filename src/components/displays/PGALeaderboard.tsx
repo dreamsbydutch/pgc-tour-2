@@ -8,19 +8,20 @@ import {
   parseRankFromPositionString,
   formatTeeTimeTimeOfDay,
   formatToPar,
-  getCountryFlagEmoji,
   isPlayerCut,
-} from "@/lib";
-import {
-  EnhancedTournamentGolferDoc,
-  TeamDoc,
-  TournamentDoc,
-} from "convex/types/types";
+} from "@/utils/app";
+import type {
+  PgaLeaderboardDto,
+  PgaLeaderboardGolfer,
+  TournamentShell,
+} from "@/types";
 import { MoveDown, MoveHorizontal, MoveUp } from "lucide-react";
 import { calculateScoreForSorting } from "convex/utils";
-import { api, Id, useQuery } from "@/convex";
+import { Id } from "@/convex";
+import { usePlayerHoleScorecard } from "@/hooks";
 import type { EspnHoleScore, EspnHoleScorecard } from "@/types";
 import { getCompletedHoleSegmentTotal } from "@/utils";
+import { getCountryFlagEmoji } from "@/utils/countryFlags";
 
 /**
  * Renders the PGA leaderboard listing for the current tournament.
@@ -36,9 +37,9 @@ import { getCompletedHoleSegmentTotal } from "@/utils";
  * @returns A sequence of clickable leaderboard rows.
  */
 export function PGALeaderboard(props: {
-  golfers: EnhancedTournamentGolferDoc[];
-  tournament: TournamentDoc;
-  currentTeam?: TeamDoc;
+  golfers: PgaLeaderboardGolfer[];
+  tournament: TournamentShell;
+  currentTeam?: NonNullable<PgaLeaderboardDto["viewerTeam"]>;
 }) {
   const nonCut = props.golfers.filter((r) => !isPlayerCut(r.position));
   const cut = props.golfers.filter((r) => isPlayerCut(r.position));
@@ -129,8 +130,8 @@ export function PGALeaderboard(props: {
  * - Within the cut section, add a divider when `group` changes.
  */
 function shouldRenderPgaDivider(
-  prev: EnhancedTournamentGolferDoc,
-  curr: EnhancedTournamentGolferDoc,
+  prev: PgaLeaderboardGolfer,
+  curr: PgaLeaderboardGolfer,
 ) {
   const prevIsCut = isPlayerCut(prev.position);
   const currIsCut = isPlayerCut(curr.position);
@@ -171,7 +172,7 @@ function LeaderboardListing({
     _id: Id<"tournaments">;
     currentRound?: number | undefined;
     livePlay?: boolean | null;
-    status?: TournamentDoc["status"];
+    status?: TournamentShell["status"];
   };
   team?: {
     _id: string;
@@ -202,11 +203,10 @@ function LeaderboardListing({
   };
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const holeScorecard = useQuery(
-    api.functions.espnGolf.getPlayerHoleScorecard,
-    isOpen
-      ? { tournamentId: tournament._id, golferId: golfer.golferId }
-      : "skip",
+  const holeScorecard = usePlayerHoleScorecard(
+    tournament._id,
+    golfer.golferId,
+    isOpen,
   );
   const isCut = isPlayerCut(golfer.position);
   const isUserGolfer = !!team?.golferIds.includes(golfer.apiId);
@@ -480,16 +480,10 @@ export function PGAHoleScorecard(props: {
               round?.holes.map((hole) => [hole.hole, hole]) ?? [],
             );
             const frontTotal = getCompletedHoleSegmentTotal(
-              Array.from(
-                { length: 9 },
-                (_, index) => holes.get(index + 1),
-              ),
+              Array.from({ length: 9 }, (_, index) => holes.get(index + 1)),
             );
             const backTotal = getCompletedHoleSegmentTotal(
-              Array.from(
-                { length: 9 },
-                (_, index) => holes.get(index + 10),
-              ),
+              Array.from({ length: 9 }, (_, index) => holes.get(index + 10)),
             );
             const roundTotal =
               round?.totalStrokes ??

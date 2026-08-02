@@ -1,15 +1,8 @@
 "use client";
 
 import { Link } from "@tanstack/react-router";
-import {
-  Dispatch,
-  SetStateAction,
-  useCallback,
-  useMemo,
-  useState,
-} from "react";
 import { Loader2 } from "lucide-react";
-import { api, useMutation, type Doc, type Id } from "@/convex";
+import { type Doc } from "@/convex";
 import {
   Button,
   Dialog,
@@ -20,10 +13,16 @@ import {
   MemberNameWithBadges,
   DialogTitle,
 } from "@/ui";
-import { DEFAULT_MAX_PARTICIPANTS } from "@/lib/constants";
-import { cn, formatMoney, formatMonthDay, getMemberDisplayName } from "@/lib";
+import {
+  cn,
+  formatMoney,
+  formatMonthDay,
+  getMemberDisplayName,
+} from "@/utils/app";
 import { SeasonDoc, TourCardDoc } from "convex/types/types";
-import { useViewerBootstrap } from "@/convex";
+import { useTourCardChange, useTourCardRegistration } from "@/hooks";
+import type { TourRegistrationOption } from "@/types";
+import { DEFAULT_MAX_PARTICIPANTS } from "@/utils/constants";
 
 /**
  * TourCardForm
@@ -61,31 +60,27 @@ export function TourCardForm({
   member: Doc<"members"> | null;
   seasonTourCards: TourCardDoc[];
 }) {
-  const { state, toursWithMeta, isCreatingTourCard, setIsCreatingTourCard } =
-    useTourCardForm({
-      tours,
-      member,
-      seasonTourCards,
-    });
+  const registration = useTourCardRegistration({
+    currentSeason,
+    tours,
+    member,
+    seasonTourCards,
+  });
 
-  if (state === "signed_out" || member === null) return null;
+  if (registration.state === "signed_out" || member === null) return null;
 
-  if (state === "registered") {
-    const tours = toursWithMeta as unknown as {
-      tour: Doc<"tours">;
-      tourCards: TourCardDoc[];
-      registeredCount: number;
-    }[];
-    const currentTourCard = seasonTourCards.find(
-      (card) => card.memberId === member._id,
-    ) as TourCardDoc;
+  if (registration.state === "registered" && registration.currentTourCard) {
     return (
       <TourCardOutput
         key={member._id}
-        tours={tours}
+        tours={registration.toursWithMeta}
         season={currentSeason}
         member={member}
-        currentTourCard={currentTourCard}
+        currentTourCard={registration.currentTourCard}
+        closesAt={registration.closesAt}
+        majorChampionBadgesByMemberId={
+          registration.majorChampionBadgesByMemberId
+        }
       />
     );
   }
@@ -96,80 +91,34 @@ export function TourCardForm({
         {`Choose your Tour for the ${currentSeason.year} season below.`}
       </h2>
       <div className="flex h-full flex-col gap-2 sm:flex-row">
-        {toursWithMeta?.map((t) => (
+        {registration.toursWithMeta.map((tour) => (
           <TourCardFormButton
-            key={t.tour._id}
-            tour={t}
-            season={currentSeason}
-            member={member}
-            isCreatingTourCard={isCreatingTourCard}
-            setIsCreatingTourCard={setIsCreatingTourCard}
+            key={tour.tour._id}
+            tour={tour}
+            isCreating={registration.creatingTourId === String(tour.tour._id)}
+            isDisabled={
+              registration.creatingTourId !== null || tour.spotsRemaining <= 0
+            }
+            hasEffect={registration.effectTourId === String(tour.tour._id)}
+            onAnimationEnd={registration.clearEffect}
+            onRegister={() => void registration.register(tour)}
           />
         ))}
       </div>
+      {registration.error ? (
+        <p role="alert" className="text-sm text-red-700">
+          {registration.error}
+        </p>
+      ) : null}
       <div className="text-center font-varela text-base text-slate-600">
         Coordinate with your friends to make sure you sign up for the same tour
         for the best experience. For more info on the PGC Tour, check out the{" "}
-        <Link
-          to="/rulebook"
-          params={(current) => current}
-          search={(current) => current}
-          className="underline"
-        >
+        <Link to="/rulebook" search={{}} className="underline">
           Rulebook.
         </Link>
       </div>
     </div>
   );
-}
-
-/**
- * useTourCardForm
- *
- * Fetches and derives the view-model used by `TourCardForm`.
- *
- * @returns A stateful view-model which includes render-state discrimination and, when ready,
- * the tour options + metadata needed to render `TourCardFormButton`.
- */
-function useTourCardForm({
-  tours,
-  member,
-  seasonTourCards,
-}: {
-  tours: Doc<"tours">[];
-  member: Doc<"members"> | null;
-  seasonTourCards: TourCardDoc[];
-}) {
-  const [isCreatingTourCard, setIsCreatingTourCard] = useState(false);
-
-  const currentTourCard = useMemo(() => {
-    if (!member) return null;
-    return seasonTourCards.find((card) => card.memberId === member._id) ?? null;
-  }, [member, seasonTourCards]);
-  const toursWithMeta = useMemo(() => {
-    return tours.map((tour) => {
-      const tc = seasonTourCards.filter((card) => card.tourId === tour._id);
-      return {
-        tour,
-        tourCards: tc,
-        registeredCount: tour.registeredCount ?? tc.length,
-      };
-    });
-  }, [tours, seasonTourCards]);
-
-  if (!member) {
-    return { state: "signed_out" as const };
-  }
-  if (currentTourCard) {
-    return { state: "registered" as const };
-  }
-
-  return {
-    state: "ready" as const,
-    toursWithMeta,
-    isCreatingTourCard,
-    setIsCreatingTourCard,
-  };
 }
 
 /**
@@ -197,38 +146,25 @@ function useTourCardForm({
  * <TourCardOutput />
  */
 function TourCardOutput(props: {
-  tours?: {
-    tour: Doc<"tours">;
-    tourCards: TourCardDoc[];
-    registeredCount: number;
-  }[];
+  tours?: TourRegistrationOption[];
   season: SeasonDoc;
   member: Doc<"members">;
   currentTourCard: TourCardDoc;
+  closesAt: number | null;
+  majorChampionBadgesByMemberId: Record<
+    string,
+    Array<{
+      tournamentId: string;
+      tournamentName: string;
+      logoUrl: string | null;
+    }>
+  >;
 }) {
-  const bootstrap = useViewerBootstrap();
-  const majorChampionBadgesByMemberId = bootstrap?.member
-    ? {
-        [String(bootstrap.member._id)]: bootstrap.badges.map((badge) => ({
-          tournamentId: String(badge.tournamentId),
-          tournamentName: badge.tournamentName,
-          logoUrl: badge.logoUrl ?? null,
-        })),
-      }
-    : {};
   const currentTour = props.tours?.find(
     (t) => t.tour._id === props.currentTourCard.tourId,
-  ) as
-    | {
-        tour: Doc<"tours">;
-        tourCards: TourCardDoc[];
-        registeredCount: number;
-      }
-    | undefined;
+  );
   if (!currentTour) return null;
-  const spotsRemaining =
-    +(currentTour?.tour.maxParticipants ?? DEFAULT_MAX_PARTICIPANTS) -
-    (currentTour?.registeredCount ?? 0);
+  const spotsRemaining = currentTour.spotsRemaining;
   return (
     <div className="mt-2 flex flex-col items-center justify-center">
       <h2 className="max-w-xl text-center font-varela text-lg text-slate-600">
@@ -246,7 +182,9 @@ function TourCardOutput(props: {
         <h2 className="text-2xl font-bold text-gray-800">
           <MemberNameWithBadges
             name={getMemberDisplayName(props.member, undefined)}
-            badges={majorChampionBadgesByMemberId[String(props.member._id)]}
+            badges={
+              props.majorChampionBadgesByMemberId[String(props.member._id)]
+            }
           />
         </h2>
         <p className="text-base italic text-gray-600">
@@ -263,6 +201,7 @@ function TourCardOutput(props: {
           currentSeason={props.season}
           tours={props.tours}
           currentTourCard={props.currentTourCard}
+          closesAt={props.closesAt}
         />
       )}
       {props.member && props.member.account < 0 && (
@@ -304,6 +243,7 @@ function TourCardChangeButton({
   currentSeason,
   tours,
   currentTourCard,
+  closesAt,
 }: {
   currentSeason: SeasonDoc;
   tours: {
@@ -312,6 +252,7 @@ function TourCardChangeButton({
     registeredCount: number;
   }[];
   currentTourCard: TourCardDoc;
+  closesAt: number | null;
 }) {
   const {
     isLoading,
@@ -328,7 +269,10 @@ function TourCardChangeButton({
     handleButtonClick,
     handleSwitch,
     handleRemoveTourCard,
-  } = useTourCardChangeButton({ currentSeason, currentTourCard });
+    isSelfServiceOpen,
+    closesAtLabel,
+    closedMessage,
+  } = useTourCardChange({ currentSeason, currentTourCard, closesAt });
 
   return (
     <>
@@ -342,9 +286,18 @@ function TourCardChangeButton({
         onAnimationEnd={() => setEffect(false)}
         variant="destructive"
         onClick={handleButtonClick}
+        disabled={!isSelfServiceOpen || isLoading}
       >
         Switch Tours
       </Button>
+
+      <div className="mb-2 text-center text-xs text-slate-600">
+        {isSelfServiceOpen
+          ? closesAtLabel
+            ? `Changes close ${closesAtLabel}.`
+            : "Tour card changes are currently open."
+          : closedMessage}
+      </div>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="w-full">
@@ -474,6 +427,7 @@ function TourCardChangeButton({
                   type="button"
                   variant="destructive"
                   onClick={handleRemoveTourCard}
+                  disabled={!isSelfServiceOpen || isLoading}
                 >
                   Remove Tour Card
                 </Button>
@@ -482,6 +436,8 @@ function TourCardChangeButton({
                   onClick={handleSwitch}
                   disabled={
                     !selectedTourId ||
+                    !isSelfServiceOpen ||
+                    isLoading ||
                     tours.filter((t) => t.tour._id !== currentTourCard.tourId)
                       .length === 0
                   }
@@ -497,109 +453,6 @@ function TourCardChangeButton({
       </Dialog>
     </>
   );
-}
-
-/**
- * useTourCardChangeButton
- *
- * Fetches and derives the view-model for `TourCardChangeButton`, including eligible tours,
- * per-tour remaining capacity, and all UI state/handlers for the dialog.
- *
- * @param input - Hook inputs.
- * @param input.currentTourCard - The current tour card to update.
- * @param input.currentSeason - The current season.
- * @returns A view-model for rendering the button and switch dialog.
- */
-function useTourCardChangeButton({
-  currentSeason,
-  currentTourCard,
-}: {
-  currentSeason: SeasonDoc;
-  currentTourCard: TourCardDoc;
-}) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [effect, setEffect] = useState(false);
-  const [confirmEffect, setConfirmEffect] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedTourId, setSelectedTourId] = useState<Id<"tours"> | null>(
-    null,
-  );
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const switchTourCard = useMutation(api.functions.tourCards.switchTourCards);
-  const deleteTourCardAndFee = useMutation(
-    api.functions.tourCards.deleteTourCardAndFee,
-  );
-
-  const handleSwitch = useCallback(async () => {
-    if (!selectedTourId) return;
-
-    setIsLoading(true);
-    setConfirmEffect(true);
-    setErrorMessage(null);
-
-    try {
-      await switchTourCard({
-        id: currentTourCard._id,
-        tourId: selectedTourId,
-      });
-      setIsModalOpen(false);
-      setSelectedTourId(null);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to switch tours",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [selectedTourId, switchTourCard, currentTourCard._id]);
-
-  const handleRemoveTourCard = useCallback(async () => {
-    if (
-      !window.confirm(
-        `This will delete your tour card for the ${currentSeason.year} season`,
-      )
-    ) {
-      return;
-    }
-    setIsLoading(true);
-    setErrorMessage(null);
-
-    try {
-      await deleteTourCardAndFee({ id: currentTourCard._id });
-      setIsModalOpen(false);
-      setSelectedTourId(null);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Failed to remove tour card.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [deleteTourCardAndFee, currentSeason.year, currentTourCard._id]);
-
-  const handleButtonClick = useCallback(() => {
-    setEffect(true);
-    setIsModalOpen(true);
-    setErrorMessage(null);
-  }, []);
-
-  return {
-    isLoading,
-    effect,
-    setEffect,
-    confirmEffect,
-    setConfirmEffect,
-    isModalOpen,
-    setIsModalOpen,
-    errorMessage,
-    setErrorMessage,
-    selectedTourId,
-    setSelectedTourId,
-    handleButtonClick,
-    handleSwitch,
-    handleRemoveTourCard,
-  };
 }
 
 /**
@@ -634,38 +487,26 @@ function useTourCardChangeButton({
  * />
  */
 function TourCardFormButton(props: {
-  tour: {
-    tour: Doc<"tours">;
-    tourCards: TourCardDoc[];
-    registeredCount: number;
-  };
-  season: SeasonDoc;
-  member: Doc<"members">;
-  isCreatingTourCard: boolean;
-  setIsCreatingTourCard: Dispatch<SetStateAction<boolean>>;
+  tour: TourRegistrationOption;
+  isCreating: boolean;
+  isDisabled: boolean;
+  hasEffect: boolean;
+  onAnimationEnd: () => void;
+  onRegister: () => void;
 }) {
-  const {
-    effect,
-    setEffect,
-    isDisabled,
-    isLoading,
-    handleSubmit,
-    spotsRemaining,
-  } = useTourCardFormButton(props);
-
   return (
     <Button
       type="button"
       variant="secondary"
-      onClick={handleSubmit}
-      disabled={isDisabled}
+      onClick={props.onRegister}
+      disabled={props.isDisabled}
       className={cn(
-        effect && "animate-toggleClick",
+        props.hasEffect && "animate-toggleClick",
         "flex h-[16rem] w-[14rem] flex-col items-center justify-center border-2 p-2 text-lg shadow-lg",
       )}
-      onAnimationEnd={() => setEffect(false)}
+      onAnimationEnd={props.onAnimationEnd}
     >
-      {isLoading ? (
+      {props.isCreating ? (
         <Loader2 className="h-6 w-6 animate-spin text-gray-700" />
       ) : (
         <>
@@ -686,9 +527,9 @@ function TourCardFormButton(props: {
             {props.tour.tour.name}
           </span>
           <div className="text-xs text-slate-600">
-            {spotsRemaining <= 0
+            {props.tour.spotsRemaining <= 0
               ? `${props.tour.tour.name} is full!`
-              : `${spotsRemaining} spots remaining`}
+              : `${props.tour.spotsRemaining} spots remaining`}
           </div>
           <div className="text-xs text-slate-600">{`Buy-in: ${formatMoney(props.tour.tour.buyIn, false)}`}</div>
         </>
@@ -711,68 +552,3 @@ function TourCardFormButton(props: {
  * @param input.setIsCreatingTourCard - Setter for the shared parent flag.
  * @returns UI state and handlers for the button.
  */
-function useTourCardFormButton({
-  tour,
-  season,
-  member,
-  isCreatingTourCard,
-  setIsCreatingTourCard,
-}: {
-  tour: {
-    tour: Doc<"tours">;
-    tourCards: TourCardDoc[];
-    registeredCount: number;
-  };
-  season: SeasonDoc;
-  member: Doc<"members">;
-  isCreatingTourCard: boolean;
-  setIsCreatingTourCard: (value: boolean) => void;
-}) {
-  const spotsRemaining =
-    (tour.tour.maxParticipants ?? DEFAULT_MAX_PARTICIPANTS) -
-    tour.registeredCount;
-  const createTourCard = useMutation(api.functions.tourCards.createMyTourCard);
-  const [isLoading, setIsLoading] = useState(false);
-  const [effect, setEffect] = useState(false);
-
-  const handleSubmit = useCallback(async () => {
-    if (spotsRemaining <= 0) return;
-    if (isCreatingTourCard) return;
-
-    setIsCreatingTourCard(true);
-    setIsLoading(true);
-    setEffect(true);
-
-    try {
-      await createTourCard({
-        displayName: getMemberDisplayName(member, undefined),
-        tourId: tour.tour._id,
-        seasonId: season._id,
-      });
-    } catch (error) {
-      console.error("Error creating tour card:", error);
-    } finally {
-      setIsLoading(false);
-      setIsCreatingTourCard(false);
-    }
-  }, [
-    createTourCard,
-    isCreatingTourCard,
-    member,
-    season._id,
-    setIsCreatingTourCard,
-    spotsRemaining,
-    tour.tour._id,
-  ]);
-
-  const isDisabled = isCreatingTourCard || isLoading || spotsRemaining <= 0;
-
-  return {
-    effect,
-    setEffect,
-    isDisabled,
-    isLoading,
-    handleSubmit,
-    spotsRemaining,
-  };
-}

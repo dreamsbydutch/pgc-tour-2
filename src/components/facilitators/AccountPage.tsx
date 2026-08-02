@@ -1,12 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-
-import { Show, useClerk, useUser } from "@clerk/tanstack-react-start";
-import { api, useMutation } from "@/convex";
-import type { Doc } from "@/convex";
+import { Show } from "@clerk/tanstack-react-start";
 
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/ui";
-import { formatMoney, isMemberForAccountValue } from "@/lib";
-import { useViewerBootstrap } from "@/convex";
+import { formatMoney } from "@/utils/app";
+import { useAccountPage } from "@/hooks";
 
 /**
  * Renders the `/account` screen.
@@ -19,7 +15,7 @@ import { useViewerBootstrap } from "@/convex";
  *
  * Data sources:
  * - `api.functions.members.getCurrentMember` (authenticated member record)
- * - `api.functions.members.updateMembers` (profile updates)
+ * - `api.functions.members.updateMyProfile` (profile updates)
  * - `api.functions.seasons.getSeasons` (season labels)
  * - `api.functions.membersViews.getMyTournamentHistory` (history rows)
  *
@@ -70,20 +66,32 @@ export function AccountPage() {
             <CardContent>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">First name</label>
+                  <label
+                    htmlFor="account-first-name"
+                    className="text-sm font-medium"
+                  >
+                    First name
+                  </label>
                   <input
+                    id="account-first-name"
                     value={vm.firstName}
                     onChange={(e) => vm.setFirstName(e.target.value)}
-                    className="w-full rounded-md border px-3 py-2 text-sm"
+                    className="min-h-11 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     placeholder="First name"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Last name</label>
+                  <label
+                    htmlFor="account-last-name"
+                    className="text-sm font-medium"
+                  >
+                    Last name
+                  </label>
                   <input
+                    id="account-last-name"
                     value={vm.lastName}
                     onChange={(e) => vm.setLastName(e.target.value)}
-                    className="w-full rounded-md border px-3 py-2 text-sm"
+                    className="min-h-11 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     placeholder="Last name"
                   />
                 </div>
@@ -119,85 +127,4 @@ export function AccountPage() {
       </div>
     </div>
   );
-}
-
-/**
- * Encapsulates all `/account` state and Convex reads/writes.
- *
- * The hook resolves the signed-in member, manages the profile editing state,
- * fetches season labels, fetches tournament history, and derives the filtered
- * and sorted history table rows along with sort toggling helpers.
- */
-function useAccountPage() {
-  type MemberForAccount = Pick<
-    Doc<"members">,
-    "_id" | "firstname" | "lastname" | "account"
-  >;
-  const isMemberForAccount = isMemberForAccountValue;
-
-  const { openSignIn, signOut } = useClerk();
-  const { user: clerkUser } = useUser();
-  const bootstrap = useViewerBootstrap();
-  const memberRaw = clerkUser ? bootstrap?.member : undefined;
-
-  const updateMember = useMutation(api.functions.members.updateMembers);
-
-  const memberForAccount = useMemo<MemberForAccount | null>(() => {
-    return isMemberForAccount(memberRaw) ? memberRaw : null;
-  }, [isMemberForAccount, memberRaw]);
-
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!memberForAccount) return;
-    setFirstName(memberForAccount.firstname ?? "");
-    setLastName(memberForAccount.lastname ?? "");
-  }, [memberForAccount]);
-
-  const memberAccountCents = memberForAccount?.account;
-
-  async function onSaveProfile() {
-    if (!memberForAccount) return;
-
-    setSaving(true);
-    setSaveError(null);
-    setSaveSuccess(null);
-
-    try {
-      await updateMember({
-        memberId: memberForAccount._id,
-        data: {
-          firstname: firstName,
-          lastname: lastName,
-        },
-        options: {
-          returnEnhanced: false,
-        },
-      });
-      setSaveSuccess("Saved");
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "Failed to save");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return {
-    openSignIn,
-    signOut,
-    memberRaw,
-    firstName,
-    setFirstName,
-    lastName,
-    setLastName,
-    saving,
-    saveError,
-    saveSuccess,
-    memberAccountCents,
-    onSaveProfile,
-  };
 }

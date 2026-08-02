@@ -12,8 +12,8 @@ import {
   isPlayerCut,
   parseRankFromPositionString,
   parseTeeTimeValueToMs,
-} from "@/lib";
-import type { MajorChampionBadgesByMemberId } from "@/hooks";
+} from "@/utils/app";
+import type { MajorChampionBadgesByMemberId } from "@/types";
 import { MoveDown, MoveHorizontal, MoveUp } from "lucide-react";
 import {
   MemberNameWithBadges,
@@ -22,13 +22,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/ui";
-import {
-  EnhancedTournamentGolferDoc,
-  EnhancedTournamentTeamDoc,
-  TournamentDoc,
-} from "convex/types/types";
+import type {
+  PgcLeaderboardTeam,
+  TournamentShell,
+  TournamentTeamDetailGolfer,
+} from "@/types";
 import { calculateScoreForSorting } from "convex/utils";
-import { api, Id, useQuery } from "@/convex";
+import { Id } from "@/convex";
+import { useTeamDetail, useTeamHoleScorecards } from "@/hooks";
 import { PGAHoleScorecard } from "./PGALeaderboard";
 import { LeaderboardStandingsCard } from "./LeaderboardStandingsCard";
 import type {
@@ -54,11 +55,8 @@ import { buildTeamAverageScorecard } from "@/utils";
  * @returns A sequence of clickable leaderboard rows.
  */
 export function PGCLeaderboard(props: {
-  teams: (EnhancedTournamentTeamDoc & {
-    teamGolfers?: EnhancedTournamentGolferDoc[];
-    posChange: number;
-  })[];
-  tournament: TournamentDoc;
+  teams: Array<PgcLeaderboardTeam & { posChange: number }>;
+  tournament: TournamentShell;
   activeTourId: string;
   variant: "regular" | "playoff";
   currentTourCardId?: string | null;
@@ -117,10 +115,7 @@ export function PGCLeaderboard(props: {
 }
 
 function buildTeamsWithDisplayPosition(
-  teams: (EnhancedTournamentTeamDoc & {
-    teamGolfers?: EnhancedTournamentGolferDoc[];
-    posChange: number;
-  })[],
+  teams: Array<PgcLeaderboardTeam & { posChange: number }>,
 ) {
   return teams.map((team, index, allTeams) => {
     if (isTeamNonRanking(team.position)) {
@@ -189,27 +184,25 @@ function LeaderboardListing({
     _id: Id<"tournaments">;
     currentRound?: number | undefined;
     livePlay?: boolean | null;
-    status?: TournamentDoc["status"];
+    status?: TournamentShell["status"];
     name: string;
   };
-  team: EnhancedTournamentTeamDoc & {
-    teamGolfers?: EnhancedTournamentGolferDoc[];
-    posChange: number;
-  };
+  team: PgcLeaderboardTeam & { posChange: number };
   currentTourCardId?: string | null;
   friendIds?: ReadonlySet<string>;
   standingsSnapshot?: LeaderboardStandingsSnapshot;
   majorChampionBadgesByMemberId?: MajorChampionBadgesByMemberId;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const teamGolferIds = (team.teamGolfers ?? [])
+  const teamDetail = useTeamDetail(String(team._id), isOpen);
+  const teamGolfers = teamDetail?.golfers ?? [];
+  const teamGolferIds = teamGolfers
     .map((golfer) => golfer.golferId)
     .slice(0, 10);
-  const teamHoleScorecards = useQuery(
-    api.functions.espnGolf.getTeamHoleScorecards,
-    isOpen && teamGolferIds.length > 0
-      ? { tournamentId: tournament._id, golferIds: teamGolferIds }
-      : "skip",
+  const teamHoleScorecards = useTeamHoleScorecards(
+    tournament._id,
+    teamGolferIds,
+    isOpen,
   );
   const isCut = isPlayerCut(team.position);
   const isUser =
@@ -259,7 +252,7 @@ function LeaderboardListing({
         <div className="col-span-10 mx-auto mb-2 w-full min-w-0 max-w-full overflow-hidden rounded-md border border-gray-300 bg-white shadow-md sm:max-w-4xl">
           <TeamGolfersTable
             tournament={tournament}
-            teamGolfers={team.teamGolfers}
+            teamGolfers={teamGolfers}
             teamHoleScorecards={teamHoleScorecards}
           />
           {standingsSnapshot ? (
@@ -288,9 +281,9 @@ function TeamGolfersTable(props: {
   tournament: {
     name: string;
     currentRound?: number | undefined;
-    status?: TournamentDoc["status"];
+    status?: TournamentShell["status"];
   };
-  teamGolfers?: EnhancedTournamentGolferDoc[];
+  teamGolfers?: TournamentTeamDetailGolfer[];
   teamHoleScorecards: TeamSourceScorecard[] | null | undefined;
 }) {
   const sortedTeamGolfers = useTeamGolfersTable({
@@ -301,7 +294,7 @@ function TeamGolfersTable(props: {
   const GolferScoreCells = ({
     golfer,
   }: {
-    golfer: EnhancedTournamentGolferDoc;
+    golfer: TournamentTeamDetailGolfer;
   }) => {
     if (isPlayerCut(golfer.position)) {
       return (
@@ -459,7 +452,7 @@ function TeamGolfersTable(props: {
  * @returns Ordered rows with cut golfers last.
  */
 function useTeamGolfersTable(args: {
-  teamGolfers: EnhancedTournamentGolferDoc[];
+  teamGolfers: TournamentTeamDetailGolfer[];
   currentRound?: number;
 }) {
   return useMemo(() => {
@@ -521,8 +514,8 @@ function useTeamGolfersTable(args: {
       });
     };
     const sortByWeekendSelection = (
-      rows: EnhancedTournamentGolferDoc[],
-    ): EnhancedTournamentGolferDoc[] => {
+      rows: TournamentTeamDetailGolfer[],
+    ): TournamentTeamDetailGolfer[] => {
       return [...rows].sort((a, b) => {
         const aToday =
           typeof a.today === "number" ? a.today : Number.POSITIVE_INFINITY;
@@ -552,7 +545,7 @@ function useTeamGolfersTable(args: {
     );
 
     if ((args.currentRound ?? 0) < 3) {
-      return [...sortedNonCut, ...sortedCut] as EnhancedTournamentGolferDoc[];
+      return [...sortedNonCut, ...sortedCut] as TournamentTeamDetailGolfer[];
     }
 
     const weekendOrdered = sortByWeekendSelection(nonCut);
@@ -566,7 +559,7 @@ function useTeamGolfersTable(args: {
       ...countedGolfers,
       ...remainingGolfers,
       ...sortedCut,
-    ] as EnhancedTournamentGolferDoc[];
+    ] as TournamentTeamDetailGolfer[];
   }, [args.currentRound, args.teamGolfers]);
 }
 

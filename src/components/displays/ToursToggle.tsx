@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 
 import { Button } from "@/ui";
-import { cn } from "@/lib";
+import { cn } from "@/utils/app";
 
 /**
  * ToursToggle

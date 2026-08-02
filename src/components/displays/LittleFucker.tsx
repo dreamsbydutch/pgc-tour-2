@@ -1,7 +1,7 @@
 "use client";
 
 import { Id } from "@/convex";
-import { cn, hasItems, isNonEmptyString } from "@/lib";
+import { cn, hasItems, isNonEmptyString } from "@/utils/app";
 
 /**
  * Renders a compact row of championship badges.

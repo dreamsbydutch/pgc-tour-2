@@ -1,4 +1,4 @@
-import type { Article } from "@/lib";
+import type { Article } from "@/types";
 
 function Body() {
   return (

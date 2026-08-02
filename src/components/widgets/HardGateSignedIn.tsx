@@ -3,7 +3,7 @@
 import { Show, SignInButton } from "@clerk/tanstack-react-start";
 
 import { Button } from "@/ui";
-import { Card, CardContent, CardHeader, CardTitle } from "@/ui";
+import { Card, CardContent, CardHeader } from "@/ui";
 
 /**
  * Hard-gates a page behind Clerk authentication.
@@ -23,7 +23,7 @@ export function HardGateSignedIn(props: { children: React.ReactNode }) {
         <div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8">
           <Card className="w-full max-w-md">
             <CardHeader>
-              <CardTitle>Sign in required</CardTitle>
+              <h1 className="text-2xl font-semibold">Sign in required</h1>
             </CardHeader>
             <CardContent className="flex items-center justify-end">
               <SignInButton>

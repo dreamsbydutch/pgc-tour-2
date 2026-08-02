@@ -1,4 +1,4 @@
-import { isPlayerCut } from "@/lib";
+import { isPlayerCut } from "@/utils/app";
 import type {
   BuildTeamAverageScorecardArgs,
   EspnHoleScore,

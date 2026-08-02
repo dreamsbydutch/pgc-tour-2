@@ -1,4 +1,4 @@
-import { cn } from "@/lib";
+import { cn } from "@/utils/app";
 import type {
   LeaderboardStandingsCardProps,
   PlayoffDestination,

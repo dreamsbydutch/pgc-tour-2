@@ -256,6 +256,7 @@ export interface StandingsViewProps {
 }
 
 export type StandingsMember = Doc<"members">;
+export type FriendableMember = Pick<StandingsMember, "_id" | "friends">;
 export type StandingsSeason = Doc<"seasons">;
 export type StandingsTour = Doc<"tours">;
 export type StandingsTier = Doc<"tiers">;
