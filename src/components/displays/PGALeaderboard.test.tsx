@@ -100,4 +100,34 @@ describe("PGAHoleScorecard", () => {
     expect(invented.dataset.synthetic).toBe("true");
     expect(invented.className).toContain("text-red-700");
   });
+
+  it("uses a very light in-cell fill for team hole completion", () => {
+    render(
+      <PGAHoleScorecard
+        scorecard={{
+          rounds: [
+            {
+              round: 1,
+              holes: [
+                {
+                  hole: 1,
+                  strokes: 4,
+                  relativeToPar: 0,
+                  completion: { completed: 3, total: 10 },
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+
+    const progressCell = screen
+      .getByText("3 of 10 golfers finished this hole")
+      .closest("td");
+    expect(progressCell?.title).toBe("3 of 10 golfers finished this hole");
+    expect(progressCell?.style.backgroundImage).toContain(
+      "rgba(148, 163, 184, 0.12) 30%",
+    );
+  });
 });

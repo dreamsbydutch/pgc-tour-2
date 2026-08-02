@@ -5,6 +5,10 @@ export type EspnHoleScore = {
   strokes: number;
   relativeToPar: number;
   synthetic?: boolean;
+  completion?: {
+    completed: number;
+    total: number;
+  };
 };
 
 export type EspnRoundScore = {

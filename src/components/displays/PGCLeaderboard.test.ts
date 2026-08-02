@@ -91,11 +91,26 @@ describe("buildTeamAverageScorecard", () => {
     });
 
     expect(scorecard.rounds[0]?.holes).toEqual([
-      { hole: 1, strokes: 3.5, relativeToPar: -0.5 },
-      { hole: 2, strokes: 4, relativeToPar: 0 },
+      {
+        hole: 1,
+        strokes: 3.5,
+        relativeToPar: -0.5,
+        completion: { completed: 2, total: 10 },
+      },
+      {
+        hole: 2,
+        strokes: 4,
+        relativeToPar: 0,
+        completion: { completed: 1, total: 10 },
+      },
     ]);
     expect(scorecard.rounds[2]?.holes).toEqual([
-      { hole: 1, strokes: 4, relativeToPar: 0 },
+      {
+        hole: 1,
+        strokes: 4,
+        relativeToPar: 0,
+        completion: { completed: 3, total: 5 },
+      },
     ]);
   });
 
@@ -122,7 +137,12 @@ describe("buildTeamAverageScorecard", () => {
     });
 
     expect(scorecard.rounds[2]?.holes).toEqual([
-      { hole: 1, strokes: 4, relativeToPar: 0 },
+      {
+        hole: 1,
+        strokes: 4,
+        relativeToPar: 0,
+        completion: { completed: 5, total: 5 },
+      },
     ]);
   });
 
@@ -153,6 +173,7 @@ describe("buildTeamAverageScorecard", () => {
       hole: 1,
       strokes: 5,
       relativeToPar: 1,
+      completion: { completed: 10, total: 10 },
     });
   });
 });

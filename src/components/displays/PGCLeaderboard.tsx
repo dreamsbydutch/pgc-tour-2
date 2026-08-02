@@ -503,6 +503,10 @@ export function buildTeamAverageScorecard(args: {
                 (sum, score) => sum + score.relativeToPar,
                 0,
               ) / completedScores.length,
+            completion: {
+              completed: completedScores.length,
+              total: countingGolfers.length,
+            },
           },
         ];
       }).flat();

@@ -506,24 +506,20 @@ export function PGAHoleScorecard(props: {
                 {Array.from({ length: 9 }, (_, index) => {
                   const holeNumber = index + 1;
                   return (
-                    <td
-                      className="h-6 border border-gray-200 py-0.5 sm:h-8"
+                    <HoleScoreCell
                       key={holeNumber}
-                    >
-                      <HoleScoreMark score={holes.get(holeNumber)} />
-                    </td>
+                      score={holes.get(holeNumber)}
+                    />
                   );
                 })}
                 <ScorecardSummaryCell value={frontTotal} />
                 {Array.from({ length: 9 }, (_, index) => {
                   const holeNumber = index + 10;
                   return (
-                    <td
-                      className="h-6 border border-gray-200 py-0.5 sm:h-8"
+                    <HoleScoreCell
                       key={holeNumber}
-                    >
-                      <HoleScoreMark score={holes.get(holeNumber)} />
-                    </td>
+                      score={holes.get(holeNumber)}
+                    />
                   );
                 })}
                 <ScorecardSummaryCell value={backTotal} />
@@ -565,6 +561,40 @@ function totalWhenComplete(values: Array<number | undefined>) {
 function formatScorecardNumber(value: number | undefined) {
   if (value === undefined) return "-";
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function HoleScoreCell(props: { score?: EspnHoleScore }) {
+  const completion = props.score?.completion;
+  const completionPercent =
+    completion && completion.total > 0
+      ? Math.max(
+          0,
+          Math.min(100, (completion.completed / completion.total) * 100),
+        )
+      : 0;
+  const completionLabel = completion
+    ? `${completion.completed} of ${completion.total} golfers finished this hole`
+    : undefined;
+
+  return (
+    <td
+      className="h-6 border border-gray-200 py-0.5 sm:h-8"
+      data-completion={completionLabel}
+      style={
+        completion
+          ? {
+              backgroundImage: `linear-gradient(to right, rgba(148, 163, 184, 0.12) ${completionPercent}%, transparent ${completionPercent}%)`,
+            }
+          : undefined
+      }
+      title={completionLabel}
+    >
+      <HoleScoreMark score={props.score} />
+      {completionLabel ? (
+        <span className="sr-only">{completionLabel}</span>
+      ) : null}
+    </td>
+  );
 }
 
 function HoleScoreMark(props: { score?: EspnHoleScore }) {
