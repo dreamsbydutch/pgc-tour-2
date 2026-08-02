@@ -1,12 +1,28 @@
 import type { FunctionReturnType } from "convex/server";
 
 import type { api } from "convex/_generated/api";
+import type { DataFreshness } from "./pages";
 
 export type TournamentShellDto = FunctionReturnType<
   typeof api.functions.tournaments.getTournamentShell
 >;
 export type TournamentShell = NonNullable<TournamentShellDto["tournament"]>;
 export type TournamentShellTour = TournamentShellDto["tours"][number];
+
+export type TournamentLeaderboardState =
+  | "live"
+  | "reconnecting"
+  | "final"
+  | "upcoming"
+  | "cancelled";
+
+export interface ResolveTournamentLeaderboardStateArgs {
+  status: TournamentShell["status"];
+  startDate: number;
+  endDate: number;
+  freshness: DataFreshness;
+  now?: number;
+}
 export type PgcLeaderboardDto = FunctionReturnType<
   typeof api.functions.tournaments.getPgcLeaderboard
 >;

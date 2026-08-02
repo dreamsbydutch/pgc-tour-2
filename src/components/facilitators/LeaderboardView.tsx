@@ -13,6 +13,7 @@ import {
 } from "@/hooks";
 import { Skeleton } from "@/ui";
 import { cn } from "@/utils/app";
+import { resolveTournamentLeaderboardState } from "@/utils";
 import type {
   PgaLeaderboardDto,
   PgaLeaderboardGolfer,
@@ -72,6 +73,19 @@ export function LeaderboardView(props: {
   });
 
   const tournamentOver = props.tournament.status === "completed";
+  const leaderboardState = resolveTournamentLeaderboardState({
+    status: props.tournament.status,
+    startDate: props.tournament.startDate,
+    endDate: props.tournament.endDate,
+    freshness: props.freshness,
+  });
+  const leaderboardStatus = {
+    live: { label: "Live", dotClassName: "bg-emerald-500" },
+    reconnecting: { label: "Reconnecting", dotClassName: "bg-amber-500" },
+    final: { label: "Final", dotClassName: "bg-slate-400" },
+    upcoming: { label: "Upcoming", dotClassName: "bg-sky-500" },
+    cancelled: { label: "Cancelled", dotClassName: "bg-slate-400" },
+  }[leaderboardState];
   const filteredMajorChampionBadgesByMemberId =
     filterMajorChampionBadgesByMemberId({
       badgesByMemberId: props.majorChampionBadgesByMemberId,
@@ -104,12 +118,12 @@ export function LeaderboardView(props: {
           <span
             className={cn(
               "h-2 w-2 rounded-full",
-              props.freshness === "live" ? "bg-emerald-500" : "bg-amber-500",
+              leaderboardStatus.dotClassName,
             )}
             aria-hidden="true"
           />
           <span>
-            {props.freshness === "live" ? "Live" : "Reconnecting"} ·{" "}
+            {leaderboardStatus.label} ·{" "}
             {formatLeaderboardLastUpdated(
               props.tournament.leaderboardLastUpdatedAt,
             )}
