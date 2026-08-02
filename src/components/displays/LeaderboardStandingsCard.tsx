@@ -68,7 +68,10 @@ function SnapshotColumn(props: StandingsSnapshotColumnProps) {
 
 export function LeaderboardStandingsCard(props: LeaderboardStandingsCardProps) {
   return (
-    <Card className="mx-2 my-1 overflow-hidden border-slate-200/70 bg-slate-50/30 shadow-none">
+    <Card
+      aria-label="Standings comparison"
+      className="mx-2 my-1 overflow-hidden border-slate-200/70 bg-slate-50/30 shadow-none sm:mx-auto sm:max-w-lg"
+    >
       <CardContent className="px-2 py-1.5 sm:px-3 sm:py-2">
         <div className="grid grid-cols-2 divide-x divide-slate-200/80">
           <SnapshotColumn

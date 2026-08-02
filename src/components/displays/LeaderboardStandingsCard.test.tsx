@@ -43,6 +43,10 @@ describe("LeaderboardStandingsCard", () => {
     expect(screen.getAllByText(/Playoff start/)).toHaveLength(2);
     expect(screen.queryByText("Standings")).toBeNull();
     expect(screen.queryByText(/Updated/)).toBeNull();
+    const card = screen.getByLabelText("Standings comparison");
+    expect(card.className).toContain("mx-2");
+    expect(card.className).toContain("sm:mx-auto");
+    expect(card.className).toContain("sm:max-w-lg");
   });
 
   it("renders an explicit red Out state without a starting-stroke row", () => {
