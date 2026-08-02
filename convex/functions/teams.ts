@@ -268,6 +268,11 @@ export const saveMyTournamentTeam = mutation({
     if (existing) {
       await ctx.db.patch(existing._id, {
         golferIds: uniqueGolferIds,
+        seasonId: tourCard.seasonId,
+        tourId: tourCard.tourId,
+        memberId: tourCard.memberId,
+        displayName: tourCard.displayName,
+        playoff: tourCard.playoff,
         updatedAt: now,
         updatedRosterAt: now,
       });

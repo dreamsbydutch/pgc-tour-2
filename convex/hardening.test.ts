@@ -638,7 +638,9 @@ describe("tour-card self-service cutoff", () => {
     expect(state.member?.account).toBe(0);
     expect(state.transactions).toEqual([]);
     expect(state.audits).toHaveLength(2);
-    expect(state.audits.at(-1)).toMatchObject({ action: "deleted" });
+    expect(state.audits[state.audits.length - 1]).toMatchObject({
+      action: "deleted",
+    });
   });
 });
 

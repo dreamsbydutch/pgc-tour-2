@@ -156,6 +156,70 @@ For any repair:
 Never import raw production data into the repository, and never hand-edit
 generated Convex types.
 
+### Team metadata backfill
+
+The index-backed tournament leaderboard requires every `teams` row to carry
+`seasonId`, `tourId`, `memberId`, `displayName`, and `playoff` copied from its
+tour card. Before enabling that leaderboard infrastructure in production:
+
+1. Deploy `adminBackfillTeamMetadata` and
+   `backfillTeamMetadataPageInternal` while the previous leaderboard read path
+   remains compatible.
+2. Run **Backfill Team Metadata** from the admin dashboard, or invoke the
+   internal release-time mutation in bounded pages:
+
+   ```bash
+   npx convex run --prod functions/migrations:backfillTeamMetadataPageInternal \
+     '{cursor:null,limit:200}'
+   ```
+
+3. Pass each returned `continueCursor` into the next invocation until `isDone`
+   is `true`. Add the `scanned`, `updated`, `unchanged`, and `missingTourCards`
+   totals across pages.
+4. Investigate every missing tour card instead of inventing metadata. Verify a
+   current tournament through `getPgcLeaderboard` for each tour.
+5. Deploy the leaderboard changes that depend on the denormalized indexes.
+
+The migration is idempotent and may be rerun. New teams and existing roster
+updates populate the canonical metadata automatically.
+
+### Full infrastructure data rebuild
+
+When promoting the normalized scorecard, sync-state, and standings read-model
+infrastructure, run the release-time mutations in this dependency order. Every
+paginated function accepts `cursor` and `limit`; continue with the returned
+`continueCursor` until `isDone` is `true`.
+
+1. Snapshot tournament golfer identity with
+   `functions/readModels:backfillTournamentGolfersPageInternal`.
+2. Normalize tournament sync state with
+   `functions/tournamentSyncState:migrateLegacyPageInternal`.
+3. Copy embedded ESPN scorecards with
+   `functions/espnGolf:migrateLegacyScorecardsPageInternal`.
+4. Run `functions/standings:backfillSeasonPageInternal` for every season. This
+   must finish before the final team snapshot pass because it recalculates tour
+   card playoff assignments.
+5. Run `functions/readModels:rebuildReadModelsPageInternal` to synchronize team
+   metadata and exact tour registration counts.
+6. Run `functions/readModels:rebuildMajorChampionBadgesInternal` once for every
+   season, then run `functions/readModels:refreshAppState` with `{}`.
+7. Verify source/snapshot equality, unique contribution and standings keys,
+   exact tour counts, one sync-state row per tournament, and representative
+   leaderboard/standings reads.
+8. Only after verification, clear copied legacy fields with
+   `functions/espnGolf:clearMigratedLegacyScorecardsPageInternal` and
+   `functions/tournamentSyncState:clearMigratedLegacyPageInternal`.
+
+If the team metadata pass reports missing tour cards, run
+`functions/migrations:cleanupOrphanedTeamsPageInternal` with
+`deleteRows:false` first. Investigate every result. A subsequent
+`deleteRows:true` pass writes a full audit snapshot before deleting an orphan;
+do not enable deletion until those exact rows have been reviewed.
+
+Run these commands against development first. Add `--prod` only during the
+approved production release, record the totals from every page, and rerun the
+verification after legacy cleanup.
+
 ## Performance guardrails
 
 - Use `.withIndex(...)` for recurring queries.

@@ -1,7 +1,7 @@
 import { internalMutation, mutation, query } from "../_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { QueryCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { requireAdmin } from "../utils/auth";
 import { getTourCardSelfServiceDeadline } from "../utils/tourCards";
@@ -388,164 +388,206 @@ export const finishLiveSyncChain = internalMutation({
   },
 });
 
+const paginatedBackfillArgs = {
+  cursor: v.optional(v.union(v.string(), v.null())),
+  limit: v.optional(v.number()),
+};
+
+async function rebuildReadModelsPage(
+  ctx: MutationCtx,
+  args: { cursor?: string | null; limit?: number },
+) {
+  const limit = Math.min(Math.max(args.limit ?? 100, 1), 250);
+  const page = await ctx.db.query("tourCards").paginate({
+    cursor: args.cursor ?? null,
+    numItems: limit,
+    maximumRowsRead: limit,
+    maximumBytesRead: 2_000_000,
+  });
+
+  for (const card of page.page) {
+    const teams = await ctx.db
+      .query("teams")
+      .withIndex("by_tour_card", (q) => q.eq("tourCardId", card._id))
+      .take(100);
+    for (const team of teams) {
+      const snapshot = {
+        seasonId: card.seasonId,
+        tourId: card.tourId,
+        memberId: card.memberId,
+        displayName: card.displayName,
+        playoff: card.playoff,
+      };
+      if (
+        team.seasonId !== snapshot.seasonId ||
+        team.tourId !== snapshot.tourId ||
+        team.memberId !== snapshot.memberId ||
+        team.displayName !== snapshot.displayName ||
+        team.playoff !== snapshot.playoff
+      ) {
+        await ctx.db.patch(team._id, snapshot);
+      }
+    }
+  }
+
+  if (page.isDone) {
+    const tours = await ctx.db.query("tours").take(100);
+    for (const tour of tours) {
+      const cards = await ctx.db
+        .query("tourCards")
+        .withIndex("by_tour", (q) => q.eq("tourId", tour._id))
+        // registeredCount reflects actual rows, including intentionally
+        // overbooked legacy tours whose enrollment exceeds maxParticipants.
+        .take(1_000);
+      if (tour.registeredCount !== cards.length) {
+        await ctx.db.patch(tour._id, { registeredCount: cards.length });
+      }
+    }
+  }
+
+  return {
+    continueCursor: page.continueCursor,
+    isDone: page.isDone,
+    processed: page.page.length,
+  };
+}
+
 export const adminRebuildReadModels = mutation({
-  args: {
-    cursor: v.optional(v.union(v.string(), v.null())),
-    limit: v.optional(v.number()),
-  },
+  args: paginatedBackfillArgs,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
-    const limit = Math.min(Math.max(args.limit ?? 100, 1), 250);
-    const page = await ctx.db.query("tourCards").paginate({
-      cursor: args.cursor ?? null,
-      numItems: limit,
-      maximumRowsRead: limit,
-      maximumBytesRead: 2_000_000,
-    });
-
-    for (const card of page.page) {
-      const teams = await ctx.db
-        .query("teams")
-        .withIndex("by_tour_card", (q) => q.eq("tourCardId", card._id))
-        .take(100);
-      for (const team of teams) {
-        const snapshot = {
-          seasonId: card.seasonId,
-          tourId: card.tourId,
-          memberId: card.memberId,
-          displayName: card.displayName,
-          playoff: card.playoff,
-        };
-        if (
-          team.seasonId !== snapshot.seasonId ||
-          team.tourId !== snapshot.tourId ||
-          team.memberId !== snapshot.memberId ||
-          team.displayName !== snapshot.displayName ||
-          team.playoff !== snapshot.playoff
-        ) {
-          await ctx.db.patch(team._id, snapshot);
-        }
-      }
-    }
-
-    if (page.isDone) {
-      const tours = await ctx.db.query("tours").take(100);
-      for (const tour of tours) {
-        const cards = await ctx.db
-          .query("tourCards")
-          .withIndex("by_tour", (q) => q.eq("tourId", tour._id))
-          .take((tour.maxParticipants ?? 500) + 1);
-        if (tour.registeredCount !== cards.length) {
-          await ctx.db.patch(tour._id, { registeredCount: cards.length });
-        }
-      }
-    }
-
-    return {
-      continueCursor: page.continueCursor,
-      isDone: page.isDone,
-      processed: page.page.length,
-    };
+    return await rebuildReadModelsPage(ctx, args);
   },
 });
+
+/** Deployment-credential entry point for release-time read-model repairs. */
+export const rebuildReadModelsPageInternal = internalMutation({
+  args: paginatedBackfillArgs,
+  handler: rebuildReadModelsPage,
+});
+
+async function backfillTournamentGolfersPage(
+  ctx: MutationCtx,
+  args: { cursor?: string | null; limit?: number },
+) {
+  const limit = Math.min(Math.max(args.limit ?? 100, 1), 250);
+  const page = await ctx.db.query("tournamentGolfers").paginate({
+    cursor: args.cursor ?? null,
+    numItems: limit,
+    maximumRowsRead: limit,
+    maximumBytesRead: 2_000_000,
+  });
+  let changed = 0;
+  for (const row of page.page) {
+    if (row.golferApiId !== undefined && row.playerName) continue;
+    const golfer = await ctx.db.get(row.golferId);
+    if (!golfer) continue;
+    await ctx.db.patch(row._id, {
+      golferApiId: golfer.apiId,
+      playerName: golfer.playerName,
+      country: golfer.country,
+    });
+    changed += 1;
+  }
+  return {
+    continueCursor: page.continueCursor,
+    isDone: page.isDone,
+    processed: page.page.length,
+    changed,
+  };
+}
 
 export const adminBackfillTournamentGolfers = mutation({
-  args: {
-    cursor: v.optional(v.union(v.string(), v.null())),
-    limit: v.optional(v.number()),
-  },
+  args: paginatedBackfillArgs,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
-    const limit = Math.min(Math.max(args.limit ?? 100, 1), 250);
-    const page = await ctx.db.query("tournamentGolfers").paginate({
-      cursor: args.cursor ?? null,
-      numItems: limit,
-      maximumRowsRead: limit,
-      maximumBytesRead: 2_000_000,
-    });
-    let changed = 0;
-    for (const row of page.page) {
-      if (row.golferApiId !== undefined && row.playerName) continue;
-      const golfer = await ctx.db.get(row.golferId);
-      if (!golfer) continue;
-      await ctx.db.patch(row._id, {
-        golferApiId: golfer.apiId,
-        playerName: golfer.playerName,
-        country: golfer.country,
-      });
-      changed += 1;
-    }
-    return {
-      continueCursor: page.continueCursor,
-      isDone: page.isDone,
-      processed: page.page.length,
-      changed,
-    };
+    return await backfillTournamentGolfersPage(ctx, args);
   },
 });
 
+/** Deployment-credential entry point for release-time golfer snapshots. */
+export const backfillTournamentGolfersPageInternal = internalMutation({
+  args: paginatedBackfillArgs,
+  handler: backfillTournamentGolfersPage,
+});
+
+async function rebuildMajorChampionBadges(
+  ctx: MutationCtx,
+  args: { seasonId: Id<"seasons"> },
+) {
+  const [tiers, tournaments] = await Promise.all([
+    ctx.db
+      .query("tiers")
+      .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
+      .take(30),
+    ctx.db
+      .query("tournaments")
+      .withIndex("by_season_status", (q) =>
+        q.eq("seasonId", args.seasonId).eq("status", "completed"),
+      )
+      .take(100),
+  ]);
+  const majorTierIds = new Set(
+    tiers
+      .filter((tier) => tier.name.trim().toLowerCase() === "major")
+      .map((tier) => tier._id),
+  );
+  let changed = 0;
+  for (const tournament of tournaments) {
+    const isBadgeTournament =
+      majorTierIds.has(tournament.tierId) ||
+      tournament.name.toLowerCase().includes("canadian open");
+    if (!isBadgeTournament) continue;
+    const teams = await ctx.db
+      .query("teams")
+      .withIndex("by_tournament_position", (q) =>
+        q.eq("tournamentId", tournament._id),
+      )
+      .take(500);
+    for (const team of teams) {
+      if (Number.parseInt(team.position?.match(/\d+/)?.[0] ?? "", 10) !== 1)
+        continue;
+      const memberId =
+        team.memberId ?? (await ctx.db.get(team.tourCardId))?.memberId;
+      if (!memberId) continue;
+      const existing = await ctx.db
+        .query("majorChampionBadges")
+        .withIndex("by_tournament_member", (q) =>
+          q.eq("tournamentId", tournament._id).eq("memberId", memberId),
+        )
+        .unique();
+      const value = {
+        seasonId: args.seasonId,
+        memberId,
+        tournamentId: tournament._id,
+        tournamentName: tournament.name,
+        logoUrl: tournament.logoUrl,
+        updatedAt: Date.now(),
+      };
+      if (existing) await ctx.db.patch(existing._id, value);
+      else await ctx.db.insert("majorChampionBadges", value);
+      changed += 1;
+    }
+  }
+  return { changed };
+}
+
+const majorChampionBadgeArgs = {
+  seasonId: v.id("seasons"),
+};
+
 export const adminRebuildMajorChampionBadges = mutation({
-  args: {
-    seasonId: v.id("seasons"),
-  },
+  args: majorChampionBadgeArgs,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
-    const [tiers, tournaments] = await Promise.all([
-      ctx.db
-        .query("tiers")
-        .withIndex("by_season", (q) => q.eq("seasonId", args.seasonId))
-        .take(30),
-      ctx.db
-        .query("tournaments")
-        .withIndex("by_season_status", (q) =>
-          q.eq("seasonId", args.seasonId).eq("status", "completed"),
-        )
-        .take(100),
-    ]);
-    const majorTierIds = new Set(
-      tiers
-        .filter((tier) => tier.name.trim().toLowerCase() === "major")
-        .map((tier) => tier._id),
-    );
-    let changed = 0;
-    for (const tournament of tournaments) {
-      const isBadgeTournament =
-        majorTierIds.has(tournament.tierId) ||
-        tournament.name.toLowerCase().includes("canadian open");
-      if (!isBadgeTournament) continue;
-      const teams = await ctx.db
-        .query("teams")
-        .withIndex("by_tournament_position", (q) =>
-          q.eq("tournamentId", tournament._id),
-        )
-        .take(500);
-      for (const team of teams) {
-        if (Number.parseInt(team.position?.match(/\d+/)?.[0] ?? "", 10) !== 1)
-          continue;
-        const memberId =
-          team.memberId ?? (await ctx.db.get(team.tourCardId))?.memberId;
-        if (!memberId) continue;
-        const existing = await ctx.db
-          .query("majorChampionBadges")
-          .withIndex("by_tournament_member", (q) =>
-            q.eq("tournamentId", tournament._id).eq("memberId", memberId),
-          )
-          .unique();
-        const value = {
-          seasonId: args.seasonId,
-          memberId,
-          tournamentId: tournament._id,
-          tournamentName: tournament.name,
-          logoUrl: tournament.logoUrl,
-          updatedAt: Date.now(),
-        };
-        if (existing) await ctx.db.patch(existing._id, value);
-        else await ctx.db.insert("majorChampionBadges", value);
-        changed += 1;
-      }
-    }
-    return { changed };
+    return await rebuildMajorChampionBadges(ctx, args);
   },
+});
+
+/** Deployment-credential entry point for release-time badge rebuilds. */
+export const rebuildMajorChampionBadgesInternal = internalMutation({
+  args: majorChampionBadgeArgs,
+  handler: rebuildMajorChampionBadges,
 });
 
 export const rebuildMajorChampionBadgesForTournament = internalMutation({

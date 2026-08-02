@@ -2,7 +2,10 @@ import { useMemo, useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 
 import { api, type Id } from "@/convex";
-import type { StandingsBackfillResult } from "@/types";
+import type {
+  StandingsBackfillResult,
+  TeamMetadataBackfillResult,
+} from "@/types";
 
 export function useAdminDashboard() {
   const dashboard = useQuery(api.functions.readModels.adminGetDashboard);
@@ -37,6 +40,9 @@ export function useAdminDashboard() {
   );
   const backfillStandings = useMutation(
     api.functions.standings.adminBackfillSeason,
+  );
+  const backfillTeamMetadata = useMutation(
+    api.functions.migrations.adminBackfillTeamMetadata,
   );
   const createTransaction = useMutation(
     api.functions.transactions.createPayment,
@@ -126,6 +132,33 @@ export function useAdminDashboard() {
           if (page.isDone) break;
         } while (cursor);
         return { tourCards, contributions, complete: true };
+      }),
+    backfillTeamMetadata: () =>
+      runJob("backfillTeamMetadata", async () => {
+        let cursor: string | null = null;
+        let scanned = 0;
+        let updated = 0;
+        let unchanged = 0;
+        let missingTourCards = 0;
+        do {
+          const page: TeamMetadataBackfillResult = await backfillTeamMetadata({
+            cursor,
+            limit: 100,
+          });
+          scanned += page.scanned;
+          updated += page.updated;
+          unchanged += page.unchanged;
+          missingTourCards += page.missingTourCards;
+          cursor = page.isDone ? null : page.continueCursor;
+          if (page.isDone) break;
+        } while (cursor);
+        return {
+          scanned,
+          updated,
+          unchanged,
+          missingTourCards,
+          complete: true,
+        };
       }),
     repairTournament: () =>
       runJob("repairTournament", () =>

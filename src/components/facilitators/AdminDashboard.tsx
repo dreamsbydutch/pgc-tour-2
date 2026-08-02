@@ -234,6 +234,26 @@ export function AdminDashboard() {
       </div>
 
       <div className="space-y-2">
+        <div className="text-sm font-semibold">Team Metadata Migration</div>
+        <p className="text-sm text-muted-foreground">
+          Backfill leaderboard index fields from each team&apos;s tour card.
+          This operation is safe to rerun.
+        </p>
+        <button
+          className="rounded bg-primary px-4 py-2 text-primary-foreground"
+          onClick={jobs.backfillTeamMetadata}
+          type="button"
+        >
+          Backfill Team Metadata
+        </button>
+        <textarea
+          className="h-28 w-full rounded border p-2 text-xs"
+          readOnly
+          value={outputs.backfillTeamMetadata ?? ""}
+        />
+      </div>
+
+      <div className="space-y-2">
         <div className="text-sm font-semibold">
           Repair Tournament Scores + Standings
         </div>

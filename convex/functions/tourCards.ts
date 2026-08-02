@@ -243,9 +243,7 @@ export const switchTourCards = mutation({
           await ctx.db
             .query("tourCards")
             .withIndex("by_tour", (q) => q.eq("tourId", previousTour._id))
-            .take(
-              (previousTour.maxParticipants ?? DEFAULT_MAX_PARTICIPANTS) + 1,
-            )
+            .take(1_000)
         ).length)
       : 0;
     await ctx.db.patch(args.id, {
@@ -349,7 +347,7 @@ export const deleteTourCardAndFee = mutation({
               await ctx.db
                 .query("tourCards")
                 .withIndex("by_tour", (q) => q.eq("tourId", tour._id))
-                .take((tour.maxParticipants ?? DEFAULT_MAX_PARTICIPANTS) + 1)
+                .take(1_000)
             ).length;
       await ctx.db.patch(tour._id, {
         registeredCount: remainingCount,

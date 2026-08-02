@@ -492,83 +492,108 @@ export const recordEventSyncSuccess = internalMutation({
   },
 });
 
+const paginatedScorecardMigrationArgs = {
+  cursor: v.optional(v.union(v.string(), v.null())),
+  limit: v.optional(v.number()),
+};
+
+async function migrateLegacyScorecardsPage(
+  ctx: MutationCtx,
+  args: { cursor?: string | null; limit?: number },
+) {
+  const limit = Math.min(Math.max(args.limit ?? 100, 1), 250);
+  const page = await ctx.db.query("tournamentGolfers").paginate({
+    cursor: args.cursor ?? null,
+    numItems: limit,
+    maximumRowsRead: limit,
+    maximumBytesRead: 2_000_000,
+  });
+  let changed = 0;
+  for (const golfer of page.page) {
+    if (!Array.isArray(golfer.espnRounds)) continue;
+    const existing = await getStoredScorecard(
+      ctx,
+      golfer.tournamentId,
+      golfer.golferId,
+    );
+    if (existing) continue;
+    await ctx.db.insert("tournamentGolferScorecards", {
+      tournamentId: golfer.tournamentId,
+      golferId: golfer.golferId,
+      rounds: golfer.espnRounds,
+      updatedAt:
+        golfer.espnScorecardUpdatedAt ?? golfer.updatedAt ?? Date.now(),
+    });
+    changed += 1;
+  }
+  return {
+    processed: page.page.length,
+    changed,
+    isDone: page.isDone,
+    continueCursor: page.continueCursor,
+  };
+}
+
 export const adminMigrateLegacyScorecards = mutation({
-  args: {
-    cursor: v.optional(v.union(v.string(), v.null())),
-    limit: v.optional(v.number()),
-  },
+  args: paginatedScorecardMigrationArgs,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
-    const limit = Math.min(Math.max(args.limit ?? 100, 1), 250);
-    const page = await ctx.db.query("tournamentGolfers").paginate({
-      cursor: args.cursor ?? null,
-      numItems: limit,
-      maximumRowsRead: limit,
-      maximumBytesRead: 2_000_000,
-    });
-    let changed = 0;
-    for (const golfer of page.page) {
-      if (!Array.isArray(golfer.espnRounds)) continue;
-      const existing = await getStoredScorecard(
-        ctx,
-        golfer.tournamentId,
-        golfer.golferId,
-      );
-      if (existing) continue;
-      await ctx.db.insert("tournamentGolferScorecards", {
-        tournamentId: golfer.tournamentId,
-        golferId: golfer.golferId,
-        rounds: golfer.espnRounds,
-        updatedAt:
-          golfer.espnScorecardUpdatedAt ?? golfer.updatedAt ?? Date.now(),
-      });
-      changed += 1;
-    }
-    return {
-      processed: page.page.length,
-      changed,
-      isDone: page.isDone,
-      continueCursor: page.continueCursor,
-    };
+    return await migrateLegacyScorecardsPage(ctx, args);
   },
 });
 
+/** Deployment-credential entry point for release-time scorecard migration. */
+export const migrateLegacyScorecardsPageInternal = internalMutation({
+  args: paginatedScorecardMigrationArgs,
+  handler: migrateLegacyScorecardsPage,
+});
+
+async function clearMigratedLegacyScorecardsPage(
+  ctx: MutationCtx,
+  args: { cursor?: string | null; limit?: number },
+) {
+  const limit = Math.min(Math.max(args.limit ?? 100, 1), 250);
+  const page = await ctx.db.query("tournamentGolfers").paginate({
+    cursor: args.cursor ?? null,
+    numItems: limit,
+    maximumRowsRead: limit,
+    maximumBytesRead: 2_000_000,
+  });
+  let changed = 0;
+  for (const golfer of page.page) {
+    if (!Array.isArray(golfer.espnRounds)) continue;
+    const stored = await getStoredScorecard(
+      ctx,
+      golfer.tournamentId,
+      golfer.golferId,
+    );
+    if (!stored) continue;
+    await ctx.db.patch(golfer._id, {
+      espnRounds: undefined,
+      espnScorecardUpdatedAt: undefined,
+    });
+    changed += 1;
+  }
+  return {
+    processed: page.page.length,
+    changed,
+    isDone: page.isDone,
+    continueCursor: page.continueCursor,
+  };
+}
+
 export const adminClearMigratedLegacyScorecards = mutation({
-  args: {
-    cursor: v.optional(v.union(v.string(), v.null())),
-    limit: v.optional(v.number()),
-  },
+  args: paginatedScorecardMigrationArgs,
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
-    const limit = Math.min(Math.max(args.limit ?? 100, 1), 250);
-    const page = await ctx.db.query("tournamentGolfers").paginate({
-      cursor: args.cursor ?? null,
-      numItems: limit,
-      maximumRowsRead: limit,
-      maximumBytesRead: 2_000_000,
-    });
-    let changed = 0;
-    for (const golfer of page.page) {
-      if (!Array.isArray(golfer.espnRounds)) continue;
-      const stored = await getStoredScorecard(
-        ctx,
-        golfer.tournamentId,
-        golfer.golferId,
-      );
-      if (!stored) continue;
-      await ctx.db.patch(golfer._id, {
-        espnRounds: undefined,
-        espnScorecardUpdatedAt: undefined,
-      });
-      changed += 1;
-    }
-    return {
-      processed: page.page.length,
-      changed,
-      isDone: page.isDone,
-      continueCursor: page.continueCursor,
-    };
+    return await clearMigratedLegacyScorecardsPage(ctx, args);
   },
+});
+
+/** Clears legacy scorecards only after their normalized rows exist. */
+export const clearMigratedLegacyScorecardsPageInternal = internalMutation({
+  args: paginatedScorecardMigrationArgs,
+  handler: clearMigratedLegacyScorecardsPage,
 });
 
 /** Fetches and applies one tournament without touching Data Golf scoring fields. */

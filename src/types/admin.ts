@@ -9,3 +9,7 @@ export type AdminDashboardDto = FunctionReturnType<
 export type StandingsBackfillResult = FunctionReturnType<
   typeof api.functions.standings.adminBackfillSeason
 >;
+
+export type TeamMetadataBackfillResult = FunctionReturnType<
+  typeof api.functions.migrations.adminBackfillTeamMetadata
+>;
