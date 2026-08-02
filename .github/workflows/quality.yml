@@ -5,25 +5,72 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   verify:
+    name: Quality gates
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Use Node 20.19.5
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 20.19.5
           cache: npm
-      - run: npm ci
-      - run: npx convex codegen
-      - run: git diff --exit-code -- convex/_generated
-      - run: npm run format:check
-      - run: npm run lint:strict
-      - run: npm run convex:io-check
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
-      - run: npm run bundle:budget
+      - name: Install dependencies
+        run: npm ci
+      - name: Generate Convex types
+        run: npx convex codegen
+      - name: Verify generated Convex types
+        run: git diff --exit-code -- convex/_generated
+      - name: 1. Formatting check
+        run: npm run format:check
+      - name: 2. Strict lint
+        run: npm run lint:strict
+      - name: 3. Type check
+        run: npm run typecheck
+      - name: 4. Unit and integration tests
+        run: npm test
+      - name: 5. Convex bounded-I/O check
+        run: npm run convex:io-check
+      - name: 6. Production build
+        run: npm run build
+      - name: Produce bundle analysis
+        run: npm run bundle:analyze
+      - name: Upload bundle analysis
+        uses: actions/upload-artifact@v6
+        with:
+          name: bundle-analysis
+          path: artifacts/bundle-analysis.json
+          if-no-files-found: error
+      - name: 7. Bundle budgets
+        run: npm run bundle:budget
+
+  security:
+    name: 8a. Dependency security checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Use Node 20.19.5
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20.19.5
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Dependency audit
+        run: npm run security:dependencies
+      - name: Review dependency changes
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@v4
