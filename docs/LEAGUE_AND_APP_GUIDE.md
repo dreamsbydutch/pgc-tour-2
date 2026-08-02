@@ -1,239 +1,310 @@
-# PGC Tour App and League Guide
+# PGC League and App Guide
 
-This document is the shared product context for agents working on the PGC Tour app. Read it before changing tournament fields, rosters, scoring, standings, payouts, or playoffs.
+This is the shared product contract for the PGC Tour. Read it before changing
+tournament fields, rosters, scoring, positions, awards, standings, payouts, or
+playoffs.
 
-The in-app rulebook describes the league's intended behavior. The Convex backend is the source of truth for behavior currently enforced by the app. If they disagree, do not silently choose one: preserve the league intent, identify the implementation difference, and confirm the desired behavior before making a broad rules change.
+The in-app rulebook records league intent. The Convex backend and tests record
+behavior currently enforced by the app. If they disagree, preserve the intent,
+identify the implementation gap, and confirm the rule before making a broad
+change. An intentional rules change updates the rulebook, backend, tests, and
+this guide in the same change.
 
-## The league at a glance
+## League structure
 
-The PGC Tour is a season-long fantasy golf league built around selected PGA Tour events.
+The PGC Tour is a season-long fantasy golf league based on selected PGA Tour
+events.
 
-- A season contains tours, tour cards, tournaments, and tournament tiers.
-- A member competes through a tour card on a particular tour.
-- For every regular tournament, each eligible tour card submits a new 10-golfer team.
-- Teams compete against the other teams on their tour for that tournament.
+- A season contains tours, tournament tiers, tournaments, and tour cards.
+- A member competes through a tour card on a specific tour.
+- A regular tournament gives every eligible tour card a new 10-golfer team.
+- Teams compete only against teams in the same tour and playoff division.
 - Tournament finishes award PGC Cup Points and league earnings.
-- Points determine the season standings and playoff qualification.
-- The regular schedule contains 16 events: 4 Majors, 6 Elevated events, and 6 Standard events.
-- Tournament tier records hold the points and payout arrays. Do not hardcode an award table when it should come from tier data.
+- Regular-season points determine standings and playoff qualification.
+- The intended regular schedule is 16 events: 4 Majors, 6 Elevated events, and
+  6 Standard events. The database and in-app rulebook hold the actual schedule.
+- Tier records hold award distributions. Points and payouts must never be
+  hardcoded when tier data is available.
 
-## From DataGolf field to five groups
+These records are not interchangeable:
 
-The app creates the selectable tournament field from two DataGolf feeds:
+| Record            | Meaning                                                 |
+| ----------------- | ------------------------------------------------------- |
+| Member            | The authenticated person and financial account          |
+| Tour card         | That member's season/tour entry and cumulative standing |
+| Team              | The tour card's picks and result for one tournament     |
+| Golfer            | Stable golfer identity                                  |
+| Tournament golfer | That golfer's group and performance in one event        |
 
-1. The field-updates feed supplies the golfers entered in the PGA event.
-2. The rankings feed supplies each golfer's DataGolf skill estimate, OWGR, and related ranking data.
+## End-to-end league workflow
 
-Before accepting the field, the app verifies that the DataGolf event name is compatible with the scheduled PGC tournament. It then joins field entries to rankings by DataGolf golfer ID, removes explicitly excluded golfers, and sorts the field from highest to lowest `dg_skill_estimate`. A golfer without a skill estimate sorts at the bottom.
+```text
+Schedule and tier configuration
+  -> DataGolf field + rankings
+  -> five tournament groups
+  -> member roster submissions
+  -> DataGolf live results + ESPN hole scores
+  -> team round scores
+  -> tour-specific positions
+  -> tier points and payouts
+  -> season standings
+  -> playoff qualification and carryover
+```
 
-The ranked field is divided into five groups:
+Each stage feeds the next. A correction to an upstream stage must invalidate or
+recompute every affected downstream result.
 
-| Group | Target share of field | Maximum size |
-| --- | ---: | ---: |
-| 1 | 10% | 10 |
-| 2 | 17.5% | 16 |
-| 3 | 22.5% | 22 |
-| 4 | 25% | 30 |
-| 5 | Remaining golfers | No fixed cap |
+## 1. Build the tournament field
 
-After Groups 1 through 3 fill, the grouping algorithm balances the remainder between Groups 4 and 5 while respecting Group 4's target and cap. Group numbers are stored on the tournament-golfer records.
+The grouping workflow combines the DataGolf field-updates and rankings feeds.
+Before writing groups, it confirms that the external event name is compatible
+with the scheduled PGC tournament.
 
-Groups are intended to be finalized on Monday before the tournament. The scheduled grouping job currently runs Monday at 17:00 UTC and retries after an hour when necessary. An administrator can also run it manually.
+The app then:
 
-Important field rules:
+1. Joins field entries to rankings by DataGolf golfer ID.
+2. Removes explicitly excluded golfer IDs.
+3. Sorts highest to lowest by `dg_skill_estimate`; missing estimates sort last.
+4. Divides the ranked field into five tournament-specific groups.
 
-- Golfers added to the PGA field after groups are finalized are not normal selectable PGC-field golfers for that event.
-- Excluded DataGolf IDs must stay excluded unless the league deliberately changes that policy.
-- Group assignment is tournament-specific. A golfer's group can change from one event to the next.
-- Later playoff events copy the field and teams from the prior playoff event instead of building a new selectable field.
+| Group |    Target share | Maximum |
+| ----- | --------------: | ------: |
+| 1     |             10% |      10 |
+| 2     |           17.5% |      16 |
+| 3     |           22.5% |      22 |
+| 4     |             25% |      30 |
+| 5     | Remaining field |    None |
 
-## Building a tournament team
+After Groups 1–3 fill, the allocator balances the remaining golfers between
+Groups 4 and 5 while respecting Group 4's target and cap. The algorithm and
+exclusions live in `convex/utils/golfers.ts` and
+`convex/functions/_constants.ts`.
 
-A regular tournament team contains exactly 10 distinct golfers: exactly 2 golfers from each of the 5 groups.
+Groups are intended to be final on Monday before the event. The scheduled job
+runs Monday at 17:00 UTC and can retry twice at one-hour intervals. An
+administrator can also run it manually.
 
-The backend enforces the practical equivalent by requiring 10 distinct, grouped golfers and allowing no more than 2 from any group. Because there are exactly five valid groups, a valid 10-player roster necessarily contains 2 from each.
+Once groups are final:
 
-Additional roster rules:
+- Late additions to the PGA field are not normal selectable PGC golfers.
+- A group belongs to the tournament golfer, not the global golfer.
+- Excluded golfer IDs remain excluded until the league deliberately changes the
+  policy.
+- The second and third playoff events copy the prior playoff field and teams
+  instead of producing new rosters.
 
-- A new team is selected for every regular-season tournament.
-- Picks currently open four days before the tournament and close at the tournament start time.
-- A member must use a tour card from the same season as the tournament.
+## 2. Submit a team
+
+A valid regular team contains exactly 10 distinct golfers: 2 from each of the 5
+groups. The backend enforces 10 distinct grouped golfers and no more than 2 from
+any group, which necessarily produces the 2-per-group roster.
+
+Submission rules:
+
+- Picks open four days before the tournament and close at its start time.
+- The tour card and tournament must belong to the same season.
+- A member can change an existing roster only while picks remain open.
 - A member with a negative account balance cannot submit picks.
-- Only playoff-qualified tour cards may submit a playoff roster.
-- The playoff roster is selected before the first playoff event and carries through the remaining playoff events.
+- A playoff roster requires a qualified tour card.
+- Picks are accepted only for the first playoff event; later playoff rosters
+  carry over.
 
 ### Pre-start withdrawals and non-starters
 
-If a rostered golfer withdraws or otherwise does not start before recording any play, the app replaces that golfer with the highest available world-ranked golfer from the same group.
+Before a golfer has recorded evidence of play, a withdrawal or non-start may be
+replaced by the best available world-ranked golfer from the same group. The
+replacement must be participating, eligible, and absent from the existing
+team. This applies to regular events and the first playoff event; later playoff
+events inherit the established roster.
 
-The replacement:
+Do not replace a golfer after actual play has begun.
 
-- must not already be on that team;
-- must belong to the same tournament group;
-- must still be an eligible, participating golfer; and
-- is chosen by the best available world rank.
+## 3. Score the tournament
 
-This automatic replacement applies to regular tournaments and the first playoff event. Later playoff events inherit the established playoff roster.
+PGC scoring averages PGA stroke totals. Lower is better. Counting golfers are
+selected independently for each round.
 
-## Regular tournament scoring
+### Regular events and first playoff event
 
-PGC scoring is based on a team's average PGA stroke score for each round. Lower is better.
+- **Rounds 1–2:** all 10 golfers count. A PGA stroke changes the team average
+  by `0.1`.
+- **Rounds 3–4:** the 5 lowest golfer scores for that round count. A PGA stroke
+  changes the team average by `0.2`.
 
-### Rounds 1 and 2
+Each completed team-round average is rounded to one decimal place. The
+tournament score is the sum of the round averages relative to course par, with
+the live round contribution included while play is underway.
 
-All 10 rostered golfers count.
+Example for a par-72 course:
 
-The team round score is the average of the 10 golfers' stroke totals, rounded to one decimal place. Because the score is averaged across 10 golfers, one PGA stroke changes the PGC score by `0.1`.
-
-### Rounds 3 and 4
-
-Only the five lowest golfer scores on the team for that round count.
-
-The team round score is the average of those five scores, rounded to one decimal place. Because the score is averaged across 5 golfers, one PGA stroke changes the PGC score by `0.2`.
-
-The five counting golfers are selected independently each round. They are not a permanent subset of the roster.
-
-### Tournament total
-
-Each completed team round is converted to score relative to the course par. The tournament score is the sum of the team's four round scores to par, with the live current-round contribution included while play is active.
-
-Example: if a par-72 team's round averages are 71.4, 72.1, 70.8, and 71.0, its tournament score is:
-
-`(71.4 - 72) + (72.1 - 72) + (70.8 - 72) + (71.0 - 72) = -2.7`
+```text
+(71.4 - 72) + (72.1 - 72) + (70.8 - 72) + (71.0 - 72) = -2.7
+```
 
 ### Cuts, withdrawals, and disqualifications
 
-- A team needs at least five weekend-eligible golfers. If fewer than five remain eligible for Rounds 3 and 4, the PGC team is marked `CUT`.
-- A golfer who withdraws or is disqualified before the cut receives an 8-over-par score for a published Round 1 or Round 2 that they did not complete.
-- If that golfer completed the round, the completed score is used.
-- Withdrawn, disqualified, and cut golfers do not contribute to weekend rounds.
-- For sorting, active numeric scores rank first, followed by `CUT`, `WD`, and `DQ` states.
+- A regular team needs at least 5 weekend-eligible golfers. Otherwise the team
+  is `CUT`.
+- A golfer who withdraws or is disqualified before the cut receives an
+  8-over-par score for a published first or second round they did not complete.
+- A completed round remains the score of record.
+- Cut, withdrawn, and disqualified golfers do not count on the weekend.
+- For sorting, numeric scores rank before terminal states; terminal ordering is
+  `CUT`, `WD`, then `DQ`.
 
-## Tournament positions, winners, and tied awards
+The feed can briefly contain overlapping rounds. The app keeps the earliest
+unfinished round as the current scoring window and must not publish a future
+round early.
 
-Tournament teams are ranked by their total PGC score within their competition grouping. The lowest score wins. Normal ties use competition ranking, such as `T2`.
+## 4. Rank teams and award results
 
-### First-place tiebreaker
+Teams are ranked within their tour/division by total PGC score. Normal ties use
+competition ranking (`T2`, followed by the appropriate skipped position).
+Terminal teams do not displace active numeric teams.
 
-If multiple teams finish with the same best PGC score, first place is decided by the highest combined actual PGA earnings of all 10 golfers on each tied roster.
+### First-place tiebreak
 
-- The team with the single highest combined roster earnings is assigned first place.
-- The remaining formerly tied teams move to second place or tied second.
-- The app waits for earnings data for every golfer on each tied roster.
-- If earnings data is missing, or the tied teams also have equal combined earnings, the tiebreak remains unresolved and the tournament is held in the active state rather than being finalized incorrectly.
+When teams on the same tour share the best completed score, the team with the
+highest combined actual PGA earnings across all 10 rostered golfers wins.
+
+- Exactly one highest total resolves first place.
+- The remaining formerly tied leader or leaders move to second place.
+- Earnings must be available for every golfer on every tied roster.
+- Missing earnings or equal combined totals leave the tiebreak unresolved.
+- An unresolved first-place tiebreak holds the tournament in `active` state
+  instead of finalizing an incorrect winner.
 
 ### Points and payouts
 
-Points and payouts come from the tournament's tier record:
+The tournament tier is the only award source.
 
-- Standard, Elevated, and Major tournaments can have different award distributions.
-- The league rulebook awards PGC Cup Points to the top 35 regular-tournament finishers.
-- Payouts and points are selected by finishing position from their respective tier arrays.
-- When teams tie at a position other than the resolved first-place case, they evenly split the awards for all positions occupied by the tie. The app averages those award slots and rounds the result to a whole number.
-- League earnings accumulate through the season and are paid at the end of the year.
+- Position selects the applicable points and payout slots.
+- Tied teams below the resolved first-place case split all occupied award slots
+  evenly.
+- The average award is rounded to a whole number.
+- Official league earnings accumulate through completed events and are settled
+  at season end.
 
-## Season standings
+Any correction to a completed team's points or earnings requires a standings
+recompute.
 
-Standings are maintained separately for each tour.
+## 5. Maintain standings
 
-After completed tournaments, the app aggregates each tour card's:
+Standings are separate for each tour. Completed regular-season teams contribute:
 
-- PGC Cup Points;
-- league earnings;
-- wins;
-- top-10 finishes;
-- made cuts; and
-- appearances.
+- PGC Cup Points
+- wins
+- top-five and top-ten finishes
+- made cuts
+- appearances
 
-Tour cards are ranked primarily by total PGC Cup Points. Equal point totals receive the same tied position label. For example, if two cards share the second-highest point total, both display `T2`, and the next position follows competition-ranking rules.
+Completed playoff earnings are included in total league earnings, but playoff
+points and finishes do not alter the regular-season standing.
 
-The current standings calculation does not apply a secondary season-standing tiebreaker after points. Do not invent an earnings, wins, or countback tiebreaker without a league decision.
+Tour cards rank by total regular-season points. Equal totals share the same
+competition position. The backend intentionally has no secondary
+regular-season tiebreaker; do not invent one from earnings, wins, or countback.
 
-Standings are recomputed after tournament completion and by a daily maintenance job. Only completed tournaments contribute to the official `points` and `earnings` totals.
+Standings are recomputed after tournament completion and by the daily
+maintenance job. Upcoming or still-active events are not official standings
+inputs.
 
-## Playoff qualification
+## 6. Run the playoffs
 
-Each tour stores its playoff allocation as `[goldSpots, silverSpots]`. The league's intended standard is:
+Each tour stores playoff allocation as `[goldSpots, silverSpots]`. The intended
+standard is:
 
-- Gold: the top 15 tour cards on each tour.
-- Silver: the next 20 tour cards on each tour.
-- Everyone below the Gold and Silver cutoffs is not playoff-qualified.
+- Gold: top 15
+- Silver: next 20
+- Not qualified: everyone below those allocations
 
-The persisted playoff flag uses:
+The persisted tour-card value is `1` for Gold, `2` for Silver, and `0` for not
+qualified. Qualification counts the cards with strictly more points. Therefore
+a tie across a boundary currently gives every tied card the same level. A
+change to that behavior is a league-rules decision.
 
-- `1` for Gold;
-- `2` for Silver; and
-- `0` for not qualified.
+Gold and Silver are separate competitions across the three FedEx Cup playoff
+events. Gold determines the PGC Champion; Silver awards bonus money and
+bragging rights.
 
-Qualification is based on how many tour cards have strictly more points. As a result, a points tie at a qualification boundary receives the same playoff level in the backend. Treat changes to boundary-tie behavior as a league-rules decision, not a presentation tweak.
+- One 10-golfer roster carries through all three events.
+- Scores are intended to carry forward for all 12 rounds.
+- Gold starting strokes scale from `-10` for the highest qualifier to `0` for
+  the lowest.
+- Silver starting strokes scale from `-10` to the configured floor, with lower
+  qualifiers starting at `0`.
+- Point ties receive the average of the starting-stroke slots occupied by the
+  tie.
 
-## Playoff format
+Counting golfers change by event:
 
-Gold and Silver are separate playoff competitions:
+| Event                       | Counting golfers                       |
+| --------------------------- | -------------------------------------- |
+| FedEx St. Jude Championship | 10 in Rounds 1–2; best 5 in Rounds 3–4 |
+| BMW Championship            | Best 5 in every round                  |
+| TOUR Championship           | Best 3 in every round                  |
 
-- The Gold winner is the season's PGC Champion.
-- Silver is a bonus-money and bragging-rights competition.
-- Each playoff covers 12 rounds across the three FedEx Cup playoff events.
-- The same 10-golfer roster carries through all three events.
-- Scores are intended to carry forward from one playoff event to the next.
+### Playoff implementation caution
 
-### Starting strokes
+The code contains event-specific selection counts and copies rosters plus prior
+scores into later events. Starting strokes are currently calculated for the
+standings display, and the live-sync scoring path has no explicit persisted
+starting-stroke field. The live ranking key currently derives from tour
+identity, so Gold/Silver isolation must also be verified rather than assumed.
+Before changing or relying on playoff scoring, verify with end-to-end tests
+that:
 
-Playoff starting strokes reward regular-season standings.
+- Gold and Silver are ranked and awarded as separate competitions;
+- starting strokes affect the first playoff leaderboard score;
+- BMW rounds always count 5;
+- TOUR Championship rounds always count 3; and
+- live synchronization preserves prior-event carryover.
 
-- Gold scales linearly from `-10` for the highest-points qualifier to `0` for the lowest-points Gold qualifier.
-- Silver scales linearly from `-10` for the highest-points Silver qualifier to `0` at the configured floor; lower Silver qualifiers start at `0`.
-- When qualifiers are tied in points, the displayed starting strokes are the average of the stroke slots occupied by the tie.
+Do not treat display output as proof that the persisted competition score is
+correct.
 
-Starting strokes and carryover are league invariants. Changes to playoff scoring must verify that the value is not merely displayed but is also included in the persisted leaderboard score.
+## Automated operating cycle
 
-### Counting golfers by playoff event
+- `appState` maintains the current season, active/next event, pick window, and
+  public version.
+- The application timeline refreshes every 15 minutes and schedules exact pick
+  and tournament-start boundaries.
+- Live tournament synchronization starts at the event boundary, repeats every
+  4 minutes while the event is active, and uses leases to prevent overlapping
+  runs.
+- A 30-minute repair job restores a broken live-sync chain.
+- Standings recompute daily at 04:00 UTC and after completion.
+- Groups run Monday at 17:00 UTC with retry protection.
+- Golfer world rank/country refresh runs Monday at 16:00 UTC.
+- Admin actions exist for grouping, live sync, prior-event repair, standings,
+  read-model rebuilds, and identity resolution.
 
-| Playoff event | Counting golfers |
-| --- | --- |
-| FedEx St. Jude Championship | All 10 in Rounds 1-2; best 5 in Rounds 3-4 |
-| BMW Championship | Best 5 in every round |
-| TOUR Championship | Best 3 in every round |
+Automatic and manual jobs must be idempotent, authenticated where public,
+audited, and safe to retry.
 
-The counting golfers are recalculated independently for every round.
+## Change checklist
 
-### Current implementation caution
+Before merging a league-affecting change:
 
-The codebase contains the playoff selection-count rules and copies rosters/scores into later playoff events. The main live-sync scoring path still needs to be treated carefully when changed: verify in tests that the BMW uses 5, the TOUR Championship uses 3, starting strokes affect the first playoff score, and prior-event scores remain included after live sync. Do not assume the presence of display logic alone proves end-to-end playoff scoring.
+1. Identify whether it changes league intent, current enforcement, or both.
+2. Trace the full downstream path from field/roster through standings.
+3. Preserve tour and playoff competition boundaries.
+4. Read points and payouts from tier data.
+5. Verify pre-start replacement and terminal-state behavior.
+6. Verify ties, occupied award slots, and the completion hold.
+7. Verify playoff selection counts, starting strokes, and carryover when
+   relevant.
+8. Add focused tests for every affected edge case.
+9. Update the in-app rulebook and this guide when intent changes.
 
-## Data flow and operational model
+Primary implementation references:
 
-At a high level:
-
-`DataGolf field + rankings -> tournament golfers and groups -> member rosters -> live golfer scores -> team scores and positions -> tier awards -> season standings -> playoff qualification`
-
-- Field grouping is a pre-tournament operation.
-- Live tournament synchronization runs every four minutes when an applicable tournament is active or near its start.
-- The sync updates golfer rounds, team scores, positions, awards, tournament status, and eventually standings.
-- Tournament completion must wait when a first-place tiebreak cannot yet be resolved.
-- Manual admin jobs exist for group creation, live synchronization, standings recomputation, and repair workflows.
-
-## Rules for agents
-
-When working on league behavior:
-
-- Preserve the distinction between a member, tour card, tournament team, golfer, and tournament golfer.
-- Keep tournament-specific facts such as group, tee time, score, and position on tournament-scoped records.
-- Never hardcode season-specific point or payout arrays when tier data is available.
-- Apply scoring rules per round and per playoff event; do not select one permanent set of counting golfers.
-- Rank and award teams within the intended competition grouping.
-- Preserve first-place earnings tiebreak behavior and the completion hold for unresolved ties.
-- Recompute or invalidate downstream standings whenever completed team points or earnings change.
-- Add focused tests for any change involving cuts, withdrawals, ties, award-slot splitting, playoff boundaries, starting strokes, or score carryover.
-- Update this guide and the user-facing rulebook together when the league rules intentionally change.
-
-## Primary code references
-
-- `src/lib/rules.ts`: user-facing league rulebook.
-- `convex/functions/cronJobs.ts`: DataGolf grouping, live scoring, positions, tiebreaks, awards, and standings.
-- `convex/functions/teams.ts`: roster submission and validation.
-- `convex/functions/tournaments.ts`: playoff roster/team carryover.
-- `convex/functions/_constants.ts`: group targets, caps, exclusions, and pick-window constants.
-- `convex/utils/golfers.ts`: five-group allocation algorithm.
-- `convex/utils/misc.ts`: award splitting and playoff golfer-count helpers.
-- `convex/schema.ts`: core league data model.
+- `src/lib/rules.ts`
+- `convex/functions/cronJobs.ts`
+- `convex/functions/teams.ts`
+- `convex/functions/tournaments.ts`
+- `convex/functions/readModels.ts`
+- `convex/functions/_constants.ts`
+- `convex/utils/golfers.ts`
+- `convex/utils/misc.ts`
+- `convex/schema.ts`

@@ -1,50 +1,43 @@
 # PGC Documentation
 
-This folder is the canonical, maintained documentation for the PGC full-stack app (TanStack Start + TanStack Router + Convex).
+This folder is the maintained operating manual for the PGC Tour application and
+league. It is intentionally small: durable rules belong here; temporary
+investigations, release notes, and one-off implementation details do not.
 
-## Start here
+## The documentation set
 
-- Getting set up locally: [getting-started/local-development.md](getting-started/local-development.md)
-- Environment variables: [getting-started/environment-variables.md](getting-started/environment-variables.md)
-- Common scripts/commands: [getting-started/scripts-and-commands.md](getting-started/scripts-and-commands.md)
+- [APP_ARCHITECTURE.md](APP_ARCHITECTURE.md) — system boundaries, repository
+  structure, data model, and engineering rules.
+- [LEAGUE_AND_APP_GUIDE.md](LEAGUE_AND_APP_GUIDE.md) — league rules and the
+  end-to-end workflow the app must preserve.
+- [DEVELOPMENT_AND_OPERATIONS.md](DEVELOPMENT_AND_OPERATIONS.md) — local setup,
+  configuration, testing, deployment, maintenance, and incident checks.
 
-## Architecture
+## Which source wins?
 
-- High-level overview: [architecture/overview.md](architecture/overview.md)
-- Routing & rendering model: [architecture/routing-and-rendering.md](architecture/routing-and-rendering.md)
-- Data model (Convex tables + concepts): [architecture/data-model.md](architecture/data-model.md)
+Different sources answer different questions:
 
-## Frontend (TanStack Start)
+| Question                        | Source of truth                                                                  |
+| ------------------------------- | -------------------------------------------------------------------------------- |
+| What the league intends         | The in-app rulebook in `src/lib/rules.ts`, confirmed by league organizers        |
+| What the app currently enforces | Convex functions, utilities, schema, and tests                                   |
+| How code should be organized    | `AGENTS.md`, summarized in `APP_ARCHITECTURE.md`                                 |
+| What data is persisted          | `convex/schema.ts`                                                               |
+| What commands exist             | `package.json`                                                                   |
+| What jobs run automatically     | `convex/crons.ts` and scheduled work created by `convex/functions/readModels.ts` |
 
-- Component taxonomy + import rules: [frontend/component-taxonomy.md](frontend/component-taxonomy.md)
-- Routing conventions (`src/routes/*`): [frontend/routing-conventions.md](frontend/routing-conventions.md)
-- Data & state (Convex hooks, view models): [frontend/data-and-state.md](frontend/data-and-state.md)
-- Styling & UI primitives (Tailwind + shadcn/ui): [frontend/styling-and-ui.md](frontend/styling-and-ui.md)
-- Frontend testing (Vitest): [frontend/testing.md](frontend/testing.md)
+If league intent and backend behavior disagree, do not silently choose one.
+Document the gap, confirm the intended rule, then update the rulebook, backend,
+tests, and this guide together.
 
-## Backend (Convex)
+## Documentation standard
 
-- Convex overview in this repo: [backend/convex-overview.md](backend/convex-overview.md)
-- Function modules and API paths: [backend/functions-and-modules.md](backend/functions-and-modules.md)
-- Schema, validators, and indexes: [backend/schema-and-indexes.md](backend/schema-and-indexes.md)
-- Auth and identity (Clerk + current conventions): [backend/auth-and-identity.md](backend/auth-and-identity.md)
-- Cron jobs and scheduled work: [backend/cron-and-jobs.md](backend/cron-and-jobs.md)
-- External integrations (DataGolf, email, analytics): [backend/external-integrations.md](backend/external-integrations.md)
-
-## Deployment
-
-- Deploying frontend on Vercel: [deployment/vercel.md](deployment/vercel.md)
-- Deploying Convex: [deployment/convex-deploy.md](deployment/convex-deploy.md)
-- Environments (dev/stage/prod): [deployment/environments.md](deployment/environments.md)
-
-## Operations
-
-- Troubleshooting playbook: [operations/troubleshooting.md](operations/troubleshooting.md)
-- Migrations/import flows: [operations/migrations-and-imports.md](operations/migrations-and-imports.md)
-- Performance notes: [operations/performance.md](operations/performance.md)
-- Security notes (non-breaking): [operations/security-notes.md](operations/security-notes.md)
-
-## Decisions
-
-- Decision log: [decisions/README.md](decisions/README.md)
-- ADR template: [decisions/adr-template.md](decisions/adr-template.md)
+- Update an existing document instead of creating a new file when the subject
+  already fits one of the three guides.
+- Document invariants, ownership, workflows, and recovery steps—not every
+  function or component.
+- Link to authoritative code rather than duplicating implementation details
+  that are likely to drift.
+- Keep secrets, real credentials, member data, and exported production data out
+  of documentation.
+- Remove obsolete guidance as part of the change that makes it obsolete.
