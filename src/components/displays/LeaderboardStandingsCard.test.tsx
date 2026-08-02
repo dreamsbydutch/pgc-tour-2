@@ -30,8 +30,8 @@ describe("LeaderboardStandingsCard", () => {
       />,
     );
 
-    expect(screen.getByText("Before tournament")).toBeTruthy();
-    expect(screen.getByText("Live projection")).toBeTruthy();
+    expect(screen.getByText("Current")).toBeTruthy();
+    expect(screen.getByText("Projected")).toBeTruthy();
     expect(screen.getByText("12th").className).toContain("text-slate-500");
     expect(screen.getByText("12th").className).toContain("text-lg");
     expect(screen.getByText("12th").className).not.toContain("text-3xl");

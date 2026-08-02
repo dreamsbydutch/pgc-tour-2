@@ -75,7 +75,7 @@ export function LeaderboardStandingsCard(props: LeaderboardStandingsCardProps) {
       <CardContent className="px-2 py-1.5 sm:px-3 sm:py-2">
         <div className="grid grid-cols-2 divide-x divide-slate-200/80">
           <SnapshotColumn
-            label="Before tournament"
+            label="Current"
             value={props.snapshot.beforeTournament}
             startingStrokes={
               props.snapshot.beforeTournament.destination === "out"
@@ -85,7 +85,7 @@ export function LeaderboardStandingsCard(props: LeaderboardStandingsCardProps) {
           />
           {props.snapshot.live ? (
             <SnapshotColumn
-              label="Live projection"
+              label="Projected"
               value={props.snapshot.live}
               startingStrokes={
                 props.snapshot.live.destination === "out"
@@ -96,7 +96,7 @@ export function LeaderboardStandingsCard(props: LeaderboardStandingsCardProps) {
           ) : (
             <div className="min-w-0 px-2 last:pr-0">
               <div className="font-varela text-[9px] font-medium uppercase tracking-wide text-muted-foreground sm:text-[10px]">
-                Live projection
+                Projected
               </div>
               <div className="mt-1 truncate font-varela text-[10px] font-medium text-muted-foreground sm:text-xs">
                 Awaiting live update
