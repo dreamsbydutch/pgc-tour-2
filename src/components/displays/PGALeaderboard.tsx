@@ -412,7 +412,7 @@ export function PGAHoleScorecard(props: {
       : undefined;
   return (
     <div
-      className="mt-2 overflow-x-auto border-t pt-2"
+      className="mt-2 max-w-full overflow-x-auto border-t pt-2"
       onClick={(event) => event.stopPropagation()}
       aria-label="Hole-by-hole scorecard"
     >

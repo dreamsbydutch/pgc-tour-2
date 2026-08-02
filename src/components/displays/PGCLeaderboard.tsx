@@ -223,7 +223,7 @@ function LeaderboardListing({
   return (
     <div
       onClick={onToggleOpen}
-      className="mx-auto my-0.5 grid max-w-4xl cursor-pointer grid-flow-row grid-cols-10 rounded-md text-center"
+      className="mx-auto my-0.5 grid w-full min-w-0 max-w-4xl cursor-pointer grid-flow-row grid-cols-10 rounded-md text-center"
     >
       <div className={rowClass}>
         <div className="col-span-2 flex place-self-center font-varela text-base sm:col-span-5">
@@ -255,7 +255,7 @@ function LeaderboardListing({
       </div>
 
       {isOpen ? (
-        <div className="col-span-10 mx-auto mb-2 w-full max-w-4xl rounded-md border border-gray-300 bg-white shadow-md">
+        <div className="col-span-10 mx-auto mb-2 w-full min-w-0 max-w-full overflow-hidden rounded-md border border-gray-300 bg-white shadow-md sm:max-w-4xl">
           <TeamGolfersTable
             tournament={tournament}
             teamGolfers={team.teamGolfers}
@@ -431,7 +431,10 @@ function TeamGolfersTable(props: {
           })}
         </TableBody>
       </Table>
-      <div className="px-2 pb-2" onClick={(event) => event.stopPropagation()}>
+      <div
+        className="min-w-0 max-w-full overflow-hidden px-2 pb-2"
+        onClick={(event) => event.stopPropagation()}
+      >
         <PGAHoleScorecard
           caption="Team average scores for holes 1 through 18"
           scorecard={
