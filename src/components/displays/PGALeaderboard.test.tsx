@@ -1,8 +1,48 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import { PGAHoleScorecard } from "./PGALeaderboard";
+import { cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import { PGADropdown, PGAHoleScorecard } from "./PGALeaderboard";
+
+afterEach(cleanup);
+
+describe("PGADropdown", () => {
+  it("leads with the country flag and keeps stats in one strip without duplicate rounds", () => {
+    render(
+      <PGADropdown
+        golfer={{
+          apiId: 1,
+          country: "USA",
+          position: "T8",
+          group: 3,
+          rating: 60.69,
+          makeCut: 1,
+          topTen: 1,
+          win: 0,
+          worldRank: 55,
+          usage: 0.25,
+        }}
+        holeScorecard={null}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "USA flag" })).toBeTruthy();
+    expect(screen.queryByText("Rounds")).toBeNull();
+
+    const stats = screen.getByRole("group", { name: "Golfer statistics" });
+    for (const label of [
+      "Make Cut",
+      "Top Ten",
+      "Win",
+      "WGR",
+      "Rating",
+      "Usage",
+      "Group",
+    ]) {
+      expect(within(stats).getByText(label)).toBeTruthy();
+    }
+  });
+});
 
 describe("PGAHoleScorecard", () => {
   it("renders 18 holes, four rounds, placeholders, and score descriptions", () => {

@@ -267,14 +267,10 @@ function LeaderboardListing({
  * @param props.currentTeamGolferIds - API ids for golfers on the viewer's team.
  * @returns A compact stats panel.
  */
-function PGADropdown(props: {
+export function PGADropdown(props: {
   golfer: {
     apiId: number;
     country: string | null;
-    roundOne: number | null | undefined;
-    roundTwo: number | null | undefined;
-    roundThree: number | null | undefined;
-    roundFour: number | null | undefined;
     position: string;
     group: number;
     rating: number;
@@ -300,6 +296,8 @@ function PGADropdown(props: {
     | null
     | undefined;
 }) {
+  const countryFlag = getCountryFlagEmoji(props.golfer.country);
+
   return (
     <div
       className={cn(
@@ -309,61 +307,82 @@ function PGADropdown(props: {
         isPlayerCut(props.golfer.position) && "text-gray-400",
       )}
     >
-      <div className="mx-auto grid max-w-2xl grid-cols-12 sm:grid-cols-16">
-        <div className="col-span-2 row-span-2 flex items-center justify-center text-sm font-bold">
-          <div
-            className={cn(
-              "flex h-12 w-12 items-center justify-center overflow-hidden",
-              isPlayerCut(props.golfer.position) && "opacity-40",
-            )}
-          >
-            {getCountryFlagEmoji(props.golfer.country) ?? null}
+      <div className="mx-auto flex max-w-2xl items-center gap-2 px-1 py-1 sm:gap-3">
+        <div
+          className={cn(
+            "flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-3xl shadow-sm sm:h-16 sm:w-16 sm:text-4xl",
+            isPlayerCut(props.golfer.position) && "opacity-40 grayscale",
+          )}
+          role={countryFlag ? "img" : undefined}
+          aria-label={
+            countryFlag && props.golfer.country
+              ? `${props.golfer.country} flag`
+              : undefined
+          }
+        >
+          {countryFlag ?? (
+            <span className="text-xs font-medium text-muted-foreground">—</span>
+          )}
+        </div>
+
+        <dl
+          className="grid min-w-0 flex-1 grid-cols-5 gap-x-1 text-center sm:grid-cols-7 sm:gap-x-2"
+          role="group"
+          aria-label="Golfer statistics"
+        >
+          <div>
+            <dt className="text-[10px] font-bold leading-tight sm:text-xs">
+              Make Cut
+            </dt>
+            <dd className="mt-1 text-sm sm:text-base">
+              {formatNumberToPercentage(props.golfer.makeCut)}
+            </dd>
           </div>
-        </div>
-
-        <div className="col-span-10 text-sm font-bold sm:hidden">Rounds</div>
-        <div className="col-span-10 text-lg sm:hidden">
-          {[
-            props.golfer.roundOne,
-            props.golfer.roundTwo,
-            props.golfer.roundThree,
-            props.golfer.roundFour,
-          ]
-            .filter((v): v is number => typeof v === "number")
-            .join(" / ")}
-        </div>
-
-        <div className="col-span-3 text-sm font-bold sm:col-span-2">
-          Make Cut
-        </div>
-        <div className="col-span-3 text-sm font-bold sm:col-span-2">
-          Top Ten
-        </div>
-        <div className="col-span-2 text-sm font-bold">Win</div>
-        <div className="col-span-2 text-sm font-bold">WGR</div>
-        <div className="col-span-2 text-sm font-bold">Rating</div>
-        <div className="col-span-2 hidden text-sm font-bold sm:grid">Usage</div>
-        <div className="col-span-2 hidden text-sm font-bold sm:grid">Group</div>
-
-        <div className="col-span-3 text-lg sm:col-span-2">
-          {formatNumberToPercentage(props.golfer.makeCut)}
-        </div>
-        <div className="col-span-3 text-lg sm:col-span-2">
-          {formatNumberToPercentage(props.golfer.topTen)}
-        </div>
-        <div className="col-span-2 text-lg">
-          {formatNumberToPercentage(props.golfer.win)}
-        </div>
-        <div className="col-span-2 text-lg">
-          {props.golfer.worldRank ? `#${props.golfer.worldRank}` : "-"}
-        </div>
-        <div className="col-span-2 text-lg">{props.golfer.rating ?? "-"}</div>
-        <div className="col-span-2 hidden text-lg sm:grid">
-          {formatNumberToPercentage(props.golfer.usage)}
-        </div>
-        <div className="col-span-2 hidden text-lg sm:grid">
-          {props.golfer.group === 0 ? "-" : (props.golfer.group ?? "-")}
-        </div>
+          <div>
+            <dt className="text-[10px] font-bold leading-tight sm:text-xs">
+              Top Ten
+            </dt>
+            <dd className="mt-1 text-sm sm:text-base">
+              {formatNumberToPercentage(props.golfer.topTen)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[10px] font-bold leading-tight sm:text-xs">
+              Win
+            </dt>
+            <dd className="mt-1 text-sm sm:text-base">
+              {formatNumberToPercentage(props.golfer.win)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[10px] font-bold leading-tight sm:text-xs">
+              WGR
+            </dt>
+            <dd className="mt-1 text-sm sm:text-base">
+              {props.golfer.worldRank ? `#${props.golfer.worldRank}` : "-"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[10px] font-bold leading-tight sm:text-xs">
+              Rating
+            </dt>
+            <dd className="mt-1 text-sm sm:text-base">
+              {props.golfer.rating ?? "-"}
+            </dd>
+          </div>
+          <div className="hidden sm:block">
+            <dt className="text-xs font-bold leading-tight">Usage</dt>
+            <dd className="mt-1 text-base">
+              {formatNumberToPercentage(props.golfer.usage)}
+            </dd>
+          </div>
+          <div className="hidden sm:block">
+            <dt className="text-xs font-bold leading-tight">Group</dt>
+            <dd className="mt-1 text-base">
+              {props.golfer.group === 0 ? "-" : (props.golfer.group ?? "-")}
+            </dd>
+          </div>
+        </dl>
       </div>
       <PGAHoleScorecard scorecard={props.holeScorecard} />
     </div>
