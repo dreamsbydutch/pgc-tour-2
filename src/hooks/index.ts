@@ -12,6 +12,7 @@ export * from "./useTournamentScorecards";
 export * from "./useHomePage";
 export * from "./useTournamentLeaderboard";
 export * from "./useHoleScorecard";
+export * from "./useTournamentCourseStats";
 export * from "./useAccountPage";
 export * from "./useTourCardRegistration";
 export * from "./useTournamentTeam";

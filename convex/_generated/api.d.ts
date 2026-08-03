@@ -26,6 +26,8 @@ import type * as functions_teams from "../functions/teams.js";
 import type * as functions_tiers from "../functions/tiers.js";
 import type * as functions_tourCards from "../functions/tourCards.js";
 import type * as functions_tournamentSyncState from "../functions/tournamentSyncState.js";
+import type * as functions_tournamentCourseStats from "../functions/tournamentCourseStats.js";
+import type * as functions_tournamentCourseStatsContext from "../functions/tournamentCourseStatsContext.js";
 import type * as functions_tournaments from "../functions/tournaments.js";
 import type * as functions_tours from "../functions/tours.js";
 import type * as functions_transactions from "../functions/transactions.js";
@@ -76,6 +78,8 @@ declare const fullApi: ApiFromModules<{
   "functions/tiers": typeof functions_tiers;
   "functions/tourCards": typeof functions_tourCards;
   "functions/tournamentSyncState": typeof functions_tournamentSyncState;
+  "functions/tournamentCourseStats": typeof functions_tournamentCourseStats;
+  "functions/tournamentCourseStatsContext": typeof functions_tournamentCourseStatsContext;
   "functions/tournaments": typeof functions_tournaments;
   "functions/tours": typeof functions_tours;
   "functions/transactions": typeof functions_transactions;

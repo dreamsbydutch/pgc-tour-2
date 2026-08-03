@@ -4,8 +4,15 @@ import { Dropdown } from "@/ui";
 import type { DropdownItem, DropdownSection } from "@/types";
 import { cn, formatMoney, formatTournamentDateRange } from "@/utils/app";
 import type { TournamentHeaderModel } from "@/types";
-import { ChevronDown, RefreshCwIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  ChevronDown,
+  CircleDollarSign,
+  MapPinned,
+  RefreshCwIcon,
+} from "lucide-react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+
+const TournamentHeaderDetails = lazy(() => import("./TournamentHeaderDetails"));
 
 /**
  * LeaderboardHeader Component
@@ -36,68 +43,113 @@ export function LeaderboardHeader(props: {
   allTournaments: TournamentHeaderModel[];
   onTournamentChange: (tournamentId: string) => void;
 }) {
+  const [awardsOpen, setAwardsOpen] = useState(false);
+  const [courseOpen, setCourseOpen] = useState(false);
+
   return (
-    <div
-      id={`leaderboard-header-${props.tournament._id}`}
-      className="mx-auto w-full max-w-4xl md:w-11/12 lg:w-8/12"
-    >
-      <div className="mx-auto grid grid-flow-row grid-cols-10 items-center border-b-2 border-gray-800 py-2">
-        <div className="col-span-3 row-span-4 max-h-40 place-self-center px-1 py-2 text-center">
-          {props.tournament.logoUrl && (
-            <img
-              src={props.tournament.logoUrl}
-              className="mx-auto max-h-32"
-              alt={`${props.tournament.name} logo`}
-              width={150}
-              height={150}
+    <>
+      <div
+        id={`leaderboard-header-${props.tournament._id}`}
+        className="mx-auto w-full max-w-4xl md:w-11/12 lg:w-8/12"
+      >
+        <div className="mx-auto grid grid-flow-row grid-cols-10 items-center gap-y-1 border-b-2 border-gray-800 py-2">
+          <div className="col-span-3 row-span-4 max-h-40 place-self-center px-1 py-2 text-center">
+            {props.tournament.logoUrl && (
+              <img
+                src={props.tournament.logoUrl}
+                className="mx-auto max-h-32"
+                alt={`${props.tournament.name} logo`}
+                width={150}
+                height={150}
+              />
+            )}
+          </div>
+
+          <h1 className="col-span-5 row-span-2 place-self-center text-center text-xl font-bold xs:text-2xl sm:text-3xl lg:text-4xl">
+            {props.tournament.name}
+          </h1>
+
+          <div className="col-span-2 row-span-1 place-self-center text-center text-xs xs:text-sm sm:text-base md:text-lg">
+            <LeaderboardHeaderDropdown
+              tournament={props.tournament}
+              allTournaments={props.allTournaments}
+              onTournamentChange={props.onTournamentChange}
             />
-          )}
-        </div>
+          </div>
 
-        <h1 className="col-span-5 row-span-2 place-self-center text-center text-xl font-bold xs:text-2xl sm:text-3xl lg:text-4xl">
-          {props.tournament.name}
-        </h1>
+          <div className="col-span-2 row-span-1 place-self-center text-center text-xs xs:text-sm sm:text-base md:text-lg">
+            {formatTournamentDateRange(
+              props.tournament.startDate,
+              props.tournament.endDate,
+            )}
+          </div>
 
-        <div className="col-span-2 row-span-1 place-self-center text-center text-xs xs:text-sm sm:text-base md:text-lg">
-          <LeaderboardHeaderDropdown
-            tournament={props.tournament}
-            allTournaments={props.allTournaments}
-            onTournamentChange={props.onTournamentChange}
-          />
-        </div>
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            onClick={() => setCourseOpen(true)}
+            className="group col-span-3 row-span-1 inline-flex min-h-8 items-center justify-center gap-1 text-center text-xs underline decoration-dotted underline-offset-4 hover:text-emerald-800 xs:text-sm sm:text-base md:text-lg"
+            title="View hole-by-hole course scoring"
+          >
+            <MapPinned
+              className="hidden h-4 w-4 shrink-0 sm:block"
+              aria-hidden="true"
+            />
+            <span>{props.tournament.course?.name ?? "-"}</span>
+          </button>
 
-        <div className="col-span-2 row-span-1 place-self-center text-center text-xs xs:text-sm sm:text-base md:text-lg">
-          {formatTournamentDateRange(
-            props.tournament.startDate,
-            props.tournament.endDate,
-          )}
-        </div>
+          <div className="col-span-2 row-span-1 text-center text-xs xs:text-sm sm:text-base md:text-lg">
+            {props.tournament.course?.location ?? "-"}
+          </div>
 
-        <div className="col-span-3 row-span-1 text-center text-xs xs:text-sm sm:text-base md:text-lg">
-          {props.tournament.course?.name ?? "-"}
-        </div>
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            onClick={() => setCourseOpen(true)}
+            className="col-span-2 row-span-1 min-h-8 text-center text-xs underline decoration-dotted underline-offset-4 hover:text-emerald-800 xs:text-sm sm:text-base md:text-lg"
+            title="View hole-by-hole course scoring"
+          >
+            {props.tournament.course?.front &&
+            props.tournament.course?.back &&
+            props.tournament.course?.par
+              ? `${props.tournament.course.front} - ${props.tournament.course.back} - ${props.tournament.course.par}`
+              : "-"}
+          </button>
 
-        <div className="col-span-2 row-span-1 text-center text-xs xs:text-sm sm:text-base md:text-lg">
-          {props.tournament.course?.location ?? "-"}
-        </div>
-
-        <div className="col-span-2 row-span-1 text-center text-xs xs:text-sm sm:text-base md:text-lg">
-          {props.tournament.course?.front &&
-          props.tournament.course?.back &&
-          props.tournament.course?.par
-            ? `${props.tournament.course.front} - ${props.tournament.course.back} - ${props.tournament.course.par}`
-            : "-"}
-        </div>
-
-        <div className="col-span-7 row-span-1 text-center text-xs xs:text-sm sm:text-base md:text-lg">
-          {props.tournament.tier
-            ? props.tournament.tier.name.toLowerCase() === "playoff"
-              ? `${props.tournament.tier.name} Tournament - 1st Place: ${formatMoney(props.tournament.tier.payouts[0] ?? 0, false)}`
-              : `${props.tournament.tier.name} Tournament - 1st Place: ${props.tournament.tier.points[0] ?? 0} pts, ${formatMoney(props.tournament.tier.payouts[0] ?? 0, false)}`
-            : ""}
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            onClick={() => setAwardsOpen(true)}
+            className="col-span-7 row-span-1 inline-flex min-h-8 items-center justify-center gap-1 text-center text-xs underline decoration-dotted underline-offset-4 hover:text-emerald-800 xs:text-sm sm:text-base md:text-lg"
+            title="View the full points and payout breakdown"
+          >
+            <CircleDollarSign
+              className="hidden h-4 w-4 shrink-0 sm:block"
+              aria-hidden="true"
+            />
+            <span>
+              {props.tournament.tier
+                ? props.tournament.tier.name.toLowerCase() === "playoff"
+                  ? `${props.tournament.tier.name} Tournament - 1st Place: ${formatMoney(props.tournament.tier.payouts[0] ?? 0, false)}`
+                  : `${props.tournament.tier.name} Tournament - 1st Place: ${props.tournament.tier.points[0] ?? 0} pts, ${formatMoney(props.tournament.tier.payouts[0] ?? 0, false)}`
+                : ""}
+            </span>
+          </button>
         </div>
       </div>
-    </div>
+
+      {(awardsOpen || courseOpen) && (
+        <Suspense fallback={null}>
+          <TournamentHeaderDetails
+            awardsOpen={awardsOpen}
+            courseOpen={courseOpen}
+            onAwardsOpenChange={setAwardsOpen}
+            onCourseOpenChange={setCourseOpen}
+            tournament={props.tournament}
+          />
+        </Suspense>
+      )}
+    </>
   );
 }
 
@@ -277,13 +329,17 @@ function useLeaderboardHeaderDropdown(props: {
 
   const [selectedYear, setSelectedYear] = useState<number>(activeYear);
 
+  useEffect(() => {
+    setSelectedYear(activeYear);
+  }, [activeYear]);
+
   const tournamentsForYear = useMemo(() => {
     if (!selectedYear) return [...props.allTournaments];
     return props.allTournaments
       .filter(
         (tournament) =>
-          tournament.season?.year ??
-          new Date(tournament.startDate).getFullYear() === selectedYear,
+          (tournament.season?.year ??
+            new Date(tournament.startDate).getFullYear()) === selectedYear,
       )
       .sort((a, b) => a.startDate - b.startDate);
   }, [selectedYear, props.allTournaments]);

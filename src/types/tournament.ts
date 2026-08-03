@@ -37,6 +37,9 @@ export type TournamentTeamDetail = NonNullable<
 >;
 export type TournamentTeamDetailGolfer =
   TournamentTeamDetail["golfers"][number];
+export type TournamentCourseStatsDto = FunctionReturnType<
+  typeof api.functions.tournamentCourseStats.getTournamentHoleStats
+>;
 export type TournamentLeaderboardDto = FunctionReturnType<
   typeof api.functions.tournaments.getTournamentLeaderboardView
 >;
@@ -68,4 +71,15 @@ export interface TournamentHeaderModel {
     front: number;
     back: number;
   };
+}
+
+export interface TournamentHoleStatRow {
+  hole: number;
+  par: number;
+  yardage: number;
+  average: number;
+  relativeToPar: number;
+  underParPercent: number;
+  parPercent: number;
+  overParPercent: number;
 }
