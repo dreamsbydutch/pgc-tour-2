@@ -52,68 +52,7 @@ export function LeagueSchedule({
           Schedule
         </h2>
       </div>
-      <div className="space-y-3 px-3 pb-3 sm:hidden">
-        {sortedTournaments.map((tourney, i) => {
-          const isCurrent = i === currentTournamentIndex;
-          const startDate = new Date(tourney.startDate);
-          const endDate = new Date(tourney.endDate);
-          return (
-            <article
-              key={tourney._id}
-              className={cn(
-                "rounded-lg border bg-white p-3",
-                tourney.tier?.name === "Major" && "border-blue-200 bg-blue-50",
-                tourney.tier?.name === "Playoff" &&
-                  "border-yellow-200 bg-yellow-50",
-                isCurrent && "border-2 border-blue-700 shadow-sm",
-              )}
-              aria-current={isCurrent ? "true" : undefined}
-            >
-              <div className="flex items-center gap-3">
-                <img
-                  src={
-                    isNonEmptyString(tourney.logoUrl)
-                      ? tourney.logoUrl
-                      : PGC_LOGO_URL
-                  }
-                  className="h-12 w-12 shrink-0 object-contain"
-                  alt=""
-                />
-                <div className="min-w-0 flex-1">
-                  <h3 className="font-varela text-sm font-bold">
-                    {tourney.name}
-                  </h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {`${formatMonthDay(startDate)} - ${
-                      startDate.getMonth() === endDate.getMonth()
-                        ? endDate.toLocaleDateString("en-US", {
-                            day: "numeric",
-                          })
-                        : formatMonthDay(endDate)
-                    }`}
-                    {tourney.tier?.name ? ` · ${tourney.tier.name}` : ""}
-                  </p>
-                </div>
-              </div>
-              <dl className="mt-3 grid grid-cols-2 gap-2 border-t pt-3 text-xs">
-                <div>
-                  <dt className="font-medium text-muted-foreground">Course</dt>
-                  <dd className="mt-0.5">{tourney.course?.name || "TBA"}</dd>
-                </div>
-                <div>
-                  <dt className="font-medium text-muted-foreground">
-                    Location
-                  </dt>
-                  <dd className="mt-0.5">
-                    {tourney.course?.location || "TBA"}
-                  </dd>
-                </div>
-              </dl>
-            </article>
-          );
-        })}
-      </div>
-      <div className="hidden overflow-x-auto sm:block">
+      <div className="overflow-x-auto">
         <Table className="mx-auto font-varela">
           <TableHeader>
             <TableRow>
