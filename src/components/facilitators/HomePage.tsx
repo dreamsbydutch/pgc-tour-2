@@ -63,6 +63,7 @@ export function HomePage() {
                 tours={model.tours}
                 member={model.member}
                 seasonTourCards={model.seasonTourCards}
+                tournaments={model.seasonTournaments}
               />
             ) : null}
             {model.nextTournament ? (

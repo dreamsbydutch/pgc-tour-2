@@ -1,23 +1,23 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { api, useMutation, useViewerBootstrap } from "@/convex";
 import { getMemberDisplayName } from "@/utils/app";
 import { DEFAULT_MAX_PARTICIPANTS } from "@/utils/constants";
-import type { TourRegistrationOption } from "@/types";
-import type { Doc } from "@/convex";
-import type { SeasonDoc, TourCardDoc } from "convex/types/types";
+import type {
+  TourRegistrationOption,
+  UseTourCardRegistrationArgs,
+} from "@/types";
+import { getTourCardDisplayDeadline, isTourCardDisplayOpen } from "@/utils";
 
-export function useTourCardRegistration(args: {
-  currentSeason: SeasonDoc;
-  tours: Doc<"tours">[];
-  member: Doc<"members"> | null;
-  seasonTourCards: TourCardDoc[];
-}) {
+const MAX_TIMEOUT_MS = 2_147_000_000;
+
+export function useTourCardRegistration(args: UseTourCardRegistrationArgs) {
   const bootstrap = useViewerBootstrap();
   const createTourCard = useMutation(api.functions.tourCards.createMyTourCard);
   const [creatingTourId, setCreatingTourId] = useState<string | null>(null);
   const [effectTourId, setEffectTourId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   const currentTourCard = useMemo(() => {
     if (!args.member) return null;
@@ -26,6 +26,27 @@ export function useTourCardRegistration(args: {
       null
     );
   }, [args.member, args.seasonTourCards]);
+
+  const closesAt = bootstrap?.tourCardSelfService.closesAt ?? null;
+  const displayDeadline = useMemo(
+    () =>
+      getTourCardDisplayDeadline(
+        currentTourCard !== null,
+        closesAt,
+        args.tournaments,
+      ),
+    [args.tournaments, closesAt, currentTourCard],
+  );
+  const isDisplayOpen = isTourCardDisplayOpen(displayDeadline, now);
+
+  useEffect(() => {
+    if (displayDeadline === null || Date.now() >= displayDeadline) return;
+    const timeout = window.setTimeout(
+      () => setNow(Date.now()),
+      Math.min(displayDeadline - Date.now() + 25, MAX_TIMEOUT_MS),
+    );
+    return () => window.clearTimeout(timeout);
+  }, [displayDeadline, now]);
 
   const toursWithMeta = useMemo<TourRegistrationOption[]>(
     () =>
@@ -85,9 +106,11 @@ export function useTourCardRegistration(args: {
   return {
     state: !args.member
       ? ("signed_out" as const)
-      : currentTourCard
-        ? ("registered" as const)
-        : ("ready" as const),
+      : !isDisplayOpen
+        ? ("hidden" as const)
+        : currentTourCard
+          ? ("registered" as const)
+          : ("ready" as const),
     currentTourCard,
     toursWithMeta,
     creatingTourId,
@@ -95,7 +118,7 @@ export function useTourCardRegistration(args: {
     clearEffect: () => setEffectTourId(null),
     error,
     register,
-    closesAt: bootstrap?.tourCardSelfService.closesAt ?? null,
+    closesAt,
     majorChampionBadgesByMemberId,
   };
 }

@@ -21,7 +21,7 @@ import {
 } from "@/utils/app";
 import { SeasonDoc, TourCardDoc } from "convex/types/types";
 import { useTourCardChange, useTourCardRegistration } from "@/hooks";
-import type { TourRegistrationOption } from "@/types";
+import type { TourCardFormProps, TourRegistrationOption } from "@/types";
 import { DEFAULT_MAX_PARTICIPANTS } from "@/utils/constants";
 
 /**
@@ -54,20 +54,23 @@ export function TourCardForm({
   tours,
   member,
   seasonTourCards,
-}: {
-  currentSeason: SeasonDoc;
-  tours: Doc<"tours">[];
-  member: Doc<"members"> | null;
-  seasonTourCards: TourCardDoc[];
-}) {
+  tournaments,
+}: TourCardFormProps) {
   const registration = useTourCardRegistration({
     currentSeason,
     tours,
     member,
     seasonTourCards,
+    tournaments,
   });
 
-  if (registration.state === "signed_out" || member === null) return null;
+  if (
+    registration.state === "signed_out" ||
+    registration.state === "hidden" ||
+    member === null
+  ) {
+    return null;
+  }
 
   if (registration.state === "registered" && registration.currentTourCard) {
     return (

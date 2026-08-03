@@ -1,5 +1,9 @@
 import type { Doc } from "@/convex";
-import type { TourCardDoc } from "convex/types/types";
+import type {
+  EnhancedTournamentDoc,
+  SeasonDoc,
+  TourCardDoc,
+} from "convex/types/types";
 
 export type TourRegistrationOption = {
   tour: Doc<"tours">;
@@ -7,3 +11,13 @@ export type TourRegistrationOption = {
   registeredCount: number;
   spotsRemaining: number;
 };
+
+export type TourCardFormProps = {
+  currentSeason: SeasonDoc;
+  tours: Doc<"tours">[];
+  member: Doc<"members"> | null;
+  seasonTourCards: TourCardDoc[];
+  tournaments: EnhancedTournamentDoc[];
+};
+
+export type UseTourCardRegistrationArgs = TourCardFormProps;
