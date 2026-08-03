@@ -307,10 +307,10 @@ export function PGADropdown(props: {
         isPlayerCut(props.golfer.position) && "text-gray-400",
       )}
     >
-      <div className="mx-auto flex max-w-2xl items-center gap-2 px-1 py-1 sm:gap-3">
+      <div className="mx-auto flex max-w-2xl items-center gap-2 px-1 sm:gap-3">
         <div
           className={cn(
-            "flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-3xl shadow-sm sm:h-16 sm:w-16 sm:text-4xl",
+            "flex w-12 shrink-0 items-center justify-center text-3xl leading-none",
             isPlayerCut(props.golfer.position) && "opacity-40 grayscale",
           )}
           role={countryFlag ? "img" : undefined}

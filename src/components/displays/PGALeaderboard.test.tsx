@@ -26,7 +26,11 @@ describe("PGADropdown", () => {
       />,
     );
 
-    expect(screen.getByRole("img", { name: "USA flag" })).toBeTruthy();
+    const flag = screen.getByRole("img", { name: "USA flag" });
+    expect(flag.className).toContain("text-3xl");
+    expect(flag.className).not.toContain("border");
+    expect(flag.className).not.toContain("bg-");
+    expect(flag.className).not.toContain("shadow");
     expect(screen.queryByText("Rounds")).toBeNull();
 
     const stats = screen.getByRole("group", { name: "Golfer statistics" });
