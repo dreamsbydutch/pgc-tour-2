@@ -230,6 +230,140 @@ describe("member privacy and identity", () => {
   });
 });
 
+describe("email action hardening", () => {
+  let t: ReturnType<typeof createTestBackend>;
+
+  beforeEach(() => {
+    t = createTestBackend();
+  });
+
+  it("rejects anonymous and non-admin missing-team reminder test sends", async () => {
+    await expect(
+      t.action(api.functions.emails.sendMissingTeamReminderEmailTest, {}),
+    ).rejects.toThrow("Unauthorized");
+
+    const regular = await ensureMember(t, "email-regular");
+    await expect(
+      regular.authenticated.action(
+        api.functions.emails.sendMissingTeamReminderEmailTest,
+        {},
+      ),
+    ).rejects.toThrow("Admin access required");
+  });
+
+  it("blocks concurrent sends and enforces the completed-send cooldown", async () => {
+    const key = "test:dispatch";
+    const first = await t.mutation(
+      internal.functions.emails.acquireEmailDispatchGuard_Internal,
+      {
+        key,
+        leaseToken: "first",
+        now: 1_000,
+        leaseMs: 5_000,
+      },
+    );
+    expect(first).toEqual({ acquired: true });
+
+    const concurrent = await t.mutation(
+      internal.functions.emails.acquireEmailDispatchGuard_Internal,
+      {
+        key,
+        leaseToken: "second",
+        now: 2_000,
+        leaseMs: 5_000,
+      },
+    );
+    expect(concurrent).toMatchObject({
+      acquired: false,
+      reason: "in_progress",
+      retryAfterMs: 4_000,
+    });
+
+    await t.mutation(
+      internal.functions.emails.completeEmailDispatchGuard_Internal,
+      {
+        key,
+        leaseToken: "first",
+        now: 3_000,
+        cooldownMs: 10_000,
+      },
+    );
+
+    const rateLimited = await t.mutation(
+      internal.functions.emails.acquireEmailDispatchGuard_Internal,
+      {
+        key,
+        leaseToken: "third",
+        now: 4_000,
+        leaseMs: 5_000,
+      },
+    );
+    expect(rateLimited).toMatchObject({
+      acquired: false,
+      reason: "rate_limited",
+      retryAfterMs: 9_000,
+    });
+
+    const afterCooldown = await t.mutation(
+      internal.functions.emails.acquireEmailDispatchGuard_Internal,
+      {
+        key,
+        leaseToken: "fourth",
+        now: 13_000,
+        leaseMs: 5_000,
+      },
+    );
+    expect(afterCooldown).toEqual({ acquired: true });
+  });
+
+  it("ignores completion from an expired lease owner", async () => {
+    const key = "test:stale-completion";
+    await t.mutation(
+      internal.functions.emails.acquireEmailDispatchGuard_Internal,
+      {
+        key,
+        leaseToken: "old",
+        now: 1_000,
+        leaseMs: 1_000,
+      },
+    );
+    await t.mutation(
+      internal.functions.emails.acquireEmailDispatchGuard_Internal,
+      {
+        key,
+        leaseToken: "new",
+        now: 2_001,
+        leaseMs: 5_000,
+      },
+    );
+
+    const staleCompletion = await t.mutation(
+      internal.functions.emails.completeEmailDispatchGuard_Internal,
+      {
+        key,
+        leaseToken: "old",
+        now: 3_000,
+        cooldownMs: 10_000,
+      },
+    );
+    expect(staleCompletion).toEqual({ completed: false });
+
+    const stillInProgress = await t.mutation(
+      internal.functions.emails.acquireEmailDispatchGuard_Internal,
+      {
+        key,
+        leaseToken: "third",
+        now: 3_001,
+        leaseMs: 5_000,
+      },
+    );
+    expect(stillInProgress).toMatchObject({
+      acquired: false,
+      reason: "in_progress",
+    });
+  });
+});
+
 describe("admin dashboard authorization", () => {
   let t: ReturnType<typeof createTestBackend>;
 
@@ -774,6 +908,194 @@ describe("registration, picks, payments, and leases", () => {
     expect(recovered.acquired).toBe(true);
   });
 
+  it("coalesces unchanged sync run heartbeats but keeps failures", async () => {
+    vi.useFakeTimers();
+    const startedAt = new Date("2026-08-02T12:00:00.000Z");
+    vi.setSystemTime(startedAt);
+
+    const first = await t.mutation(internal.functions.syncRuns.acquire, {
+      jobName: "tournament_sync",
+      runKey: "tournament_sync:first",
+      trigger: "scheduled",
+      leaseMs: 60_000,
+    });
+    if (!first.acquired) throw new Error("Expected first lease");
+    await t.mutation(internal.functions.syncRuns.finalize, {
+      runId: first.runId,
+      status: "skipped",
+      skipReason: "data_golf_unchanged",
+      coalesceWithinMs: 30 * 60_000,
+    });
+
+    vi.setSystemTime(new Date(startedAt.getTime() + 4 * 60_000));
+    const second = await t.mutation(internal.functions.syncRuns.acquire, {
+      jobName: "tournament_sync",
+      runKey: "tournament_sync:second",
+      trigger: "scheduled",
+      leaseMs: 60_000,
+    });
+    if (!second.acquired) throw new Error("Expected second lease");
+    const coalesced = await t.mutation(internal.functions.syncRuns.finalize, {
+      runId: second.runId,
+      status: "skipped",
+      skipReason: "data_golf_unchanged",
+      coalesceWithinMs: 30 * 60_000,
+    });
+    expect(coalesced?.persisted).toBe(false);
+
+    vi.setSystemTime(new Date(startedAt.getTime() + 8 * 60_000));
+    const failed = await t.mutation(internal.functions.syncRuns.acquire, {
+      jobName: "tournament_sync",
+      runKey: "tournament_sync:failed",
+      trigger: "scheduled",
+      leaseMs: 60_000,
+    });
+    if (!failed.acquired) throw new Error("Expected failure lease");
+    await t.mutation(internal.functions.syncRuns.finalize, {
+      runId: failed.runId,
+      status: "failed",
+      error: "upstream unavailable",
+      coalesceWithinMs: 30 * 60_000,
+    });
+
+    vi.setSystemTime(new Date(startedAt.getTime() + 9 * 60_000));
+    const recovery = await t.mutation(internal.functions.syncRuns.acquire, {
+      jobName: "tournament_sync",
+      runKey: "tournament_sync:recovery",
+      trigger: "scheduled",
+      leaseMs: 60_000,
+    });
+    if (!recovery.acquired) throw new Error("Expected recovery lease");
+    const recovered = await t.mutation(internal.functions.syncRuns.finalize, {
+      runId: recovery.runId,
+      status: "skipped",
+      skipReason: "data_golf_unchanged",
+      coalesceWithinMs: 30 * 60_000,
+    });
+    expect(recovered?.persisted).toBe(true);
+
+    vi.setSystemTime(new Date(startedAt.getTime() + 13 * 60_000));
+    const repeated = await t.mutation(internal.functions.syncRuns.acquire, {
+      jobName: "tournament_sync",
+      runKey: "tournament_sync:repeated",
+      trigger: "scheduled",
+      leaseMs: 60_000,
+    });
+    if (!repeated.acquired) throw new Error("Expected repeated lease");
+    const repeatedResult = await t.mutation(
+      internal.functions.syncRuns.finalize,
+      {
+        runId: repeated.runId,
+        status: "skipped",
+        skipReason: "data_golf_unchanged",
+        coalesceWithinMs: 30 * 60_000,
+      },
+    );
+    expect(repeatedResult?.persisted).toBe(false);
+
+    vi.setSystemTime(new Date(startedAt.getTime() + 39 * 60_000));
+    const nextHeartbeat = await t.mutation(
+      internal.functions.syncRuns.acquire,
+      {
+        jobName: "tournament_sync",
+        runKey: "tournament_sync:next-heartbeat",
+        trigger: "scheduled",
+        leaseMs: 60_000,
+      },
+    );
+    if (!nextHeartbeat.acquired) throw new Error("Expected heartbeat lease");
+    const nextHeartbeatResult = await t.mutation(
+      internal.functions.syncRuns.finalize,
+      {
+        runId: nextHeartbeat.runId,
+        status: "skipped",
+        skipReason: "data_golf_unchanged",
+        coalesceWithinMs: 30 * 60_000,
+      },
+    );
+    expect(nextHeartbeatResult?.persisted).toBe(true);
+
+    const runs = await t.run((ctx) => ctx.db.query("syncRuns").collect());
+    expect(runs).toHaveLength(4);
+    expect(runs.map((run) => run.status).sort()).toEqual([
+      "failed",
+      "skipped",
+      "skipped",
+      "skipped",
+    ]);
+  });
+
+  it("coalesces unchanged sync timestamps and records recovery promptly", async () => {
+    vi.useFakeTimers();
+    const startedAt = new Date("2026-08-02T12:00:00.000Z");
+    vi.setSystemTime(startedAt);
+    const seeded = await seedCompetition(t);
+
+    const first = await t.mutation(
+      internal.functions.tournamentSyncState.recordUnchangedSuccess,
+      {
+        tournamentId: seeded.tournamentId,
+        dataGolfInPlayLastUpdate: "marker-1",
+        coalesceWithinMs: 30 * 60_000,
+      },
+    );
+    expect(first.persisted).toBe(true);
+
+    vi.setSystemTime(new Date(startedAt.getTime() + 4 * 60_000));
+    const second = await t.mutation(
+      internal.functions.tournamentSyncState.recordUnchangedSuccess,
+      {
+        tournamentId: seeded.tournamentId,
+        dataGolfInPlayLastUpdate: "marker-1",
+        coalesceWithinMs: 30 * 60_000,
+      },
+    );
+    expect(second.persisted).toBe(false);
+    const coalescedState = await t.run((ctx) => ctx.db.get(first.id));
+    expect(coalescedState?.lastAttemptAt).toBe(startedAt.getTime());
+    expect(coalescedState?.lastSuccessAt).toBe(startedAt.getTime());
+
+    const failureAt = startedAt.getTime() + 5 * 60_000;
+    vi.setSystemTime(new Date(failureAt));
+    await t.mutation(internal.functions.tournamentSyncState.recordFailure, {
+      tournamentId: seeded.tournamentId,
+      error: "upstream unavailable",
+    });
+    const failedState = await t.run((ctx) => ctx.db.get(first.id));
+    expect(failedState?.failureCount).toBe(1);
+    expect(failedState?.lastAttemptAt).toBe(failureAt);
+    expect(failedState?.updatedAt).toBe(failureAt);
+
+    const recoveredAt = failureAt + 60_000;
+    vi.setSystemTime(new Date(recoveredAt));
+    const recovered = await t.mutation(
+      internal.functions.tournamentSyncState.recordUnchangedSuccess,
+      {
+        tournamentId: seeded.tournamentId,
+        dataGolfInPlayLastUpdate: "marker-1",
+        coalesceWithinMs: 30 * 60_000,
+      },
+    );
+    expect(recovered.persisted).toBe(true);
+    const recoveredState = await t.run((ctx) => ctx.db.get(first.id));
+    expect(recoveredState?.failureCount).toBe(0);
+    expect(recoveredState?.lastSuccessAt).toBe(recoveredAt);
+
+    const nextHeartbeatAt = recoveredAt + 30 * 60_000;
+    vi.setSystemTime(new Date(nextHeartbeatAt));
+    const nextHeartbeat = await t.mutation(
+      internal.functions.tournamentSyncState.recordUnchangedSuccess,
+      {
+        tournamentId: seeded.tournamentId,
+        dataGolfInPlayLastUpdate: "marker-1",
+        coalesceWithinMs: 30 * 60_000,
+      },
+    );
+    expect(nextHeartbeat.persisted).toBe(true);
+    const refreshedState = await t.run((ctx) => ctx.db.get(first.id));
+    expect(refreshedState?.lastSuccessAt).toBe(nextHeartbeatAt);
+  });
+
   it("keeps public home data viewer-independent and bounded", async () => {
     const seeded = await seedCompetition(t);
     const { member } = await ensureMember(t, "private-home");
@@ -1160,6 +1482,78 @@ describe("phase two bounded tournament reads", () => {
       { tournamentId: seeded.tournamentId, golferId: golfer.golferId },
     );
     expect(scorecard?.rounds[0]?.holes[0]?.strokes).toBe(3);
+  });
+
+  it("does not rewrite a scorecard whose normalized rounds are unchanged", async () => {
+    const seeded = await seedCompetition(t);
+    const golfer = await t.run((ctx) =>
+      ctx.db
+        .query("tournamentGolfers")
+        .withIndex("by_tournament", (q) =>
+          q.eq("tournamentId", seeded.tournamentId),
+        )
+        .first(),
+    );
+    if (!golfer) throw new Error("Expected golfer");
+
+    const first = await t.mutation(
+      internal.functions.espnGolf.applyScorecardChunk,
+      {
+        tournamentId: seeded.tournamentId,
+        players: [],
+        scorecards: [
+          {
+            golferId: golfer.golferId,
+            rounds: [
+              {
+                round: 1,
+                holes: [
+                  { hole: 1, strokes: 4, relativeToPar: 0 },
+                  { hole: 2, strokes: 3, relativeToPar: -1 },
+                ],
+              },
+            ],
+          },
+        ],
+        fetchedAt: 100,
+      },
+    );
+    const repeated = await t.mutation(
+      internal.functions.espnGolf.applyScorecardChunk,
+      {
+        tournamentId: seeded.tournamentId,
+        players: [],
+        scorecards: [
+          {
+            golferId: golfer.golferId,
+            rounds: [
+              {
+                round: 1,
+                holes: [
+                  { hole: 2, strokes: 3, relativeToPar: -1 },
+                  { hole: 1, strokes: 4, relativeToPar: 0 },
+                ],
+              },
+            ],
+          },
+        ],
+        fetchedAt: 200,
+      },
+    );
+    const stored = await t.run((ctx) =>
+      ctx.db
+        .query("tournamentGolferScorecards")
+        .withIndex("by_golfer_tournament", (q) =>
+          q
+            .eq("golferId", golfer.golferId)
+            .eq("tournamentId", seeded.tournamentId),
+        )
+        .unique(),
+    );
+
+    expect(first.scorecardsUpdated).toBe(1);
+    expect(repeated.scorecardsUpdated).toBe(0);
+    expect(stored?.updatedAt).toBe(100);
   });
 
   it("applies golfer and team updates in bounded batches", async () => {

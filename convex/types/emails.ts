@@ -88,3 +88,9 @@ export type SendGroupsEmailImplArgs = {
   customBlurb?: string;
   force?: boolean;
 };
+
+export type EmailDispatchLease = {
+  key: string;
+  leaseToken: string;
+  cooldownMs: number;
+};

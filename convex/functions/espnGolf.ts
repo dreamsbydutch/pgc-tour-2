@@ -12,10 +12,12 @@ import type { Doc } from "../_generated/dataModel";
 import type { Id } from "../_generated/dataModel";
 import { fetchWithRetry } from "../utils/externalFetch";
 import {
+  areEspnRoundsEqual,
   completeWithdrawnEspnRounds,
   findEspnGolferMatch,
   inferEspnRoundHolePars,
   mergeEspnRounds,
+  normalizeEspnRounds,
   parseEspnGolfScoreboard,
   selectEspnGolfEvent,
 } from "../utils/espnGolf";
@@ -37,9 +39,16 @@ const roundValidator = v.object({
   holes: v.array(holeValidator),
 });
 
-const playerScorecardValidator = v.object({
+const playerIdentityDeltaValidator = v.object({
   espnAthleteId: v.string(),
   playerName: v.string(),
+  golferId: v.optional(v.id("golfers")),
+  auditId: v.optional(v.id("espnIdentityAudit")),
+  updateGolferIdentity: v.optional(v.boolean()),
+});
+
+const scorecardDeltaValidator = v.object({
+  golferId: v.id("golfers"),
   rounds: v.array(roundValidator),
 });
 
@@ -79,14 +88,22 @@ async function upsertStoredScorecard(
     args.tournamentId,
     args.golferId,
   );
+  const normalizedRounds = normalizeEspnRounds(args.rounds);
   if (existing) {
+    if (areEspnRoundsEqual(existing.rounds, normalizedRounds)) {
+      return { scorecardId: existing._id, changed: false };
+    }
     await ctx.db.patch(existing._id, {
-      rounds: args.rounds,
+      rounds: normalizedRounds,
       updatedAt: args.updatedAt,
     });
-    return existing._id;
+    return { scorecardId: existing._id, changed: true };
   }
-  return await ctx.db.insert("tournamentGolferScorecards", args);
+  const scorecardId = await ctx.db.insert("tournamentGolferScorecards", {
+    ...args,
+    rounds: normalizedRounds,
+  });
+  return { scorecardId, changed: true };
 }
 
 /** Lazily reads one scorecard with a legacy fallback during migration. */
@@ -185,11 +202,54 @@ export const getTournamentSyncContext = internalQuery({
         row.status !== "resolved" &&
         row.espnId,
     );
+
+    const tournamentGolfers = await ctx.db
+      .query("tournamentGolfers")
+      .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
+      .take(500);
+    const [golferDocs, storedScorecards, golferAuditRows] = await Promise.all([
+      Promise.all(tournamentGolfers.map((entry) => ctx.db.get(entry.golferId))),
+      ctx.db
+        .query("tournamentGolferScorecards")
+        .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
+        .take(500),
+      ctx.db.query("espnIdentityAudit").take(500),
+    ]);
+    const storedByGolferId = new Map(
+      storedScorecards.map((scorecard) => [scorecard.golferId, scorecard]),
+    );
     return {
       tournamentId: tournament._id,
       tournamentName: tournament.name,
       startDate: tournament.startDate,
       espnId: tournament.espnId ?? manualAudit?.espnId,
+      golfers: tournamentGolfers.flatMap((entry, index) => {
+        const golfer = golferDocs[index];
+        if (!golfer) return [];
+        return [
+          {
+            golferId: golfer._id,
+            playerName: golfer.playerName,
+            espnId: golfer.espnId,
+            rounds:
+              storedByGolferId.get(golfer._id)?.rounds ??
+              entry.espnRounds ??
+              [],
+          },
+        ];
+      }),
+      golferAudits: golferAuditRows.flatMap((row) =>
+        row.entityType === "golfer" && row.espnId
+          ? [
+              {
+                auditId: row._id,
+                status: row.status,
+                espnId: row.espnId,
+                golferId: row.golferId,
+              },
+            ]
+          : [],
+      ),
     };
   },
 });
@@ -231,73 +291,17 @@ export const recordEventSyncFailure = internalMutation({
 export const applyScorecardChunk = internalMutation({
   args: {
     tournamentId: v.id("tournaments"),
-    players: v.array(playerScorecardValidator),
+    players: v.array(playerIdentityDeltaValidator),
+    scorecards: v.array(scorecardDeltaValidator),
     fetchedAt: v.number(),
   },
   handler: async (ctx, args) => {
-    const tournamentGolfers = await ctx.db
-      .query("tournamentGolfers")
-      .withIndex("by_tournament", (q) =>
-        q.eq("tournamentId", args.tournamentId),
-      )
-      .take(500);
-    const golferDocs = await Promise.all(
-      tournamentGolfers.map((entry) => ctx.db.get(entry.golferId)),
-    );
-    const localGolfers = golferDocs.filter(
-      (golfer): golfer is Doc<"golfers"> => golfer !== null,
-    );
-    const golferAudits = (
-      await ctx.db.query("espnIdentityAudit").take(500)
-    ).filter(
-      (row) =>
-        row.entityType === "golfer" &&
-        row.status !== "resolved" &&
-        row.espnId &&
-        row.golferId,
-    );
-    const identityMappings = [
-      ...localGolfers.flatMap((golfer) =>
-        golfer.espnId
-          ? [{ golferId: String(golfer._id), espnAthleteId: golfer.espnId }]
-          : [],
-      ),
-      ...golferAudits.map((row) => ({
-        golferId: String(row.golferId!),
-        espnAthleteId: row.espnId!,
-      })),
-    ];
-    const localIdentityGolfers = localGolfers.map((golfer) => ({
-      golferId: String(golfer._id),
-      playerName: golfer.playerName,
-    }));
-    const tournamentGolferByGolferId = new Map(
-      tournamentGolfers.map((row) => [row.golferId, row]),
-    );
     let matched = 0;
     let unmatched = 0;
     let scorecardsUpdated = 0;
 
     for (const player of args.players) {
-      const match = findEspnGolferMatch({
-        espnAthleteId: player.espnAthleteId,
-        playerName: player.playerName,
-        localGolfers: localIdentityGolfers,
-        mappings: identityMappings,
-      });
-      const golfer = match
-        ? localGolfers.find(
-            (candidate) => String(candidate._id) === match.golferId,
-          )
-        : undefined;
-      const existingAudit = await ctx.db
-        .query("espnIdentityAudit")
-        .withIndex("by_entity_espn_id", (q) =>
-          q.eq("entityType", "golfer").eq("espnId", player.espnAthleteId),
-        )
-        .first();
-
-      if (!golfer) {
+      if (!player.golferId) {
         unmatched += 1;
         const auditValue = {
           entityType: "golfer" as const,
@@ -308,7 +312,7 @@ export const applyScorecardChunk = internalMutation({
           reason: "No unique Data Golf golfer match was found.",
           lastSeenAt: args.fetchedAt,
         };
-        if (existingAudit) await ctx.db.patch(existingAudit._id, auditValue);
+        if (player.auditId) await ctx.db.patch(player.auditId, auditValue);
         else
           await ctx.db.insert("espnIdentityAudit", {
             ...auditValue,
@@ -318,39 +322,31 @@ export const applyScorecardChunk = internalMutation({
       }
 
       matched += 1;
-      if (golfer.espnId !== player.espnAthleteId) {
-        await ctx.db.patch(golfer._id, {
+      if (player.updateGolferIdentity) {
+        await ctx.db.patch(player.golferId, {
           espnId: player.espnAthleteId,
           updatedAt: args.fetchedAt,
         });
       }
-      if (existingAudit) {
-        await ctx.db.patch(existingAudit._id, {
+      if (player.auditId) {
+        await ctx.db.patch(player.auditId, {
           status: "resolved",
-          golferId: golfer._id,
+          golferId: player.golferId,
           resolvedAt: args.fetchedAt,
           lastSeenAt: args.fetchedAt,
           reason: undefined,
         });
       }
+    }
 
-      const tournamentGolfer = tournamentGolferByGolferId.get(golfer._id);
-      if (!tournamentGolfer) continue;
-      const storedScorecard = await getStoredScorecard(
-        ctx,
-        args.tournamentId,
-        golfer._id,
-      );
-      await upsertStoredScorecard(ctx, {
+    for (const scorecard of args.scorecards) {
+      const result = await upsertStoredScorecard(ctx, {
         tournamentId: args.tournamentId,
-        golferId: golfer._id,
-        rounds: mergeEspnRounds(
-          storedScorecard?.rounds ?? tournamentGolfer.espnRounds ?? [],
-          player.rounds,
-        ),
+        golferId: scorecard.golferId,
+        rounds: scorecard.rounds,
         updatedAt: args.fetchedAt,
       });
-      scorecardsUpdated += 1;
+      if (result.changed) scorecardsUpdated += 1;
     }
 
     return { matched, unmatched, scorecardsUpdated };
@@ -424,6 +420,7 @@ export const recordEventSyncSuccess = internalMutation({
     tournamentId: v.id("tournaments"),
     espnEventId: v.string(),
     espnEventName: v.string(),
+    matchedGolferIds: v.array(v.id("golfers")),
     fetchedAt: v.number(),
   },
   handler: async (ctx, args) => {
@@ -456,7 +453,9 @@ export const recordEventSyncSuccess = internalMutation({
         q.eq("tournamentId", args.tournamentId),
       )
       .take(500);
+    const matchedGolferIds = new Set(args.matchedGolferIds);
     for (const tournamentGolfer of tournamentGolfers) {
+      if (matchedGolferIds.has(tournamentGolfer.golferId)) continue;
       const storedScorecard = await getStoredScorecard(
         ctx,
         args.tournamentId,
@@ -651,17 +650,92 @@ export const syncTournamentScorecards: ReturnType<typeof internalAction> =
         let matched = 0;
         let unmatched = 0;
         let scorecardsUpdated = 0;
-        for (let index = 0; index < event.players.length; index += 50) {
+        const matchedGolferIds = new Set<Id<"golfers">>();
+        const localGolfers = syncContext.golfers.map((golfer) => ({
+          golferId: String(golfer.golferId),
+          playerName: golfer.playerName,
+        }));
+        const identityMappings = [
+          ...syncContext.golfers.flatMap((golfer) =>
+            golfer.espnId
+              ? [
+                  {
+                    golferId: String(golfer.golferId),
+                    espnAthleteId: golfer.espnId,
+                  },
+                ]
+              : [],
+          ),
+          ...syncContext.golferAudits.flatMap((audit) =>
+            audit.status !== "resolved" && audit.golferId
+              ? [
+                  {
+                    golferId: String(audit.golferId),
+                    espnAthleteId: audit.espnId,
+                  },
+                ]
+              : [],
+          ),
+        ];
+        const golferById = new Map(
+          syncContext.golfers.map((golfer) => [
+            String(golfer.golferId),
+            golfer,
+          ]),
+        );
+        const auditByEspnId = new Map(
+          syncContext.golferAudits.map((audit) => [audit.espnId, audit]),
+        );
+        const playerDeltas = event.players.map((player) => {
+          const match = findEspnGolferMatch({
+            espnAthleteId: player.espnAthleteId,
+            playerName: player.playerName,
+            localGolfers,
+            mappings: identityMappings,
+          });
+          const golfer = match ? golferById.get(match.golferId) : undefined;
+          const audit = auditByEspnId.get(player.espnAthleteId);
+          if (!golfer) {
+            unmatched += 1;
+            return {
+              identity: {
+                espnAthleteId: player.espnAthleteId,
+                playerName: player.playerName,
+                auditId: audit?.auditId,
+              },
+            };
+          }
+
+          matched += 1;
+          matchedGolferIds.add(golfer.golferId);
+          const mergedRounds = mergeEspnRounds(golfer.rounds, player.rounds);
+          return {
+            identity: {
+              espnAthleteId: player.espnAthleteId,
+              playerName: player.playerName,
+              golferId: golfer.golferId,
+              auditId: audit?.auditId,
+              updateGolferIdentity: golfer.espnId !== player.espnAthleteId,
+            },
+            scorecard: areEspnRoundsEqual(golfer.rounds, mergedRounds)
+              ? undefined
+              : { golferId: golfer.golferId, rounds: mergedRounds },
+          };
+        });
+
+        for (let index = 0; index < playerDeltas.length; index += 50) {
+          const chunk = playerDeltas.slice(index, index + 50);
           const summary = await ctx.runMutation(
             internal.functions.espnGolf.applyScorecardChunk,
             {
               tournamentId: args.tournamentId,
-              players: event.players.slice(index, index + 50),
+              players: chunk.map((delta) => delta.identity),
+              scorecards: chunk.flatMap((delta) =>
+                delta.scorecard ? [delta.scorecard] : [],
+              ),
               fetchedAt,
             },
           );
-          matched += summary.matched;
-          unmatched += summary.unmatched;
           scorecardsUpdated += summary.scorecardsUpdated;
         }
         const withdrawnSummary = await ctx.runMutation(
@@ -675,6 +749,7 @@ export const syncTournamentScorecards: ReturnType<typeof internalAction> =
             tournamentId: args.tournamentId,
             espnEventId: event.espnEventId,
             espnEventName: event.eventName,
+            matchedGolferIds: [...matchedGolferIds],
             fetchedAt,
           },
         );

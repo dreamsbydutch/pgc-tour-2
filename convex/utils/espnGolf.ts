@@ -360,6 +360,24 @@ export function mergeEspnRounds(
     .sort((a, b) => a.round - b.round);
 }
 
+/** Produces the canonical ordering and shape used for scorecard comparisons. */
+export function normalizeEspnRounds(
+  rounds: EspnRoundScore[],
+): EspnRoundScore[] {
+  return mergeEspnRounds([], rounds);
+}
+
+/** Ignores feed/storage ordering differences when comparing scorecards. */
+export function areEspnRoundsEqual(
+  left: EspnRoundScore[],
+  right: EspnRoundScore[],
+): boolean {
+  return (
+    JSON.stringify(normalizeEspnRounds(left)) ===
+    JSON.stringify(normalizeEspnRounds(right))
+  );
+}
+
 /**
  * Infers one round's hole pars from confirmed ESPN cells. The course totals are
  * used only to fill a hole that has not appeared in the feed yet.

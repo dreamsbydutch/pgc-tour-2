@@ -56,11 +56,38 @@ export const finalize = internalMutation({
     skipReason: v.optional(v.string()),
     upstreamUpdatedAt: v.optional(v.number()),
     error: v.optional(v.string()),
+    coalesceWithinMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const run = await ctx.db.get(args.runId);
     if (!run || run.status !== "running") return;
     const finishedAt = Date.now();
+    if ((args.coalesceWithinMs ?? 0) > 0 && args.status !== "failed") {
+      const cutoff = finishedAt - Math.max(args.coalesceWithinMs ?? 0, 0);
+      const recentRuns = await ctx.db
+        .query("syncRuns")
+        .withIndex("by_job_started", (q) => q.eq("jobName", run.jobName))
+        .order("desc")
+        .take(100);
+      const priorCompletedRun = recentRuns.find(
+        (candidate) =>
+          candidate._id !== run._id &&
+          candidate.status !== "running" &&
+          candidate.finishedAt !== undefined,
+      );
+      if (
+        priorCompletedRun?.status === args.status &&
+        priorCompletedRun.skipReason === args.skipReason &&
+        priorCompletedRun.finishedAt !== undefined &&
+        priorCompletedRun.finishedAt > cutoff
+      ) {
+        await ctx.db.delete(run._id);
+        return {
+          persisted: false as const,
+          coalescedInto: priorCompletedRun._id,
+        };
+      }
+    }
     await ctx.db.patch(run._id, {
       status: args.status,
       finishedAt,
@@ -70,6 +97,7 @@ export const finalize = internalMutation({
       upstreamUpdatedAt: args.upstreamUpdatedAt,
       error: args.error?.slice(0, 500),
     });
+    return { persisted: true as const, runId: run._id };
   },
 });
 

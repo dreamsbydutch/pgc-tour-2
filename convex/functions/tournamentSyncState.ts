@@ -65,7 +65,7 @@ export const recordSuccess = internalMutation({
       leaderboardLastUpdatedAt:
         args.leaderboardLastUpdatedAt ?? existing?.leaderboardLastUpdatedAt,
       finalDataComplete: args.finalDataComplete ?? existing?.finalDataComplete,
-      lastAttemptAt: existing?.lastAttemptAt ?? now,
+      lastAttemptAt: now,
       lastSuccessAt: now,
       failureCount: 0,
       skipReason: args.skipReason,
@@ -79,6 +79,50 @@ export const recordSuccess = internalMutation({
       tournamentId: args.tournamentId,
       ...value,
     });
+  },
+});
+
+export const recordUnchangedSuccess = internalMutation({
+  args: {
+    tournamentId: v.id("tournaments"),
+    dataGolfInPlayLastUpdate: markerValidator,
+    coalesceWithinMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("tournamentSyncState")
+      .withIndex("by_tournament", (q) =>
+        q.eq("tournamentId", args.tournamentId),
+      )
+      .unique();
+    const hasRecentHealthyHeartbeat =
+      existing?.lastSuccessAt !== undefined &&
+      existing.dataGolfInPlayLastUpdate === args.dataGolfInPlayLastUpdate &&
+      (existing.failureCount ?? 0) === 0 &&
+      now - existing.lastSuccessAt < Math.max(args.coalesceWithinMs, 0);
+
+    if (existing && hasRecentHealthyHeartbeat) {
+      return { id: existing._id, persisted: false as const };
+    }
+
+    const value = {
+      dataGolfInPlayLastUpdate: args.dataGolfInPlayLastUpdate,
+      lastAttemptAt: now,
+      lastSuccessAt: now,
+      failureCount: 0,
+      skipReason: "data_golf_unchanged",
+      updatedAt: now,
+    };
+    if (existing) {
+      await ctx.db.patch(existing._id, value);
+      return { id: existing._id, persisted: true as const };
+    }
+    const id = await ctx.db.insert("tournamentSyncState", {
+      tournamentId: args.tournamentId,
+      ...value,
+    });
+    return { id, persisted: true as const };
   },
 });
 
@@ -97,6 +141,7 @@ export const recordFailure = internalMutation({
       await ctx.db.patch(existing._id, {
         failureCount,
         skipReason: args.error.slice(0, 500),
+        lastAttemptAt: now,
         updatedAt: now,
       });
       return failureCount;

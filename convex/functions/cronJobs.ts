@@ -72,6 +72,7 @@ type TeamRoundWindowMetrics = {
 
 const TOURNAMENT_ROUNDS: RoundNumber[] = [1, 2, 3, 4];
 const SYNC_WRITE_BATCH_SIZE = 25;
+const UNCHANGED_SYNC_HEARTBEAT_MS = 30 * 60_000;
 
 export function chunkSyncUpdates<T>(
   updates: T[],
@@ -2211,10 +2212,6 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         internal.functions.tournamentSyncState.get,
         { tournamentId: activeTournamentData.tournament._id },
       );
-      await ctx.runMutation(
-        internal.functions.tournamentSyncState.recordAttempt,
-        { tournamentId: activeTournamentData.tournament._id },
-      );
       const previousDataGolfMarker =
         syncState?.dataGolfInPlayLastUpdate ??
         activeTournamentData.tournament.dataGolfInPlayLastUpdate;
@@ -2243,11 +2240,11 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             activeTournamentData.tournament._id,
           );
           await ctx.runMutation(
-            internal.functions.tournamentSyncState.recordSuccess,
+            internal.functions.tournamentSyncState.recordUnchangedSuccess,
             {
               tournamentId: activeTournamentData.tournament._id,
               dataGolfInPlayLastUpdate: liveProbe.info.last_update,
-              skipReason: "data_golf_unchanged",
+              coalesceWithinMs: UNCHANGED_SYNC_HEARTBEAT_MS,
             },
           );
           return {
@@ -3193,6 +3190,12 @@ export const runTournamentSyncWithLease: ReturnType<typeof internalAction> =
           runId: lease.runId,
           status: result.skipped ? "skipped" : "succeeded",
           skipReason: result.skipped ? result.reason : undefined,
+          coalesceWithinMs:
+            trigger === "scheduled" &&
+            result.skipped &&
+            result.reason === "data_golf_unchanged"
+              ? UNCHANGED_SYNC_HEARTBEAT_MS
+              : undefined,
         });
         return result;
       } catch (error) {

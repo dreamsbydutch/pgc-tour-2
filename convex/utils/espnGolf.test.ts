@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  areEspnRoundsEqual,
   completeWithdrawnEspnRounds,
   findEspnGolferMatch,
   inferEspnRoundHolePars,
@@ -159,6 +160,41 @@ describe("mergeEspnRounds", () => {
       },
     ];
     expect(mergeEspnRounds(existing, [])).toEqual(existing);
+  });
+
+  it("compares scorecards after normalizing round and hole order", () => {
+    expect(
+      areEspnRoundsEqual(
+        [
+          {
+            round: 2,
+            holes: [{ hole: 2, strokes: 4, relativeToPar: 0 }],
+          },
+          {
+            round: 1,
+            totalStrokes: 70,
+            holes: [
+              { hole: 2, strokes: 3, relativeToPar: -1 },
+              { hole: 1, strokes: 4, relativeToPar: 0 },
+            ],
+          },
+        ],
+        [
+          {
+            round: 1,
+            totalStrokes: 70,
+            holes: [
+              { hole: 1, strokes: 4, relativeToPar: 0 },
+              { hole: 2, strokes: 3, relativeToPar: -1 },
+            ],
+          },
+          {
+            round: 2,
+            holes: [{ hole: 2, strokes: 4, relativeToPar: 0 }],
+          },
+        ],
+      ),
+    ).toBe(true);
   });
 });
 

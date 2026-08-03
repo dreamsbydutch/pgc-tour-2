@@ -547,6 +547,19 @@ const schema = defineSchema({
     .index("by_entity", ["entityType", "entityId"])
     .index("by_action", ["action"]),
 
+  /**
+   * Server-side leases and cooldowns for outbound email actions. These guards
+   * prevent concurrent duplicate sends and enforce rate limits independently
+   * of any client-side button state.
+   */
+  emailDispatchGuards: defineTable({
+    key: v.string(),
+    leaseToken: v.string(),
+    leaseExpiresAt: v.number(),
+    cooldownUntil: v.number(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+
   syncRuns: defineTable({
     jobName: v.string(),
     runKey: v.string(),
