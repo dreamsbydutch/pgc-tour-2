@@ -3,9 +3,20 @@ import { useAction, useMutation, useQuery } from "convex/react";
 
 import { api, type Id } from "@/convex";
 import type {
+  AdminConfirmationRequest,
+  AdminOperationKey,
+  AdminOperationRun,
   StandingsBackfillResult,
   TeamMetadataBackfillResult,
 } from "@/types";
+import {
+  buildBulkEmailPreview,
+  buildImportTeamsPreview,
+  buildPaymentPreview,
+  buildRepairPreview,
+  toAdminOperationStatus,
+  toLatestAdminOperationStatus,
+} from "@/utils/adminOperations";
 
 export function useAdminDashboard() {
   const dashboard = useQuery(api.functions.readModels.adminGetDashboard);
@@ -51,29 +62,179 @@ export function useAdminDashboard() {
     api.functions.teams.adminImportTeamsFromJson,
   );
 
-  const [outputs, setOutputs] = useState<Record<string, string>>({});
+  const [runs, setRuns] = useState<
+    Partial<Record<AdminOperationKey, AdminOperationRun>>
+  >({});
   const [repairTournamentId, setRepairTournamentId] = useState("");
   const [tournamentId, setTournamentId] = useState("");
   const [teamsJson, setTeamsJson] = useState("");
-  const [importOutput, setImportOutput] = useState("");
   const [weeklyRecapBody, setWeeklyRecapBody] = useState("");
   const [paymentMemberId, setPaymentMemberId] = useState("");
   const [paymentSeasonId, setPaymentSeasonId] = useState("");
   const [paymentAmountDollars, setPaymentAmountDollars] = useState("");
   const [recomputeSeasonId, setRecomputeSeasonId] = useState("");
+  const [confirmationOperation, setConfirmationOperation] = useState<
+    AdminConfirmationRequest["operation"] | null
+  >(null);
 
-  async function runJob(key: string, job: () => Promise<unknown>) {
-    setOutputs((previous) => ({ ...previous, [key]: "Running..." }));
+  const selectedPaymentMember = members?.find(
+    (member) => member._id === paymentMemberId,
+  );
+  const selectedPaymentSeason = seasons?.find(
+    (season) => season._id === paymentSeasonId,
+  );
+  const selectedRepairTournament = tournaments?.find(
+    (tournament) => tournament._id === repairTournamentId,
+  );
+  const selectedImportTournament = tournaments?.find(
+    (tournament) => tournament._id === tournamentId,
+  );
+
+  const previews = useMemo(
+    () => ({
+      weeklyRecapSendAll: buildBulkEmailPreview({
+        tournamentName:
+          dashboard?.weeklyRecapPreview?.tournamentName ?? undefined,
+        recipientCount:
+          dashboard === undefined
+            ? undefined
+            : (dashboard.weeklyRecapPreview?.recipientCount ?? 0),
+        customBlurb: weeklyRecapBody,
+      }),
+      createPayment: buildPaymentPreview({
+        memberName: selectedPaymentMember?.fullName,
+        seasonName: selectedPaymentSeason
+          ? `${selectedPaymentSeason.year} (Season ${selectedPaymentSeason.number})`
+          : undefined,
+        currentBalanceCents: selectedPaymentMember?.account,
+        amountDollars: paymentAmountDollars,
+      }),
+      repairTournament: buildRepairPreview({
+        tournamentName: selectedRepairTournament?.name,
+        tournamentStatus: selectedRepairTournament?.status,
+        tournamentStartDate: selectedRepairTournament?.startDate,
+      }),
+      importTeams: buildImportTeamsPreview({
+        tournamentId,
+        tournamentName: selectedImportTournament?.name,
+        teamsJson,
+      }),
+    }),
+    [
+      dashboard,
+      paymentAmountDollars,
+      selectedImportTournament,
+      selectedPaymentMember,
+      selectedPaymentSeason,
+      selectedRepairTournament,
+      teamsJson,
+      tournamentId,
+      weeklyRecapBody,
+    ],
+  );
+
+  const operationStatus = {
+    createGroups: toAdminOperationStatus(runs.createGroups),
+    liveSync: toAdminOperationStatus(runs.liveSync),
+    liveSyncForce: toAdminOperationStatus(runs.liveSyncForce),
+    updateWorldRank: toAdminOperationStatus(runs.updateWorldRank),
+    weeklyRecapTest: toAdminOperationStatus(runs.weeklyRecapTest),
+    weeklyRecapSendAll: toAdminOperationStatus(runs.weeklyRecapSendAll),
+    createPayment: toAdminOperationStatus(runs.createPayment),
+    recomputeStandings: toAdminOperationStatus(runs.recomputeStandings),
+    backfillStandings: toAdminOperationStatus(runs.backfillStandings),
+    backfillTeamMetadata: toAdminOperationStatus(runs.backfillTeamMetadata),
+    repairTournament: toAdminOperationStatus(runs.repairTournament),
+    importTeams: toAdminOperationStatus(runs.importTeams),
+  } satisfies Record<
+    AdminOperationKey,
+    ReturnType<typeof toAdminOperationStatus>
+  >;
+  const groupStatus = {
+    eventSetup: toLatestAdminOperationStatus([
+      runs.updateWorldRank,
+      runs.createGroups,
+    ]),
+    liveSync: toLatestAdminOperationStatus([runs.liveSync, runs.liveSyncForce]),
+    weeklyRecap: toLatestAdminOperationStatus([
+      runs.weeklyRecapTest,
+      runs.weeklyRecapSendAll,
+    ]),
+    standings: toLatestAdminOperationStatus([
+      runs.recomputeStandings,
+      runs.backfillStandings,
+    ]),
+  };
+
+  const confirmation = useMemo<AdminConfirmationRequest | null>(() => {
+    switch (confirmationOperation) {
+      case "weeklyRecapSendAll":
+        return {
+          operation: confirmationOperation,
+          title: "Send the weekly recap to everyone?",
+          description:
+            "Review the recipient estimate and message details before starting the bulk send.",
+          confirmLabel: "Send bulk email",
+          preview: previews.weeklyRecapSendAll,
+        };
+      case "createPayment":
+        return {
+          operation: confirmationOperation,
+          title: "Record this payment?",
+          description:
+            "This immediately creates a completed transaction and changes the member's balance.",
+          confirmLabel: "Record payment",
+          preview: previews.createPayment,
+        };
+      case "repairTournament":
+        return {
+          operation: confirmationOperation,
+          title: "Repair this tournament?",
+          description:
+            "The repair can replace calculated results and update season standings.",
+          confirmLabel: "Run repair",
+          preview: previews.repairTournament,
+        };
+      case "importTeams":
+        return {
+          operation: confirmationOperation,
+          title: "Import these teams?",
+          description:
+            "Matching teams will be overwritten and new team rows may be created.",
+          confirmLabel: "Import teams",
+          preview: previews.importTeams,
+        };
+      default:
+        return null;
+    }
+  }, [confirmationOperation, previews]);
+
+  async function runJob(key: AdminOperationKey, job: () => Promise<unknown>) {
+    const startedAt = Date.now();
+    setRuns((previous) => ({
+      ...previous,
+      [key]: { status: "running", startedAt, result: "Operation in progress…" },
+    }));
     try {
       const result = await job();
-      setOutputs((previous) => ({
+      setRuns((previous) => ({
         ...previous,
-        [key]: JSON.stringify(result, null, 2),
+        [key]: {
+          status: "succeeded",
+          startedAt,
+          finishedAt: Date.now(),
+          result: formatResult(result),
+        },
       }));
     } catch (error) {
-      setOutputs((previous) => ({
+      setRuns((previous) => ({
         ...previous,
-        [key]: error instanceof Error ? error.message : "Unknown error",
+        [key]: {
+          status: "failed",
+          startedAt,
+          finishedAt: Date.now(),
+          result: error instanceof Error ? error.message : "Unknown error",
+        },
       }));
     }
   }
@@ -90,22 +251,6 @@ export function useAdminDashboard() {
       runJob("weeklyRecapTest", () =>
         sendWeeklyRecapEmailTest({ customBlurb: weeklyRecapBody }),
       ),
-    weeklyRecapSendAll: () =>
-      runJob("weeklyRecapSendAll", () =>
-        sendWeeklyRecapEmailToAll({ customBlurb: weeklyRecapBody }),
-      ),
-    createPayment: () =>
-      runJob("createPayment", async () => {
-        const cents = Math.round(Number(paymentAmountDollars) * 100);
-        if (!Number.isFinite(cents) || cents === 0) {
-          throw new Error("Amount must be a non-zero number");
-        }
-        return await createTransaction({
-          memberId: paymentMemberId as Id<"members">,
-          seasonId: paymentSeasonId as Id<"seasons">,
-          amount: cents,
-        });
-      }),
     recomputeStandings: () =>
       runJob("recomputeStandings", () =>
         runRecomputeStandings({
@@ -160,25 +305,53 @@ export function useAdminDashboard() {
           complete: true,
         };
       }),
-    repairTournament: () =>
-      runJob("repairTournament", () =>
-        runRepairTournament({
-          tournamentId: repairTournamentId as Id<"tournaments">,
-        }),
-      ),
   };
 
-  async function runImport() {
-    setImportOutput("Running...");
-    try {
-      const result = await importTeamsFromJson({
-        tournamentId: tournamentId.trim() as Id<"tournaments">,
-        teamsJson,
-      });
-      setImportOutput(JSON.stringify(result, null, 2));
-    } catch (error) {
-      setImportOutput(error instanceof Error ? error.message : "Unknown error");
+  async function runConfirmedOperation(
+    operation: AdminConfirmationRequest["operation"],
+  ) {
+    switch (operation) {
+      case "weeklyRecapSendAll":
+        await runJob(operation, () =>
+          sendWeeklyRecapEmailToAll({ customBlurb: weeklyRecapBody }),
+        );
+        break;
+      case "createPayment":
+        await runJob(operation, async () => {
+          const cents = Math.round(Number(paymentAmountDollars) * 100);
+          if (!Number.isSafeInteger(cents) || cents === 0) {
+            throw new Error("Amount must be a non-zero number");
+          }
+          return await createTransaction({
+            memberId: paymentMemberId as Id<"members">,
+            seasonId: paymentSeasonId as Id<"seasons">,
+            amount: cents,
+          });
+        });
+        break;
+      case "repairTournament":
+        await runJob(operation, () =>
+          runRepairTournament({
+            tournamentId: repairTournamentId as Id<"tournaments">,
+          }),
+        );
+        break;
+      case "importTeams":
+        await runJob(operation, () =>
+          importTeamsFromJson({
+            tournamentId: tournamentId.trim() as Id<"tournaments">,
+            teamsJson,
+          }),
+        );
+        break;
     }
+  }
+
+  async function confirmOperation() {
+    if (!confirmation?.preview.canRun) return;
+    const operation = confirmation.operation;
+    setConfirmationOperation(null);
+    await runConfirmedOperation(operation);
   }
 
   return {
@@ -186,14 +359,12 @@ export function useAdminDashboard() {
     sortedTournaments,
     members,
     seasons,
-    outputs,
     repairTournamentId,
     setRepairTournamentId,
     tournamentId,
     setTournamentId,
     teamsJson,
     setTeamsJson,
-    importOutput,
     weeklyRecapBody,
     setWeeklyRecapBody,
     paymentMemberId,
@@ -205,6 +376,18 @@ export function useAdminDashboard() {
     recomputeSeasonId,
     setRecomputeSeasonId,
     jobs,
-    runImport,
+    previews,
+    operationStatus,
+    groupStatus,
+    confirmation,
+    requestConfirmation: setConfirmationOperation,
+    dismissConfirmation: () => setConfirmationOperation(null),
+    confirmOperation,
   };
+}
+
+function formatResult(result: unknown) {
+  if (result === undefined) return "Completed successfully.";
+  if (typeof result === "string") return result;
+  return JSON.stringify(result, null, 2);
 }

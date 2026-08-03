@@ -194,6 +194,31 @@ export const adminGetDashboard = query({
       ctx.db.query("tournaments").take(500),
       ctx.db.query("seasons").take(100),
     ]);
+    const upcomingTournament = tournaments
+      .filter(
+        (tournament) =>
+          tournament.status === "upcoming" && tournament.startDate > Date.now(),
+      )
+      .sort((a, b) => a.startDate - b.startDate)[0];
+    const upcomingTourCards = upcomingTournament
+      ? await ctx.db
+          .query("tourCards")
+          .withIndex("by_season", (q) =>
+            q.eq("seasonId", upcomingTournament.seasonId),
+          )
+          .take(500)
+      : [];
+    const activeMemberIds = new Set(
+      members
+        .filter((member) => member.isActive !== false)
+        .map((member) => String(member._id)),
+    );
+    const weeklyRecapRecipientIds = new Set(
+      upcomingTourCards
+        .map((tourCard) => tourCard.memberId)
+        .filter((memberId) => activeMemberIds.has(String(memberId)))
+        .map(String),
+    );
 
     return {
       members: members.map((member) => ({
@@ -224,6 +249,13 @@ export const adminGetDashboard = query({
         year: season.year,
         number: season.number,
       })),
+      weeklyRecapPreview: upcomingTournament
+        ? {
+            tournamentId: upcomingTournament._id,
+            tournamentName: upcomingTournament.name,
+            recipientCount: weeklyRecapRecipientIds.size,
+          }
+        : null,
     };
   },
 });
