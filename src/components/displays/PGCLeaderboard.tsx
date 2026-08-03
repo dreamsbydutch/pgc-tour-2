@@ -96,19 +96,17 @@ export function PGCLeaderboard(props: {
   return (
     <>
       {teamsWithDisplayPosition.map((team) => (
-        <>
-          <LeaderboardListing
-            key={team._id}
-            tournament={props.tournament}
-            team={team}
-            currentTourCardId={props.currentTourCardId}
-            friendIds={props.friendIds}
-            standingsSnapshot={props.standingsSnapshots?.get(
-              String(team.tourCardId),
-            )}
-            majorChampionBadgesByMemberId={props.majorChampionBadgesByMemberId}
-          />
-        </>
+        <LeaderboardListing
+          key={team._id}
+          tournament={props.tournament}
+          team={team}
+          currentTourCardId={props.currentTourCardId}
+          friendIds={props.friendIds}
+          standingsSnapshot={props.standingsSnapshots?.get(
+            String(team.tourCardId),
+          )}
+          majorChampionBadgesByMemberId={props.majorChampionBadgesByMemberId}
+        />
       ))}
     </>
   );
