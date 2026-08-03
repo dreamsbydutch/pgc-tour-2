@@ -74,3 +74,35 @@ jobs:
       - name: Review dependency changes
         if: github.event_name == 'pull_request'
         uses: actions/dependency-review-action@v4
+
+  secret-scan:
+    name: 8c. Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - name: Check out full repository history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Install verified Gitleaks binary
+        run: |
+          curl --fail --silent --show-error --location \
+            --output /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum --check --strict
+          tar --extract --gzip --file /tmp/gitleaks.tar.gz --directory /tmp gitleaks
+      - name: Scan current code and full Git history
+        run: >-
+          /tmp/gitleaks git .
+          --log-opts="--all"
+          --max-archive-depth=1
+          --max-decode-depth=2
+          --redact
+          --no-banner
+          --no-color
+          --verbose
