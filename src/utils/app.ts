@@ -1044,6 +1044,36 @@ export function formatTournamentDateRange(
   return `${start} - ${end}`;
 }
 
+export function formatCompactTournamentDateRange(
+  startDate: number,
+  endDate: number,
+): string {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const monthAndDay = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+  const startLabel = monthAndDay.format(start);
+
+  if (
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth() &&
+    start.getDate() === end.getDate()
+  ) {
+    return startLabel;
+  }
+
+  if (
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth()
+  ) {
+    return `${startLabel}–${end.getDate()}`;
+  }
+
+  return `${startLabel}–${monthAndDay.format(end)}`;
+}
+
 export function formatToPar(score: number | null | undefined): string {
   if (score === null || score === undefined) return "-";
   if (score === 0) return "E";

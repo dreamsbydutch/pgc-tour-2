@@ -2,7 +2,12 @@
 
 import { Dropdown } from "@/ui";
 import type { DropdownItem, DropdownSection } from "@/types";
-import { cn, formatMoney, formatTournamentDateRange } from "@/utils/app";
+import {
+  cn,
+  formatCompactTournamentDateRange,
+  formatMoney,
+  formatTournamentDateRange,
+} from "@/utils/app";
 import type { TournamentHeaderModel } from "@/types";
 import { ChevronDown, ChevronRight, RefreshCwIcon } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
@@ -73,7 +78,7 @@ export function LeaderboardHeader(props: {
           </div>
 
           <div className="col-span-2 row-span-1 place-self-center text-center text-xs xs:text-sm sm:text-base md:text-lg">
-            {formatTournamentDateRange(
+            {formatCompactTournamentDateRange(
               props.tournament.startDate,
               props.tournament.endDate,
             )}

@@ -46,8 +46,8 @@ afterEach(cleanup);
 const tournament: TournamentHeaderModel = {
   _id: "tournament-1",
   name: "Rocket Classic",
-  startDate: Date.UTC(2026, 6, 30),
-  endDate: Date.UTC(2026, 7, 2),
+  startDate: new Date(2026, 6, 30).getTime(),
+  endDate: new Date(2026, 7, 2).getTime(),
   logoUrl: "/rocket.png",
   season: { year: 2026 },
   tier: {
@@ -77,6 +77,7 @@ describe("LeaderboardHeader", () => {
     expect(
       screen.getByRole("heading", { name: "Rocket Classic" }),
     ).toBeTruthy();
+    expect(screen.getByText("Jul 30–Aug 2")).toBeTruthy();
     const courseButton = screen.getByTitle("View hole-by-hole course scoring");
     expect(courseButton.textContent).toContain(
       "Detroit Golf Club·Detroit, MI·Par 70 (35–35)",
