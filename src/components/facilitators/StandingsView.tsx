@@ -486,7 +486,7 @@ export function StandingsListingRow(props: {
         </div>
       ) : null}
 
-      {props.mode === "regular" ? (
+      {props.mode !== "playoff" ? (
         <>
           <div className="col-span-1 hidden place-self-center font-varela text-xs sm:block sm:text-sm">
             {props.card.wins ?? 0}
@@ -814,7 +814,7 @@ function StandingsPositionChange(props: { posChange: number }) {
  * @param props.playoffDetails - Optional content shown beneath the playoff title.
  * @returns A responsive grid header matching standings listing rows.
  */
-function StandingsTableHeader(props: {
+export function StandingsTableHeader(props: {
   variant: "regular" | "gold" | "silver" | "bumped";
   friendsOnlyToggle: ReactNode;
   playoffDetails?: ReactNode;
@@ -959,7 +959,7 @@ function StandingsTableHeader(props: {
         </div>
       ) : null}
 
-      {props.variant === "regular" ? (
+      {props.variant === "regular" || props.variant === "bumped" ? (
         <>
           <div className="col-span-1 hidden place-self-center font-varela text-2xs font-bold text-muted-foreground sm:block sm:text-xs">
             Wins
