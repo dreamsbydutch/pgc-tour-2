@@ -77,15 +77,20 @@ describe("LeaderboardHeader", () => {
     expect(
       screen.getByRole("heading", { name: "Rocket Classic" }),
     ).toBeTruthy();
-    expect(screen.getByText("Detroit, MI")).toBeTruthy();
-    expect(screen.getByText("35 - 35 - 70")).toBeTruthy();
-    expect(
-      screen.getByText("Standard Tournament - 1st Place: 600 pts, $75"),
-    ).toBeTruthy();
-
-    fireEvent.click(
-      screen.getByTitle("View the full points and payout breakdown"),
+    const courseButton = screen.getByTitle("View hole-by-hole course scoring");
+    expect(courseButton.textContent).toContain(
+      "Detroit Golf Club·Detroit, MI·Par 70 (35–35)",
     );
+    expect(courseButton.className).not.toContain("underline");
+    const awardsButton = screen.getByTitle(
+      "View the full points and payout breakdown",
+    );
+    expect(awardsButton.textContent).toContain(
+      "Standard Tournament·1st place: 600 pts / $75",
+    );
+    expect(awardsButton.className).not.toContain("underline");
+
+    fireEvent.click(awardsButton);
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Points & payouts")).toBeTruthy();
@@ -104,9 +109,7 @@ describe("LeaderboardHeader", () => {
       />,
     );
 
-    fireEvent.click(
-      screen.getAllByTitle("View hole-by-hole course scoring")[0]!,
-    );
+    fireEvent.click(screen.getByTitle("View hole-by-hole course scoring"));
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Detroit Golf Club")).toBeTruthy();

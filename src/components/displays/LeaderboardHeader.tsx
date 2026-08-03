@@ -4,12 +4,7 @@ import { Dropdown } from "@/ui";
 import type { DropdownItem, DropdownSection } from "@/types";
 import { cn, formatMoney, formatTournamentDateRange } from "@/utils/app";
 import type { TournamentHeaderModel } from "@/types";
-import {
-  ChevronDown,
-  CircleDollarSign,
-  MapPinned,
-  RefreshCwIcon,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, RefreshCwIcon } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 
 const TournamentHeaderDetails = lazy(() => import("./TournamentHeaderDetails"));
@@ -52,12 +47,12 @@ export function LeaderboardHeader(props: {
         id={`leaderboard-header-${props.tournament._id}`}
         className="mx-auto w-full max-w-4xl md:w-11/12 lg:w-8/12"
       >
-        <div className="mx-auto grid grid-flow-row grid-cols-10 items-center gap-y-1 border-b-2 border-gray-800 py-2">
-          <div className="col-span-3 row-span-4 max-h-40 place-self-center px-1 py-2 text-center">
+        <div className="mx-auto grid grid-flow-row grid-cols-10 items-center gap-y-0.5 border-b-2 border-gray-800 py-1.5">
+          <div className="col-span-3 row-span-4 max-h-36 place-self-center px-1 py-1 text-center">
             {props.tournament.logoUrl && (
               <img
                 src={props.tournament.logoUrl}
-                className="mx-auto max-h-32"
+                className="mx-auto max-h-24 sm:max-h-28 md:max-h-32"
                 alt={`${props.tournament.name} logo`}
                 width={150}
                 height={150}
@@ -88,52 +83,61 @@ export function LeaderboardHeader(props: {
             type="button"
             aria-haspopup="dialog"
             onClick={() => setCourseOpen(true)}
-            className="group col-span-3 row-span-1 inline-flex min-h-8 items-center justify-center gap-1 text-center text-xs underline decoration-dotted underline-offset-4 hover:text-emerald-800 xs:text-sm sm:text-base md:text-lg"
+            className="group col-span-7 row-span-1 mx-auto flex max-w-full flex-wrap items-center justify-center gap-x-1.5 gap-y-0 rounded-sm px-1 py-0.5 text-center text-xs text-gray-700 transition-colors hover:bg-gray-50 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xs:text-sm sm:text-base md:text-lg"
             title="View hole-by-hole course scoring"
           >
-            <MapPinned
-              className="hidden h-4 w-4 shrink-0 sm:block"
+            <span className="font-medium text-gray-950">
+              {props.tournament.course?.name ?? "-"}
+            </span>
+            {props.tournament.course && (
+              <>
+                <span className="text-gray-400" aria-hidden="true">
+                  ·
+                </span>
+                <span>{props.tournament.course.location}</span>
+                <span className="text-gray-400" aria-hidden="true">
+                  ·
+                </span>
+                <span className="whitespace-nowrap">
+                  Par {props.tournament.course.par} (
+                  {props.tournament.course.front}–{props.tournament.course.back}
+                  )
+                </span>
+              </>
+            )}
+            <ChevronRight
+              className="h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5"
               aria-hidden="true"
             />
-            <span>{props.tournament.course?.name ?? "-"}</span>
-          </button>
-
-          <div className="col-span-2 row-span-1 text-center text-xs xs:text-sm sm:text-base md:text-lg">
-            {props.tournament.course?.location ?? "-"}
-          </div>
-
-          <button
-            type="button"
-            aria-haspopup="dialog"
-            onClick={() => setCourseOpen(true)}
-            className="col-span-2 row-span-1 min-h-8 text-center text-xs underline decoration-dotted underline-offset-4 hover:text-emerald-800 xs:text-sm sm:text-base md:text-lg"
-            title="View hole-by-hole course scoring"
-          >
-            {props.tournament.course?.front &&
-            props.tournament.course?.back &&
-            props.tournament.course?.par
-              ? `${props.tournament.course.front} - ${props.tournament.course.back} - ${props.tournament.course.par}`
-              : "-"}
           </button>
 
           <button
             type="button"
             aria-haspopup="dialog"
             onClick={() => setAwardsOpen(true)}
-            className="col-span-7 row-span-1 inline-flex min-h-8 items-center justify-center gap-1 text-center text-xs underline decoration-dotted underline-offset-4 hover:text-emerald-800 xs:text-sm sm:text-base md:text-lg"
+            className="group col-span-7 row-span-1 mx-auto flex max-w-full flex-wrap items-center justify-center gap-x-1.5 gap-y-0 rounded-sm px-1 py-0.5 text-center text-xs text-gray-700 transition-colors hover:bg-gray-50 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xs:text-sm sm:text-base md:text-lg"
             title="View the full points and payout breakdown"
           >
-            <CircleDollarSign
-              className="hidden h-4 w-4 shrink-0 sm:block"
+            {props.tournament.tier && (
+              <>
+                <span className="font-medium text-gray-950">
+                  {props.tournament.tier.name} Tournament
+                </span>
+                <span className="text-gray-400" aria-hidden="true">
+                  ·
+                </span>
+                <span className="whitespace-nowrap">
+                  1st place:{" "}
+                  {props.tournament.tier.name.toLowerCase() === "playoff"
+                    ? formatMoney(props.tournament.tier.payouts[0] ?? 0, false)
+                    : `${props.tournament.tier.points[0] ?? 0} pts / ${formatMoney(props.tournament.tier.payouts[0] ?? 0, false)}`}
+                </span>
+              </>
+            )}
+            <ChevronRight
+              className="h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5"
               aria-hidden="true"
             />
-            <span>
-              {props.tournament.tier
-                ? props.tournament.tier.name.toLowerCase() === "playoff"
-                  ? `${props.tournament.tier.name} Tournament - 1st Place: ${formatMoney(props.tournament.tier.payouts[0] ?? 0, false)}`
-                  : `${props.tournament.tier.name} Tournament - 1st Place: ${props.tournament.tier.points[0] ?? 0} pts, ${formatMoney(props.tournament.tier.payouts[0] ?? 0, false)}`
-                : ""}
-            </span>
           </button>
         </div>
       </div>
