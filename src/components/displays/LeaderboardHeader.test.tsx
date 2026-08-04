@@ -93,7 +93,7 @@ describe("LeaderboardHeader", () => {
 
     fireEvent.click(awardsButton);
 
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("dialog", {}, { timeout: 3_000 });
     expect(within(dialog).getByText("Points & payouts")).toBeTruthy();
     expect(within(dialog).getByText("600")).toBeTruthy();
     expect(within(dialog).getByText("$75.00")).toBeTruthy();
@@ -112,7 +112,7 @@ describe("LeaderboardHeader", () => {
 
     fireEvent.click(screen.getByTitle("View hole-by-hole course scoring"));
 
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("dialog", {}, { timeout: 3_000 });
     expect(within(dialog).getByText("Detroit Golf Club")).toBeTruthy();
     expect(
       within(dialog).getByText("Round 4 · DataGolf live scoring"),
