@@ -3,29 +3,61 @@ import type { EnhancedGolfer } from "../types/types";
 import {
   buildTourCardStandingsTotals,
   buildFirstPlaceTiebreakSummary,
+  chunkSyncUpdates,
   derivePersistedTournamentState,
   deriveTournamentTimelineState,
+  getEffectiveGolferLeaderboardScore,
+  getAdaptiveSyncDelayMs,
+  getGolferLeaderboardRankMetrics,
   getTeamRoundWindowGolfers,
   getTournamentRoundWindowMetrics,
   getTeamTournamentRank,
   isRoundPublishedForTimeline,
 } from "./cronJobs";
 
-type TestSyncTeam = Parameters<typeof buildFirstPlaceTiebreakSummary>[0]["teams"][number];
+describe("sync batching and adaptive cadence", () => {
+  it("chunks writes at the configured boundary without losing order", () => {
+    const updates = Array.from({ length: 57 }, (_, index) => index);
+    const chunks = chunkSyncUpdates(updates);
+    expect(chunks.map((chunk) => chunk.length)).toEqual([25, 25, 7]);
+    expect(chunks.flat()).toEqual(updates);
+  });
 
-function makeGolfer(args: {
-  golfer?: Partial<NonNullable<EnhancedGolfer["golfer"]>>;
-  live?: Partial<NonNullable<EnhancedGolfer["live"]>>;
-  historical?: Partial<NonNullable<EnhancedGolfer["historical"]>>;
-  historicalEvent?: Partial<NonNullable<EnhancedGolfer["historicalEvent"]>>;
-  tournamentGolfer?: Partial<NonNullable<EnhancedGolfer["tournamentGolfer"]>>;
-} = {}): EnhancedGolfer {
+  it("uses 4/12 minute live cadence and bounded failure backoff", () => {
+    expect(getAdaptiveSyncDelayMs({ livePlay: true, status: "active" })).toBe(
+      4 * 60_000,
+    );
+    expect(getAdaptiveSyncDelayMs({ status: "active" })).toBe(12 * 60_000);
+    expect(getAdaptiveSyncDelayMs({ activatedTournament: true })).toBe(
+      12 * 60_000,
+    );
+    expect(getAdaptiveSyncDelayMs({ status: "completed" })).toBeNull();
+    expect(getAdaptiveSyncDelayMs({ failureCount: 1 })).toBe(8 * 60_000);
+    expect(getAdaptiveSyncDelayMs({ failureCount: 2 })).toBe(16 * 60_000);
+    expect(getAdaptiveSyncDelayMs({ failureCount: 9 })).toBe(30 * 60_000);
+  });
+});
+
+type TestSyncTeam = Parameters<
+  typeof buildFirstPlaceTiebreakSummary
+>[0]["teams"][number];
+
+function makeGolfer(
+  args: {
+    golfer?: Partial<NonNullable<EnhancedGolfer["golfer"]>>;
+    live?: Partial<NonNullable<EnhancedGolfer["live"]>>;
+    historical?: Partial<NonNullable<EnhancedGolfer["historical"]>>;
+    historicalEvent?: Partial<NonNullable<EnhancedGolfer["historicalEvent"]>>;
+    tournamentGolfer?: Partial<NonNullable<EnhancedGolfer["tournamentGolfer"]>>;
+  } = {},
+): EnhancedGolfer {
   return {
     golfer: args.golfer as EnhancedGolfer["golfer"],
     live: args.live as EnhancedGolfer["live"],
     historical: args.historical as EnhancedGolfer["historical"],
     historicalEvent: args.historicalEvent as EnhancedGolfer["historicalEvent"],
-    tournamentGolfer: args.tournamentGolfer as EnhancedGolfer["tournamentGolfer"],
+    tournamentGolfer:
+      args.tournamentGolfer as EnhancedGolfer["tournamentGolfer"],
   } as EnhancedGolfer;
 }
 
@@ -53,6 +85,61 @@ function makeTeam(args: {
     tourCard: { tourId },
   } as unknown as TestSyncTeam;
 }
+
+describe("golfer leaderboard score and rank", () => {
+  it("uses historical totals when the live score is missing", () => {
+    const leader = makeGolfer({
+      historical: {
+        fin_text: "1",
+        round_1: { score: 69, course_par: 72, teetime: undefined },
+      },
+      tournamentGolfer: { position: "1", score: 4 },
+    });
+    const second = makeGolfer({
+      historical: {
+        fin_text: "2",
+        round_1: { score: 71, course_par: 72, teetime: undefined },
+      },
+      tournamentGolfer: { position: "2", score: 5 },
+    });
+
+    expect(getEffectiveGolferLeaderboardScore(leader)).toBe(-3);
+    expect(getEffectiveGolferLeaderboardScore(second)).toBe(-1);
+    expect(
+      getGolferLeaderboardRankMetrics({
+        golfer: leader,
+        golfers: [leader, second],
+        allowPreStartNonStarterReplacement: false,
+      }),
+    ).toMatchObject({ betterGolfers: 0, tiedGolfers: 1 });
+    expect(
+      getGolferLeaderboardRankMetrics({
+        golfer: second,
+        golfers: [leader, second],
+        allowPreStartNonStarterReplacement: false,
+      }),
+    ).toMatchObject({ betterGolfers: 1, tiedGolfers: 1 });
+  });
+
+  it("prefers a live score and preserves a saved even-par score", () => {
+    expect(
+      getEffectiveGolferLeaderboardScore(
+        makeGolfer({
+          live: { current_score: -5 },
+          historical: {
+            round_1: { score: 70, course_par: 72, teetime: undefined },
+          },
+          tournamentGolfer: { score: 0 },
+        }),
+      ),
+    ).toBe(-5);
+    expect(
+      getEffectiveGolferLeaderboardScore(
+        makeGolfer({ tournamentGolfer: { score: 0 } }),
+      ),
+    ).toBe(0);
+  });
+});
 
 describe("buildTourCardStandingsTotals", () => {
   it("counts only regular-season events for standings stats while keeping playoff earnings", () => {
@@ -454,7 +541,9 @@ describe("getTeamRoundWindowGolfers", () => {
     });
 
     expect(selected).toHaveLength(5);
-    expect(selected.map((golfer) => golfer.golfer?.apiId)).toEqual([3, 4, 7, 2, 6]);
+    expect(selected.map((golfer) => golfer.golfer?.apiId)).toEqual([
+      3, 4, 7, 2, 6,
+    ]);
     expect(selected.some((golfer) => golfer.golfer?.apiId === 1)).toBe(false);
     expect(selected.some((golfer) => golfer.golfer?.apiId === 8)).toBe(false);
   });

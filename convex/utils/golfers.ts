@@ -333,8 +333,6 @@ export function getSortFunction(sort: GolferSortOptions): GolferSortFunction {
   }
 }
 
-
-
 export function determineGroupIndex<T>(
   currentIndex: number,
   totalGolfers: number,

@@ -1,8 +1,9 @@
-import type { QueryCtx } from "../_generated/server";
+import type { ActionCtx, QueryCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import type {
   BuildTournamentUrlArgs,
+  EmailDispatchLease,
   GetAppBaseUrlArgs,
   GetChampionsStringForTournamentIdArgs,
   GetLeaderboardRowsForTournamentArgs,
@@ -15,6 +16,59 @@ import type {
   SendGroupsEmailImplArgs,
 } from "../types/emails";
 import { calculateScoreForSorting } from "./misc";
+
+export const EMAIL_TEST_COOLDOWN_MS = 30_000;
+export const EMAIL_BULK_COOLDOWN_MS = 5 * 60_000;
+const EMAIL_DISPATCH_LEASE_MS = 5 * 60_000;
+
+export async function acquireEmailDispatchGuard(args: {
+  ctx: ActionCtx;
+  key: string;
+  cooldownMs: number;
+}): Promise<EmailDispatchLease> {
+  const leaseToken = crypto.randomUUID();
+  const result = await args.ctx.runMutation(
+    internal.functions.emails.acquireEmailDispatchGuard_Internal,
+    {
+      key: args.key,
+      leaseToken,
+      now: Date.now(),
+      leaseMs: EMAIL_DISPATCH_LEASE_MS,
+    },
+  );
+
+  if (!result.acquired) {
+    const retrySeconds = Math.max(1, Math.ceil(result.retryAfterMs / 1_000));
+    const reason =
+      result.reason === "in_progress"
+        ? "An equivalent email send is already in progress"
+        : "This email send is rate limited";
+    throw new Error(`${reason}. Try again in ${retrySeconds} seconds.`);
+  }
+
+  return { key: args.key, leaseToken, cooldownMs: args.cooldownMs };
+}
+
+export async function completeEmailDispatchGuard(
+  ctx: ActionCtx,
+  lease: EmailDispatchLease,
+): Promise<void> {
+  try {
+    await ctx.runMutation(
+      internal.functions.emails.completeEmailDispatchGuard_Internal,
+      {
+        key: lease.key,
+        leaseToken: lease.leaseToken,
+        now: Date.now(),
+        cooldownMs: lease.cooldownMs,
+      },
+    );
+  } catch (error) {
+    // The external send has already completed. Do not report it as failed and
+    // encourage an operator to retry merely because guard bookkeeping failed.
+    console.error("Failed to complete email dispatch guard", error);
+  }
+}
 
 export function formatMemberName(member: Doc<"members">): string {
   const first = (member.firstname ?? "").trim();
@@ -181,10 +235,7 @@ export async function getLeaderboardRowsForTournament(
 
 export function findPreviousCompletedTournament<
   T extends { startDate: number; status?: Doc<"tournaments">["status"] },
->(args: {
-  tournaments: T[];
-  startDate: number;
-}): T | null {
+>(args: { tournaments: T[]; startDate: number }): T | null {
   return (
     [...args.tournaments]
       .filter(
@@ -586,11 +637,17 @@ export async function sendGroupsEmailImpl(args: SendGroupsEmailImplArgs) {
     };
   });
 
+  const dispatchLease = await acquireEmailDispatchGuard({
+    ctx: args.ctx,
+    key: `groups:bulk:${tournament._id}`,
+    cooldownMs: EMAIL_BULK_COOLDOWN_MS,
+  });
   const summary = await sendBrevoTemplateEmailBatch({
     apiKey,
     templateId,
     recipients,
   });
+  await completeEmailDispatchGuard(args.ctx, dispatchLease);
 
   if (summary.sent > 0) {
     await args.ctx.runMutation(internal.functions.emails.markGroupsEmailSent, {

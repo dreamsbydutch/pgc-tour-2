@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation } from "convex/react";
-import { api } from "@/convex";
-import type { FriendManagementHook, StandingsMember } from "@/lib";
+import { api, type Id } from "@/convex";
+import type { FriendableMember, FriendManagementHook } from "@/types";
 
-function getFriendIds(member: StandingsMember | null | undefined): string[] {
+function getFriendIds(member: FriendableMember | null | undefined): string[] {
   if (!member?.friends?.length) return [];
   return member.friends.map((v: string) => String(v));
 }
 
 export function useFriendManagement(
-  currentMember: StandingsMember | null | undefined,
+  currentMember: FriendableMember | null | undefined,
   currentMemberClerkId: string | undefined,
 ): FriendManagementHook {
   const [friendChangingIds, setFriendChangingIds] = useState<Set<string>>(
@@ -19,7 +19,8 @@ export function useFriendManagement(
     () => new Set(getFriendIds(currentMember)),
   );
 
-  const updateMember = useMutation(api.functions.members.updateMembers);
+  const addMyFriend = useMutation(api.functions.members.addMyFriend);
+  const removeMyFriend = useMutation(api.functions.members.removeMyFriend);
 
   const currentFriends = useMemo(
     () => getFriendIds(currentMember),
@@ -53,10 +54,7 @@ export function useFriendManagement(
       setFriendIds(new Set(nextFriends));
 
       try {
-        await updateMember({
-          memberId: currentMember._id,
-          data: { friends: nextFriends },
-        });
+        await addMyFriend({ memberId: memberIdToAdd as Id<"members"> });
       } catch (error) {
         setFriendIds((prev) => {
           const next = new Set(prev);
@@ -76,7 +74,7 @@ export function useFriendManagement(
       friendIds,
       friendChangingIds,
       removeFromChangingSet,
-      updateMember,
+      addMyFriend,
     ],
   );
 
@@ -92,9 +90,8 @@ export function useFriendManagement(
       setFriendIds(new Set(nextFriends));
 
       try {
-        await updateMember({
-          memberId: currentMember._id,
-          data: { friends: nextFriends },
+        await removeMyFriend({
+          memberId: memberIdToRemove as Id<"members">,
         });
       } catch (error) {
         setFriendIds((prev) => new Set([...prev, memberIdToRemove]));
@@ -111,7 +108,7 @@ export function useFriendManagement(
       friendIds,
       friendChangingIds,
       removeFromChangingSet,
-      updateMember,
+      removeMyFriend,
     ],
   );
 

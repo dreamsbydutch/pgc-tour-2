@@ -1,10 +1,5 @@
-import {
-  cn,
-  formatMonthDay,
-  getTournamentTimeline,
-  isNonEmptyString,
-  PGC_LOGO_URL,
-} from "@/lib";
+import { cn, formatMonthDay, isNonEmptyString } from "@/utils/app";
+import { PGC_LOGO_URL } from "@/utils/constants";
 
 import {
   Table,
@@ -16,7 +11,7 @@ import {
 } from "@/ui";
 import { Skeleton, SVGSkeleton } from "@/ui";
 import { EnhancedTournamentDoc } from "convex/types/types";
-import { useMemo } from "react";
+import { buildLeagueScheduleState } from "@/utils";
 
 /**
  * Renders the league schedule table (tournaments for a season).
@@ -38,7 +33,7 @@ export function LeagueSchedule({
 }: {
   tournaments: EnhancedTournamentDoc[] | undefined;
 }) {
-  const state = useLeagueSchedule({ tournaments });
+  const state = buildLeagueScheduleState(tournaments);
 
   if (state.status === "loading") return <LeagueScheduleSkeleton />;
 
@@ -57,114 +52,116 @@ export function LeagueSchedule({
           Schedule
         </h2>
       </div>
-      <Table className="mx-auto font-varela">
-        <TableHeader>
-          <TableRow>
-            <TableHead className="p-1 text-center text-xs font-bold">
-              Tournament
-            </TableHead>
-            <TableHead className="border-l p-1 text-center text-xs font-bold">
-              Dates
-            </TableHead>
-            <TableHead className="border-l p-1 text-center text-xs font-bold">
-              Tier
-            </TableHead>
-            <TableHead className="border-l p-1 text-center text-xs font-bold">
-              Course
-            </TableHead>
-            <TableHead className="border-l p-1 text-center text-xs font-bold">
-              Location
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {sortedTournaments.map((tourney, i) => {
-            const isCurrent = i === currentTournamentIndex;
-            const showBorderAfter =
-              i === previousTournamentIndex && currentTournamentIndex === -1;
-            const startDate = new Date(tourney.startDate);
-            const endDate = new Date(tourney.endDate);
+      <div className="overflow-x-auto">
+        <Table className="mx-auto font-varela">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="p-1 text-center text-xs font-bold">
+                Tournament
+              </TableHead>
+              <TableHead className="border-l p-1 text-center text-xs font-bold">
+                Dates
+              </TableHead>
+              <TableHead className="border-l p-1 text-center text-xs font-bold">
+                Tier
+              </TableHead>
+              <TableHead className="border-l p-1 text-center text-xs font-bold">
+                Course
+              </TableHead>
+              <TableHead className="border-l p-1 text-center text-xs font-bold">
+                Location
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sortedTournaments.map((tourney, i) => {
+              const isCurrent = i === currentTournamentIndex;
+              const showBorderAfter =
+                i === previousTournamentIndex && currentTournamentIndex === -1;
+              const startDate = new Date(tourney.startDate);
+              const endDate = new Date(tourney.endDate);
 
-            return (
-              <TableRow
-                key={tourney._id}
-                className={cn(
-                  sortedTournaments[i - 1]?.tier?.name !== "Playoff" &&
+              return (
+                <TableRow
+                  key={tourney._id}
+                  className={cn(
+                    sortedTournaments[i - 1]?.tier?.name !== "Playoff" &&
+                      sortedTournaments[i]?.tier?.name === "Playoff" &&
+                      "border-t-2 border-t-gray-500",
                     sortedTournaments[i]?.tier?.name === "Playoff" &&
-                    "border-t-2 border-t-gray-500",
-                  sortedTournaments[i]?.tier?.name === "Playoff" &&
-                    "bg-yellow-50",
-                  sortedTournaments[i]?.seasonId !==
-                    sortedTournaments[i - 1]?.seasonId &&
-                    i !== 0 &&
-                    "border-t-4 border-t-gray-800",
-                  tourney.tier?.name === "Major" && "bg-blue-50",
-                  showBorderAfter &&
-                    "border-b-[3px] border-dashed border-b-blue-800",
-                )}
-              >
-                <TableCell className="min-w-48 text-xs">
-                  <div className="flex items-center justify-evenly gap-1 text-center">
-                    <img
-                      src={
-                        isNonEmptyString(tourney.logoUrl)
-                          ? tourney.logoUrl
-                          : PGC_LOGO_URL
-                      }
-                      className={cn(
-                        isCurrent ? "h-12 w-12" : "h-8 w-8",
-                        "object-contain",
-                      )}
-                      alt={tourney.name}
-                    />
-                    <span className={cn(isCurrent && "font-bold")}>
-                      {tourney.name}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell
-                  className={cn(
-                    isCurrent && "font-bold",
-                    "text-nowrap border-l text-center text-xs",
+                      "bg-yellow-50",
+                    sortedTournaments[i]?.seasonId !==
+                      sortedTournaments[i - 1]?.seasonId &&
+                      i !== 0 &&
+                      "border-t-4 border-t-gray-800",
+                    tourney.tier?.name === "Major" && "bg-blue-50",
+                    showBorderAfter &&
+                      "border-b-[3px] border-dashed border-b-blue-800",
                   )}
                 >
-                  {`${formatMonthDay(startDate)} - ${
-                    startDate.getMonth() === endDate.getMonth()
-                      ? endDate.toLocaleDateString("en-US", {
-                          day: "numeric",
-                        })
-                      : formatMonthDay(endDate)
-                  }`}
-                </TableCell>
-                <TableCell
-                  className={cn(
-                    isCurrent && "font-bold",
-                    "text-nowrap border-l text-center text-xs",
-                  )}
-                >
-                  {tourney.tier?.name ?? ""}
-                </TableCell>
-                <TableCell
-                  className={cn(
-                    isCurrent && "font-bold",
-                    "min-w-48 border-l text-center text-xs",
-                  )}
-                >
-                  {tourney.course?.name ?? ""}
-                </TableCell>
-                <TableCell
-                  className={cn(
-                    isCurrent && "font-bold",
-                    "min-w-32 border-l text-center text-xs",
-                  )}
-                >
-                  {tourney.course?.location ?? ""}
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+                  <TableCell className="min-w-48 text-xs">
+                    <div className="flex items-center justify-evenly gap-1 text-center">
+                      <img
+                        src={
+                          isNonEmptyString(tourney.logoUrl)
+                            ? tourney.logoUrl
+                            : PGC_LOGO_URL
+                        }
+                        className={cn(
+                          isCurrent ? "h-12 w-12" : "h-8 w-8",
+                          "object-contain",
+                        )}
+                        alt={tourney.name}
+                      />
+                      <span className={cn(isCurrent && "font-bold")}>
+                        {tourney.name}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell
+                    className={cn(
+                      isCurrent && "font-bold",
+                      "text-nowrap border-l text-center text-xs",
+                    )}
+                  >
+                    {`${formatMonthDay(startDate)} - ${
+                      startDate.getMonth() === endDate.getMonth()
+                        ? endDate.toLocaleDateString("en-US", {
+                            day: "numeric",
+                          })
+                        : formatMonthDay(endDate)
+                    }`}
+                  </TableCell>
+                  <TableCell
+                    className={cn(
+                      isCurrent && "font-bold",
+                      "text-nowrap border-l text-center text-xs",
+                    )}
+                  >
+                    {tourney.tier?.name ?? ""}
+                  </TableCell>
+                  <TableCell
+                    className={cn(
+                      isCurrent && "font-bold",
+                      "min-w-48 border-l text-center text-xs",
+                    )}
+                  >
+                    {tourney.course?.name ?? ""}
+                  </TableCell>
+                  <TableCell
+                    className={cn(
+                      isCurrent && "font-bold",
+                      "min-w-32 border-l text-center text-xs",
+                    )}
+                  >
+                    {tourney.course?.location ?? ""}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }
@@ -230,62 +227,4 @@ function LeagueScheduleSkeleton({ rows = 16 }: { rows?: number }) {
       </div>
     </div>
   );
-}
-
-type LeagueScheduleState =
-  | { status: "loading" }
-  | {
-      status: "ready";
-      tournaments: EnhancedTournamentDoc[];
-      sortedTournaments: EnhancedTournamentDoc[];
-      currentTournamentIndex: number;
-      previousTournamentIndex: number;
-    };
-
-/**
- * Fetches and derives the schedule state used by the `LeagueSchedule` UI.
- *
- * Data sources:
- * - `api.functions.seasons.getCurrentSeason`
- * - `api.functions.seasons.getSeasons` (fallback when no season is provided)
- * - `api.functions.tournaments.getTournaments` (for the resolved season)
- *
- * @param args.season - Season filter.
- * @returns A discriminated union describing loading/empty/ready schedule state.
- */
-function useLeagueSchedule(args: {
-  tournaments: EnhancedTournamentDoc[] | undefined;
-}): LeagueScheduleState {
-  const derived = useMemo(() => {
-    if (!args.tournaments) {
-      return null;
-    }
-
-    const timeline = getTournamentTimeline(args.tournaments);
-    const sortedTournaments = timeline.all;
-
-    const currentTournamentIndex = timeline.current
-      ? sortedTournaments.findIndex((t) => t._id === timeline.current?._id)
-      : -1;
-
-    const previousTournamentIndex = timeline.past.slice(-1)[0]
-      ? sortedTournaments.findIndex(
-          (t) => t._id === timeline.past.slice(-1)[0]?._id,
-        )
-      : -1;
-
-    return { sortedTournaments, currentTournamentIndex, previousTournamentIndex };
-  }, [args.tournaments]);
-
-  if (!args.tournaments || !derived) {
-    return { status: "loading" };
-  }
-
-  return {
-    status: "ready",
-    tournaments: args.tournaments,
-    sortedTournaments: derived.sortedTournaments,
-    currentTournamentIndex: derived.currentTournamentIndex,
-    previousTournamentIndex: derived.previousTournamentIndex,
-  };
 }

@@ -8,17 +8,23 @@ import {
 } from "@/displays";
 import {
   filterMajorChampionBadgesByMemberId,
-  useCurrentSeasonMajorChampionBadges,
+  useAnalytics,
+  useLeaderboardStandingsProjection,
 } from "@/hooks";
 import { Skeleton } from "@/ui";
-import {
-  EnhancedTournamentGolferDoc,
-  MemberDoc,
-  EnhancedTournamentTeamDoc,
-  TourCardDoc,
-  TourDoc,
-  TournamentDoc,
-} from "convex/types/types";
+import { cn } from "@/utils/app";
+import { resolveTournamentLeaderboardState } from "@/utils";
+import type {
+  PgaLeaderboardDto,
+  PgaLeaderboardGolfer,
+  PgcLeaderboardTeam,
+  PgcLeaderboardTourCard,
+  TournamentShellDto,
+  TournamentShell,
+  TournamentShellTour,
+  ViewerMemberDto,
+  ViewerTourCardDto,
+} from "@/types";
 
 /**
  * Renders the tournament leaderboard body (tour toggle + column header + rows).
@@ -35,43 +41,63 @@ import {
  * @returns A responsive leaderboard view.
  */
 export function LeaderboardView(props: {
-  tournament: TournamentDoc;
-  tours: TourDoc[];
-  teams: EnhancedTournamentTeamDoc[];
-  golfers: EnhancedTournamentGolferDoc[];
-  allTournaments: TournamentDoc[];
-  userTourCard?: TourCardDoc | null;
-  viewerMember?: MemberDoc | null;
+  tournament: TournamentShell;
+  tours: TournamentShellTour[];
+  tourCards: PgcLeaderboardTourCard[];
+  teams: PgcLeaderboardTeam[];
+  golfers: PgaLeaderboardGolfer[];
+  viewerTeam?: PgaLeaderboardDto["viewerTeam"];
+  allTournaments: TournamentShell[];
+  userTourCard?: ViewerTourCardDto | null;
+  viewerMember?: ViewerMemberDto | null;
   onTournamentChange: (tournamentId: string) => void;
   activeTourId: string;
   onChangeTourId: (tourId: string) => void;
   variant: "regular" | "playoff";
   isPreTournament?: boolean;
+  majorChampionBadgesByMemberId: TournamentShellDto["majorChampionBadgesByMemberId"];
+  freshness: "live" | "stale";
 }) {
+  const { trackLeaderboardTabChanged } = useAnalytics();
   const activeTourShortForm =
     props.tours?.find((t) => t._id === props.activeTourId)?.shortForm ?? "";
   const viewerFriendIds = new Set(
     (props.viewerMember?.friends ?? []).map((friendId) => String(friendId)),
   );
-  const majorChampionBadgesByMemberId = useCurrentSeasonMajorChampionBadges();
+  const standingsSnapshots = useLeaderboardStandingsProjection({
+    tournament: props.tournament,
+    variant: props.variant,
+    tours: props.tours,
+    tourCards: props.tourCards,
+    teams: props.teams,
+  });
 
   const tournamentOver = props.tournament.status === "completed";
+  const leaderboardState = resolveTournamentLeaderboardState({
+    status: props.tournament.status,
+    startDate: props.tournament.startDate,
+    endDate: props.tournament.endDate,
+    freshness: props.freshness,
+  });
+  const leaderboardStatus = {
+    live: { label: "Live", dotClassName: "bg-emerald-500" },
+    reconnecting: { label: "Reconnecting", dotClassName: "bg-amber-500" },
+    final: { label: "Final", dotClassName: "bg-slate-400" },
+    upcoming: { label: "Upcoming", dotClassName: "bg-sky-500" },
+    cancelled: { label: "Cancelled", dotClassName: "bg-slate-400" },
+  }[leaderboardState];
   const filteredMajorChampionBadgesByMemberId =
     filterMajorChampionBadgesByMemberId({
-      badgesByMemberId: majorChampionBadgesByMemberId,
+      badgesByMemberId: props.majorChampionBadgesByMemberId,
       hiddenTournamentIds: tournamentOver ? [] : [String(props.tournament._id)],
     });
 
   const leaderboardTeams = props.teams.map((t) => {
-    const teamGolfers = props.golfers.filter((g) =>
-      t.golferIds.includes(g.apiId ?? 0),
-    );
     const posChange =
       +(t.pastPosition?.replace("T", "") ?? 0) -
       +(t.position?.replace("T", "") ?? 0);
     return {
       ...t,
-      teamGolfers,
       posChange,
     };
   });
@@ -84,10 +110,24 @@ export function LeaderboardView(props: {
         onTournamentChange={props.onTournamentChange}
       />
       <div className="mx-auto mt-2 w-full max-w-4xl md:w-11/12 lg:w-8/12">
-        <div className="text-end text-xs text-muted-foreground">
-          {formatLeaderboardLastUpdated(
-            props.tournament.leaderboardLastUpdatedAt,
-          )}
+        <div
+          className="flex items-center justify-end gap-2 text-xs text-muted-foreground"
+          role="status"
+          aria-live="polite"
+        >
+          <span
+            className={cn(
+              "h-2 w-2 rounded-full",
+              leaderboardStatus.dotClassName,
+            )}
+            aria-hidden="true"
+          />
+          <span>
+            {leaderboardStatus.label} ·{" "}
+            {formatLeaderboardLastUpdated(
+              props.tournament.leaderboardLastUpdatedAt,
+            )}
+          </span>
         </div>
         <ToursToggle
           tours={[
@@ -100,13 +140,20 @@ export function LeaderboardView(props: {
             },
           ]}
           activeTourId={props.activeTourId}
-          onChangeTourId={props.onChangeTourId}
+          onChangeTourId={(nextTourId) => {
+            trackLeaderboardTabChanged(nextTourId === "pga" ? "pga" : "pgc");
+            props.onChangeTourId(nextTourId);
+          }}
         />
         <LeaderboardHeaderRow
           tournamentOver={tournamentOver}
           activeTourShortForm={activeTourShortForm}
         />
-        {props.activeTourId !== "pga" ? (
+        {props.activeTourId !== "pga" && props.teams.length === 0 ? (
+          <LeaderboardEmptyState label="No PGC teams are available for this tournament yet." />
+        ) : props.activeTourId === "pga" && props.golfers.length === 0 ? (
+          <LeaderboardEmptyState label="No PGA scores are available for this tournament yet." />
+        ) : props.activeTourId !== "pga" ? (
           <PGCLeaderboard
             teams={leaderboardTeams}
             tournament={props.tournament}
@@ -114,22 +161,29 @@ export function LeaderboardView(props: {
             variant={props.variant}
             currentTourCardId={props.userTourCard?._id ?? null}
             friendIds={viewerFriendIds}
-            majorChampionBadgesByMemberId={filteredMajorChampionBadgesByMemberId}
+            standingsSnapshots={standingsSnapshots}
+            majorChampionBadgesByMemberId={
+              filteredMajorChampionBadgesByMemberId
+            }
           />
         ) : (
           <>
             <PGALeaderboard
               golfers={props.golfers}
               tournament={props.tournament}
-              currentTeam={
-                leaderboardTeams.find(
-                  (t) => t.tourCardId === props.userTourCard?._id,
-                ) ?? undefined
-              }
+              currentTeam={props.viewerTeam ?? undefined}
             />
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function LeaderboardEmptyState({ label }: { label: string }) {
+  return (
+    <div className="mt-4 rounded-lg border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">
+      {label}
     </div>
   );
 }
@@ -221,7 +275,7 @@ export function LeaderboardViewSkeleton() {
           <div className="col-span-3 row-span-4 place-self-center px-1 py-2">
             <Skeleton className="mx-auto h-24 w-24 rounded-2xl sm:h-28 sm:w-28" />
           </div>
-          <div className="col-span-5 row-span-2 place-self-center space-y-3 text-center">
+          <div className="col-span-5 row-span-2 space-y-3 place-self-center text-center">
             <Skeleton className="mx-auto h-8 w-48 sm:h-10 sm:w-64" />
             <Skeleton className="mx-auto h-4 w-36 sm:w-44" />
           </div>

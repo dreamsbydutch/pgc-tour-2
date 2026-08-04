@@ -1,6 +1,7 @@
 import { v } from "convex/values";
-import { Doc } from "../_generated/dataModel";
+import { Doc, type Id } from "../_generated/dataModel";
 import { internalMutation } from "../_generated/server";
+import type { MutationCtx } from "../_generated/server";
 import {
   normalizeDgSkillEstimateToPgcRating,
   normalizePlayerNameFromDataGolf,
@@ -58,6 +59,17 @@ export const applyGolfersWorldRankFromDataGolfInput = internalMutation({
       const keys = Object.keys(patch);
       if (keys.length > 1) {
         await ctx.db.patch(golfer._id, patch);
+        const tournamentRows = await ctx.db
+          .query("tournamentGolfers")
+          .withIndex("by_golfer", (q) => q.eq("golferId", golfer._id))
+          .take(100);
+        for (const row of tournamentRows) {
+          await ctx.db.patch(row._id, {
+            golferApiId: golfer.apiId,
+            playerName: patch.playerName ?? golfer.playerName,
+            country: patch.country ?? golfer.country,
+          });
+        }
         golfersUpdated += 1;
       }
     }
@@ -146,9 +158,15 @@ export const createTournamentGolfers = internalMutation({
         );
 
         if (!existingTG) {
+          const playerName =
+            existingGolfer?.playerName ??
+            normalizePlayerNameFromDataGolf(g.playerName);
           await ctx.db.insert("tournamentGolfers", {
             golferId,
             tournamentId: args.tournamentId,
+            golferApiId: g.dgId,
+            playerName,
+            country: g.country ?? existingGolfer?.country,
             group: group.groupNumber,
             worldRank: g.worldRank ?? 501,
             rating,
@@ -214,9 +232,15 @@ export const createMissingTournamentGolfers = internalMutation({
         .first();
 
       if (!existingTG) {
+        const playerName =
+          existingGolfer?.playerName ??
+          normalizePlayerNameFromDataGolf(g.player_name);
         await ctx.db.insert("tournamentGolfers", {
           golferId,
           tournamentId: args.tournamentId,
+          golferApiId: g.dg_id,
+          playerName,
+          country: g.country ?? existingGolfer?.country,
           worldRank: g.worldRank ?? 501,
           group: 0,
           usage: 0,
@@ -239,40 +263,82 @@ export const createMissingTournamentGolfers = internalMutation({
   },
 });
 
+const tournamentGolferUpdateValidator = v.object({
+  _id: v.id("tournamentGolfers"),
+  golferId: v.id("golfers"),
+  tournamentId: v.id("tournaments"),
+  position: v.optional(v.string()),
+  posChange: v.optional(v.number()),
+  score: v.optional(v.number()),
+  makeCut: v.optional(v.number()),
+  topTen: v.optional(v.number()),
+  win: v.optional(v.number()),
+  today: v.optional(v.number()),
+  thru: v.optional(v.number()),
+  group: v.optional(v.number()),
+  endHole: v.optional(v.number()),
+  round: v.optional(v.number()),
+  roundOne: v.optional(v.number()),
+  roundTwo: v.optional(v.number()),
+  roundThree: v.optional(v.number()),
+  roundFour: v.optional(v.number()),
+  roundOneTeeTime: v.optional(v.number()),
+  roundTwoTeeTime: v.optional(v.number()),
+  roundThreeTeeTime: v.optional(v.number()),
+  roundFourTeeTime: v.optional(v.number()),
+  rating: v.optional(v.number()),
+  worldRank: v.optional(v.number()),
+  usage: v.optional(v.number()),
+});
+
+export type TournamentGolferUpdate = {
+  _id: Id<"tournamentGolfers">;
+  golferId: Id<"golfers">;
+  tournamentId: Id<"tournaments">;
+  [key: string]: unknown;
+};
+
+async function applyTournamentGolferUpdate(
+  ctx: MutationCtx,
+  tournamentGolfer: TournamentGolferUpdate,
+) {
+  const existing = await ctx.db.get(tournamentGolfer._id);
+  if (!existing) return false;
+  const {
+    _id,
+    golferId: _golferId,
+    tournamentId: _tournamentId,
+    ...candidate
+  } = tournamentGolfer;
+  const patch = Object.fromEntries(
+    Object.entries(candidate).filter(
+      ([key, value]) => existing[key as keyof typeof existing] !== value,
+    ),
+  );
+  if (Object.keys(patch).length === 0) return false;
+  await ctx.db.patch(_id, { ...patch, updatedAt: Date.now() });
+  return true;
+}
+
 export const updateTournamentGolfer = internalMutation({
-  args: {
-    tournamentGolfer: v.object({
-      _id: v.id("tournamentGolfers"),
-      golferId: v.id("golfers"),
-      tournamentId: v.id("tournaments"),
-      position: v.optional(v.string()),
-      posChange: v.optional(v.number()),
-      score: v.optional(v.number()),
-      makeCut: v.optional(v.number()),
-      topTen: v.optional(v.number()),
-      win: v.optional(v.number()),
-      today: v.optional(v.number()),
-      thru: v.optional(v.number()),
-      group: v.optional(v.number()),
-      endHole: v.optional(v.number()),
-      round: v.optional(v.number()),
-      roundOne: v.optional(v.number()),
-      roundTwo: v.optional(v.number()),
-      roundThree: v.optional(v.number()),
-      roundFour: v.optional(v.number()),
-      roundOneTeeTime: v.optional(v.number()),
-      roundTwoTeeTime: v.optional(v.number()),
-      roundThreeTeeTime: v.optional(v.number()),
-      roundFourTeeTime: v.optional(v.number()),
-      rating: v.optional(v.number()),
-      worldRank: v.optional(v.number()),
-      usage: v.optional(v.number()),
-    }),
-  },
+  args: { tournamentGolfer: tournamentGolferUpdateValidator },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.tournamentGolfer._id, {
-      ...args.tournamentGolfer,
-      updatedAt: Date.now(),
-    });
+    const changed = await applyTournamentGolferUpdate(
+      ctx,
+      args.tournamentGolfer,
+    );
+    return { changed } as const;
+  },
+});
+
+export const applyTournamentGolferUpdatesBatch = internalMutation({
+  args: { updates: v.array(tournamentGolferUpdateValidator) },
+  handler: async (ctx, args) => {
+    if (args.updates.length > 25) throw new Error("Batch limit is 25 golfers");
+    let changed = 0;
+    for (const update of args.updates) {
+      if (await applyTournamentGolferUpdate(ctx, update)) changed += 1;
+    }
+    return { seen: args.updates.length, changed };
   },
 });

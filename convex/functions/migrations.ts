@@ -1,4 +1,5 @@
-import { mutation } from "../_generated/server";
+import { internalMutation, mutation } from "../_generated/server";
+import type { MutationCtx } from "../_generated/server";
 import { v } from "convex/values";
 import { requireAdmin } from "../utils/auth";
 import type { Doc } from "../_generated/dataModel";
@@ -1144,5 +1145,134 @@ export const normalizeRoundTeeTimeFields = mutation({
         tournamentGolfers: page.continueCursor,
       },
     } as const;
+  },
+});
+
+/**
+ * Backfills team metadata denormalized from the team's tour card.
+ *
+ * The tournament leaderboard reads teams through compound indexes containing
+ * these fields, so legacy rows without them are otherwise invisible. The
+ * migration is paginated and idempotent so it can be run safely in every
+ * deployment after the associated indexes and query infrastructure ship.
+ */
+const teamMetadataBackfillArgs = {
+  cursor: v.optional(v.union(v.string(), v.null())),
+  limit: v.optional(v.number()),
+};
+
+async function backfillTeamMetadataPage(
+  ctx: MutationCtx,
+  args: { cursor?: string | null; limit?: number },
+) {
+  const limit = Math.min(Math.max(Math.trunc(args.limit ?? 100), 1), 200);
+  const page = await ctx.db.query("teams").paginate({
+    cursor: args.cursor ?? null,
+    numItems: limit,
+  });
+  let updated = 0;
+  let unchanged = 0;
+  let missingTourCards = 0;
+
+  for (const team of page.page) {
+    const tourCard = await ctx.db.get(team.tourCardId);
+    if (!tourCard) {
+      missingTourCards += 1;
+      continue;
+    }
+
+    const metadata = {
+      seasonId: tourCard.seasonId,
+      tourId: tourCard.tourId,
+      memberId: tourCard.memberId,
+      displayName: tourCard.displayName,
+      playoff: tourCard.playoff,
+    };
+    const changed =
+      team.seasonId !== metadata.seasonId ||
+      team.tourId !== metadata.tourId ||
+      team.memberId !== metadata.memberId ||
+      team.displayName !== metadata.displayName ||
+      team.playoff !== metadata.playoff;
+
+    if (!changed) {
+      unchanged += 1;
+      continue;
+    }
+
+    await ctx.db.patch(team._id, metadata);
+    updated += 1;
+  }
+
+  return {
+    scanned: page.page.length,
+    updated,
+    unchanged,
+    missingTourCards,
+    isDone: page.isDone,
+    continueCursor: page.continueCursor,
+  };
+}
+
+export const adminBackfillTeamMetadata = mutation({
+  args: teamMetadataBackfillArgs,
+  handler: async (ctx, args) => {
+    await requireAdmin(ctx);
+    return await backfillTeamMetadataPage(ctx, args);
+  },
+});
+
+/** Deployment-credential entry point for release-time database migrations. */
+export const backfillTeamMetadataPageInternal = internalMutation({
+  args: teamMetadataBackfillArgs,
+  handler: async (ctx, args) => {
+    return await backfillTeamMetadataPage(ctx, args);
+  },
+});
+
+/**
+ * Removes team rows whose owning tour card no longer exists. Current tour-card
+ * deletion cascades these rows; this only repairs data created before that
+ * invariant was enforced and writes an audit snapshot before each deletion.
+ */
+export const cleanupOrphanedTeamsPageInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+    deleteRows: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.min(Math.max(Math.trunc(args.limit ?? 100), 1), 200);
+    const page = await ctx.db.query("teams").paginate({
+      cursor: args.cursor ?? null,
+      numItems: limit,
+    });
+    let orphaned = 0;
+    let deleted = 0;
+    for (const team of page.page) {
+      if (await ctx.db.get(team.tourCardId)) continue;
+      orphaned += 1;
+      if (!args.deleteRows) continue;
+      await ctx.db.insert("auditLogs", {
+        memberId: team.memberId,
+        entityType: "team",
+        entityId: String(team._id),
+        action: "deleted",
+        changes: {
+          reason: "orphaned_tour_card",
+          missingTourCardId: String(team.tourCardId),
+          snapshot: team,
+        },
+      });
+      await ctx.db.delete(team._id);
+      deleted += 1;
+    }
+    return {
+      scanned: page.page.length,
+      orphaned,
+      deleted,
+      isDone: page.isDone,
+      continueCursor: page.continueCursor,
+    };
   },
 });

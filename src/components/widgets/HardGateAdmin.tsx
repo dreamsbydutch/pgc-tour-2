@@ -1,0 +1,78 @@
+"use client";
+
+import { Show, SignInButton } from "@clerk/tanstack-react-start";
+
+import { useRoleAccess } from "@/hooks";
+import { Button } from "@/ui";
+import { Card, CardContent, CardHeader } from "@/ui";
+
+/**
+ * Hard-gates a page behind Clerk authentication and an admin role.
+ *
+ * This wrapper prevents the gated page UI from rendering unless the user is:
+ * - signed in via Clerk, and
+ * - resolved (non-loading) as an `admin` via `useRoleAccess()`.
+ *
+ * Major render states:
+ * - Signed out: sign-in required prompt.
+ * - Signed in + loading role: loading screen.
+ * - Signed in + non-admin: forbidden screen.
+ * - Signed in + admin: renders `children`.
+ *
+ * @param props - `children` to render only when the user is an admin.
+ * @returns The gated content when admin; otherwise a sign-in / loading / forbidden UI.
+ */
+export function HardGateAdmin(props: { children: React.ReactNode }) {
+  return (
+    <>
+      <Show when="signed-out">
+        <div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <h1 className="text-2xl font-semibold">Sign in required</h1>
+            </CardHeader>
+            <CardContent className="flex items-center justify-end">
+              <SignInButton>
+                <Button>Sign In</Button>
+              </SignInButton>
+            </CardContent>
+          </Card>
+        </div>
+      </Show>
+
+      <Show when="signed-in">
+        <AdminGateContent>{props.children}</AdminGateContent>
+      </Show>
+    </>
+  );
+}
+
+function AdminGateContent(props: { children: React.ReactNode }) {
+  const access = useRoleAccess();
+
+  if (access.isLoading || !access.isAuthenticated) {
+    return (
+      <div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <h1 className="text-2xl font-semibold">Loading admin dashboard…</h1>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!access.isAdmin) {
+    return (
+      <div className="container mx-auto flex min-h-[60vh] items-center justify-center px-4 py-8">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <h1 className="text-2xl font-semibold">Admin access required</h1>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
+  return <>{props.children}</>;
+}

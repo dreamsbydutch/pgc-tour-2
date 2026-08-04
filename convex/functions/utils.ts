@@ -6,7 +6,7 @@ import {
   internalQuery,
 } from "../_generated/server";
 import { EnhancedGolfer } from "../types/types";
-import { api, internal } from "../_generated/api";
+import { internal } from "../_generated/api";
 import {
   DataGolfFieldUpdatesResponse,
   DataGolfRankingsResponse,
@@ -467,6 +467,8 @@ export const getExternalDataForTournament = internalAction({
       seasonId: v.id("seasons"),
     }),
     tzOffset: v.optional(v.number()),
+    includeStatic: v.optional(v.boolean()),
+    includeHistorical: v.optional(v.boolean()),
   },
   handler: async (
     ctx,
@@ -488,16 +490,20 @@ export const getExternalDataForTournament = internalAction({
       apiId: args.tournament.apiId,
       seasonId: args.tournament.seasonId,
     };
-    const fieldData = await ctx.runAction(
-      api.functions.datagolf.fetchFieldUpdates,
-      { tournament: tournamentForDataGolf },
-    );
-    const rankingData = await ctx.runAction(
-      api.functions.datagolf.fetchDataGolfRankings,
-      {},
-    );
+    const includeStatic = args.includeStatic ?? true;
+    const fieldData = includeStatic
+      ? await ctx.runAction(internal.functions.datagolf.fetchFieldUpdates, {
+          tournament: tournamentForDataGolf,
+        })
+      : ({ field: [] } as unknown as DataGolfFieldUpdatesResponse);
+    const rankingData = includeStatic
+      ? await ctx.runAction(
+          internal.functions.datagolf.fetchDataGolfRankings,
+          {},
+        )
+      : ({ rankings: [] } as unknown as DataGolfRankingsResponse);
     const liveData = await ctx.runAction(
-      api.functions.datagolf.fetchLiveModelPredictions,
+      internal.functions.datagolf.fetchLiveModelPredictions,
       { tournament: tournamentForDataGolf },
     );
     console.log(
@@ -505,30 +511,33 @@ export const getExternalDataForTournament = internalAction({
       Date.now(),
       args.tournament.endDate,
     );
-    const historicalData =
-      args.tournament.endDate < Date.now()
-        ? await ctx.runAction(api.functions.datagolf.fetchHistoricalRoundData, {
+    const includeHistorical =
+      args.includeHistorical ?? args.tournament.endDate < Date.now();
+    const historicalData = includeHistorical
+      ? await ctx.runAction(
+          internal.functions.datagolf.fetchHistoricalRoundData,
+          {
             tournament: tournamentForDataGolf,
             options: {
               tour: "pga",
               year: new Date().getFullYear(),
               tzOffset: args.tzOffset,
             },
-          })
-        : undefined;
-    const historicalEventData =
-      args.tournament.endDate < Date.now()
-        ? await ctx.runAction(
-            api.functions.datagolf.fetchHistoricalEventDataEvents,
-            {
-              tournament: tournamentForDataGolf,
-              options: {
-                tour: "pga",
-                year: new Date().getFullYear(),
-              },
+          },
+        )
+      : undefined;
+    const historicalEventData = includeHistorical
+      ? await ctx.runAction(
+          internal.functions.datagolf.fetchHistoricalEventDataEvents,
+          {
+            tournament: tournamentForDataGolf,
+            options: {
+              tour: "pga",
+              year: new Date().getFullYear(),
             },
-          )
-        : undefined;
+          },
+        )
+      : undefined;
     if ("ok" in fieldData && !rankingData && "ok" in liveData) {
       return {
         ok: false,
@@ -559,6 +568,8 @@ export const getAllDataForTournament = internalAction({
       seasonId: v.id("seasons"),
     }),
     tzOffset: v.optional(v.number()),
+    includeStatic: v.optional(v.boolean()),
+    includeHistorical: v.optional(v.boolean()),
   },
   handler: async (
     ctx,
@@ -592,6 +603,8 @@ export const getAllDataForTournament = internalAction({
       {
         tournament: args.tournament,
         tzOffset: args.tzOffset,
+        includeStatic: args.includeStatic,
+        includeHistorical: args.includeHistorical,
       },
     );
     if (!databaseData.ok || !externalData.ok) {
@@ -660,18 +673,39 @@ export const updateTournamentInfo = internalMutation({
       livePlay: v.optional(v.boolean()),
       currentRound: v.optional(v.number()),
       leaderboardLastUpdatedAt: v.optional(v.number()),
+      dataGolfInPlayLastUpdate: v.optional(v.union(v.string(), v.number())),
     }),
   },
   handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.tournament._id);
+    if (!existing) {
+      return {
+        ok: false,
+        changed: false,
+        tournamentId: args.tournament._id,
+      } as const;
+    }
+    const { _id, ...candidate } = args.tournament;
+    const changedEntries = Object.entries(candidate).filter(
+      ([key, value]) => existing[key as keyof typeof existing] !== value,
+    );
+    if (changedEntries.length === 0) {
+      return {
+        ok: true,
+        changed: false,
+        tournamentId: _id,
+      } as const;
+    }
     const updateData: Partial<Doc<"tournaments">> = {
-      ...args.tournament,
+      ...Object.fromEntries(changedEntries),
       updatedAt: Date.now(),
     };
-    await ctx.db.patch(args.tournament._id, updateData);
+    await ctx.db.patch(_id, updateData);
 
     return {
       ok: true,
-      tournamentId: args.tournament._id,
+      changed: true,
+      tournamentId: _id,
     } as const;
   },
 });
@@ -687,6 +721,7 @@ export const getIsAdminByClerkId_Internal = internalQuery({
     return {
       ok: true,
       isAdmin: Boolean(member && member.role === "admin"),
+      memberId: member?._id,
     } as const;
   },
 });

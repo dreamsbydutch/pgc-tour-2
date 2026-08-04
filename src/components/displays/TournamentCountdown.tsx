@@ -27,9 +27,9 @@ export function TournamentCountdown(tourney: {
   return (
     <div className="mx-auto my-4 w-11/12 max-w-xl rounded-2xl bg-gray-100 px-2 py-4 shadow-md">
       <div className="flex flex-col items-center justify-center gap-2 text-center font-varela font-bold">
-        <h1 className="px-4 text-2xl xs:text-3xl md:text-4xl">
+        <h2 className="px-4 text-xl xs:text-2xl md:text-3xl">
           Countdown until {tourney.name}
-        </h1>
+        </h2>
         <div className="flex w-full items-center justify-center gap-2">
           <div>
             {tourney.logoUrl && (

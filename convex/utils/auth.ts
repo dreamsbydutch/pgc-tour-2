@@ -6,11 +6,56 @@
  */
 
 import { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 
 type AuthContext = QueryCtx | MutationCtx;
 
-export async function requireAdminForAction(ctx: ActionCtx): Promise<void> {
+const MEMBER_NAME_MAX_LENGTH = 80;
+
+function readIdentityStringClaim(
+  identity: Record<string, unknown>,
+  ...keys: string[]
+): string | undefined {
+  for (const key of keys) {
+    const value = identity[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+export function normalizeMemberName(value: string | undefined) {
+  const normalized = value?.trim().slice(0, MEMBER_NAME_MAX_LENGTH);
+  return normalized || undefined;
+}
+
+export async function getAuthenticatedIdentityProfile(ctx: AuthContext) {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    throw new Error("Unauthorized: You must be signed in");
+  }
+
+  const claims = identity as unknown as Record<string, unknown>;
+  const emailVerified =
+    claims.email_verified === true || claims.emailVerified === true;
+  const emailClaim = readIdentityStringClaim(claims, "email", "email_address");
+
+  return {
+    subject: identity.subject,
+    email: emailVerified && emailClaim ? emailClaim.toLowerCase() : undefined,
+    emailVerified,
+    firstname: normalizeMemberName(
+      readIdentityStringClaim(claims, "given_name", "givenName"),
+    ),
+    lastname: normalizeMemberName(
+      readIdentityStringClaim(claims, "family_name", "familyName"),
+    ),
+  };
+}
+
+export async function requireAdminForAction(
+  ctx: ActionCtx,
+): Promise<Id<"members">> {
   const identity = await ctx.auth.getUserIdentity();
   const passedClerkId = undefined;
   const effectiveClerkId = (identity?.subject ?? passedClerkId ?? "").trim();
@@ -24,35 +69,10 @@ export async function requireAdminForAction(ctx: ActionCtx): Promise<void> {
     { clerkId: effectiveClerkId },
   );
 
-  if (!adminCheck.isAdmin) {
+  if (!adminCheck.isAdmin || !adminCheck.memberId) {
     throw new Error("Forbidden: Admin access required");
   }
-}
-
-export async function requireAdminForActionWithClerkId(
-  ctx: ActionCtx,
-  args: { clerkId?: string },
-): Promise<void> {
-  const identity = await ctx.auth.getUserIdentity();
-  const passedClerkId = args.clerkId?.trim();
-
-  if (identity && passedClerkId && identity.subject !== passedClerkId) {
-    throw new Error("Unauthorized: Clerk ID mismatch");
-  }
-
-  const effectiveClerkId = (identity?.subject ?? passedClerkId ?? "").trim();
-  if (!effectiveClerkId) {
-    throw new Error("Unauthorized: You must be signed in");
-  }
-
-  const adminCheck = await ctx.runQuery(
-    internal.functions.utils.getIsAdminByClerkId_Internal,
-    { clerkId: effectiveClerkId },
-  );
-
-  if (!adminCheck.isAdmin) {
-    throw new Error("Forbidden: Admin access required");
-  }
+  return adminCheck.memberId;
 }
 
 /**

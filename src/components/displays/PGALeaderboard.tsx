@@ -8,16 +8,20 @@ import {
   parseRankFromPositionString,
   formatTeeTimeTimeOfDay,
   formatToPar,
-  getCountryFlagEmoji,
   isPlayerCut,
-} from "@/lib";
-import {
-  EnhancedTournamentGolferDoc,
-  TeamDoc,
-  TournamentDoc,
-} from "convex/types/types";
+} from "@/utils/app";
+import type {
+  PgaLeaderboardDto,
+  PgaLeaderboardGolfer,
+  TournamentShell,
+} from "@/types";
 import { MoveDown, MoveHorizontal, MoveUp } from "lucide-react";
 import { calculateScoreForSorting } from "convex/utils";
+import { Id } from "@/convex";
+import { usePlayerHoleScorecard } from "@/hooks";
+import type { EspnHoleScore, EspnHoleScorecard } from "@/types";
+import { getCompletedHoleSegmentTotal } from "@/utils";
+import { getCountryFlagEmoji } from "@/utils/countryFlags";
 
 /**
  * Renders the PGA leaderboard listing for the current tournament.
@@ -33,9 +37,9 @@ import { calculateScoreForSorting } from "convex/utils";
  * @returns A sequence of clickable leaderboard rows.
  */
 export function PGALeaderboard(props: {
-  golfers: EnhancedTournamentGolferDoc[];
-  tournament: TournamentDoc;
-  currentTeam?: TeamDoc;
+  golfers: PgaLeaderboardGolfer[];
+  tournament: TournamentShell;
+  currentTeam?: NonNullable<PgaLeaderboardDto["viewerTeam"]>;
 }) {
   const nonCut = props.golfers.filter((r) => !isPlayerCut(r.position));
   const cut = props.golfers.filter((r) => isPlayerCut(r.position));
@@ -88,6 +92,7 @@ export function PGALeaderboard(props: {
               tournament={props.tournament}
               team={props.currentTeam}
               golfer={{
+                golferId: golfer.golferId,
                 position: golfer.position ?? "-",
                 playerName: golfer.playerName ?? "",
                 score: golfer.score,
@@ -125,8 +130,8 @@ export function PGALeaderboard(props: {
  * - Within the cut section, add a divider when `group` changes.
  */
 function shouldRenderPgaDivider(
-  prev: EnhancedTournamentGolferDoc,
-  curr: EnhancedTournamentGolferDoc,
+  prev: PgaLeaderboardGolfer,
+  curr: PgaLeaderboardGolfer,
 ) {
   const prevIsCut = isPlayerCut(prev.position);
   const currIsCut = isPlayerCut(curr.position);
@@ -164,15 +169,17 @@ function LeaderboardListing({
   golfer,
 }: {
   tournament: {
+    _id: Id<"tournaments">;
     currentRound?: number | undefined;
     livePlay?: boolean | null;
-    status?: TournamentDoc["status"];
+    status?: TournamentShell["status"];
   };
   team?: {
     _id: string;
     golferIds: number[];
   };
   golfer: {
+    golferId: Id<"golfers">;
     position: string;
     playerName: string;
     score: number | null | undefined;
@@ -196,6 +203,11 @@ function LeaderboardListing({
   };
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const holeScorecard = usePlayerHoleScorecard(
+    tournament._id,
+    golfer.golferId,
+    isOpen,
+  );
   const isCut = isPlayerCut(golfer.position);
   const isUserGolfer = !!team?.golferIds.includes(golfer.apiId);
   const onToggleOpen = () => setIsOpen((v) => !v);
@@ -232,7 +244,11 @@ function LeaderboardListing({
 
       {isOpen ? (
         <div className="col-span-10 mx-auto mb-2 w-full max-w-4xl rounded-md border border-gray-300 bg-white shadow-md">
-          <PGADropdown golfer={golfer} currentTeamGolferIds={team?.golferIds} />
+          <PGADropdown
+            golfer={golfer}
+            currentTeamGolferIds={team?.golferIds}
+            holeScorecard={holeScorecard}
+          />
         </div>
       ) : null}
     </div>
@@ -251,14 +267,10 @@ function LeaderboardListing({
  * @param props.currentTeamGolferIds - API ids for golfers on the viewer's team.
  * @returns A compact stats panel.
  */
-function PGADropdown(props: {
+export function PGADropdown(props: {
   golfer: {
     apiId: number;
     country: string | null;
-    roundOne: number | null | undefined;
-    roundTwo: number | null | undefined;
-    roundThree: number | null | undefined;
-    roundFour: number | null | undefined;
     position: string;
     group: number;
     rating: number;
@@ -269,7 +281,23 @@ function PGADropdown(props: {
     usage: number;
   };
   currentTeamGolferIds?: number[];
+  holeScorecard:
+    | {
+        rounds: Array<{
+          round: number;
+          totalStrokes?: number;
+          holes: Array<{
+            hole: number;
+            strokes: number;
+            relativeToPar: number;
+          }>;
+        }>;
+      }
+    | null
+    | undefined;
 }) {
+  const countryFlag = getCountryFlagEmoji(props.golfer.country);
+
   return (
     <div
       className={cn(
@@ -279,63 +307,373 @@ function PGADropdown(props: {
         isPlayerCut(props.golfer.position) && "text-gray-400",
       )}
     >
-      <div className="mx-auto grid max-w-2xl grid-cols-12 sm:grid-cols-16">
-        <div className="col-span-2 row-span-2 flex items-center justify-center text-sm font-bold">
-          <div
-            className={cn(
-              "flex h-12 w-12 items-center justify-center overflow-hidden",
-              isPlayerCut(props.golfer.position) && "opacity-40",
-            )}
-          >
-            {getCountryFlagEmoji(props.golfer.country) ?? null}
+      <div className="mx-auto flex max-w-2xl items-center gap-2 px-1 sm:gap-3">
+        <div
+          className={cn(
+            "flex w-12 shrink-0 items-center justify-center text-3xl leading-none",
+            isPlayerCut(props.golfer.position) && "opacity-40 grayscale",
+          )}
+          role={countryFlag ? "img" : undefined}
+          aria-label={
+            countryFlag && props.golfer.country
+              ? `${props.golfer.country} flag`
+              : undefined
+          }
+        >
+          {countryFlag ?? (
+            <span className="text-xs font-medium text-muted-foreground">—</span>
+          )}
+        </div>
+
+        <dl
+          className="grid min-w-0 flex-1 grid-cols-5 gap-x-1 text-center sm:grid-cols-7 sm:gap-x-2"
+          role="group"
+          aria-label="Golfer statistics"
+        >
+          <div>
+            <dt className="text-[10px] font-bold leading-tight sm:text-xs">
+              Make Cut
+            </dt>
+            <dd className="mt-1 text-sm sm:text-base">
+              {formatNumberToPercentage(props.golfer.makeCut)}
+            </dd>
           </div>
-        </div>
-
-        <div className="col-span-10 text-sm font-bold sm:hidden">Rounds</div>
-        <div className="col-span-10 text-lg sm:hidden">
-          {[
-            props.golfer.roundOne,
-            props.golfer.roundTwo,
-            props.golfer.roundThree,
-            props.golfer.roundFour,
-          ]
-            .filter((v): v is number => typeof v === "number")
-            .join(" / ")}
-        </div>
-
-        <div className="col-span-3 text-sm font-bold sm:col-span-2">
-          Make Cut
-        </div>
-        <div className="col-span-3 text-sm font-bold sm:col-span-2">
-          Top Ten
-        </div>
-        <div className="col-span-2 text-sm font-bold">Win</div>
-        <div className="col-span-2 text-sm font-bold">WGR</div>
-        <div className="col-span-2 text-sm font-bold">Rating</div>
-        <div className="col-span-2 hidden text-sm font-bold sm:grid">Usage</div>
-        <div className="col-span-2 hidden text-sm font-bold sm:grid">Group</div>
-
-        <div className="col-span-3 text-lg sm:col-span-2">
-          {formatNumberToPercentage(props.golfer.makeCut)}
-        </div>
-        <div className="col-span-3 text-lg sm:col-span-2">
-          {formatNumberToPercentage(props.golfer.topTen)}
-        </div>
-        <div className="col-span-2 text-lg">
-          {formatNumberToPercentage(props.golfer.win)}
-        </div>
-        <div className="col-span-2 text-lg">
-          {props.golfer.worldRank ? `#${props.golfer.worldRank}` : "-"}
-        </div>
-        <div className="col-span-2 text-lg">{props.golfer.rating ?? "-"}</div>
-        <div className="col-span-2 hidden text-lg sm:grid">
-          {formatNumberToPercentage(props.golfer.usage)}
-        </div>
-        <div className="col-span-2 hidden text-lg sm:grid">
-          {props.golfer.group === 0 ? "-" : (props.golfer.group ?? "-")}
-        </div>
+          <div>
+            <dt className="text-[10px] font-bold leading-tight sm:text-xs">
+              Top Ten
+            </dt>
+            <dd className="mt-1 text-sm sm:text-base">
+              {formatNumberToPercentage(props.golfer.topTen)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[10px] font-bold leading-tight sm:text-xs">
+              Win
+            </dt>
+            <dd className="mt-1 text-sm sm:text-base">
+              {formatNumberToPercentage(props.golfer.win)}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[10px] font-bold leading-tight sm:text-xs">
+              WGR
+            </dt>
+            <dd className="mt-1 text-sm sm:text-base">
+              {props.golfer.worldRank ? `#${props.golfer.worldRank}` : "-"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[10px] font-bold leading-tight sm:text-xs">
+              Rating
+            </dt>
+            <dd className="mt-1 text-sm sm:text-base">
+              {props.golfer.rating ?? "-"}
+            </dd>
+          </div>
+          <div className="hidden sm:block">
+            <dt className="text-xs font-bold leading-tight">Usage</dt>
+            <dd className="mt-1 text-base">
+              {formatNumberToPercentage(props.golfer.usage)}
+            </dd>
+          </div>
+          <div className="hidden sm:block">
+            <dt className="text-xs font-bold leading-tight">Group</dt>
+            <dd className="mt-1 text-base">
+              {props.golfer.group === 0 ? "-" : (props.golfer.group ?? "-")}
+            </dd>
+          </div>
+        </dl>
       </div>
+      <PGAHoleScorecard scorecard={props.holeScorecard} />
     </div>
+  );
+}
+
+/** Minimal, horizontally scrollable four-round PGA scorecard. */
+export function PGAHoleScorecard(props: {
+  scorecard: EspnHoleScorecard | null | undefined;
+  caption?: string;
+}) {
+  if (props.scorecard === undefined) {
+    return (
+      <div className="mt-3 border-t pt-3 text-center text-xs text-muted-foreground">
+        Loading hole-by-hole scoring...
+      </div>
+    );
+  }
+  if (props.scorecard === null) {
+    return (
+      <div className="mt-3 border-t pt-3 text-center text-xs text-muted-foreground">
+        Hole-by-hole scoring unavailable.
+      </div>
+    );
+  }
+
+  const rounds = new Map(
+    props.scorecard.rounds.map((round) => [round.round, round]),
+  );
+  const pars = new Map<number, number>();
+  for (const round of props.scorecard.rounds) {
+    for (const score of round.holes) {
+      if (!pars.has(score.hole)) {
+        pars.set(score.hole, score.strokes - score.relativeToPar);
+      }
+    }
+  }
+  const frontPar = totalWhenComplete(
+    Array.from({ length: 9 }, (_, index) => pars.get(index + 1)),
+  );
+  const backPar = totalWhenComplete(
+    Array.from({ length: 9 }, (_, index) => pars.get(index + 10)),
+  );
+  const totalPar =
+    frontPar !== undefined && backPar !== undefined
+      ? frontPar + backPar
+      : undefined;
+  return (
+    <div
+      className="mt-2 max-w-full overflow-x-auto border-t pt-2 [contain:paint]"
+      onClick={(event) => event.stopPropagation()}
+      aria-label="Hole-by-hole scorecard"
+    >
+      <table className="mx-auto min-w-[540px] table-fixed border-collapse border border-gray-400 text-center font-varela text-[8px] [-webkit-text-size-adjust:none] [text-size-adjust:none] sm:min-w-[716px] sm:text-[10px]">
+        <caption className="sr-only">
+          {props.caption ?? "Golfer scores for holes 1 through 18"}
+        </caption>
+        <thead>
+          <tr className="text-muted-foreground">
+            <th
+              className="w-6 border border-r-2 border-gray-300 border-r-gray-400 bg-gray-50/70 py-0.5 font-medium sm:w-8"
+              scope="col"
+            >
+              Rd
+            </th>
+            {Array.from({ length: 9 }, (_, index) => (
+              <th
+                className="w-6 border border-gray-200 py-0.5 font-medium sm:w-8"
+                scope="col"
+                key={index + 1}
+              >
+                {index + 1}
+              </th>
+            ))}
+            <ScorecardSummaryHeader label="OUT" />
+            {Array.from({ length: 9 }, (_, index) => (
+              <th
+                className="w-6 border border-gray-200 py-0.5 font-medium sm:w-8"
+                scope="col"
+                key={index + 10}
+              >
+                {index + 10}
+              </th>
+            ))}
+            <ScorecardSummaryHeader label="IN" />
+            <ScorecardSummaryHeader label="TOT" />
+          </tr>
+          <tr className="bg-gray-50/70 text-[7px] text-muted-foreground sm:text-[9px]">
+            <th
+              className="border border-r-2 border-gray-300 border-r-gray-400 py-0.5 font-normal"
+              scope="row"
+            >
+              Par
+            </th>
+            {Array.from({ length: 9 }, (_, index) => (
+              <td className="border border-gray-200 py-0.5" key={index + 1}>
+                {formatScorecardNumber(pars.get(index + 1))}
+              </td>
+            ))}
+            <ScorecardSummaryCell value={frontPar} />
+            {Array.from({ length: 9 }, (_, index) => (
+              <td className="border border-gray-200 py-0.5" key={index + 10}>
+                {formatScorecardNumber(pars.get(index + 10))}
+              </td>
+            ))}
+            <ScorecardSummaryCell value={backPar} />
+            <ScorecardSummaryCell value={totalPar} />
+          </tr>
+        </thead>
+        <tbody>
+          {[1, 2, 3, 4].map((roundNumber) => {
+            const round = rounds.get(roundNumber);
+            const holes = new Map(
+              round?.holes.map((hole) => [hole.hole, hole]) ?? [],
+            );
+            const frontTotal = getCompletedHoleSegmentTotal(
+              Array.from({ length: 9 }, (_, index) => holes.get(index + 1)),
+            );
+            const backTotal = getCompletedHoleSegmentTotal(
+              Array.from({ length: 9 }, (_, index) => holes.get(index + 10)),
+            );
+            const roundTotal =
+              round?.totalStrokes ??
+              (frontTotal !== undefined && backTotal !== undefined
+                ? frontTotal + backTotal
+                : undefined);
+            return (
+              <tr key={roundNumber}>
+                <th
+                  className="border border-r-2 border-gray-300 border-r-gray-400 bg-gray-50/60 py-1 font-medium text-muted-foreground sm:py-1.5"
+                  scope="row"
+                >
+                  R{roundNumber}
+                </th>
+                {Array.from({ length: 9 }, (_, index) => {
+                  const holeNumber = index + 1;
+                  return (
+                    <HoleScoreCell
+                      key={holeNumber}
+                      score={holes.get(holeNumber)}
+                    />
+                  );
+                })}
+                <ScorecardSummaryCell value={frontTotal} />
+                {Array.from({ length: 9 }, (_, index) => {
+                  const holeNumber = index + 10;
+                  return (
+                    <HoleScoreCell
+                      key={holeNumber}
+                      score={holes.get(holeNumber)}
+                    />
+                  );
+                })}
+                <ScorecardSummaryCell value={backTotal} />
+                <ScorecardSummaryCell value={roundTotal} />
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ScorecardSummaryHeader(props: { label: "OUT" | "IN" | "TOT" }) {
+  return (
+    <th
+      className="w-7 border border-x-2 border-gray-400 bg-gray-100/80 py-0.5 font-semibold sm:w-9"
+      scope="col"
+    >
+      {props.label}
+    </th>
+  );
+}
+
+function ScorecardSummaryCell(props: { value: number | undefined }) {
+  return (
+    <td className="border border-x-2 border-gray-400 bg-gray-100/80 px-0 py-0.5 font-semibold">
+      {formatScorecardNumber(props.value)}
+    </td>
+  );
+}
+
+function totalWhenComplete(values: Array<number | undefined>) {
+  return values.length > 0 && values.every((value) => value !== undefined)
+    ? (values as number[]).reduce((total, value) => total + value, 0)
+    : undefined;
+}
+
+function formatScorecardNumber(value: number | undefined) {
+  if (value === undefined) return "-";
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function HoleScoreCell(props: { score?: EspnHoleScore }) {
+  const completion = props.score?.completion;
+  const completionPercent =
+    completion && completion.total > 0
+      ? Math.max(
+          0,
+          Math.min(100, (completion.completed / completion.total) * 100),
+        )
+      : 0;
+  const completionLabel = completion
+    ? `${completion.completed} of ${completion.total} golfers finished this hole`
+    : undefined;
+
+  return (
+    <td
+      className="h-6 border border-gray-200 py-0.5 sm:h-8"
+      data-completion={completionLabel}
+      style={
+        completion
+          ? {
+              backgroundImage: `linear-gradient(to right, rgba(148, 163, 184, 0.12) ${completionPercent}%, transparent ${completionPercent}%)`,
+            }
+          : undefined
+      }
+      title={completionLabel}
+    >
+      <HoleScoreMark score={props.score} />
+      {completionLabel ? (
+        <span className="sr-only">{completionLabel}</span>
+      ) : null}
+    </td>
+  );
+}
+
+function HoleScoreMark(props: { score?: EspnHoleScore }) {
+  if (!props.score) {
+    return <span className="text-gray-300">-</span>;
+  }
+  const relative = props.score.relativeToPar;
+  const description =
+    relative <= -2
+      ? "eagle or better"
+      : relative < 0
+        ? relative === -1
+          ? "birdie"
+          : "under-par average"
+        : relative === 0
+          ? "par"
+          : relative >= 2
+            ? "double bogey or worse"
+            : relative === 1
+              ? "bogey"
+              : "over-par average";
+  const shape =
+    relative <= -1.5
+      ? "double-circle"
+      : relative < 0
+        ? "circle"
+        : relative >= 1.5
+          ? "double-square"
+          : relative > 0
+            ? "square"
+            : "none";
+  const isDouble = shape === "double-circle" || shape === "double-square";
+  const isCircle = shape === "circle" || shape === "double-circle";
+  return (
+    <span
+      aria-label={`${props.score.strokes} strokes, ${description}${props.score.synthetic ? ", estimated WD penalty score" : ""}`}
+      data-score-shape={shape}
+      data-synthetic={props.score.synthetic ? "true" : undefined}
+      title={
+        props.score.synthetic
+          ? "Estimated score added for the WD/DQ +8 penalty"
+          : undefined
+      }
+      className={cn(
+        "mx-auto inline-flex h-4 w-4 items-center justify-center text-[8px] leading-none text-foreground sm:h-5 sm:w-5 sm:text-[10px]",
+        shape !== "none" && "border border-current",
+        isCircle && "rounded-full",
+        props.score.synthetic &&
+          "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300",
+      )}
+    >
+      {isDouble ? (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "inline-flex h-3 w-3 items-center justify-center border border-current sm:h-4 sm:w-4",
+            isCircle && "rounded-full",
+          )}
+        >
+          {formatScorecardNumber(props.score.strokes)}
+        </span>
+      ) : (
+        formatScorecardNumber(props.score.strokes)
+      )}
+    </span>
   );
 }
 

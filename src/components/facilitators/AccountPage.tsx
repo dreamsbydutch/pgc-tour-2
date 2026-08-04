@@ -1,22 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-
-import {
-  SignedIn,
-  SignedOut,
-  useClerk,
-  useUser,
-} from "@clerk/tanstack-react-start";
-import { api, useMutation, useQuery } from "@/convex";
-import type { Doc, Id } from "@/convex";
+import { Show } from "@clerk/tanstack-react-start";
 
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@/ui";
-import {
-  formatDateTime,
-  formatMoney,
-  isMemberForAccountValue,
-  isSeasonForLabelValue,
-  toggleSort,
-} from "@/lib";
+import { formatMoney } from "@/utils/app";
+import { useAccountPage } from "@/hooks";
 
 /**
  * Renders the `/account` screen.
@@ -28,8 +14,8 @@ import {
  * - Listing and filtering the signed-in member’s tournament history
  *
  * Data sources:
- * - `api.functions.members.getMembers` (member record by Clerk id)
- * - `api.functions.members.updateMembers` (profile updates)
+ * - `api.functions.members.getCurrentMember` (authenticated member record)
+ * - `api.functions.members.updateMyProfile` (profile updates)
  * - `api.functions.seasons.getSeasons` (season labels)
  * - `api.functions.membersViews.getMyTournamentHistory` (history rows)
  *
@@ -41,7 +27,7 @@ export function AccountPage() {
   const vm = useAccountPage();
 
   return (
-    <div className="container mx-auto px-4 py-8 pb-20 lg:pb-8 lg:pt-20">
+    <div className="container mx-auto px-4 py-8">
       <div className="mx-auto max-w-4xl space-y-6">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -51,17 +37,17 @@ export function AccountPage() {
             </p>
           </div>
 
-          <SignedIn>
+          <Show when="signed-in">
             <Button
               variant="destructive"
               onClick={() => vm.signOut({ redirectUrl: "/" })}
             >
               Log out
             </Button>
-          </SignedIn>
+          </Show>
         </div>
 
-        <SignedOut>
+        <Show when="signed-out">
           <Card>
             <CardHeader>
               <CardTitle>Sign in</CardTitle>
@@ -70,9 +56,9 @@ export function AccountPage() {
               <Button onClick={() => vm.openSignIn()}>Sign In</Button>
             </CardContent>
           </Card>
-        </SignedOut>
+        </Show>
 
-        <SignedIn>
+        <Show when="signed-in">
           <Card>
             <CardHeader>
               <CardTitle>Profile</CardTitle>
@@ -80,20 +66,32 @@ export function AccountPage() {
             <CardContent>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">First name</label>
+                  <label
+                    htmlFor="account-first-name"
+                    className="text-sm font-medium"
+                  >
+                    First name
+                  </label>
                   <input
+                    id="account-first-name"
                     value={vm.firstName}
                     onChange={(e) => vm.setFirstName(e.target.value)}
-                    className="w-full rounded-md border px-3 py-2 text-sm"
+                    className="min-h-11 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     placeholder="First name"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Last name</label>
+                  <label
+                    htmlFor="account-last-name"
+                    className="text-sm font-medium"
+                  >
+                    Last name
+                  </label>
                   <input
+                    id="account-last-name"
                     value={vm.lastName}
                     onChange={(e) => vm.setLastName(e.target.value)}
-                    className="w-full rounded-md border px-3 py-2 text-sm"
+                    className="min-h-11 w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     placeholder="Last name"
                   />
                 </div>
@@ -125,138 +123,8 @@ export function AccountPage() {
               </div>
             </CardContent>
           </Card>
-        </SignedIn>
+        </Show>
       </div>
     </div>
   );
-}
-
-/**
- * Encapsulates all `/account` state and Convex reads/writes.
- *
- * The hook resolves the signed-in member, manages the profile editing state,
- * fetches season labels, fetches tournament history, and derives the filtered
- * and sorted history table rows along with sort toggling helpers.
- */
-function useAccountPage() {
-  type SortDir = "asc" | "desc";
-  type SortKey =
-    | "start"
-    | "season"
-    | "tournament"
-    | "points"
-    | "earnings"
-    | "position";
-
-  type MemberForAccount = Pick<
-    Doc<"members">,
-    "_id" | "firstname" | "lastname" | "account"
-  >;
-  const isMemberForAccount = isMemberForAccountValue;
-  const isSeasonForLabel = isSeasonForLabelValue;
-
-  const { openSignIn, signOut } = useClerk();
-  const { user: clerkUser } = useUser();
-
-  const memberRaw = useQuery(
-    api.functions.members.getMembers,
-    clerkUser ? { options: { clerkId: clerkUser.id } } : "skip",
-  );
-
-  const updateMember = useMutation(api.functions.members.updateMembers);
-
-  const memberForAccount = useMemo<MemberForAccount | null>(() => {
-    return isMemberForAccount(memberRaw) ? memberRaw : null;
-  }, [isMemberForAccount, memberRaw]);
-
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!memberForAccount) return;
-    setFirstName(memberForAccount.firstname ?? "");
-    setLastName(memberForAccount.lastname ?? "");
-  }, [memberForAccount]);
-
-  const memberAccountCents = memberForAccount?.account;
-
-  const seasons = useQuery(api.functions.seasons.getSeasons, {
-    options: {
-      sort: { sortBy: "year", sortOrder: "desc" },
-    },
-  });
-
-  const seasonLabelById = useMemo(() => {
-    const map = new Map<Id<"seasons">, string>();
-    if (!Array.isArray(seasons)) return map;
-    for (const s of seasons) {
-      if (!isSeasonForLabel(s)) continue;
-      map.set(s._id, `${s.year} #${s.number}`);
-    }
-    return map;
-  }, [isSeasonForLabel, seasons]);
-
-  const [tSeasonFilter, setTSeasonFilter] = useState<Id<"seasons"> | "all">(
-    "all",
-  );
-  const [tTourCardFilter, setTTourCardFilter] = useState<
-    Id<"tourCards"> | "all"
-  >("all");
-  const [tSort, setTSort] = useState<{ key: SortKey; dir: SortDir } | null>({
-    key: "start",
-    dir: "desc",
-  });
-
-  async function onSaveProfile() {
-    if (!memberForAccount) return;
-
-    setSaving(true);
-    setSaveError(null);
-    setSaveSuccess(null);
-
-    try {
-      await updateMember({
-        memberId: memberForAccount._id,
-        data: {
-          firstname: firstName,
-          lastname: lastName,
-        },
-        options: {
-          returnEnhanced: false,
-        },
-      });
-      setSaveSuccess("Saved");
-    } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "Failed to save");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return {
-    openSignIn,
-    signOut,
-    memberRaw,
-    firstName,
-    setFirstName,
-    lastName,
-    setLastName,
-    saving,
-    saveError,
-    saveSuccess,
-    memberAccountCents,
-    seasonLabelById,
-    tSeasonFilter,
-    setTSeasonFilter,
-    tTourCardFilter,
-    setTTourCardFilter,
-    tSort,
-    setTSort,
-    toggleSort,
-    onSaveProfile,
-    formatDateTime,
-  };
 }

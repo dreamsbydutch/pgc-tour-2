@@ -7,10 +7,120 @@
 import { mutation, query } from "../_generated/server";
 import { tourCardsValidators } from "../validators/common";
 import {
+  hasTourCardFeeForSeason,
   isCompletedTourCardFee,
   requireTourCardOwner,
+  requireTourCardSelfServiceOpen,
 } from "../utils/tourCards";
 import { DEFAULT_MAX_PARTICIPANTS } from "./_constants";
+import { getCurrentMember } from "../utils/auth";
+import { writeAuditLog } from "../utils/audit";
+import { v } from "convex/values";
+import { projectPublicTourCard } from "../utils/publicDtos";
+
+export const createMyTourCard = mutation({
+  args: {
+    displayName: v.string(),
+    tourId: v.id("tours"),
+    seasonId: v.id("seasons"),
+  },
+  handler: async (ctx, args) => {
+    const member = await getCurrentMember(ctx);
+    const [tour, season] = await Promise.all([
+      ctx.db.get(args.tourId),
+      ctx.db.get(args.seasonId),
+    ]);
+    if (!tour || !season) {
+      throw new Error("Tour or season not found");
+    }
+    if (tour.seasonId !== season._id) {
+      throw new Error("Tour does not belong to the selected season");
+    }
+    if (
+      typeof season.registrationDeadline === "number" &&
+      Date.now() >= season.registrationDeadline
+    ) {
+      throw new Error("Registration is closed for this season");
+    }
+
+    const memberCards = await ctx.db
+      .query("tourCards")
+      .withIndex("by_member_season", (q) =>
+        q.eq("memberId", member._id).eq("seasonId", season._id),
+      )
+      .collect();
+    if (memberCards.some((card) => card.tourId === tour._id)) {
+      throw new Error("You are already registered for this tour");
+    }
+
+    const capacity =
+      typeof tour.maxParticipants === "number" && tour.maxParticipants > 0
+        ? tour.maxParticipants
+        : DEFAULT_MAX_PARTICIPANTS;
+    const registeredCount =
+      tour.registeredCount ??
+      (
+        await ctx.db
+          .query("tourCards")
+          .withIndex("by_tour_season", (q) =>
+            q.eq("tourId", tour._id).eq("seasonId", season._id),
+          )
+          .take(capacity)
+      ).length;
+    if (registeredCount >= capacity) {
+      throw new Error("Selected tour is full");
+    }
+
+    const now = Date.now();
+    const tourCardId = await ctx.db.insert("tourCards", {
+      displayName: args.displayName.trim() || member.email,
+      tourId: tour._id,
+      seasonId: season._id,
+      memberId: member._id,
+      earnings: 0,
+      points: 0,
+      wins: 0,
+      topTen: 0,
+      topFive: 0,
+      madeCut: 0,
+      appearances: 0,
+      updatedAt: now,
+    });
+    await ctx.db.patch(tour._id, {
+      registeredCount: registeredCount + 1,
+      updatedAt: now,
+    });
+
+    if (
+      !(await hasTourCardFeeForSeason(ctx, { member, seasonId: season._id }))
+    ) {
+      const fee = -Math.abs(tour.buyIn);
+      await ctx.db.insert("transactions", {
+        memberId: member._id,
+        seasonId: season._id,
+        amount: fee,
+        transactionType: "TourCardFee",
+        status: "completed",
+        processedAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.patch(member._id, {
+        account: member.account + fee,
+        updatedAt: now,
+      });
+    }
+
+    await writeAuditLog(ctx, {
+      memberId: member._id,
+      entityType: "tourCard",
+      entityId: String(tourCardId),
+      action: "created",
+      changes: { tourId: String(tour._id), seasonId: String(season._id) },
+    });
+    const created = await ctx.db.get(tourCardId);
+    return created ? projectPublicTourCard(created) : null;
+  },
+});
 
 export const getTourCards = query({
   args: tourCardsValidators.args.getTourCards,
@@ -19,7 +129,7 @@ export const getTourCards = query({
 
     if (options.id) {
       const card = await ctx.db.get(options.id);
-      return card ? [card] : [];
+      return card ? [projectPublicTourCard(card)] : [];
     }
 
     let memberId = options.memberId;
@@ -33,45 +143,52 @@ export const getTourCards = query({
     }
 
     if (memberId && options.seasonId) {
-      return await ctx.db
+      const cards = await ctx.db
         .query("tourCards")
         .withIndex("by_member_season", (q) =>
           q.eq("memberId", memberId!).eq("seasonId", options.seasonId!),
         )
-        .collect();
+        .take(500);
+      return cards.map(projectPublicTourCard);
     }
 
     if (memberId) {
-      return await ctx.db
+      const cards = await ctx.db
         .query("tourCards")
         .withIndex("by_member", (q) => q.eq("memberId", memberId!))
-        .collect();
+        .take(500);
+      return cards.map(projectPublicTourCard);
     }
 
     if (options.tourId && options.seasonId) {
-      return await ctx.db
+      const cards = await ctx.db
         .query("tourCards")
         .withIndex("by_tour_season", (q) =>
           q.eq("tourId", options.tourId!).eq("seasonId", options.seasonId!),
         )
-        .collect();
+        .take(500);
+      return cards.map(projectPublicTourCard);
     }
 
     if (options.tourId) {
-      return await ctx.db
+      const cards = await ctx.db
         .query("tourCards")
         .withIndex("by_tour", (q) => q.eq("tourId", options.tourId!))
-        .collect();
+        .take(500);
+      return cards.map(projectPublicTourCard);
     }
 
     if (options.seasonId) {
-      return await ctx.db
+      const cards = await ctx.db
         .query("tourCards")
         .withIndex("by_season", (q) => q.eq("seasonId", options.seasonId!))
-        .collect();
+        .take(500);
+      return cards.map(projectPublicTourCard);
     }
 
-    return await ctx.db.query("tourCards").collect();
+    return (await ctx.db.query("tourCards").take(500)).map(
+      projectPublicTourCard,
+    );
   },
 });
 
@@ -85,9 +202,10 @@ export const switchTourCards = mutation({
     }
 
     await requireTourCardOwner(ctx, tourCard);
+    await requireTourCardSelfServiceOpen(ctx, tourCard.seasonId);
 
     if (tourCard.tourId === args.tourId) {
-      return tourCard;
+      return projectPublicTourCard(tourCard);
     }
 
     const tour = await ctx.db.get(args.tourId);
@@ -104,23 +222,79 @@ export const switchTourCards = mutation({
         ? tour.maxParticipants
         : DEFAULT_MAX_PARTICIPANTS;
 
-    const existing = await ctx.db
-      .query("tourCards")
-      .withIndex("by_tour_season", (q) =>
-        q.eq("tourId", args.tourId).eq("seasonId", tourCard.seasonId),
-      )
-      .collect();
-
-    if (existing.length >= maxParticipants) {
+    const destinationCount =
+      tour.registeredCount ??
+      (
+        await ctx.db
+          .query("tourCards")
+          .withIndex("by_tour_season", (q) =>
+            q.eq("tourId", args.tourId).eq("seasonId", tourCard.seasonId),
+          )
+          .take(maxParticipants)
+      ).length;
+    if (destinationCount >= maxParticipants) {
       throw new Error("Selected tour is full");
     }
 
+    const previousTour = await ctx.db.get(tourCard.tourId);
+    const previousCount = previousTour
+      ? (previousTour.registeredCount ??
+        (
+          await ctx.db
+            .query("tourCards")
+            .withIndex("by_tour", (q) => q.eq("tourId", previousTour._id))
+            .take(1_000)
+        ).length)
+      : 0;
     await ctx.db.patch(args.id, {
       tourId: args.tourId,
       updatedAt: Date.now(),
     });
+    await ctx.db.patch(tour._id, {
+      registeredCount: destinationCount + 1,
+      updatedAt: Date.now(),
+    });
+    if (previousTour) {
+      await ctx.db.patch(previousTour._id, {
+        registeredCount: Math.max(previousCount - 1, 0),
+        updatedAt: Date.now(),
+      });
+    }
+    const teams = await ctx.db
+      .query("teams")
+      .withIndex("by_tour_card", (q) => q.eq("tourCardId", tourCard._id))
+      .take(100);
+    const now = Date.now();
+    const teamTournaments = await Promise.all(
+      teams.map((team) => ctx.db.get(team.tournamentId)),
+    );
+    const upcomingTeams = teams.filter((_, index) => {
+      const tournament = teamTournaments[index];
+      return (
+        tournament !== null &&
+        tournament.startDate > now &&
+        tournament.status !== "cancelled" &&
+        tournament.status !== "completed"
+      );
+    });
+    for (const team of upcomingTeams) {
+      await ctx.db.patch(team._id, { tourId: args.tourId });
+    }
 
-    return await ctx.db.get(args.id);
+    await writeAuditLog(ctx, {
+      memberId: tourCard.memberId,
+      entityType: "tourCard",
+      entityId: String(tourCard._id),
+      action: "updated",
+      changes: {
+        previousTourId: tourCard.tourId,
+        destinationTourId: args.tourId,
+        affectedTeamIds: upcomingTeams.map((team) => team._id),
+      },
+    });
+
+    const updated = await ctx.db.get(args.id);
+    return updated ? projectPublicTourCard(updated) : null;
   },
 });
 
@@ -134,6 +308,7 @@ export const deleteTourCardAndFee = mutation({
     }
 
     await requireTourCardOwner(ctx, tourCard);
+    await requireTourCardSelfServiceOpen(ctx, tourCard.seasonId);
 
     const member = await ctx.db.get(tourCard.memberId);
     if (!member) {
@@ -150,6 +325,8 @@ export const deleteTourCardAndFee = mutation({
     const hasOtherTourCardsInSeason = tourCardsInSeason.some(
       (doc) => doc._id !== tourCard._id,
     );
+    const deletedFeeTransactionIds: string[] = [];
+    let accountAdjustment = 0;
 
     const teams = await ctx.db
       .query("teams")
@@ -161,6 +338,22 @@ export const deleteTourCardAndFee = mutation({
     }
 
     await ctx.db.delete(tourCard._id);
+    const tour = await ctx.db.get(tourCard.tourId);
+    if (tour) {
+      const remainingCount =
+        tour.registeredCount !== undefined
+          ? Math.max(tour.registeredCount - 1, 0)
+          : (
+              await ctx.db
+                .query("tourCards")
+                .withIndex("by_tour", (q) => q.eq("tourId", tour._id))
+                .take(1_000)
+            ).length;
+      await ctx.db.patch(tour._id, {
+        registeredCount: remainingCount,
+        updatedAt: Date.now(),
+      });
+    }
 
     if (!hasOtherTourCardsInSeason) {
       const feeTransactions = await ctx.db
@@ -178,10 +371,12 @@ export const deleteTourCardAndFee = mutation({
         .reduce((sum, tx) => sum + tx.amount, 0);
 
       for (const tx of feeTransactions) {
+        deletedFeeTransactionIds.push(String(tx._id));
         await ctx.db.delete(tx._id);
       }
 
       if (completedFeeTotal !== 0) {
+        accountAdjustment = -completedFeeTotal;
         const updatedAt = Date.now();
         await ctx.db.patch(member._id, {
           account: member.account - completedFeeTotal,
@@ -190,6 +385,20 @@ export const deleteTourCardAndFee = mutation({
       }
     }
 
-    return tourCard;
+    await writeAuditLog(ctx, {
+      memberId: member._id,
+      entityType: "tourCard",
+      entityId: String(tourCard._id),
+      action: "deleted",
+      changes: {
+        seasonId: tourCard.seasonId,
+        tourId: tourCard.tourId,
+        deletedTeamIds: teams.map((team) => team._id),
+        deletedFeeTransactionIds,
+        accountAdjustment,
+      },
+    });
+
+    return projectPublicTourCard(tourCard);
   },
 });

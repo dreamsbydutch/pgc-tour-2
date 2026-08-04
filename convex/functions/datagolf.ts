@@ -12,7 +12,7 @@
  * Betting Tools, Historical Odds, Historical DFS).
  */
 
-import { action } from "../_generated/server";
+import { internalAction } from "../_generated/server";
 import {
   datagolfValidators,
   validateDataGolfFieldPlayer,
@@ -63,7 +63,7 @@ import { Id } from "../_generated/dataModel";
  * 3. Optional local processing (`filter`/`sort`/`limit`/`skip`) of `data.field`.
  * 4. Return upstream payload with the (possibly) processed `field`.
  */
-export const fetchFieldUpdates = action({
+export const fetchFieldUpdates = internalAction({
   args: datagolfValidators.args.fetchFieldUpdates,
   handler: async (
     _ctx,
@@ -203,7 +203,7 @@ export const fetchFieldUpdates = action({
  * 3. Optional local processing of `data.rankings`.
  * 4. Return upstream payload with processed `rankings`.
  */
-export const fetchDataGolfRankings = action({
+export const fetchDataGolfRankings = internalAction({
   args: datagolfValidators.args.fetchDataGolfRankings,
   handler: async (
     _ctx,
@@ -277,7 +277,7 @@ export const fetchDataGolfRankings = action({
  * 3. Optional local processing of `data.data`.
  * 4. Return upstream payload with processed `data`.
  */
-export const fetchLiveModelPredictions = action({
+export const fetchLiveModelPredictions = internalAction({
   args: datagolfValidators.args.fetchLiveModelPredictions,
   handler: async (
     _ctx,
@@ -420,7 +420,7 @@ export const fetchLiveModelPredictions = action({
  * 4. Optional post-processing to strip heavy stats payload.
  * 5. Return upstream payload with processed `scores`.
  */
-export const fetchHistoricalRoundData = action({
+export const fetchHistoricalRoundData = internalAction({
   args: datagolfValidators.args.fetchHistoricalRoundData,
   handler: async (
     _ctx,
@@ -558,7 +558,7 @@ export const fetchHistoricalRoundData = action({
  * 1. Options normalization and endpoint construction.
  * 2. DataGolf fetch with a response guard.
  */
-export const fetchHistoricalEventDataEvents = action({
+export const fetchHistoricalEventDataEvents = internalAction({
   args: datagolfValidators.args.fetchHistoricalEventDataEvents,
   handler: async (
     ctx,

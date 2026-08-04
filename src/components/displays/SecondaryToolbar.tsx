@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 
-import { cn } from "@/lib";
+import { cn } from "@/utils/app";
 
 function useIsHorizontallyOverflowing(ref: RefObject<HTMLElement | null>) {
   const [isOverflowing, setIsOverflowing] = useState(false);

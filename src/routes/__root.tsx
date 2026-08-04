@@ -1,12 +1,19 @@
 import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
-import { TanstackDevtools } from "@tanstack/react-devtools";
-import { useEffect } from "react";
+import { lazy, Suspense } from "react";
 
-import { NavigationContainer } from "@/facilitators";
+import { NavigationContainer } from "@/facilitators/NavigationContainer";
+import { Providers } from "@/facilitators/Providers";
 
 import "../styles.css";
-import { Providers, SignedOutPersistentSignIn } from "@/components/displays";
-import { PWAInstallPrompt } from "@/components/displays/PWAInstallPrompt";
+import { SignedOutPersistentSignIn } from "@/widgets/SignedOutPersistentSignIn";
+
+const DevelopmentTools = import.meta.env.DEV
+  ? lazy(() =>
+      import("../components/facilitators/DevelopmentTools").then((module) => ({
+        default: module.DevelopmentTools,
+      })),
+    )
+  : null;
 
 export const Route = createRootRoute({
   head: () => ({
@@ -61,10 +68,6 @@ export const Route = createRootRoute({
         name: "msapplication-TileColor",
         content: "#059669",
       },
-      {
-        name: "msapplication-config",
-        content: "/browserconfig.xml",
-      },
     ],
     links: [
       {
@@ -114,34 +117,6 @@ export const Route = createRootRoute({
 });
 
 function RootDocument({ children }: { children: React.ReactNode }) {
-  useEffect(() => {
-    if (!("serviceWorker" in navigator)) return;
-
-    if (import.meta.env.DEV) {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        if (registrations.length === 0) return;
-
-        Promise.all(registrations.map((r) => r.unregister())).then(() => {
-          window.location.reload();
-        });
-      });
-
-      return;
-    }
-
-    navigator.serviceWorker
-      .register("/sw.js")
-      .then((registration) => {
-        console.log(
-          "ServiceWorker registration successful with scope: ",
-          registration.scope,
-        );
-      })
-      .catch((err) => {
-        console.log("ServiceWorker registration failed: ", err);
-      });
-  }, []);
-
   return (
     <html lang="en">
       <head>
@@ -151,14 +126,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <Providers>
           <NavigationContainer />
           <main className="app-main">{children}</main>
-          <PWAInstallPrompt />
           <SignedOutPersistentSignIn />
-          {import.meta.env.DEV ? (
-            <TanstackDevtools
-              config={{
-                position: "bottom-left",
-              }}
-            />
+          {DevelopmentTools ? (
+            <Suspense fallback={null}>
+              <DevelopmentTools />
+            </Suspense>
           ) : null}
         </Providers>
         <Scripts />

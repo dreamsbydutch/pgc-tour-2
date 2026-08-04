@@ -1,17 +1,11 @@
-"use client";
-
-import { api, useQuery } from "@/convex";
-
-export type MajorChampionBadge = {
-  tournamentId: string;
-  tournamentName: string;
-  logoUrl: string | null;
-};
-
-export type MajorChampionBadgesByMemberId = Record<
-  string,
-  MajorChampionBadge[]
->;
+import type {
+  MajorChampionBadge,
+  MajorChampionBadgesByMemberId,
+} from "@/types";
+export type {
+  MajorChampionBadge,
+  MajorChampionBadgesByMemberId,
+} from "@/types";
 
 export function filterMajorChampionBadges(args: {
   badges?: MajorChampionBadge[] | null;
@@ -24,9 +18,7 @@ export function filterMajorChampionBadges(args: {
     return badges;
   }
 
-  return badges.filter(
-    (badge) => !hiddenTournamentIds.has(badge.tournamentId),
-  );
+  return badges.filter((badge) => !hiddenTournamentIds.has(badge.tournamentId));
 }
 
 export function filterMajorChampionBadgesByMemberId(args: {
@@ -39,19 +31,13 @@ export function filterMajorChampionBadgesByMemberId(args: {
     return args.badgesByMemberId;
   }
 
-  return Object.entries(args.badgesByMemberId).reduce<
-    MajorChampionBadgesByMemberId
-  >((accumulator, [memberId, badges]) => {
+  return Object.entries(
+    args.badgesByMemberId,
+  ).reduce<MajorChampionBadgesByMemberId>((accumulator, [memberId, badges]) => {
     accumulator[memberId] = filterMajorChampionBadges({
       badges,
       hiddenTournamentIds,
     });
     return accumulator;
   }, {});
-}
-
-export function useCurrentSeasonMajorChampionBadges(): MajorChampionBadgesByMemberId {
-  return (
-    useQuery(api.functions.seasons.getCurrentSeasonMajorChampionBadges) ?? {}
-  );
 }

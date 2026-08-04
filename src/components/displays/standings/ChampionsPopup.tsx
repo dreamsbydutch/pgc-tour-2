@@ -1,9 +1,12 @@
 import { Link } from "@tanstack/react-router";
+import { filterMajorChampionBadges } from "@/hooks";
+import type { MajorChampionBadgesByMemberId } from "@/types";
 import {
-  filterMajorChampionBadges,
-  useCurrentSeasonMajorChampionBadges,
-} from "@/hooks";
-import { capitalize, formatScore, hasItems, isNonEmptyString } from "@/lib";
+  capitalize,
+  formatScore,
+  hasItems,
+  isNonEmptyString,
+} from "@/utils/app";
 import { MemberNameWithBadges, Skeleton } from "@/ui";
 import type { TournamentDoc } from "convex/types/types";
 
@@ -56,8 +59,8 @@ export function ChampionsPopup(props: {
     tier?: { name?: string };
   };
   loading?: boolean;
+  majorChampionBadgesByMemberId?: MajorChampionBadgesByMemberId;
 }) {
-  const majorChampionBadgesByMemberId = useCurrentSeasonMajorChampionBadges();
   const model = useChampionsPopup(props);
   if (model.status === "loading") return <ChampionsPopupSkeleton />;
   if (model.status === "hidden") return null;
@@ -67,7 +70,7 @@ export function ChampionsPopup(props: {
   return (
     <div className="mx-auto my-3 rounded-2xl bg-amber-100 bg-opacity-70 shadow-lg md:w-10/12 lg:w-7/12">
       <div className="mx-auto max-w-3xl p-2 text-center">
-        <h1 className="flex items-center justify-center px-3 py-2 text-2xl font-bold sm:text-3xl md:text-4xl">
+        <h2 className="flex items-center justify-center px-3 py-2 text-2xl font-bold sm:text-3xl md:text-4xl">
           {isNonEmptyString(model.tournament.logoUrl) && (
             <img
               alt={`${model.tournament.name} Logo`}
@@ -78,7 +81,7 @@ export function ChampionsPopup(props: {
             />
           )}
           {model.tournament.name} Champions
-        </h1>
+        </h2>
 
         {model.champs.map((champ) => (
           <Link
@@ -87,7 +90,7 @@ export function ChampionsPopup(props: {
             search={{
               tournamentId: champ.tournamentId,
               tourId: champ.tourId,
-              variant: "regular",
+              variant: undefined,
             }}
             className="block transition-colors duration-200 hover:bg-amber-50"
           >
@@ -109,7 +112,10 @@ export function ChampionsPopup(props: {
                     badges={
                       champ.memberId
                         ? filterMajorChampionBadges({
-                            badges: majorChampionBadgesByMemberId[champ.memberId],
+                            badges:
+                              props.majorChampionBadgesByMemberId?.[
+                                champ.memberId
+                              ],
                             hiddenTournamentIds: tournamentComplete
                               ? []
                               : [model.tournament.id],

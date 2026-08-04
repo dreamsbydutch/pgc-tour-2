@@ -1,6 +1,10 @@
 import { query } from "../_generated/server";
 import { v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
+import {
+  projectPublicTour,
+  projectPublicTourWithSeason,
+} from "../utils/publicDtos";
 
 /**
  * Returns tours with optional filtering, sorting, pagination, and enhancement.
@@ -82,9 +86,9 @@ export const getTours = query({
       tours = await ctx.db
         .query("tours")
         .withIndex("by_season", (q) => q.eq("seasonId", filter.seasonId!))
-        .collect();
+        .take(500);
     } else {
-      tours = await ctx.db.query("tours").collect();
+      tours = await ctx.db.query("tours").take(500);
     }
 
     const filtered = tours.filter((tour) => {
@@ -177,19 +181,18 @@ export const getTours = query({
     const offset = Math.max(0, pagination.offset ?? 0);
     const limit =
       pagination.limit && pagination.limit > 0
-        ? pagination.limit
-        : sorted.length;
+        ? Math.min(pagination.limit, 500)
+        : 500;
     const paginated = sorted.slice(offset, offset + limit);
 
     if (!enhance.includeSeason) {
-      return paginated;
+      return paginated.map(projectPublicTour);
     }
 
     return await Promise.all(
-      paginated.map(async (tour) => ({
-        ...tour,
-        season: (await ctx.db.get(tour.seasonId)) ?? undefined,
-      })),
+      paginated.map(async (tour) =>
+        projectPublicTourWithSeason(tour, await ctx.db.get(tour.seasonId)),
+      ),
     );
   },
 });

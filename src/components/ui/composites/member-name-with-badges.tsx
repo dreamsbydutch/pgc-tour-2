@@ -1,7 +1,8 @@
 "use client";
 
-import { cn, isNonEmptyString } from "@/lib";
-import type { MajorChampionBadge } from "@/hooks";
+import type { MajorChampionBadge } from "@/types";
+import { cn } from "@/utils/classNames";
+import { isNonEmptyString } from "@/utils/strings";
 
 export function MemberNameWithBadges(props: {
   name: string;

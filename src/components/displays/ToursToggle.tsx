@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 
 import { Button } from "@/ui";
-import { cn } from "@/lib";
+import { cn } from "@/utils/app";
 
 /**
  * ToursToggle
@@ -130,7 +130,8 @@ function useToursToggle({
       })),
     ];
 
-    const normalize = (value: string) => value ? value.trim().toLowerCase() : "";
+    const normalize = (value: string) =>
+      value ? value.trim().toLowerCase() : "";
     const playoffLike = (value: string) => normalize(value).includes("playoff");
 
     const rank = (item: {

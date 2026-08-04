@@ -1,6 +1,6 @@
 import { ChevronDown } from "lucide-react";
 
-import { formatMoney } from "@/lib";
+import { formatMoney } from "@/utils/app";
 
 /**
  * Renders a compact, collapsible table that shows a rank → points/payouts mapping.
@@ -18,7 +18,7 @@ export function PointsAndPayoutsDetails(props: {
   points: number[];
   payouts: number[];
 }) {
-  const rowCount = Math.min(props.points.length, props.payouts.length);
+  const rowCount = Math.max(props.points.length, props.payouts.length);
 
   return (
     <details className="rounded-md border p-2">
@@ -33,9 +33,11 @@ export function PointsAndPayoutsDetails(props: {
         {Array.from({ length: rowCount }).map((_, i) => (
           <div key={i} className="contents">
             <div className="text-muted-foreground">{i + 1}</div>
-            <div className="text-muted-foreground">{props.points[i]}</div>
             <div className="text-muted-foreground">
-              {formatMoney(props.payouts[i] ?? 0,true)}
+              {props.points[i] ?? "-"}
+            </div>
+            <div className="text-muted-foreground">
+              {formatMoney(props.payouts[i] ?? 0, true)}
             </div>
           </div>
         ))}

@@ -1,0 +1,529 @@
+import type {
+  EspnGolfEvent,
+  EspnHoleScore,
+  EspnPlayerScorecard,
+  EspnRoundScore,
+} from "../types/espnGolf";
+import { checkCompatabilityOfEventNames } from "./datagolf";
+
+type UnknownRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): UnknownRecord | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as UnknownRecord)
+    : null;
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+export function parseRelativeToPar(value: unknown): number | undefined {
+  const raw = String(value ?? "")
+    .trim()
+    .toUpperCase();
+  if (raw === "E" || raw === "EVEN") return 0;
+  if (!/^[+-]?\d+$/.test(raw)) return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+export function normalizeEspnIdentityName(name: string): string {
+  return name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/ø/g, "o")
+    .replace(/æ/g, "ae")
+    .replace(/œ/g, "oe")
+    .replace(/ł/g, "l")
+    .replace(/ð/g, "d")
+    .replace(/þ/g, "th")
+    .replace(/\b(junior)\b/g, "jr")
+    .replace(/\b(senior)\b/g, "sr")
+    .replace(/[’']/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b(jr|sr|ii|iii|iv|v)\b$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const GIVEN_NAME_ALIASES = [
+  ["ben", "benjamin"],
+  ["bill", "billy", "will", "william"],
+  ["bob", "bobby", "rob", "robert"],
+  ["cam", "cameron"],
+  ["chris", "christopher"],
+  ["dan", "daniel"],
+  ["dave", "david"],
+  ["joe", "joseph"],
+  ["jon", "jonathan"],
+  ["kris", "kristoffer"],
+  ["matt", "matthew"],
+  ["nick", "nicholas"],
+  ["pat", "patrick"],
+  ["sam", "samuel"],
+  ["steve", "stephen", "steven"],
+  ["joohyung", "tom", "thomas"],
+  ["tony", "anthony"],
+] as const;
+
+const GIVEN_NAME_CANONICAL = new Map<string, string>(
+  GIVEN_NAME_ALIASES.flatMap((group) =>
+    group.map((name) => [name, group[0]] as const),
+  ),
+);
+
+type ParsedIdentityName = {
+  normalized: string;
+  orderedTokens: string[];
+  givenTokens: string[];
+  surnameTokens: string[];
+};
+
+function parseIdentityName(name: string): ParsedIdentityName | null {
+  const normalized = normalizeEspnIdentityName(name);
+  const tokens = normalized.split(" ").filter(Boolean);
+  if (tokens.length < 2) return null;
+  const commaReversed = /,/.test(name);
+  const ordered = commaReversed ? [...tokens].reverse() : tokens;
+  return {
+    normalized,
+    orderedTokens: ordered,
+    givenTokens: ordered.slice(0, -1),
+    surnameTokens: ordered.slice(-1),
+  };
+}
+
+function canonicalGivenName(value: string): string {
+  return GIVEN_NAME_CANONICAL.get(value) ?? value;
+}
+
+function givenNamesAreCompatible(a: string[], b: string[]): boolean {
+  const aJoined = a.join("");
+  const bJoined = b.join("");
+  if (!aJoined || !bJoined) return false;
+  if (aJoined === bJoined) return true;
+  if (canonicalGivenName(a[0] ?? "") === canonicalGivenName(b[0] ?? "")) {
+    return true;
+  }
+
+  const aInitials = a.map((token) => token[0]).join("");
+  const bInitials = b.map((token) => token[0]).join("");
+  return (
+    (aJoined.length <= 3 && aJoined === bInitials) ||
+    (bJoined.length <= 3 && bJoined === aInitials) ||
+    (aJoined.length === 1 && bJoined.startsWith(aJoined)) ||
+    (bJoined.length === 1 && aJoined.startsWith(bJoined))
+  );
+}
+
+function scoreIdentityNameMatch(espnName: string, localName: string): number {
+  const espn = parseIdentityName(espnName);
+  const local = parseIdentityName(localName);
+  if (!espn || !local) return 0;
+  if (espn.normalized === local.normalized) return 100;
+
+  const sameSurname =
+    espn.surnameTokens.join("") === local.surnameTokens.join("");
+  const compatibleGiven = givenNamesAreCompatible(
+    espn.givenTokens,
+    local.givenTokens,
+  );
+  if (sameSurname && compatibleGiven) {
+    const exactGiven = espn.givenTokens.join("") === local.givenTokens.join("");
+    return exactGiven ? 90 : 80;
+  }
+
+  // Some feeds omit one part of a compound family name. Only accept this when
+  // the full given name (or a known nickname) agrees and a substantial family
+  // token is shared; initials alone are intentionally not enough here.
+  const firstNamesAgree =
+    canonicalGivenName(espn.orderedTokens[0] ?? "") ===
+    canonicalGivenName(local.orderedTokens[0] ?? "");
+  const espnFamilyTokens = new Set(
+    espn.orderedTokens.slice(1).filter((token) => token.length >= 3),
+  );
+  const sharedFamilyToken = local.orderedTokens
+    .slice(1)
+    .some((token) => token.length >= 3 && espnFamilyTokens.has(token));
+  const espnFamilyCompact = espn.orderedTokens.slice(1).join("");
+  const localFamilyCompact = local.orderedTokens.slice(1).join("");
+  const compatibleFamilyCompact =
+    espnFamilyCompact.length >= 4 &&
+    localFamilyCompact.length >= 4 &&
+    (espnFamilyCompact.includes(localFamilyCompact) ||
+      localFamilyCompact.includes(espnFamilyCompact));
+  return firstNamesAgree && (sharedFamilyToken || compatibleFamilyCompact)
+    ? 75
+    : 0;
+}
+
+export function findEspnGolferMatch(args: {
+  espnAthleteId: string;
+  playerName: string;
+  localGolfers: Array<{ golferId: string; playerName: string }>;
+  mappings: Array<{ golferId: string; espnAthleteId: string }>;
+}): {
+  golferId: string;
+  matchMethod: "saved" | "exact_name" | "name_variant";
+} | null {
+  const saved = args.mappings.find(
+    (mapping) => mapping.espnAthleteId === args.espnAthleteId,
+  );
+  if (saved) {
+    return args.localGolfers.some(
+      (golfer) => golfer.golferId === saved.golferId,
+    )
+      ? { golferId: saved.golferId, matchMethod: "saved" }
+      : null;
+  }
+
+  const candidates = args.localGolfers
+    .map((golfer) => ({
+      golfer,
+      score: scoreIdentityNameMatch(args.playerName, golfer.playerName),
+    }))
+    .filter((candidate) => candidate.score >= 75)
+    .sort((a, b) => b.score - a.score);
+  const best = candidates[0];
+  if (!best || candidates[1]?.score === best.score) return null;
+  const golferId = best.golfer.golferId;
+  if (!golferId) return null;
+  const conflictingMapping = args.mappings.some(
+    (mapping) =>
+      mapping.golferId === golferId &&
+      mapping.espnAthleteId !== args.espnAthleteId,
+  );
+  return conflictingMapping
+    ? null
+    : {
+        golferId,
+        matchMethod: best.score === 100 ? "exact_name" : "name_variant",
+      };
+}
+
+function parseHole(value: unknown): EspnHoleScore | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const hole = finiteNumber(record.period);
+  const strokes = finiteNumber(record.value);
+  const scoreType = asRecord(record.scoreType);
+  const relativeToPar = parseRelativeToPar(scoreType?.displayValue);
+  if (
+    hole === undefined ||
+    strokes === undefined ||
+    relativeToPar === undefined ||
+    !Number.isInteger(hole) ||
+    hole < 1 ||
+    hole > 18 ||
+    strokes < 1
+  ) {
+    return null;
+  }
+  return { hole, strokes, relativeToPar };
+}
+
+function parseRound(value: unknown): EspnRoundScore | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const round = finiteNumber(record.period);
+  if (
+    round === undefined ||
+    !Number.isInteger(round) ||
+    round < 1 ||
+    round > 4
+  ) {
+    return null;
+  }
+  const holes = Array.isArray(record.linescores)
+    ? record.linescores
+        .map(parseHole)
+        .filter((hole): hole is EspnHoleScore => hole !== null)
+        .sort((a, b) => a.hole - b.hole)
+    : [];
+  const totalStrokes = finiteNumber(record.value);
+  return {
+    round,
+    ...(totalStrokes !== undefined ? { totalStrokes } : {}),
+    holes,
+  };
+}
+
+function parsePlayer(value: unknown): EspnPlayerScorecard | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const athlete = asRecord(record.athlete);
+  const espnAthleteId = String(athlete?.id ?? record.id ?? "").trim();
+  const playerName = String(
+    athlete?.displayName ?? athlete?.fullName ?? "",
+  ).trim();
+  if (!espnAthleteId || !playerName) return null;
+  const rounds = Array.isArray(record.linescores)
+    ? record.linescores
+        .map(parseRound)
+        .filter((round): round is EspnRoundScore => round !== null)
+        .sort((a, b) => a.round - b.round)
+    : [];
+  return { espnAthleteId, playerName, rounds };
+}
+
+export function parseEspnGolfScoreboard(payload: unknown): EspnGolfEvent[] {
+  const root = asRecord(payload);
+  if (!root || !Array.isArray(root.events)) return [];
+
+  return root.events.flatMap((rawEvent): EspnGolfEvent[] => {
+    const event = asRecord(rawEvent);
+    if (!event) return [];
+    const espnEventId = String(event.id ?? "").trim();
+    const eventName = String(event.name ?? event.shortName ?? "").trim();
+    const competitions = Array.isArray(event.competitions)
+      ? event.competitions
+      : [];
+    const competition = asRecord(competitions[0]);
+    if (!espnEventId || !eventName || !competition) return [];
+    const players = Array.isArray(competition.competitors)
+      ? competition.competitors
+          .map(parsePlayer)
+          .filter((player): player is EspnPlayerScorecard => player !== null)
+      : [];
+    return [
+      {
+        espnEventId,
+        eventName,
+        startDate: typeof event.date === "string" ? event.date : undefined,
+        endDate: typeof event.endDate === "string" ? event.endDate : undefined,
+        players,
+      },
+    ];
+  });
+}
+
+export function selectEspnGolfEvent(
+  events: EspnGolfEvent[],
+  tournamentName: string,
+): EspnGolfEvent | null {
+  const normalizedTournamentName = normalizeEspnIdentityName(tournamentName);
+  const compatible = events
+    .map((event) => ({
+      event,
+      match: checkCompatabilityOfEventNames(
+        normalizedTournamentName,
+        normalizeEspnIdentityName(event.eventName),
+      ),
+    }))
+    .filter(({ match }) => match.ok)
+    .sort((a, b) => b.match.score - a.match.score);
+
+  if (compatible.length === 0) return null;
+  if (
+    compatible.length > 1 &&
+    compatible[0]?.match.score === compatible[1]?.match.score
+  ) {
+    return null;
+  }
+  return compatible[0]?.event ?? null;
+}
+
+export function mergeEspnRounds(
+  existing: EspnRoundScore[],
+  incoming: EspnRoundScore[],
+): EspnRoundScore[] {
+  const rounds = new Map<number, EspnRoundScore>();
+  for (const round of existing) {
+    rounds.set(round.round, {
+      ...round,
+      holes: [...round.holes].sort((a, b) => a.hole - b.hole),
+    });
+  }
+  for (const round of incoming) {
+    const previous = rounds.get(round.round);
+    const holes = new Map<number, EspnHoleScore>(
+      previous?.holes.map((hole) => [hole.hole, hole]) ?? [],
+    );
+    for (const hole of round.holes) holes.set(hole.hole, hole);
+    rounds.set(round.round, {
+      round: round.round,
+      ...(round.totalStrokes !== undefined
+        ? { totalStrokes: round.totalStrokes }
+        : previous?.totalStrokes !== undefined
+          ? { totalStrokes: previous.totalStrokes }
+          : {}),
+      holes: [...holes.values()].sort((a, b) => a.hole - b.hole),
+    });
+  }
+  return [...rounds.values()]
+    .filter((round) => round.round >= 1 && round.round <= 4)
+    .sort((a, b) => a.round - b.round);
+}
+
+/** Produces the canonical ordering and shape used for scorecard comparisons. */
+export function normalizeEspnRounds(
+  rounds: EspnRoundScore[],
+): EspnRoundScore[] {
+  return mergeEspnRounds([], rounds);
+}
+
+/** Ignores feed/storage ordering differences when comparing scorecards. */
+export function areEspnRoundsEqual(
+  left: EspnRoundScore[],
+  right: EspnRoundScore[],
+): boolean {
+  return (
+    JSON.stringify(normalizeEspnRounds(left)) ===
+    JSON.stringify(normalizeEspnRounds(right))
+  );
+}
+
+/**
+ * Infers one round's hole pars from confirmed ESPN cells. The course totals are
+ * used only to fill a hole that has not appeared in the feed yet.
+ */
+export function inferEspnRoundHolePars(args: {
+  scorecards: readonly EspnRoundScore[][];
+  roundNumber: number;
+  frontPar: number;
+  backPar: number;
+}): number[] | null {
+  const votes = Array.from({ length: 18 }, () => new Map<number, number>());
+  for (const rounds of args.scorecards) {
+    const round = rounds.find(
+      (candidate) => candidate.round === args.roundNumber,
+    );
+    for (const hole of round?.holes ?? []) {
+      if (hole.synthetic) continue;
+      const par = hole.strokes - hole.relativeToPar;
+      if (!Number.isInteger(par) || par < 2 || par > 6) continue;
+      const holeVotes = votes[hole.hole - 1];
+      if (!holeVotes) continue;
+      holeVotes.set(par, (holeVotes.get(par) ?? 0) + 1);
+    }
+  }
+
+  const pars = votes.map(
+    (holeVotes) =>
+      [...holeVotes.entries()].sort(
+        ([parA, votesA], [parB, votesB]) => votesB - votesA || parA - parB,
+      )[0]?.[0],
+  );
+
+  for (const [start, target] of [
+    [0, args.frontPar],
+    [9, args.backPar],
+  ] as const) {
+    const missing = Array.from(
+      { length: 9 },
+      (_, index) => start + index,
+    ).filter((index) => pars[index] === undefined);
+    let total = Array.from(
+      { length: 9 },
+      (_, index) => pars[start + index] ?? 4,
+    ).reduce((sum, par) => sum + par, 0);
+    for (const index of missing) pars[index] = 4;
+
+    while (total !== target) {
+      const direction = target > total ? 1 : -1;
+      const adjustable = missing.find((index) => {
+        const next = (pars[index] ?? 4) + direction;
+        return next >= 3 && next <= 5;
+      });
+      if (adjustable === undefined) return null;
+      pars[adjustable] = (pars[adjustable] ?? 4) + direction;
+      total += direction;
+    }
+  }
+
+  return pars.every((par): par is number => typeof par === "number")
+    ? pars
+    : null;
+}
+
+/**
+ * Completes published WD/DQ penalty rounds without changing any real ESPN hole.
+ * A completed penalty round always sums to eight over par.
+ */
+export function completeWithdrawnEspnRounds(args: {
+  existing: EspnRoundScore[];
+  position?: string;
+  roundScores: readonly [number | undefined, number | undefined];
+  coursePar: number;
+  holeParsByRound: ReadonlyMap<number, readonly number[]>;
+}): { rounds: EspnRoundScore[]; completedPenaltyRounds: number[] } {
+  if (!["WD", "DQ"].includes(args.position?.trim().toUpperCase() ?? "")) {
+    return { rounds: args.existing, completedPenaltyRounds: [] };
+  }
+
+  let rounds = args.existing;
+  const completedPenaltyRounds: number[] = [];
+  for (const roundNumber of [1, 2] as const) {
+    if (args.roundScores[roundNumber - 1] !== args.coursePar + 8) continue;
+    const holePars = args.holeParsByRound.get(roundNumber);
+    if (!holePars || holePars.length !== 18) continue;
+
+    const existingRound = rounds.find((round) => round.round === roundNumber);
+    const actualHoles = new Map(
+      (existingRound?.holes ?? [])
+        .filter((hole) => !hole.synthetic)
+        .map((hole) => [hole.hole, hole]),
+    );
+    const missingHoleNumbers = Array.from(
+      { length: 18 },
+      (_, index) => index + 1,
+    ).filter((hole) => !actualHoles.has(hole));
+    if (missingHoleNumbers.length === 0) continue;
+
+    const actualRelativeToPar = [...actualHoles.values()].reduce(
+      (sum, hole) => sum + hole.relativeToPar,
+      0,
+    );
+    let remainingRelativeToPar = 8 - actualRelativeToPar;
+    const inventedRelativeToPar = missingHoleNumbers.map(() => 0);
+
+    if (remainingRelativeToPar < 0) {
+      while (remainingRelativeToPar < 0) {
+        const adjustableIndex = missingHoleNumbers.findIndex(
+          (hole, index) =>
+            inventedRelativeToPar[index]! > 1 - holePars[hole - 1]!,
+        );
+        if (adjustableIndex === -1) break;
+        inventedRelativeToPar[adjustableIndex]! -= 1;
+        remainingRelativeToPar += 1;
+      }
+    } else {
+      let index = 0;
+      while (remainingRelativeToPar > 0) {
+        inventedRelativeToPar[index % inventedRelativeToPar.length]! += 1;
+        remainingRelativeToPar -= 1;
+        index += 1;
+      }
+    }
+
+    // Keeping a real hole is more important than forcing an impossible total.
+    // In that exceptional case, leave the round partial so the UI can withhold it.
+    if (remainingRelativeToPar !== 0) continue;
+
+    const inventedHoles = missingHoleNumbers.map((hole, index) => {
+      const relativeToPar = inventedRelativeToPar[index]!;
+      return {
+        hole,
+        strokes: holePars[hole - 1]! + relativeToPar,
+        relativeToPar,
+        synthetic: true,
+      };
+    });
+    const completedRound: EspnRoundScore = {
+      round: roundNumber,
+      totalStrokes: args.coursePar + 8,
+      holes: [...actualHoles.values(), ...inventedHoles].sort(
+        (a, b) => a.hole - b.hole,
+      ),
+    };
+    rounds = mergeEspnRounds(rounds, [completedRound]);
+    completedPenaltyRounds.push(roundNumber);
+  }
+
+  return { rounds, completedPenaltyRounds };
+}

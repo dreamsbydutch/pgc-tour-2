@@ -115,11 +115,133 @@ export default [
       "no-var": "error",
       "no-undef": "off", // TypeScript handles this
       "no-empty-pattern": "off",
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@/lib", "@/lib/index", "@/lib/index.ts"],
+              message:
+                "Import the specific constants, rules, types, or utility module instead of the legacy lib barrel.",
+            },
+            {
+              group: ["@/components", "@/components/*", "@/components/**"],
+              message:
+                "Import components through @/ui, @/displays, @/widgets, or @/facilitators.",
+            },
+          ],
+        },
+      ],
     },
     settings: {
       react: {
         version: "detect",
       },
+    },
+  },
+  {
+    files: ["src/components/**/*.{ts,tsx}", "src/routes/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/convex",
+              importNames: [
+                "useAction",
+                "useMutation",
+                "usePaginatedQuery",
+                "useQuery",
+              ],
+              message:
+                "Routes and components receive data and actions from src/hooks/.",
+            },
+            {
+              name: "convex/react",
+              importNames: [
+                "useAction",
+                "useMutation",
+                "usePaginatedQuery",
+                "useQuery",
+              ],
+              message:
+                "Routes and components receive data and actions from src/hooks/.",
+            },
+          ],
+        },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "TSInterfaceDeclaration",
+          message:
+            "App-owned interfaces belong in src/types/. Use a local type alias only for implementation-only shapes.",
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/hooks/**/*.{ts,tsx}", "src/utils/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "TSInterfaceDeclaration",
+          message: "App-owned interfaces belong in src/types/.",
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/utils/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "@/hooks",
+                "@/hooks/*",
+                "@/components/*",
+                "@/ui",
+                "@/displays",
+                "@/widgets",
+                "@/facilitators",
+              ],
+              message: "Utilities cannot depend on hooks or components.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/components/ui/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: [
+                "@/lib",
+                "@/lib/index",
+                "@/lib/index.ts",
+                "convex",
+                "convex/*",
+                "@clerk/*",
+                "@tanstack/react-router",
+                "@/hooks",
+                "@/convex",
+              ],
+              message:
+                "UI primitives cannot depend on data, authentication, or routing.",
+            },
+          ],
+        },
+      ],
     },
   },
 ];

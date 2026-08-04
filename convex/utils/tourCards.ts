@@ -1,6 +1,9 @@
-import { requireOwnResource } from "./auth";
+import { getCurrentMember } from "./auth";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
+
+export const TOUR_CARD_SELF_SERVICE_CLOSED_MESSAGE =
+  "Tour card changes closed when the season's first event started.";
 
 export function isCompletedTourCardFee(
   tx: Doc<"transactions"> | null,
@@ -13,12 +16,35 @@ export async function requireTourCardOwner(
   ctx: MutationCtx,
   tourCard: Doc<"tourCards">,
 ): Promise<void> {
-  const member = await ctx.db.get(tourCard.memberId);
-  const clerkId = member?.clerkId;
-  if (!clerkId) {
-    throw new Error("Unauthorized: Tour card owner is not linked to Clerk");
+  const member = await getCurrentMember(ctx);
+  if (member._id !== tourCard.memberId) {
+    throw new Error("Forbidden: You can only access your own tour card");
   }
-  await requireOwnResource(ctx, clerkId);
+}
+
+export async function getTourCardSelfServiceDeadline(
+  ctx: QueryCtx | MutationCtx,
+  seasonId: Id<"seasons">,
+): Promise<Doc<"tournaments"> | null> {
+  const tournaments = await ctx.db
+    .query("tournaments")
+    .withIndex("by_season_start_date", (q) => q.eq("seasonId", seasonId))
+    .order("asc")
+    .take(100);
+
+  return (
+    tournaments.find((tournament) => tournament.status !== "cancelled") ?? null
+  );
+}
+
+export async function requireTourCardSelfServiceOpen(
+  ctx: MutationCtx,
+  seasonId: Id<"seasons">,
+): Promise<void> {
+  const deadline = await getTourCardSelfServiceDeadline(ctx, seasonId);
+  if (deadline && Date.now() >= deadline.startDate) {
+    throw new Error(TOUR_CARD_SELF_SERVICE_CLOSED_MESSAGE);
+  }
 }
 
 export async function hasTourCardFeeForSeason(

@@ -1,4 +1,5 @@
 import { emailsValidators } from "../validators/common";
+import { v } from "convex/values";
 
 import {
   action,
@@ -26,6 +27,10 @@ import {
   requireAdminForAction,
   requireAdminForQuery,
   buildGroupsEmailLeaderboardTemplateParams,
+  acquireEmailDispatchGuard,
+  completeEmailDispatchGuard,
+  EMAIL_BULK_COOLDOWN_MS,
+  EMAIL_TEST_COOLDOWN_MS,
   sendBrevoTemplateEmailBatch,
   sendGroupsEmailImpl,
 } from "../utils/emails";
@@ -46,7 +51,7 @@ export const getActiveTourCardRecipientsForTournament = internalQuery({
     const tournaments = await ctx.db
       .query("tournaments")
       .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-      .collect();
+      .take(500);
 
     const previous = findPreviousCompletedTournament({
       tournaments,
@@ -83,7 +88,7 @@ export const getActiveTourCardRecipientsForTournament = internalQuery({
     const tourCards = await ctx.db
       .query("tourCards")
       .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-      .collect();
+      .take(500);
 
     const byMemberId = new Map<Id<"members">, Doc<"tourCards">>();
     for (const tc of tourCards) {
@@ -268,7 +273,7 @@ export const markGroupsEmailSent = internalMutation({
 export const getActiveMemberEmailRecipients = internalQuery({
   args: emailsValidators.args.getActiveMemberEmailRecipients,
   handler: async (ctx) => {
-    const members = await ctx.db.query("members").collect();
+    const members = await ctx.db.query("members").take(500);
 
     const byEmail = new Map<string, { email: string; name?: string }>();
 
@@ -314,6 +319,86 @@ export const markReminderEmailSent = internalMutation({
   },
 });
 
+export const acquireEmailDispatchGuard_Internal: ReturnType<
+  typeof internalMutation
+> = internalMutation({
+  args: {
+    key: v.string(),
+    leaseToken: v.string(),
+    now: v.number(),
+    leaseMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("emailDispatchGuards")
+      .withIndex("by_key", (q) => q.eq("key", args.key))
+      .unique();
+
+    if (existing?.leaseExpiresAt && existing.leaseExpiresAt > args.now) {
+      return {
+        acquired: false,
+        reason: "in_progress",
+        retryAfterMs: existing.leaseExpiresAt - args.now,
+      } as const;
+    }
+
+    if (existing?.cooldownUntil && existing.cooldownUntil > args.now) {
+      return {
+        acquired: false,
+        reason: "rate_limited",
+        retryAfterMs: existing.cooldownUntil - args.now,
+      } as const;
+    }
+
+    const leaseExpiresAt = args.now + args.leaseMs;
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        leaseToken: args.leaseToken,
+        leaseExpiresAt,
+        updatedAt: args.now,
+      });
+    } else {
+      await ctx.db.insert("emailDispatchGuards", {
+        key: args.key,
+        leaseToken: args.leaseToken,
+        leaseExpiresAt,
+        cooldownUntil: 0,
+        updatedAt: args.now,
+      });
+    }
+
+    return { acquired: true } as const;
+  },
+});
+
+export const completeEmailDispatchGuard_Internal: ReturnType<
+  typeof internalMutation
+> = internalMutation({
+  args: {
+    key: v.string(),
+    leaseToken: v.string(),
+    now: v.number(),
+    cooldownMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("emailDispatchGuards")
+      .withIndex("by_key", (q) => q.eq("key", args.key))
+      .unique();
+
+    if (!existing || existing.leaseToken !== args.leaseToken) {
+      return { completed: false } as const;
+    }
+
+    await ctx.db.patch(existing._id, {
+      leaseExpiresAt: args.now,
+      cooldownUntil: args.now + args.cooldownMs,
+      updatedAt: args.now,
+    });
+    return { completed: true } as const;
+  },
+});
+
 export const getIsAdminByClerkId = internalQuery({
   args: emailsValidators.args.getIsAdminByClerkId,
   handler: async (ctx, args) => {
@@ -354,7 +439,7 @@ export const adminGetGroupsEmailPreview: ReturnType<typeof query> = query({
     const tournaments = await ctx.db
       .query("tournaments")
       .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-      .collect();
+      .take(100);
 
     const previous = findPreviousCompletedTournament({
       tournaments,
@@ -366,7 +451,7 @@ export const adminGetGroupsEmailPreview: ReturnType<typeof query> = query({
     const tourCards = await ctx.db
       .query("tourCards")
       .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-      .collect();
+      .take(500);
 
     const byMemberId = new Map<Id<"members">, true>();
     for (const tc of tourCards) {
@@ -523,11 +608,17 @@ export const adminSendWeeklyRecapEmailToActiveTourCards = action({
       };
     });
 
+    const dispatchLease = await acquireEmailDispatchGuard({
+      ctx,
+      key: `weekly-recap:bulk:${tournament._id}`,
+      cooldownMs: EMAIL_BULK_COOLDOWN_MS,
+    });
     const summary = await sendBrevoTemplateEmailBatch({
       apiKey,
       templateId,
       recipients,
     });
+    await completeEmailDispatchGuard(ctx, dispatchLease);
 
     return {
       ok: true,
@@ -611,6 +702,11 @@ export const sendWeeklyRecapEmailTest: ReturnType<typeof action> = action({
       recipientTourCardId,
     });
 
+    const dispatchLease = await acquireEmailDispatchGuard({
+      ctx,
+      key: `weekly-recap:test:${tournament._id}`,
+      cooldownMs: EMAIL_TEST_COOLDOWN_MS,
+    });
     const summary = await sendBrevoTemplateEmailBatch({
       apiKey,
       templateId,
@@ -640,6 +736,7 @@ export const sendWeeklyRecapEmailTest: ReturnType<typeof action> = action({
         },
       ],
     });
+    await completeEmailDispatchGuard(ctx, dispatchLease);
 
     return {
       ok: true,
@@ -723,11 +820,17 @@ export const sendMissingTeamReminderForUpcomingTournament: ReturnType<
       },
     }));
 
+    const dispatchLease = await acquireEmailDispatchGuard({
+      ctx,
+      key: `missing-team-reminder:bulk:${tournament._id}`,
+      cooldownMs: EMAIL_BULK_COOLDOWN_MS,
+    });
     const summary = await sendBrevoTemplateEmailBatch({
       apiKey,
       templateId,
       recipients,
     });
+    await completeEmailDispatchGuard(ctx, dispatchLease);
 
     if (summary.sent > 0) {
       await ctx.runMutation(internal.functions.emails.markReminderEmailSent, {
@@ -814,6 +917,11 @@ export const sendGroupsEmailTest: ReturnType<typeof action> = action({
       recipientTourCardId,
     });
 
+    const dispatchLease = await acquireEmailDispatchGuard({
+      ctx,
+      key: `groups:test:${tournament._id}`,
+      cooldownMs: EMAIL_TEST_COOLDOWN_MS,
+    });
     const summary = await sendBrevoTemplateEmailBatch({
       apiKey,
       templateId,
@@ -840,6 +948,7 @@ export const sendGroupsEmailTest: ReturnType<typeof action> = action({
         },
       ],
     });
+    await completeEmailDispatchGuard(ctx, dispatchLease);
 
     return {
       ok: true,
@@ -877,6 +986,11 @@ export const sendSeasonStartEmailTest: ReturnType<typeof action> = action({
     const clubhouseUrl =
       clubhouseUrlRaw.length > 0 ? clubhouseUrlRaw : defaultClubhouseUrl;
 
+    const dispatchLease = await acquireEmailDispatchGuard({
+      ctx,
+      key: "season-start:test",
+      cooldownMs: EMAIL_TEST_COOLDOWN_MS,
+    });
     const summary = await sendBrevoTemplateEmailBatch({
       apiKey,
       templateId,
@@ -892,6 +1006,7 @@ export const sendSeasonStartEmailTest: ReturnType<typeof action> = action({
         },
       ],
     });
+    await completeEmailDispatchGuard(ctx, dispatchLease);
 
     return {
       ok: true,
@@ -915,7 +1030,7 @@ export const adminGetSeasonStartEmailPreview = query({
   handler: async (ctx) => {
     await requireAdminForQuery(ctx);
 
-    const members = await ctx.db.query("members").collect();
+    const members = await ctx.db.query("members").take(500);
     const activeMemberCount = members.filter(
       (m) => m.isActive !== false,
     ).length;
@@ -966,11 +1081,17 @@ export const adminSendSeasonStartEmailToActiveMembers: ReturnType<
       },
     }));
 
+    const dispatchLease = await acquireEmailDispatchGuard({
+      ctx,
+      key: "season-start:bulk",
+      cooldownMs: EMAIL_BULK_COOLDOWN_MS,
+    });
     const summary = await sendBrevoTemplateEmailBatch({
       apiKey,
       templateId,
       recipients,
     });
+    await completeEmailDispatchGuard(ctx, dispatchLease);
 
     return {
       ok: true,
@@ -992,6 +1113,8 @@ export const sendMissingTeamReminderEmailTest: ReturnType<typeof action> =
   action({
     args: emailsValidators.args.sendMissingTeamReminderEmailTest,
     handler: async (ctx, args) => {
+      await requireAdminForAction(ctx);
+
       const apiKey = getBrevoApiKey();
       const templateId = parseNumericEnv(
         "BREVO_MISSING_TEAM_REMINDER_TEMPLATE_ID",
@@ -1019,6 +1142,11 @@ export const sendMissingTeamReminderEmailTest: ReturnType<typeof action> =
           : "";
       const nextUpLogoDisplay = nextUpLogoUrl ? "inline-block" : "none";
 
+      const dispatchLease = await acquireEmailDispatchGuard({
+        ctx,
+        key: `missing-team-reminder:test:${tournament._id}`,
+        cooldownMs: EMAIL_TEST_COOLDOWN_MS,
+      });
       const summary = await sendBrevoTemplateEmailBatch({
         apiKey,
         templateId,
@@ -1035,11 +1163,11 @@ export const sendMissingTeamReminderEmailTest: ReturnType<typeof action> =
           },
         ],
       });
+      await completeEmailDispatchGuard(ctx, dispatchLease);
 
       return {
         ok: true,
         mode: "test",
-        testTo,
         tournamentId: tournament._id,
         attempted: summary.attempted,
         sent: summary.sent,
