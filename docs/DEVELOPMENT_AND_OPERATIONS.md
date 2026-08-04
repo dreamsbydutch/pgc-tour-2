@@ -8,7 +8,7 @@ operate PGC. League behavior belongs in
 
 Prerequisites:
 
-- Node.js 20.19 or newer within Node 20 (`.nvmrc` pins 20.19.5)
+- Node.js 22.12 or newer within Node 22 (`.nvmrc` pins 22.23.1)
 - npm
 - Access to the appropriate Convex and Clerk projects
 - DataGolf, ESPN, Brevo, and PostHog access only when working on those features

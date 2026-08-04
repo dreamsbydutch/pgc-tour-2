@@ -17,8 +17,8 @@ rules are also enforced by [AGENTS.md](AGENTS.md).
 
 ## Quick start
 
-Node.js 20.19 or newer within Node 20, plus access to the project's Convex and
-Clerk configuration, are required. The repository pins Node 20.19.5 in
+Node.js 22.12 or newer within Node 22, plus access to the project's Convex and
+Clerk configuration, are required. The repository pins Node 22.23.1 in
 `.nvmrc` and CI.
 
 ```bash
