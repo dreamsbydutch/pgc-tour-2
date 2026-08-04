@@ -26,9 +26,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Generate Convex types
+        if: env.CONVEX_DEPLOY_KEY != ''
         run: npx convex codegen
       - name: Verify generated Convex types
+        if: env.CONVEX_DEPLOY_KEY != ''
         run: git diff --exit-code -- convex/_generated
+      - name: Verify committed Convex types are present
+        if: env.CONVEX_DEPLOY_KEY == ''
+        run: >-
+          git ls-files --error-unmatch
+          convex/_generated/api.d.ts
+          convex/_generated/api.js
+          convex/_generated/dataModel.d.ts
+          convex/_generated/server.d.ts
+          convex/_generated/server.js
       - name: 1. Formatting check
         run: npm run format:check
       - name: 2. Strict lint
