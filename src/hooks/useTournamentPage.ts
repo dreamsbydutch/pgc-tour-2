@@ -22,16 +22,28 @@ export function useTournamentPage(args: {
       : undefined,
   });
   const tournament = shell?.tournament ?? null;
-  const userTourCard =
+  const seasonTourCards =
     tournament && bootstrap
-      ? (bootstrap.tourCards.find(
+      ? bootstrap.tourCards.filter(
           (card) => card.seasonId === tournament.seasonId,
-        ) ?? null)
-      : null;
+        )
+      : [];
+  const requestedTourCard = seasonTourCards.find((card) =>
+    args.variant === "playoff"
+      ? (card.playoff ?? 0) === (args.tourId === "silver" ? 2 : 1)
+      : args.tourId
+        ? String(card.tourId) === args.tourId
+        : false,
+  );
+  const userTourCard = requestedTourCard ?? seasonTourCards[0] ?? null;
   const activeTourId =
     args.tourId ||
     (userTourCard
-      ? String(userTourCard.tourId)
+      ? args.variant === "playoff"
+        ? userTourCard.playoff === 2
+          ? "silver"
+          : "gold"
+        : String(userTourCard.tourId)
       : shell?.tours[0]
         ? String(shell.tours[0]._id)
         : "pga");

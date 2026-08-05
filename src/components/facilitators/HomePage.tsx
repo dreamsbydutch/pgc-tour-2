@@ -1,7 +1,11 @@
 import { Link as RouterLink } from "@tanstack/react-router";
 import { Shield, Star, WifiOff } from "lucide-react";
 
-import { LeagueSchedule, TournamentCountdown } from "@/displays";
+import {
+  ClubhousePulse,
+  LeagueSchedule,
+  TournamentCountdown,
+} from "@/displays";
 import { useHomePage } from "@/hooks";
 import { Button, Skeleton } from "@/ui";
 import { formatMoney } from "@/utils/app";
@@ -57,6 +61,9 @@ export function HomePage() {
           </div>
         ) : (
           <>
+            {model.member && model.seasonTourCards.length > 0 ? (
+              <ClubhousePulse model={model.pulse} />
+            ) : null}
             {model.member ? (
               <TourCardForm
                 currentSeason={model.currentSeason}
@@ -66,7 +73,8 @@ export function HomePage() {
                 tournaments={model.seasonTournaments}
               />
             ) : null}
-            {model.nextTournament ? (
+            {model.member &&
+            model.seasonTourCards.length > 0 ? null : model.nextTournament ? (
               <TournamentCountdown {...model.nextTournament} />
             ) : (
               <div className="rounded-lg border bg-white p-6 text-center text-slate-600">

@@ -1,4 +1,5 @@
 export * from "./leaderboardStandings";
+export * from "./clubhousePulse";
 export * from "./teamHoleScorecard";
 export * from "./schedule";
 export * from "./tourCardRegistration";

@@ -4,6 +4,18 @@ export type StandingsAnalyticsView = "playoffs" | "tour";
 
 export type TeamSubmissionOperation = "create" | "update";
 
+export type ClubhousePulseAnalyticsPhase =
+  | "live"
+  | "picks_open"
+  | "between_events"
+  | "season_complete";
+
+export type ClubhousePulseAnalyticsDestination =
+  | "leaderboard"
+  | "picks"
+  | "standings"
+  | "result";
+
 export type TeamSubmissionErrorCategory =
   | "authorization"
   | "conflict"
@@ -21,6 +33,13 @@ export interface AnalyticsEventProperties {
   team_submission_failed: {
     operation: TeamSubmissionOperation;
     error_category: TeamSubmissionErrorCategory;
+  };
+  clubhouse_pulse_cta_clicked: {
+    phase: ClubhousePulseAnalyticsPhase;
+    destination: ClubhousePulseAnalyticsDestination;
+  };
+  clubhouse_pulse_tour_changed: {
+    phase: ClubhousePulseAnalyticsPhase;
   };
 }
 

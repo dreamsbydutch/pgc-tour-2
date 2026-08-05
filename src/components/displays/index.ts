@@ -8,6 +8,7 @@ export {
 } from "./admin/AdminOperationUi";
 
 export { ChampionsPopup } from "./standings/ChampionsPopup";
+export { ClubhousePulse, ClubhousePulseSkeleton } from "./ClubhousePulse";
 
 // COMPLETED
 export { LeaderboardHeader } from "./LeaderboardHeader";
@@ -20,4 +21,5 @@ export { PointsAndPayoutsDetails } from "./PointsAndPayoutsDetails";
 export { SecondaryToolbar } from "./SecondaryToolbar";
 export { TierDistributionsTable } from "./TierDistributionsTable";
 export { TournamentCountdown } from "./TournamentCountdown";
+export { TournamentPulseStrip } from "./TournamentPulseStrip";
 export { ToursToggle } from "./ToursToggle";

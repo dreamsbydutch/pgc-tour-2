@@ -5,11 +5,13 @@ import {
   ToursToggle,
   PGCLeaderboard,
   PGALeaderboard,
+  TournamentPulseStrip,
 } from "@/displays";
 import {
   filterMajorChampionBadgesByMemberId,
   useAnalytics,
   useLeaderboardStandingsProjection,
+  useTournamentPulseStrip,
 } from "@/hooks";
 import { Skeleton } from "@/ui";
 import { cn } from "@/utils/app";
@@ -101,6 +103,16 @@ export function LeaderboardView(props: {
       posChange,
     };
   });
+  const tournamentPulse = useTournamentPulseStrip({
+    tournament: props.tournament,
+    activeTourId: props.activeTourId,
+    variant: props.variant,
+    teams: leaderboardTeams,
+    currentTourCardId: props.userTourCard?._id ?? null,
+    viewerMemberId: props.viewerMember?._id ?? null,
+    friendIds: viewerFriendIds,
+    standingsSnapshots,
+  });
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -145,6 +157,9 @@ export function LeaderboardView(props: {
             props.onChangeTourId(nextTourId);
           }}
         />
+        {tournamentPulse ? (
+          <TournamentPulseStrip model={tournamentPulse} />
+        ) : null}
         <LeaderboardHeaderRow
           tournamentOver={tournamentOver}
           activeTourShortForm={activeTourShortForm}

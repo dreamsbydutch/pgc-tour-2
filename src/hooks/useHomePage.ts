@@ -15,12 +15,14 @@ import type {
   TourCardDoc,
   TourDoc,
 } from "convex/types/types";
+import { useClubhousePulse } from "./useClubhousePulse";
 
 export function useHomePage(): HomePageModel {
   const convex = useConvex();
   const connection = useConvexConnectionState();
   const queriedDashboard = useQuery(api.functions.home.getPublicHomeDashboard);
   const bootstrap = useViewerBootstrap();
+  const pulse = useClubhousePulse();
   const [retriedDashboard, setRetriedDashboard] =
     useState<typeof queriedDashboard>();
   const [isRetrying, setIsRetrying] = useState(false);
@@ -69,5 +71,6 @@ export function useHomePage(): HomePageModel {
     role,
     account: typeof member?.account === "number" ? member.account : null,
     freshness,
+    pulse,
   };
 }

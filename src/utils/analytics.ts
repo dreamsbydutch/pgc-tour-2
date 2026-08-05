@@ -26,6 +26,20 @@ const TEAM_SUBMISSION_ERROR_CATEGORIES = new Set<TeamSubmissionErrorCategory>([
   "unknown",
 ]);
 
+const CLUBHOUSE_PULSE_PHASES = new Set([
+  "live",
+  "picks_open",
+  "between_events",
+  "season_complete",
+]);
+
+const CLUBHOUSE_PULSE_DESTINATIONS = new Set([
+  "leaderboard",
+  "picks",
+  "standings",
+  "result",
+]);
+
 const POSTHOG_INTERNAL_PROPERTY_NAMES = [
   "token",
   "distinct_id",
@@ -90,6 +104,32 @@ function sanitizeExplicitEventProperties(
         ? {
             operation: properties.operation,
             error_category: properties.error_category,
+          }
+        : null;
+    case "clubhouse_pulse_cta_clicked":
+      return CLUBHOUSE_PULSE_PHASES.has(properties.phase) &&
+        CLUBHOUSE_PULSE_DESTINATIONS.has(properties.destination)
+        ? {
+            phase: properties.phase as
+              | "live"
+              | "picks_open"
+              | "between_events"
+              | "season_complete",
+            destination: properties.destination as
+              | "leaderboard"
+              | "picks"
+              | "standings"
+              | "result",
+          }
+        : null;
+    case "clubhouse_pulse_tour_changed":
+      return CLUBHOUSE_PULSE_PHASES.has(properties.phase)
+        ? {
+            phase: properties.phase as
+              | "live"
+              | "picks_open"
+              | "between_events"
+              | "season_complete",
           }
         : null;
     default:

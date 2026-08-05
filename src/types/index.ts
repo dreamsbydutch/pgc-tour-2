@@ -9,3 +9,4 @@ export * from "./pages";
 export * from "./tourCardRegistration";
 export * from "./app";
 export * from "./auth";
+export * from "./clubhousePulse";

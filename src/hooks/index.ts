@@ -1,5 +1,7 @@
 export * from "./useAdminDashboard";
 export * from "./useAnalytics";
+export * from "./useClubhousePulse";
+export * from "./useTournamentPulseStrip";
 export * from "./useFriendManagement";
 export * from "./useCurrentSeasonMajorChampionBadges";
 export * from "./useRoleAccess";

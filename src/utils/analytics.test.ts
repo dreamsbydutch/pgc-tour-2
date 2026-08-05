@@ -74,4 +74,31 @@ describe("analytics sanitization", () => {
       "unknown",
     );
   });
+
+  it("keeps only privacy-safe Clubhouse Pulse properties", () => {
+    const event: CaptureResult = {
+      uuid: "event-id",
+      event: "clubhouse_pulse_cta_clicked",
+      properties: {
+        phase: "live",
+        destination: "leaderboard",
+        member_id: "private-member",
+        tournament_id: "private-tournament",
+        score: -8,
+      },
+    };
+    expect(sanitizePostHogEvent(event)?.properties).toEqual({
+      $process_person_profile: false,
+      phase: "live",
+      destination: "leaderboard",
+    });
+
+    expect(
+      sanitizePostHogEvent({
+        uuid: "event-id",
+        event: "clubhouse_pulse_tour_changed",
+        properties: { phase: "invalid", tour_id: "private-tour" },
+      }),
+    ).toBeNull();
+  });
 });
