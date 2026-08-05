@@ -6,7 +6,11 @@ import {
   useQuery,
   useViewerBootstrap,
 } from "@/convex";
-import type { ClubhousePulseModel, ClubhousePulseReadyDto } from "@/types";
+import type {
+  ClubhousePulseDestination,
+  ClubhousePulseModel,
+  ClubhousePulseReadyDto,
+} from "@/types";
 import { buildClubhousePulseCards } from "@/utils/clubhousePulse";
 import { useAnalytics } from "./useAnalytics";
 
@@ -74,10 +78,16 @@ export function useClubhousePulse(): ClubhousePulseModel {
     [activeCardId, built?.cards, trackClubhousePulseTourChanged],
   );
 
-  const activateAction = useCallback(() => {
-    if (!card) return;
-    trackClubhousePulseCtaClicked(card.phase, card.action.destination);
-  }, [card, trackClubhousePulseCtaClicked]);
+  const activateAction = useCallback(
+    (destination?: ClubhousePulseDestination) => {
+      if (!card) return;
+      trackClubhousePulseCtaClicked(
+        card.phase,
+        destination ?? card.action.destination,
+      );
+    },
+    [card, trackClubhousePulseCtaClicked],
+  );
 
   if (!shouldLoad) return { kind: "idle" };
   if (!data && queried === undefined) return { kind: "loading" };

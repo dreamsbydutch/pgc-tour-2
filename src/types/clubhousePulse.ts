@@ -74,6 +74,8 @@ export interface ClubhousePulseCardViewModel {
   phase: ClubhousePulsePhase;
   eyebrow: string;
   title: string;
+  headline: string;
+  summary: string;
   statusLabel: string;
   isLive: boolean;
   stats: [ClubhousePulseStat, ClubhousePulseStat, ClubhousePulseStat];
@@ -81,6 +83,8 @@ export interface ClubhousePulseCardViewModel {
   officialStanding: ClubhousePulseStandingSnapshot | null;
   projectedStanding: ClubhousePulseStandingSnapshot | null;
   action: ClubhousePulseAction;
+  actionHint: string;
+  secondaryAction: ClubhousePulseAction | null;
   lastUpdatedAt: number | null;
 }
 
@@ -119,7 +123,7 @@ export type ClubhousePulseModel =
       selectedCardId: string;
       card: ClubhousePulseCardViewModel;
       selectCard: (cardId: string) => void;
-      activateAction: () => void;
+      activateAction: (destination?: ClubhousePulseDestination) => void;
     };
 
 export interface TournamentPulseStripModel {

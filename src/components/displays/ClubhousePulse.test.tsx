@@ -36,7 +36,9 @@ function card(
     tourId: "tour-1",
     phase,
     eyebrow: `TEST · ${phase}`,
-    title,
+    title: "Tournament context",
+    headline: title,
+    summary: "A clear summary of the current Pulse state.",
     statusLabel: phase === "live" ? "Live" : "Official",
     isLive: phase === "live",
     stats: [
@@ -56,6 +58,8 @@ function card(
       destination: phase === "picks_open" ? "picks" : "standings",
       tourId: "tour-1",
     },
+    actionHint: "Take the recommended next step.",
+    secondaryAction: null,
     lastUpdatedAt: null,
   };
 }
@@ -85,6 +89,9 @@ describe("ClubhousePulse", () => {
   ] as const)("renders the %s phase", (phase, title) => {
     render(<ClubhousePulse model={model(phase)} />);
     expect(screen.getByText(title)).toBeTruthy();
+    expect(screen.getByText("How you're doing")).toBeTruthy();
+    expect(screen.getByText("What to do next")).toBeTruthy();
+    expect(screen.getByText("What changed")).toBeTruthy();
     expect(screen.getByLabelText("Position tied third")).toBeTruthy();
     expect(screen.getByText("Up 4 spots today")).toBeTruthy();
   });
@@ -115,7 +122,28 @@ describe("ClubhousePulse", () => {
     );
     fireEvent.click(screen.getByRole("link", { name: /Pick my team/ }));
     expect(activateAction).toHaveBeenCalledOnce();
+    expect(activateAction).toHaveBeenCalledWith("picks");
     rerender(<ClubhousePulseSkeleton />);
     expect(screen.getByLabelText("Loading Clubhouse Pulse")).toBeTruthy();
+  });
+
+  it("makes official and projected season outlooks explicit", () => {
+    const ready = model("live");
+    ready.card.officialStanding = {
+      position: "12th",
+      points: 900,
+      destination: "silver",
+    };
+    ready.card.projectedStanding = {
+      position: "8th",
+      points: 1_050,
+      destination: "gold",
+    };
+    render(<ClubhousePulse model={ready} />);
+    expect(screen.getByText("Season outlook")).toBeTruthy();
+    expect(screen.getByText("Official")).toBeTruthy();
+    expect(screen.getByText("Projected")).toBeTruthy();
+    expect(screen.getByText("12th")).toBeTruthy();
+    expect(screen.getByText("8th")).toBeTruthy();
   });
 });

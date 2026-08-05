@@ -321,7 +321,17 @@ function buildLiveCard(
     tourId: args.tourId,
     phase: "live",
     eyebrow: `${args.card.tour!.shortForm} · ${isPlayoff ? bracketName(args.card.tourCard.playoff) : "Live"}`,
-    title: viewerTeam ? tournament.name : "No team found",
+    title: tournament.name,
+    headline: viewerTeam
+      ? terminal
+        ? terminal
+        : `${viewerTeam.position ?? "—"} · ${scoreValue(viewerTeam.score)}`
+      : "No team found",
+    summary: viewerTeam
+      ? terminal
+        ? `Your ${isPlayoff ? bracketName(args.card.tourCard.playoff).toLowerCase() : "tournament"} result is final for this event.`
+        : `You're ${viewerTeam.position ?? "unranked"} at ${scoreValue(viewerTeam.score)} through ${thruValue(viewerTeam.thru)}.`
+      : "Your tour card is active, but no matching team is attached to this competition.",
     statusLabel: "Live",
     isLive: true,
     stats: [
@@ -344,7 +354,7 @@ function buildLiveCard(
       ),
     ],
     stories: stories.slice(0, 3),
-    officialStanding: args.official,
+    officialStanding: isPlayoff ? null : args.official,
     projectedStanding: projected,
     action: {
       label: "Open live leaderboard",
@@ -357,6 +367,17 @@ function buildLiveCard(
         : args.tourId,
       variant: isPlayoff ? "playoff" : "regular",
     },
+    actionHint: viewerTeam
+      ? "Follow live scores and open your team in the competition."
+      : "Open the leaderboard to review the competition and your roster status.",
+    secondaryAction:
+      isPlayoff || !args.official
+        ? null
+        : {
+            label: "View season standings",
+            destination: "standings",
+            tourId: args.tourId,
+          },
     lastUpdatedAt: tournament.leaderboardLastUpdatedAt ?? null,
   };
 }
@@ -392,7 +413,13 @@ function buildPicksCard(
     tourId: args.tourId,
     phase: "picks_open",
     eyebrow: `${args.card.tour!.shortForm} · Picks open`,
-    title,
+    title: tournament.name,
+    headline: title,
+    summary: laterPlayoff
+      ? "This playoff roster carries forward, so there is nothing new to submit."
+      : args.card.hasPickWindowTeam
+        ? "Your roster is saved and remains editable until the window closes."
+        : "You have not submitted a roster for this tournament yet.",
     statusLabel: formatRelativeTime(closesAt, args.now, "Closes"),
     isLive: false,
     stats: [
@@ -427,6 +454,16 @@ function buildPicksCard(
           tournamentId: String(tournament._id),
           tourId: args.tourId,
           variant: tournament.isPlayoff ? "playoff" : "regular",
+        },
+    actionHint: laterPlayoff
+      ? "Review the field and your current playoff position."
+      : `${args.card.hasPickWindowTeam ? "Make any final changes" : "Choose your golfers"} before ${formatRelativeTime(closesAt, args.now, "the window closes").toLowerCase()}.`,
+    secondaryAction: laterPlayoff
+      ? null
+      : {
+          label: "View season standings",
+          destination: "standings",
+          tourId: args.tourId,
         },
     lastUpdatedAt: null,
   };
@@ -463,6 +500,14 @@ function buildIdleCard(
         }
       : null,
   ].filter((story): story is NonNullable<typeof story> => Boolean(story));
+  const nextTiming =
+    !complete && next
+      ? formatRelativeTime(
+          next.startDate - 4 * 24 * 60 * 60 * 1000,
+          args.now,
+          "Picks open",
+        )
+      : null;
   return {
     cardId: args.cardId,
     tourId: args.tourId,
@@ -471,14 +516,21 @@ function buildIdleCard(
     title: complete
       ? "Final season card"
       : (latest?.tournament.name ?? "Season snapshot"),
-    statusLabel:
-      !complete && next
-        ? formatRelativeTime(
-            next.startDate - 4 * 24 * 60 * 60 * 1000,
-            args.now,
-            "Picks open",
-          )
-        : "Official",
+    headline: complete
+      ? args.official
+        ? `Finished ${args.official.position}`
+        : "Season complete"
+      : args.official
+        ? `You're ${args.official.position}`
+        : "Season snapshot",
+    summary: complete
+      ? `You closed the season with ${formatPoints(args.card.tourCard.points)}, ${formatMoney(args.card.tourCard.earnings, false)}, and ${args.card.tourCard.wins ?? 0} ${pluralize("win", args.card.tourCard.wins ?? 0)}.`
+      : latest
+        ? `${latest.position ?? "Finished"} at ${latest.tournament.name} added ${formatPoints(latest.points ?? 0)} to your season.`
+        : args.official
+          ? "Your official season position is ready, with the next event on deck."
+          : "Your season snapshot will fill in as official results are posted.",
+    statusLabel: nextTiming ?? "Official",
     isLive: false,
     stats: complete
       ? [
@@ -532,6 +584,27 @@ function buildIdleCard(
           destination: "standings",
           tourId: args.tourId,
         },
+    actionHint: complete
+      ? "See where every card finished and review the final table."
+      : next
+        ? `Next up: ${next.name}. ${nextTiming}.`
+        : "Review your latest result and official season standing.",
+    secondaryAction:
+      latest && !complete
+        ? {
+            label: "View season standings",
+            destination: "standings",
+            tourId: args.tourId,
+          }
+        : latest && complete
+          ? {
+              label: "Open latest result",
+              destination: "result",
+              tournamentId: String(latest.tournament._id),
+              tourId: args.tourId,
+              variant: latest.isPlayoff ? "playoff" : "regular",
+            }
+          : null,
     lastUpdatedAt: null,
   };
 }

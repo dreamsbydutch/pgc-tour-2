@@ -25,7 +25,7 @@ describe("TournamentPulseStrip", () => {
     );
     expect(screen.getByText("T4")).toBeTruthy();
     expect(screen.getByText("Up 3")).toBeTruthy();
-    expect(screen.getByText("7th projected · Gold")).toBeTruthy();
+    expect(screen.getByText(/Season: 7th projected · Gold/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Jump to my team" }));
     expect(jumpToTeam).toHaveBeenCalledOnce();
   });
