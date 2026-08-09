@@ -17,6 +17,26 @@ import {
 } from "../utils/tournamentBadges";
 
 const APP_STATE_KEY = "primary" as const;
+const ADMIN_DASHBOARD_JOB_NAMES = [
+  "update_golfer_world_ranks",
+  "create_tournament_groups",
+  "tournament_sync",
+  "repair_tournament",
+] as const;
+
+function projectAdminSyncRun(run: Doc<"syncRuns"> | null) {
+  if (!run) return null;
+  return {
+    status: run.status,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    durationMs: run.durationMs,
+    changedRows: run.changedRows,
+    skipReason: run.skipReason,
+    error: run.error,
+    trigger: run.trigger,
+  };
+}
 
 function chooseCurrentSeason(seasons: Doc<"seasons">[], now: number) {
   const year = new Date(now).getFullYear();
@@ -186,14 +206,55 @@ export const adminGetDashboard = query({
   args: {},
   handler: async (ctx) => {
     await requireAdmin(ctx);
-    const [members, tournaments, seasons] = await Promise.all([
-      ctx.db
-        .query("members")
-        .withIndex("by_active", (q) => q.eq("isActive", true))
-        .take(500),
-      ctx.db.query("tournaments").take(500),
-      ctx.db.query("seasons").take(100),
+    const [members, tournaments, seasons, appState, recentRunRows] =
+      await Promise.all([
+        ctx.db
+          .query("members")
+          .withIndex("by_active", (q) => q.eq("isActive", true))
+          .take(500),
+        ctx.db.query("tournaments").take(500),
+        ctx.db.query("seasons").take(100),
+        loadOrDeriveAppState(ctx),
+        Promise.all(
+          ADMIN_DASHBOARD_JOB_NAMES.map((jobName) =>
+            ctx.db
+              .query("syncRuns")
+              .withIndex("by_job_started", (q) => q.eq("jobName", jobName))
+              .order("desc")
+              .first(),
+          ),
+        ),
+      ]);
+    const focusTournamentId =
+      appState.activeTournamentId ??
+      appState.pickWindowTournamentId ??
+      appState.nextTournamentId;
+    const focusTournament = focusTournamentId
+      ? tournaments.find((tournament) => tournament._id === focusTournamentId)
+      : undefined;
+    const [focusGolfers, focusSyncState] = await Promise.all([
+      focusTournamentId
+        ? ctx.db
+            .query("tournamentGolfers")
+            .withIndex("by_tournament", (q) =>
+              q.eq("tournamentId", focusTournamentId),
+            )
+            .take(500)
+        : Promise.resolve([]),
+      focusTournamentId
+        ? ctx.db
+            .query("tournamentSyncState")
+            .withIndex("by_tournament", (q) =>
+              q.eq("tournamentId", focusTournamentId),
+            )
+            .unique()
+        : Promise.resolve(null),
     ]);
+    const populatedGroups = new Set(
+      focusGolfers.flatMap((golfer) =>
+        golfer.group === undefined ? [] : [golfer.group],
+      ),
+    );
     const upcomingTournament = tournaments
       .filter(
         (tournament) =>
@@ -221,6 +282,33 @@ export const adminGetDashboard = query({
     );
 
     return {
+      appState: projectPublicAppState(appState),
+      focusTournament: focusTournament
+        ? {
+            _id: focusTournament._id,
+            name: focusTournament.name,
+            startDate: focusTournament.startDate,
+            endDate: focusTournament.endDate,
+            status: focusTournament.status,
+            groupedGolferCount: focusGolfers.filter(
+              (golfer) => golfer.group !== undefined,
+            ).length,
+            totalGolferCount: focusGolfers.length,
+            groupsReady: [1, 2, 3, 4, 5].every((group) =>
+              populatedGroups.has(group),
+            ),
+            lastSyncSuccessAt: focusSyncState?.lastSuccessAt,
+            lastSyncAttemptAt: focusSyncState?.lastAttemptAt,
+            syncFailureCount: focusSyncState?.failureCount ?? 0,
+            syncSkipReason: focusSyncState?.skipReason,
+          }
+        : null,
+      recentRuns: {
+        updateWorldRank: projectAdminSyncRun(recentRunRows[0]),
+        createGroups: projectAdminSyncRun(recentRunRows[1]),
+        liveSync: projectAdminSyncRun(recentRunRows[2]),
+        repairTournament: projectAdminSyncRun(recentRunRows[3]),
+      },
       members: members.map((member) => ({
         _id: member._id,
         firstname: member.firstname,

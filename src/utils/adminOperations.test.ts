@@ -106,4 +106,32 @@ describe("admin operation run status", () => {
       ]),
     ).toMatchObject({ statusLabel: "Failed", tone: "error" });
   });
+
+  it("shows persisted skipped and abandoned jobs clearly", () => {
+    expect(
+      toAdminOperationStatus({
+        status: "skipped",
+        startedAt: 1_000,
+        finishedAt: 1_500,
+        skipReason: "Upstream feed unchanged",
+      }),
+    ).toMatchObject({
+      statusLabel: "Checked",
+      tone: "success",
+      result: "Upstream feed unchanged",
+    });
+
+    expect(
+      toAdminOperationStatus({
+        status: "abandoned",
+        startedAt: 1_000,
+        finishedAt: 1_500,
+        error: "Lease expired",
+      }),
+    ).toMatchObject({
+      statusLabel: "Interrupted",
+      tone: "error",
+      result: "Lease expired",
+    });
+  });
 });

@@ -5,6 +5,7 @@ import { getCurrentMember, requireAdmin } from "../utils/auth";
 import { writeAuditLog } from "../utils/audit";
 import { refreshStandingsForTeams } from "../utils/standings";
 import { projectPublicTeamWithRoster } from "../utils/publicDtos";
+import { detectTeamMoment, publishNotifications } from "../utils/notifications";
 import { PRE_TOURNAMENT_PICK_WINDOW_MS } from "./_constants";
 
 function toOptionalNumber(
@@ -141,10 +142,39 @@ export const applyTeamUpdatesBatch = internalMutation({
     let changed = 0;
     const canonicalChanges = [];
     for (const update of args.updates) {
+      const before = await ctx.db.get(update._id);
       const result = await applyTeamUpdate(ctx, update);
       if (result.changed) changed += 1;
       if (result.canonicalChanged && result.document) {
         canonicalChanges.push(result.document);
+      }
+      if (before && result.document && result.changed) {
+        const moment = detectTeamMoment({
+          beforePosition: before.position,
+          afterPosition: result.document.position,
+          round: result.document.round,
+        });
+        if (moment) {
+          const tournament = await ctx.db.get(result.document.tournamentId);
+          const memberId =
+            result.document.memberId ??
+            (await ctx.db.get(result.document.tourCardId))?.memberId;
+          if (tournament?.status === "active" && memberId) {
+            await publishNotifications(ctx, {
+              dedupeKey: `team-moment:${tournament._id}:${result.document._id}:${moment.key}`,
+              category: "teamMoments",
+              tournamentId: tournament._id,
+              recipients: [
+                {
+                  memberId,
+                  title: moment.title,
+                  body: `${tournament.name}: ${moment.body}`,
+                  href: `/tournament?tournamentId=${tournament._id}`,
+                },
+              ],
+            });
+          }
+        }
       }
     }
     if (canonicalChanges.length > 0) {

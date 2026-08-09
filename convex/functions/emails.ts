@@ -620,6 +620,18 @@ export const adminSendWeeklyRecapEmailToActiveTourCards = action({
     });
     await completeEmailDispatchGuard(ctx, dispatchLease);
 
+    if (summary.sent > 0) {
+      await ctx.runMutation(
+        internal.functions.notifications.publishWeeklyRecap,
+        {
+          tournamentId: tournament._id,
+          memberIds: tournamentContext.recipients.flatMap((recipient) =>
+            recipient.memberId ? [recipient.memberId] : [],
+          ),
+        },
+      );
+    }
+
     return {
       ok: true,
       skipped: false,

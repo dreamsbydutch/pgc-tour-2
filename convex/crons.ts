@@ -20,6 +20,20 @@ crons.interval(
   {},
 );
 
+crons.interval(
+  "publish_due_pick_reminders",
+  { minutes: 15 },
+  internal.functions.notifications.publishDuePickReminders,
+  {},
+);
+
+crons.interval(
+  "repair_notification_deliveries",
+  { minutes: 10 },
+  internal.functions.notifications.repairDeliveries,
+  {},
+);
+
 // Standings recompute (teams -> tourCards standings)
 crons.cron(
   "recompute_standings",

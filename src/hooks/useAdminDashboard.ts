@@ -6,11 +6,12 @@ import type {
   AdminConfirmationRequest,
   AdminOperationKey,
   AdminOperationRun,
+  AdminTaskKey,
+  StandingsBackfillResult,
+  TeamMetadataBackfillResult,
   SettlementAdminFilter,
   SettlementFeedback,
   SettlementItemKind,
-  StandingsBackfillResult,
-  TeamMetadataBackfillResult,
 } from "@/types";
 import {
   buildBulkEmailPreview,
@@ -20,6 +21,7 @@ import {
   toAdminOperationStatus,
   toLatestAdminOperationStatus,
 } from "@/utils/adminOperations";
+import { buildAdminHubOverview } from "@/utils/adminHub";
 
 export function useAdminDashboard() {
   const dashboard = useQuery(api.functions.readModels.adminGetDashboard);
@@ -92,6 +94,7 @@ export function useAdminDashboard() {
   );
   const [settlementFeedback, setSettlementFeedback] =
     useState<SettlementFeedback | null>(null);
+  const [activeTask, setActiveTask] = useState<AdminTaskKey | null>(null);
   const [confirmationOperation, setConfirmationOperation] = useState<
     AdminConfirmationRequest["operation"] | null
   >(null);
@@ -173,18 +176,26 @@ export function useAdminDashboard() {
     ],
   );
 
+  const persistentRuns = dashboard?.recentRuns;
+  const updateWorldRankRun =
+    runs.updateWorldRank ?? persistentRuns?.updateWorldRank ?? undefined;
+  const createGroupsRun =
+    runs.createGroups ?? persistentRuns?.createGroups ?? undefined;
+  const liveSyncRun = runs.liveSync ?? persistentRuns?.liveSync ?? undefined;
+  const repairTournamentRun =
+    runs.repairTournament ?? persistentRuns?.repairTournament ?? undefined;
   const operationStatus = {
-    createGroups: toAdminOperationStatus(runs.createGroups),
-    liveSync: toAdminOperationStatus(runs.liveSync),
+    createGroups: toAdminOperationStatus(createGroupsRun),
+    liveSync: toAdminOperationStatus(liveSyncRun),
     liveSyncForce: toAdminOperationStatus(runs.liveSyncForce),
-    updateWorldRank: toAdminOperationStatus(runs.updateWorldRank),
+    updateWorldRank: toAdminOperationStatus(updateWorldRankRun),
     weeklyRecapTest: toAdminOperationStatus(runs.weeklyRecapTest),
     weeklyRecapSendAll: toAdminOperationStatus(runs.weeklyRecapSendAll),
     createPayment: toAdminOperationStatus(runs.createPayment),
     recomputeStandings: toAdminOperationStatus(runs.recomputeStandings),
     backfillStandings: toAdminOperationStatus(runs.backfillStandings),
     backfillTeamMetadata: toAdminOperationStatus(runs.backfillTeamMetadata),
-    repairTournament: toAdminOperationStatus(runs.repairTournament),
+    repairTournament: toAdminOperationStatus(repairTournamentRun),
     importTeams: toAdminOperationStatus(runs.importTeams),
   } satisfies Record<
     AdminOperationKey,
@@ -192,10 +203,10 @@ export function useAdminDashboard() {
   >;
   const groupStatus = {
     eventSetup: toLatestAdminOperationStatus([
-      runs.updateWorldRank,
-      runs.createGroups,
+      updateWorldRankRun,
+      createGroupsRun,
     ]),
-    liveSync: toLatestAdminOperationStatus([runs.liveSync, runs.liveSyncForce]),
+    liveSync: toLatestAdminOperationStatus([liveSyncRun, runs.liveSyncForce]),
     weeklyRecap: toLatestAdminOperationStatus([
       runs.weeklyRecapTest,
       runs.weeklyRecapSendAll,
@@ -205,6 +216,22 @@ export function useAdminDashboard() {
       runs.backfillStandings,
     ]),
   };
+  const hubOverview = useMemo(
+    () =>
+      buildAdminHubOverview({
+        now: Date.now(),
+        appState: dashboard?.appState,
+        focusTournament: dashboard?.focusTournament ?? undefined,
+        recentLiveSync: liveSyncRun,
+        pendingSettlementCount,
+      }),
+    [
+      dashboard?.appState,
+      dashboard?.focusTournament,
+      liveSyncRun,
+      pendingSettlementCount,
+    ],
+  );
 
   const confirmation = useMemo<AdminConfirmationRequest | null>(() => {
     switch (confirmationOperation) {
@@ -476,6 +503,10 @@ export function useAdminDashboard() {
     operationStatus,
     groupStatus,
     confirmation,
+    activeTask,
+    openTask: setActiveTask,
+    closeTask: () => setActiveTask(null),
+    hubOverview,
     settlementRequests,
     visibleSettlementRequests,
     settlementFilter,

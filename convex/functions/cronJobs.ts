@@ -3137,6 +3137,10 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           internal.functions.readModels.refreshAppState,
           {},
         );
+        await ctx.runMutation(
+          internal.functions.notifications.publishFinalResults,
+          { tournamentId: tournament._id },
+        );
       }
 
       return {
@@ -4203,6 +4207,10 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         await ctx.runMutation(
           internal.functions.readModels.refreshAppState,
           {},
+        );
+        await ctx.runMutation(
+          internal.functions.notifications.publishFinalResults,
+          { tournamentId: tournament._id },
         );
       }
 

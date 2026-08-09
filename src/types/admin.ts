@@ -31,9 +31,13 @@ export type AdminOperationKey =
   | "importTeams";
 
 export type AdminOperationRun = {
-  status: "running" | "succeeded" | "failed";
+  status: "running" | "succeeded" | "skipped" | "failed" | "abandoned";
   startedAt: number;
   finishedAt?: number;
+  durationMs?: number;
+  changedRows?: number;
+  skipReason?: string;
+  error?: string;
   result?: string;
 };
 
@@ -114,6 +118,105 @@ export type AdminTaskShortcutProps = {
   icon: LucideIcon;
   title: string;
   detail: string;
+};
+
+export type AdminTaskKey =
+  | "eventSetup"
+  | "liveScoring"
+  | "weeklyRecap"
+  | "memberPayment"
+  | "settlements"
+  | "standings"
+  | "teamMetadata"
+  | "repairTournament"
+  | "importTeams";
+
+export type AdminHubStageTone =
+  | "neutral"
+  | "upcoming"
+  | "open"
+  | "live"
+  | "complete";
+
+export type AdminHubOverview = {
+  eventName: string;
+  eventMeta: string;
+  stageLabel: string;
+  stageTone: AdminHubStageTone;
+  readinessLabel: string;
+  readinessDetail: string;
+  recommendation: {
+    task: AdminTaskKey | null;
+    eyebrow: string;
+    title: string;
+    detail: string;
+    actionLabel: string | null;
+  };
+};
+
+export type BuildAdminHubOverviewArgs = {
+  now: number;
+  appState?: Partial<AdminDashboardDto["appState"]>;
+  focusTournament?: AdminDashboardDto["focusTournament"];
+  recentLiveSync?: AdminOperationRun;
+  pendingSettlementCount: number;
+};
+
+export type AdminHubProps = {
+  overview: AdminHubOverview;
+  operationStatus: Record<AdminOperationKey, AdminOperationStatus>;
+  groupStatus: {
+    eventSetup: AdminOperationStatus;
+    liveSync: AdminOperationStatus;
+    weeklyRecap: AdminOperationStatus;
+    standings: AdminOperationStatus;
+  };
+  pendingSettlementCount: number;
+  pendingTransferTotal: number;
+  onOpenTask: (task: AdminTaskKey) => void;
+};
+
+export type AdminTaskPanelProps = {
+  open: boolean;
+  title: string;
+  description: string;
+  tone?: "routine" | "communication" | "financial" | "advanced";
+  children: ReactNode;
+  footer?: ReactNode;
+  onClose: () => void;
+};
+
+export type AdminHubTaskRowProps = {
+  task: AdminTaskKey;
+  title: string;
+  description: string;
+  status?: AdminOperationStatus;
+  meta?: string;
+  onOpenTask: (task: AdminTaskKey) => void;
+};
+
+export type AdminStageBadgeProps = {
+  label: string;
+  tone: AdminHubStageTone;
+};
+
+export type AdminQuickActionProps = Pick<
+  AdminHubTaskRowProps,
+  "task" | "onOpenTask"
+> & {
+  label: string;
+};
+
+export type AdminToolGroupProps = {
+  title: string;
+  icon: LucideIcon;
+  tone?: "routine" | "advanced";
+  children: ReactNode;
+};
+
+export type AdminActivityLineProps = {
+  label: string;
+  status: AdminOperationStatus;
 };
 
 export type AdminOperationStatusBadgeProps = {

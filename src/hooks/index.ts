@@ -21,3 +21,4 @@ export * from "./useTournamentTeam";
 export * from "./useStandingsPage";
 export * from "./useRulebookPage";
 export * from "./useNavigationContainer";
+export * from "./useNotifications";

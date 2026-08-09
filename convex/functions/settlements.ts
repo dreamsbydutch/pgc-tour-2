@@ -4,6 +4,7 @@ import type { MutationCtx } from "../_generated/server";
 import { v } from "convex/values";
 import { getCurrentMember, requireAdmin } from "../utils/auth";
 import { writeAuditLog } from "../utils/audit";
+import { publishNotifications } from "../utils/notifications";
 import {
   NEXT_SEASON_CARD_CENTS,
   areAllSettlementItemsComplete,
@@ -158,6 +159,23 @@ export const submitMyRequest = mutation({
         leagueCents,
         nextSeasonCardCents,
       },
+    });
+    const admins = await ctx.db
+      .query("members")
+      .withIndex("by_role", (query) => query.eq("role", "admin"))
+      .take(100);
+    await publishNotifications(ctx, {
+      dedupeKey: `settlement-submitted:${requestId}:${now}`,
+      category: "financial",
+      settlementRequestId: requestId,
+      recipients: admins
+        .filter((admin) => admin.isActive !== false)
+        .map((admin) => ({
+          memberId: admin._id,
+          title: "New earnings request",
+          body: `${[member.firstname, member.lastname].filter(Boolean).join(" ") || member.email} submitted season earnings instructions.`,
+          href: "/admin#payout-requests",
+        })),
     });
     return await ctx.db.get(requestId);
   },
@@ -354,6 +372,25 @@ export const adminCompleteItem = mutation({
         amountCents: settlementItemAmount(request, args.item),
       },
     });
+    await publishNotifications(ctx, {
+      dedupeKey: `settlement-completed:${request._id}:${args.item}`,
+      category: "financial",
+      settlementRequestId: request._id,
+      recipients: [
+        {
+          memberId: request.memberId,
+          title:
+            args.item === "transfer"
+              ? "Your e-transfer is complete"
+              : "An earnings allocation is complete",
+          body:
+            args.item === "transfer"
+              ? "The PGC administrator confirmed your transfer."
+              : `Your ${args.item === "nextSeasonCard" ? "next-season card" : args.item} allocation was confirmed.`,
+          href: "/account#earnings",
+        },
+      ],
+    });
     return await ctx.db.get(request._id);
   },
 });
@@ -388,6 +425,19 @@ export const adminCancelRequest = mutation({
       entityId: String(request._id),
       action: "deleted",
       changes: { reason: reason.slice(0, 500) },
+    });
+    await publishNotifications(ctx, {
+      dedupeKey: `settlement-cancelled:${request._id}:${now}`,
+      category: "financial",
+      settlementRequestId: request._id,
+      recipients: [
+        {
+          memberId: request.memberId,
+          title: "Your earnings request was cancelled",
+          body: "Open your account to review the request and submit again.",
+          href: "/account#earnings",
+        },
+      ],
     });
     return await ctx.db.get(request._id);
   },

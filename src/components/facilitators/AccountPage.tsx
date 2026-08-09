@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { useAccountPage } from "@/hooks";
+import { NotificationPreferencesCard } from "@/displays";
 import type {
   AccountStatProps,
   FinancialSummaryProps,
@@ -595,6 +596,10 @@ export function AccountPage() {
                   )}
                 </CardContent>
               </Card>
+            </section>
+
+            <section aria-label="Notification preferences">
+              <NotificationPreferencesCard />
             </section>
 
             <section aria-labelledby="profile-title">

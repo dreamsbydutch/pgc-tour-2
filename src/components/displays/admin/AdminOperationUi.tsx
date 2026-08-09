@@ -190,7 +190,7 @@ export function AdminConfirmationDialog({
       open={Boolean(request)}
       onOpenChange={(open) => !open && onCancel()}
     >
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-lg overflow-y-auto">
         {request ? (
           <>
             <DialogHeader>

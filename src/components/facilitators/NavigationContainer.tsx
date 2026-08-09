@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router";
 import { LogIn, UserRound } from "lucide-react";
 
 import { MemberNameWithBadges } from "@/components/ui/composites/member-name-with-badges";
+import { NotificationCenter } from "@/displays";
 import { Button } from "@/components/ui/primitives/button";
 import { Skeleton } from "@/components/ui/primitives/skeleton";
 import type { NavigationContainerProps } from "@/types";
@@ -165,6 +166,8 @@ export function NavigationContainer(props: NavigationContainerProps) {
                     </span>
                   )}
                 </div>
+
+                <NotificationCenter />
 
                 <Button
                   asChild
