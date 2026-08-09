@@ -1,6 +1,5 @@
 import type { FunctionReturnType } from "convex/server";
 import type { api } from "convex/_generated/api";
-import type { ReactNode } from "react";
 import type { Id } from "@/convex";
 
 export type AccountOverviewDto = FunctionReturnType<
@@ -42,10 +41,7 @@ export type SettlementAllocationInputProps = {
   disabled: boolean;
 };
 
-export type FinancialSummaryProps = AccountStatProps & {
-  icon: ReactNode;
-  featured?: boolean;
-};
+export type FinancialSummaryProps = AccountStatProps;
 
 export type SettlementFeedback = {
   tone: "success" | "error";

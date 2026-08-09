@@ -44,10 +44,10 @@ const categoryRows: Array<{
 export function NotificationPreferencesCard() {
   const model = useNotificationPreferences();
   return (
-    <Card>
-      <CardHeader>
+    <Card className="overflow-hidden">
+      <CardHeader className="border-b bg-muted/30">
         <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-emerald-100 p-2 text-emerald-800">
+          <div className="rounded-md border bg-background p-2 text-foreground">
             <BellRing className="h-5 w-5" aria-hidden="true" />
           </div>
           <div>
@@ -59,8 +59,8 @@ export function NotificationPreferencesCard() {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-muted/30 p-4">
+      <CardContent className="space-y-5 pt-6">
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border p-4">
           <div className="flex items-center gap-3">
             <Smartphone className="h-5 w-5 text-muted-foreground" />
             <div>
@@ -96,7 +96,7 @@ export function NotificationPreferencesCard() {
             {model.deviceError}
           </p>
         ) : null}
-        <div className="divide-y rounded-xl border">
+        <div className="divide-y rounded-lg border">
           {categoryRows.map((row) => (
             <label
               key={row.category}
@@ -110,7 +110,7 @@ export function NotificationPreferencesCard() {
               </span>
               <input
                 type="checkbox"
-                className="h-5 w-5 shrink-0 accent-emerald-700"
+                className="h-5 w-5 shrink-0 accent-slate-900"
                 checked={model.preferences?.[row.category] ?? true}
                 disabled={
                   model.isLoading || model.busyCategory === row.category
