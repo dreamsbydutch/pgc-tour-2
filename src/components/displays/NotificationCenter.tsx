@@ -24,7 +24,11 @@ export function NotificationCenter() {
           className="relative"
           aria-label={`Notifications${model.unreadCount ? `, ${model.unreadCount} unread` : ""}`}
         >
-          <Bell className="h-6 w-6 text-gray-700" aria-hidden="true" />
+          <Bell
+            className="h-8 w-8 text-gray-500 lg:h-6 lg:w-6"
+            strokeWidth={2}
+            aria-hidden="true"
+          />
           {model.unreadCount > 0 ? (
             <span className="absolute right-0.5 top-0.5 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
               {model.unreadCount > 99 ? "99+" : model.unreadCount}

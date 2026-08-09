@@ -6,7 +6,6 @@ import type {
   TourDoc,
 } from "convex/types/types";
 import type { Doc } from "@/convex";
-import type { ClubhousePulseModel } from "./clubhousePulse";
 
 export type DataFreshness = "live" | "stale";
 
@@ -34,7 +33,6 @@ export type HomePageModel =
       role: string | null;
       account: number | null;
       freshness: DataFreshness;
-      pulse: ClubhousePulseModel;
     };
 
 export type TournamentSearch = {
