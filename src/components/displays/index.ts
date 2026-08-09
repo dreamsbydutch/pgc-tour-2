@@ -6,6 +6,7 @@ export {
   AdminOperationCard,
   AdminOperationFeedback,
 } from "./admin/AdminOperationUi";
+export { SettlementHub } from "./admin/SettlementHub";
 
 export { ChampionsPopup } from "./standings/ChampionsPopup";
 export { ClubhousePulse, ClubhousePulseSkeleton } from "./ClubhousePulse";

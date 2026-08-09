@@ -470,6 +470,7 @@ const schema = defineSchema({
   transactions: defineTable({
     memberId: v.optional(v.id("members")),
     seasonId: v.id("seasons"),
+    settlementRequestId: v.optional(v.id("settlementRequests")),
     amount: v.number(), // Amount in cents (positive = credit, negative = debit)
 
     payoutEmail: v.optional(v.string()),
@@ -503,9 +504,51 @@ const schema = defineSchema({
     .index("by_season", ["seasonId"])
     .index("by_member_season", ["memberId", "seasonId"])
     .index("by_member_season_type", ["memberId", "seasonId", "transactionType"])
+    .index("by_settlement_request", ["settlementRequestId"])
     .index("by_type", ["transactionType"])
     .index("by_status", ["status"])
     .index("by_amount", ["amount"]),
+
+  /**
+   * Season-end instructions for distributing a member's official earnings.
+   * Item completion timestamps let administrators reconcile each real-world
+   * transfer independently while keeping the overall request auditable.
+   */
+  settlementRequests: defineTable({
+    memberId: v.id("members"),
+    seasonId: v.id("seasons"),
+    earningsCents: v.number(),
+    accountOffsetCents: v.number(),
+    availableCents: v.number(),
+    transferCents: v.number(),
+    charityCents: v.number(),
+    leagueCents: v.number(),
+    nextSeasonCardCents: v.number(),
+    payoutEmail: v.optional(v.string()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("in_progress"),
+      v.literal("completed"),
+      v.literal("cancelled"),
+    ),
+    submittedAt: v.number(),
+    transferCompletedAt: v.optional(v.number()),
+    transferCompletedBy: v.optional(v.id("members")),
+    charityCompletedAt: v.optional(v.number()),
+    charityCompletedBy: v.optional(v.id("members")),
+    leagueCompletedAt: v.optional(v.number()),
+    leagueCompletedBy: v.optional(v.id("members")),
+    nextSeasonCardCompletedAt: v.optional(v.number()),
+    nextSeasonCardCompletedBy: v.optional(v.id("members")),
+    completedAt: v.optional(v.number()),
+    cancelledAt: v.optional(v.number()),
+    cancelledBy: v.optional(v.id("members")),
+    cancellationReason: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_member", ["memberId"])
+    .index("by_member_season", ["memberId", "seasonId"])
+    .index("by_status_submitted", ["status", "submittedAt"]),
 
   // =========================================================================
   // SYSTEM & NOTIFICATIONS

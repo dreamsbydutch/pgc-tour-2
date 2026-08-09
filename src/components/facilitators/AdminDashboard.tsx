@@ -20,6 +20,7 @@ import {
   AdminDryRunPreview,
   AdminOperationCard,
   AdminOperationFeedback,
+  SettlementHub,
 } from "@/displays";
 import { useAdminDashboard } from "@/hooks";
 import type {
@@ -59,6 +60,16 @@ export function AdminDashboard() {
     operationStatus,
     groupStatus,
     confirmation,
+    settlementRequests,
+    visibleSettlementRequests,
+    settlementFilter,
+    setSettlementFilter,
+    pendingSettlementCount,
+    pendingTransferTotal,
+    settlementBusyKey,
+    settlementFeedback,
+    completeSettlement,
+    cancelSettlement,
     requestConfirmation,
     dismissConfirmation,
     confirmOperation,
@@ -117,6 +128,19 @@ export function AdminDashboard() {
           />
         </nav>
       </header>
+
+      <SettlementHub
+        requests={settlementRequests}
+        visibleRequests={visibleSettlementRequests}
+        filter={settlementFilter}
+        onFilterChange={setSettlementFilter}
+        pendingCount={pendingSettlementCount}
+        pendingTransferTotal={pendingTransferTotal}
+        busyKey={settlementBusyKey}
+        feedback={settlementFeedback}
+        onComplete={completeSettlement}
+        onCancel={cancelSettlement}
+      />
 
       <OperationGroup
         id="regular-tasks"

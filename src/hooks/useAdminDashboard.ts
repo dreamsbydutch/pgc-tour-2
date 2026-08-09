@@ -6,6 +6,9 @@ import type {
   AdminConfirmationRequest,
   AdminOperationKey,
   AdminOperationRun,
+  SettlementAdminFilter,
+  SettlementFeedback,
+  SettlementItemKind,
   StandingsBackfillResult,
   TeamMetadataBackfillResult,
 } from "@/types";
@@ -20,6 +23,9 @@ import {
 
 export function useAdminDashboard() {
   const dashboard = useQuery(api.functions.readModels.adminGetDashboard);
+  const settlementRequests = useQuery(
+    api.functions.settlements.adminListRequests,
+  );
   const tournaments = dashboard?.tournaments ?? null;
   const members = dashboard?.members ?? null;
   const seasons = dashboard?.seasons ?? null;
@@ -58,6 +64,12 @@ export function useAdminDashboard() {
   const createTransaction = useMutation(
     api.functions.transactions.createPayment,
   );
+  const completeSettlementItem = useMutation(
+    api.functions.settlements.adminCompleteItem,
+  );
+  const cancelSettlementRequest = useMutation(
+    api.functions.settlements.adminCancelRequest,
+  );
   const importTeamsFromJson = useMutation(
     api.functions.teams.adminImportTeamsFromJson,
   );
@@ -73,6 +85,13 @@ export function useAdminDashboard() {
   const [paymentSeasonId, setPaymentSeasonId] = useState("");
   const [paymentAmountDollars, setPaymentAmountDollars] = useState("");
   const [recomputeSeasonId, setRecomputeSeasonId] = useState("");
+  const [settlementFilter, setSettlementFilter] =
+    useState<SettlementAdminFilter>("open");
+  const [settlementBusyKey, setSettlementBusyKey] = useState<string | null>(
+    null,
+  );
+  const [settlementFeedback, setSettlementFeedback] =
+    useState<SettlementFeedback | null>(null);
   const [confirmationOperation, setConfirmationOperation] = useState<
     AdminConfirmationRequest["operation"] | null
   >(null);
@@ -88,6 +107,27 @@ export function useAdminDashboard() {
   );
   const selectedImportTournament = tournaments?.find(
     (tournament) => tournament._id === tournamentId,
+  );
+  const visibleSettlementRequests = useMemo(() => {
+    const rows = settlementRequests ?? [];
+    if (settlementFilter === "all") return rows;
+    if (settlementFilter === "open") {
+      return rows.filter(
+        (request) =>
+          request.status === "pending" || request.status === "in_progress",
+      );
+    }
+    return rows.filter((request) => request.status === settlementFilter);
+  }, [settlementFilter, settlementRequests]);
+  const openSettlementRequests = (settlementRequests ?? []).filter(
+    (request) =>
+      request.status === "pending" || request.status === "in_progress",
+  );
+  const pendingSettlementCount = openSettlementRequests.length;
+  const pendingTransferTotal = openSettlementRequests.reduce(
+    (total, request) =>
+      total + (request.transferCompletedAt ? 0 : request.transferCents),
+    0,
   );
 
   const previews = useMemo(
@@ -354,6 +394,62 @@ export function useAdminDashboard() {
     await runConfirmedOperation(operation);
   }
 
+  async function completeSettlement(
+    requestId: Id<"settlementRequests">,
+    item: SettlementItemKind,
+  ) {
+    if (
+      !globalThis.confirm(
+        "Mark this allocation complete? This records the financial transaction and cannot be unchecked.",
+      )
+    ) {
+      return;
+    }
+    const key = `${requestId}:${item}`;
+    setSettlementBusyKey(key);
+    setSettlementFeedback(null);
+    try {
+      await completeSettlementItem({ requestId, item });
+      setSettlementFeedback({
+        tone: "success",
+        message: "Allocation marked complete.",
+      });
+    } catch (error) {
+      setSettlementFeedback({
+        tone: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unable to complete allocation.",
+      });
+    } finally {
+      setSettlementBusyKey(null);
+    }
+  }
+
+  async function cancelSettlement(requestId: Id<"settlementRequests">) {
+    const reason = globalThis.prompt("Why is this request being cancelled?");
+    if (!reason) return;
+    const key = `${requestId}:cancel`;
+    setSettlementBusyKey(key);
+    setSettlementFeedback(null);
+    try {
+      await cancelSettlementRequest({ requestId, reason });
+      setSettlementFeedback({
+        tone: "success",
+        message: "Settlement request cancelled.",
+      });
+    } catch (error) {
+      setSettlementFeedback({
+        tone: "error",
+        message:
+          error instanceof Error ? error.message : "Unable to cancel request.",
+      });
+    } finally {
+      setSettlementBusyKey(null);
+    }
+  }
+
   return {
     tournaments,
     sortedTournaments,
@@ -380,6 +476,16 @@ export function useAdminDashboard() {
     operationStatus,
     groupStatus,
     confirmation,
+    settlementRequests,
+    visibleSettlementRequests,
+    settlementFilter,
+    setSettlementFilter,
+    pendingSettlementCount,
+    pendingTransferTotal,
+    settlementBusyKey,
+    settlementFeedback,
+    completeSettlement,
+    cancelSettlement,
     requestConfirmation: setConfirmationOperation,
     dismissConfirmation: () => setConfirmationOperation(null),
     confirmOperation,

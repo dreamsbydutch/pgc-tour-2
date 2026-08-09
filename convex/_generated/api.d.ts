@@ -10,6 +10,7 @@
 
 import type * as crons from "../crons.js";
 import type * as functions__constants from "../functions/_constants.js";
+import type * as functions_account from "../functions/account.js";
 import type * as functions_cronJobs from "../functions/cronJobs.js";
 import type * as functions_datagolf from "../functions/datagolf.js";
 import type * as functions_emails from "../functions/emails.js";
@@ -20,6 +21,7 @@ import type * as functions_members from "../functions/members.js";
 import type * as functions_migrations from "../functions/migrations.js";
 import type * as functions_readModels from "../functions/readModels.js";
 import type * as functions_seasons from "../functions/seasons.js";
+import type * as functions_settlements from "../functions/settlements.js";
 import type * as functions_standings from "../functions/standings.js";
 import type * as functions_syncRuns from "../functions/syncRuns.js";
 import type * as functions_teams from "../functions/teams.js";
@@ -47,6 +49,7 @@ import type * as utils_golfers from "../utils/golfers.js";
 import type * as utils_index from "../utils/index.js";
 import type * as utils_misc from "../utils/misc.js";
 import type * as utils_publicDtos from "../utils/publicDtos.js";
+import type * as utils_settlements from "../utils/settlements.js";
 import type * as utils_standings from "../utils/standings.js";
 import type * as utils_tourCards from "../utils/tourCards.js";
 import type * as utils_tournamentBadges from "../utils/tournamentBadges.js";
@@ -62,6 +65,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   "functions/_constants": typeof functions__constants;
+  "functions/account": typeof functions_account;
   "functions/cronJobs": typeof functions_cronJobs;
   "functions/datagolf": typeof functions_datagolf;
   "functions/emails": typeof functions_emails;
@@ -72,6 +76,7 @@ declare const fullApi: ApiFromModules<{
   "functions/migrations": typeof functions_migrations;
   "functions/readModels": typeof functions_readModels;
   "functions/seasons": typeof functions_seasons;
+  "functions/settlements": typeof functions_settlements;
   "functions/standings": typeof functions_standings;
   "functions/syncRuns": typeof functions_syncRuns;
   "functions/teams": typeof functions_teams;
@@ -99,6 +104,7 @@ declare const fullApi: ApiFromModules<{
   "utils/index": typeof utils_index;
   "utils/misc": typeof utils_misc;
   "utils/publicDtos": typeof utils_publicDtos;
+  "utils/settlements": typeof utils_settlements;
   "utils/standings": typeof utils_standings;
   "utils/tourCards": typeof utils_tourCards;
   "utils/tournamentBadges": typeof utils_tournamentBadges;
