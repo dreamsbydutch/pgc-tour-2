@@ -166,7 +166,9 @@ describe("earnings settlements", () => {
           tournamentStatus: "completed",
           tierId: playoffTierId,
           tierName: "Playoff",
-          isPlayoff: true,
+          // Historical contribution rows can have a stale playoff flag. The
+          // scheduled tournament tier remains the source of truth.
+          isPlayoff: false,
           position: "1",
           points: 0,
           earnings: 10_000,

@@ -83,14 +83,20 @@ export const getMyOverview = query({
         .filter((tier) => includesPlayoffLabel(tier.name))
         .map((tier) => tier._id),
     );
+    const playoffTournamentIds = new Set(
+      tournamentsBySeason
+        .flat()
+        .filter(
+          (tournament) =>
+            playoffTierIds.has(tournament.tierId) ||
+            includesPlayoffLabel(tournament.name),
+        )
+        .map((tournament) => tournament._id),
+    );
     const finalPlayoffTournamentIdBySeason = new Map(
       tournamentsBySeason.flatMap((tournaments) => {
         const finalTournament = tournaments
-          .filter(
-            (tournament) =>
-              playoffTierIds.has(tournament.tierId) ||
-              includesPlayoffLabel(tournament.name),
-          )
+          .filter((tournament) => playoffTournamentIds.has(tournament._id))
           .sort((a, b) => b.startDate - a.startDate)[0];
         return finalTournament
           ? [[finalTournament.seasonId, finalTournament._id] as const]
@@ -98,10 +104,15 @@ export const getMyOverview = query({
       }),
     );
     const contributions = contributionsByCard.flat();
+    const isPlayoffContribution = (item: (typeof contributions)[number]) =>
+      playoffTournamentIds.has(item.tournamentId) ||
+      item.isPlayoff ||
+      includesPlayoffLabel(item.tierName) ||
+      includesPlayoffLabel(item.tournamentName);
     const finalPlayoffResults = contributions.filter(
       (item) =>
         item.tournamentStatus === "completed" &&
-        item.isPlayoff &&
+        isPlayoffContribution(item) &&
         finalPlayoffTournamentIdBySeason.get(item.seasonId) ===
           item.tournamentId,
     );
@@ -170,7 +181,7 @@ export const getMyOverview = query({
         (item) =>
           item.tournamentStatus === "completed" &&
           parseRank(item.position) === 1 &&
-          (!item.isPlayoff ||
+          (!isPlayoffContribution(item) ||
             finalPlayoffTournamentIdBySeason.get(item.seasonId) ===
               item.tournamentId),
       )
