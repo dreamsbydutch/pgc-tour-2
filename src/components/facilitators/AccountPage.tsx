@@ -115,14 +115,15 @@ export function AccountPage() {
               <div className="mb-4 flex items-end justify-between gap-4">
                 <div>
                   <h2 id="trophy-case-title" className="text-2xl font-bold">
-                    Wins and accomplishments
+                    Career wins
                   </h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Official tournament wins from your PGC career.
+                    Tournament titles and completed playoff championships.
                   </p>
                 </div>
                 <div className="shrink-0 text-sm font-medium text-muted-foreground">
-                  {vm.overview.achievements.length} trophies
+                  {vm.overview.achievements.length}{" "}
+                  {vm.overview.achievements.length === 1 ? "win" : "wins"}
                 </div>
               </div>
               {vm.overview.achievements.length === 0 ? (
@@ -142,50 +143,29 @@ export function AccountPage() {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-4 md:grid-cols-6">
                   {vm.overview.achievements.map((achievement) => (
-                    <Card key={achievement.id} className="overflow-hidden">
-                      <CardContent className="flex gap-4 p-5">
-                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border bg-muted/30">
-                          {achievement.logoUrl ? (
-                            <img
-                              src={achievement.logoUrl}
-                              alt=""
-                              className="h-10 w-10 object-contain"
-                            />
-                          ) : (
-                            <Trophy
-                              className="h-7 w-7 text-foreground"
-                              aria-hidden="true"
-                            />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap gap-2">
-                            <span className="rounded-full border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide">
-                              {achievement.isMajor
-                                ? "Major champion"
-                                : achievement.tierName}
-                            </span>
-                            {achievement.isPlayoff ? (
-                              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-                                Playoff
-                              </span>
-                            ) : null}
-                          </div>
-                          <h3 className="mt-2 truncate text-lg font-bold">
-                            {achievement.tournamentName}
-                          </h3>
-                          <p className="mt-1 text-sm text-muted-foreground">
-                            {achievement.tourName} · {achievement.seasonLabel}
-                          </p>
-                          <p className="mt-2 text-sm font-semibold">
-                            {formatNumber(achievement.points)} pts ·{" "}
-                            {formatMoney(achievement.earningsCents, true)}
-                          </p>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <div
+                      key={achievement.id}
+                      className="flex min-h-36 flex-col items-center justify-center bg-card p-4 text-center"
+                      title={achievement.tournamentName}
+                    >
+                      {achievement.logoUrl ? (
+                        <img
+                          src={achievement.logoUrl}
+                          alt={`${achievement.tournamentName} logo`}
+                          className="h-16 w-16 object-contain"
+                        />
+                      ) : (
+                        <Trophy
+                          className="h-14 w-14 text-foreground"
+                          aria-label={achievement.tournamentName}
+                        />
+                      )}
+                      <p className="mt-3 text-lg font-bold">
+                        {achievement.year ?? "—"}
+                      </p>
+                    </div>
                   ))}
                 </div>
               )}
@@ -277,7 +257,9 @@ export function AccountPage() {
                       <WalletCards className="h-5 w-5" aria-hidden="true" />
                     </div>
                     <div>
-                      <CardTitle id="earnings-title">Season earnings</CardTitle>
+                      <CardTitle id="earnings-title">
+                        Current season earnings
+                      </CardTitle>
                       <CardDescription className="mt-2 max-w-2xl">
                         Tell us where the available amount should go. PGC
                         administrators will process each instruction.
@@ -286,47 +268,30 @@ export function AccountPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6 pt-6">
-                  <label className="block max-w-sm space-y-1.5 text-sm font-medium">
-                    <span>Season</span>
-                    <select
-                      className={inputClassName}
-                      value={vm.selectedSeasonId}
-                      onChange={(event) =>
-                        vm.setSelectedSeasonId(event.target.value)
-                      }
-                    >
-                      {vm.overview.seasonFinancials.map((financial) => (
-                        <option
-                          key={financial.seasonId}
-                          value={financial.seasonId}
-                        >
-                          {financial.seasonLabel}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  {vm.selectedFinancial ? (
+                  {vm.currentSeasonFinancial ? (
                     <>
+                      <p className="text-sm font-semibold">
+                        {vm.currentSeasonFinancial.seasonLabel}
+                      </p>
                       <div className="grid gap-3 sm:grid-cols-3">
                         <FinancialSummary
                           label="Official earnings"
                           value={formatMoney(
-                            vm.selectedFinancial.earningsCents,
+                            vm.currentSeasonFinancial.earningsCents,
                             true,
                           )}
                         />
                         <FinancialSummary
                           label="Applied to balance"
                           value={formatMoney(
-                            vm.selectedFinancial.accountOffsetCents,
+                            vm.currentSeasonFinancial.accountOffsetCents,
                             true,
                           )}
                         />
                         <FinancialSummary
                           label="Available to allocate"
                           value={formatMoney(
-                            vm.selectedFinancial.availableCents,
+                            vm.currentSeasonFinancial.availableCents,
                             true,
                           )}
                         />
@@ -378,12 +343,12 @@ export function AccountPage() {
                             </div>
                           </div>
                         </div>
-                      ) : !vm.selectedFinancial.isComplete ? (
+                      ) : !vm.currentSeasonFinancial.isComplete ? (
                         <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
                           Your earnings are updating throughout the season.
                           Allocation requests open when the season is complete.
                         </div>
-                      ) : vm.selectedFinancial.availableCents <= 0 ? (
+                      ) : vm.currentSeasonFinancial.availableCents <= 0 ? (
                         <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
                           There are no earnings available to allocate for this
                           season.
@@ -450,7 +415,8 @@ export function AccountPage() {
                               disabled={
                                 vm.submitting ||
                                 !vm.canSubmitSettlement ||
-                                vm.selectedFinancial.availableCents < 10_000
+                                vm.currentSeasonFinancial.availableCents <
+                                  10_000
                               }
                             />
                             <div>
@@ -527,7 +493,7 @@ export function AccountPage() {
                     </>
                   ) : (
                     <p className="text-sm text-muted-foreground">
-                      No season earnings are available yet.
+                      No current-season earnings are available yet.
                     </p>
                   )}
                 </CardContent>

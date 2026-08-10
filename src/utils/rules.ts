@@ -121,6 +121,10 @@ export const ruleList: {
       },
       {
         ruleText:
+          "The first two event positions are playoff checkpoints, not separate tournament finishes. Only the final TOUR Championship result counts toward career wins, top fives, and top tens.",
+      },
+      {
+        ruleText:
           "Players that qualify will pick their 10-golfer team for the entire three-week playoffs prior to the first event.",
       },
       {

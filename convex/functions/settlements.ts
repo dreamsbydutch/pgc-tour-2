@@ -48,6 +48,11 @@ export const submitMyRequest = mutation({
         .take(100),
     ]);
     if (!season) throw new Error("Season not found");
+    if (!appState?.currentSeasonId || season._id !== appState.currentSeasonId) {
+      throw new Error(
+        "Earnings requests are only available for the current season",
+      );
+    }
     if (!isSettlementSeasonComplete({ season, appState, now: Date.now() })) {
       throw new Error("Earnings requests open after the season is completed");
     }

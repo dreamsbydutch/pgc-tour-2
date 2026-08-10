@@ -4,6 +4,7 @@ import {
   getSettlementAmounts,
   isSettlementSeasonComplete,
 } from "../utils/settlements";
+import { includesPlayoffLabel } from "../utils/standings";
 
 function parseRank(position: string | undefined) {
   const match = position ? /\d+/.exec(position) : null;
@@ -31,7 +32,13 @@ export const getMyOverview = query({
 
     const seasonIds = [...new Set(cards.map((card) => card.seasonId))];
     const tourIds = [...new Set(cards.map((card) => card.tourId))];
-    const [seasonDocs, tourDocs, contributionsByCard] = await Promise.all([
+    const [
+      seasonDocs,
+      tourDocs,
+      contributionsByCard,
+      tournamentsBySeason,
+      tiersBySeason,
+    ] = await Promise.all([
       Promise.all(seasonIds.map((seasonId) => ctx.db.get(seasonId))),
       Promise.all(tourIds.map((tourId) => ctx.db.get(tourId))),
       Promise.all(
@@ -45,6 +52,22 @@ export const getMyOverview = query({
             .take(100),
         ),
       ),
+      Promise.all(
+        seasonIds.map((seasonId) =>
+          ctx.db
+            .query("tournaments")
+            .withIndex("by_season", (query) => query.eq("seasonId", seasonId))
+            .take(100),
+        ),
+      ),
+      Promise.all(
+        seasonIds.map((seasonId) =>
+          ctx.db
+            .query("tiers")
+            .withIndex("by_season", (query) => query.eq("seasonId", seasonId))
+            .take(20),
+        ),
+      ),
     ]);
 
     const seasons = seasonDocs.filter((season) => season !== null);
@@ -53,6 +76,37 @@ export const getMyOverview = query({
     const tourById = new Map(tours.map((tour) => [tour._id, tour]));
     const requestBySeasonId = new Map(
       requests.map((request) => [request.seasonId, request]),
+    );
+    const playoffTierIds = new Set(
+      tiersBySeason
+        .flat()
+        .filter((tier) => includesPlayoffLabel(tier.name))
+        .map((tier) => tier._id),
+    );
+    const finalPlayoffTournamentIdBySeason = new Map(
+      tournamentsBySeason.flatMap((tournaments) => {
+        const finalTournament = tournaments
+          .filter(
+            (tournament) =>
+              playoffTierIds.has(tournament.tierId) ||
+              includesPlayoffLabel(tournament.name),
+          )
+          .sort((a, b) => b.startDate - a.startDate)[0];
+        return finalTournament
+          ? [[finalTournament.seasonId, finalTournament._id] as const]
+          : [];
+      }),
+    );
+    const contributions = contributionsByCard.flat();
+    const finalPlayoffResults = contributions.filter(
+      (item) =>
+        item.tournamentStatus === "completed" &&
+        item.isPlayoff &&
+        finalPlayoffTournamentIdBySeason.get(item.seasonId) ===
+          item.tournamentId,
+    );
+    const finalPlayoffResultByCardId = new Map(
+      finalPlayoffResults.map((item) => [item.tourCardId, item] as const),
     );
     const earningsBySeasonId = new Map<string, number>();
     for (const card of cards) {
@@ -63,87 +117,69 @@ export const getMyOverview = query({
       );
     }
 
-    const seasonFinancials = seasons
-      .map((season) => {
-        const earningsCents = Math.round(
-          earningsBySeasonId.get(String(season._id)) ?? 0,
-        );
-        const amounts = getSettlementAmounts({
-          earningsCents,
-          accountCents: member.account,
-        });
-        const request = requestBySeasonId.get(season._id);
-        return {
-          seasonId: season._id,
-          seasonLabel: `${season.year} Season ${season.number}`,
-          year: season.year,
-          number: season.number,
-          earningsCents,
-          accountOffsetCents: amounts.accountOffsetCents,
-          availableCents: amounts.availableCents,
-          isComplete: isSettlementSeasonComplete({
-            season,
-            appState,
-            now: Date.now(),
-          }),
-          request: request
-            ? {
-                _id: request._id,
-                status: request.status,
-                earningsCents: request.earningsCents,
-                accountOffsetCents: request.accountOffsetCents,
-                availableCents: request.availableCents,
-                transferCents: request.transferCents,
-                charityCents: request.charityCents,
-                leagueCents: request.leagueCents,
-                nextSeasonCardCents: request.nextSeasonCardCents,
-                payoutEmail: request.payoutEmail,
-                submittedAt: request.submittedAt,
-                completedAt: request.completedAt,
-                cancelledAt: request.cancelledAt,
-              }
-            : null,
-        };
-      })
-      .sort((a, b) => b.year - a.year || b.number - a.number);
+    const currentSeason = appState?.currentSeasonId
+      ? seasonById.get(appState.currentSeasonId)
+      : undefined;
+    const currentSeasonFinancial = currentSeason
+      ? (() => {
+          const season = currentSeason;
+          const earningsCents = Math.round(
+            earningsBySeasonId.get(String(season._id)) ?? 0,
+          );
+          const amounts = getSettlementAmounts({
+            earningsCents,
+            accountCents: member.account,
+          });
+          const request = requestBySeasonId.get(season._id);
+          return {
+            seasonId: season._id,
+            seasonLabel: `${season.year} Season ${season.number}`,
+            year: season.year,
+            number: season.number,
+            earningsCents,
+            accountOffsetCents: amounts.accountOffsetCents,
+            availableCents: amounts.availableCents,
+            isComplete: isSettlementSeasonComplete({
+              season,
+              appState,
+              now: Date.now(),
+            }),
+            request: request
+              ? {
+                  _id: request._id,
+                  status: request.status,
+                  earningsCents: request.earningsCents,
+                  accountOffsetCents: request.accountOffsetCents,
+                  availableCents: request.availableCents,
+                  transferCents: request.transferCents,
+                  charityCents: request.charityCents,
+                  leagueCents: request.leagueCents,
+                  nextSeasonCardCents: request.nextSeasonCardCents,
+                  payoutEmail: request.payoutEmail,
+                  submittedAt: request.submittedAt,
+                  completedAt: request.completedAt,
+                  cancelledAt: request.cancelledAt,
+                }
+              : null,
+          };
+        })()
+      : null;
 
-    const currentSeasonFinancial =
-      seasonFinancials.find(
-        (item) => item.seasonId === appState?.currentSeasonId,
-      ) ??
-      seasonFinancials.find(
-        (item) =>
-          item.earningsCents > 0 && item.request?.status !== "completed",
-      ) ??
-      seasonFinancials[0] ??
-      null;
-
-    const achievements = contributionsByCard
-      .flat()
+    const achievements = contributions
       .filter(
         (item) =>
           item.tournamentStatus === "completed" &&
-          parseRank(item.position) === 1,
+          parseRank(item.position) === 1 &&
+          (!item.isPlayoff ||
+            finalPlayoffTournamentIdBySeason.get(item.seasonId) ===
+              item.tournamentId),
       )
       .map((item) => ({
         id: item._id,
-        seasonId: item.seasonId,
-        tourId: item.tourId,
-        tournamentId: item.tournamentId,
         tournamentName: item.tournamentName,
         logoUrl: item.tournamentLogoUrl ?? null,
-        tierName: item.tierName,
-        isMajor: item.tierName.trim().toLowerCase() === "major",
-        isPlayoff: item.isPlayoff,
-        position: item.position ?? "1",
-        points: item.points ?? 0,
-        earningsCents: item.earnings ?? 0,
         wonAt: item.tournamentEndDate,
-        seasonLabel: (() => {
-          const season = seasonById.get(item.seasonId);
-          return season ? `${season.year} Season ${season.number}` : "Season";
-        })(),
-        tourName: tourById.get(item.tourId)?.name ?? "Tour",
+        year: seasonById.get(item.seasonId)?.year ?? null,
       }))
       .sort((a, b) => b.wonAt - a.wonAt);
 
@@ -151,6 +187,12 @@ export const getMyOverview = query({
       .map((card) => {
         const season = seasonById.get(card.seasonId);
         const tour = tourById.get(card.tourId);
+        const finalPlayoffResult = finalPlayoffResultByCardId.get(card._id);
+        const finalPlayoffRank = finalPlayoffResult
+          ? parseRank(finalPlayoffResult.position)
+          : Number.POSITIVE_INFINITY;
+        const completedFinalPlayoff = finalPlayoffResult ? 1 : 0;
+        const madeFinalPlayoffCut = Number.isFinite(finalPlayoffRank) ? 1 : 0;
         return {
           _id: card._id,
           seasonId: card.seasonId,
@@ -167,11 +209,11 @@ export const getMyOverview = query({
           currentPosition: card.currentPosition ?? "-",
           points: card.points,
           earningsCents: card.earnings,
-          wins: card.wins ?? 0,
-          topFive: card.topFive ?? 0,
-          topTen: card.topTen,
-          madeCut: card.madeCut,
-          appearances: card.appearances,
+          wins: (card.wins ?? 0) + (finalPlayoffRank === 1 ? 1 : 0),
+          topFive: (card.topFive ?? 0) + (finalPlayoffRank <= 5 ? 1 : 0),
+          topTen: card.topTen + (finalPlayoffRank <= 10 ? 1 : 0),
+          madeCut: card.madeCut + madeFinalPlayoffCut,
+          appearances: card.appearances + completedFinalPlayoff,
           playoff: card.playoff ?? 0,
           isCurrent: card.seasonId === appState?.currentSeasonId,
         };
@@ -182,6 +224,27 @@ export const getMyOverview = query({
           b.seasonNumber - a.seasonNumber ||
           a.tourName.localeCompare(b.tourName),
       );
+
+    const career = tourCards.reduce(
+      (totals, card) => ({
+        earningsCents: totals.earningsCents + card.earningsCents,
+        points: totals.points + card.points,
+        wins: totals.wins + card.wins,
+        topFive: totals.topFive + card.topFive,
+        topTen: totals.topTen + card.topTen,
+        madeCut: totals.madeCut + card.madeCut,
+        appearances: totals.appearances + card.appearances,
+      }),
+      {
+        earningsCents: 0,
+        points: 0,
+        wins: 0,
+        topFive: 0,
+        topTen: 0,
+        madeCut: 0,
+        appearances: 0,
+      },
+    );
 
     return {
       member: {
@@ -194,17 +257,10 @@ export const getMyOverview = query({
       career: {
         seasonsPlayed: new Set(cards.map((card) => String(card.seasonId))).size,
         tourCards: cards.length,
-        earningsCents: cards.reduce((sum, card) => sum + card.earnings, 0),
-        points: cards.reduce((sum, card) => sum + card.points, 0),
-        wins: cards.reduce((sum, card) => sum + (card.wins ?? 0), 0),
-        topFive: cards.reduce((sum, card) => sum + (card.topFive ?? 0), 0),
-        topTen: cards.reduce((sum, card) => sum + card.topTen, 0),
-        madeCut: cards.reduce((sum, card) => sum + card.madeCut, 0),
-        appearances: cards.reduce((sum, card) => sum + card.appearances, 0),
+        ...career,
       },
       achievements,
       tourCards,
-      seasonFinancials,
       currentSeasonFinancial,
     };
   },

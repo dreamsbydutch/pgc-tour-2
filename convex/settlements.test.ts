@@ -43,6 +43,13 @@ async function seedCompletedSeason(
       startDate: Date.now() - 100_000,
       endDate: Date.now() - 1_000,
     });
+    await ctx.db.insert("appState", {
+      key: "primary",
+      currentSeasonId: seasonId,
+      seasonPhase: "completed",
+      publicVersion: 1,
+      updatedAt: Date.now(),
+    });
     const tourId = await ctx.db.insert("tours", {
       name: "Settlement Tour",
       shortForm: "SET",
@@ -75,27 +82,36 @@ describe("earnings settlements", () => {
     const owner = await ensureMember(t, "overview-owner");
     const fixture = await seedCompletedSeason(t, owner.member._id);
     await t.run(async (ctx) => {
-      const tierId = await ctx.db.insert("tiers", {
+      const now = Date.now();
+      const majorTierId = await ctx.db.insert("tiers", {
         name: "Major",
         seasonId: fixture.seasonId,
         points: [],
         payouts: [],
       });
+      const playoffTierId = await ctx.db.insert("tiers", {
+        name: "Playoff",
+        seasonId: fixture.seasonId,
+        points: [],
+        payouts: [],
+      });
+      const courseId = await ctx.db.insert("courses", {
+        apiId: "account-course",
+        name: "Account Course",
+        location: "Test",
+        par: 72,
+        front: 36,
+        back: 36,
+        timeZoneOffset: 0,
+      });
       const tournamentId = await ctx.db.insert("tournaments", {
         name: "Account Major",
         seasonId: fixture.seasonId,
-        tierId,
-        courseId: await ctx.db.insert("courses", {
-          apiId: "account-course",
-          name: "Account Course",
-          location: "Test",
-          par: 72,
-          front: 36,
-          back: 36,
-          timeZoneOffset: 0,
-        }),
-        startDate: Date.now() - 10_000,
-        endDate: Date.now() - 5_000,
+        tierId: majorTierId,
+        courseId,
+        logoUrl: "https://example.com/major.png",
+        startDate: now - 100_000,
+        endDate: now - 90_000,
         status: "completed",
       });
       await ctx.db.insert("standingsContributions", {
@@ -106,17 +122,57 @@ describe("earnings settlements", () => {
         memberId: owner.member._id,
         displayName: "Settlement Player",
         tournamentName: "Account Major",
-        tournamentStartDate: Date.now() - 10_000,
-        tournamentEndDate: Date.now() - 5_000,
+        tournamentLogoUrl: "https://example.com/major.png",
+        tournamentStartDate: now - 100_000,
+        tournamentEndDate: now - 90_000,
         tournamentStatus: "completed",
-        tierId,
+        tierId: majorTierId,
         tierName: "Major",
         isPlayoff: false,
         position: "1",
         points: 100,
         earnings: 20_000,
-        updatedAt: Date.now(),
+        updatedAt: now,
       });
+
+      for (const [index, tournamentName] of [
+        "FedEx St. Jude Championship",
+        "BMW Championship",
+        "TOUR Championship",
+      ].entries()) {
+        const startDate = now - 80_000 + index * 20_000;
+        const endDate = startDate + 10_000;
+        const playoffTournamentId = await ctx.db.insert("tournaments", {
+          name: tournamentName,
+          seasonId: fixture.seasonId,
+          tierId: playoffTierId,
+          courseId,
+          logoUrl: `https://example.com/playoff-${index + 1}.png`,
+          startDate,
+          endDate,
+          status: "completed",
+        });
+        await ctx.db.insert("standingsContributions", {
+          seasonId: fixture.seasonId,
+          tourId: fixture.tourId,
+          tourCardId: fixture.cardId,
+          tournamentId: playoffTournamentId,
+          memberId: owner.member._id,
+          displayName: "Settlement Player",
+          tournamentName,
+          tournamentLogoUrl: `https://example.com/playoff-${index + 1}.png`,
+          tournamentStartDate: startDate,
+          tournamentEndDate: endDate,
+          tournamentStatus: "completed",
+          tierId: playoffTierId,
+          tierName: "Playoff",
+          isPlayoff: true,
+          position: "1",
+          points: 0,
+          earnings: 10_000,
+          updatedAt: now,
+        });
+      }
     });
 
     const overview = await owner.authenticated.query(
@@ -126,15 +182,26 @@ describe("earnings settlements", () => {
     expect(overview.career).toMatchObject({
       earningsCents: 50_000,
       points: 250,
-      wins: 1,
-      madeCut: 4,
-      appearances: 5,
+      wins: 2,
+      topFive: 3,
+      topTen: 4,
+      madeCut: 5,
+      appearances: 6,
     });
-    expect(overview.achievements).toHaveLength(1);
-    expect(overview.achievements[0]).toMatchObject({
-      tournamentName: "Account Major",
-      isMajor: true,
+    expect(overview.achievements.map((item) => item.tournamentName)).toEqual([
+      "TOUR Championship",
+      "Account Major",
+    ]);
+    expect(overview.achievements[0]).toMatchObject({ year: 2026 });
+    expect(overview.tourCards[0]).toMatchObject({
+      wins: 2,
+      topFive: 3,
+      topTen: 4,
+      madeCut: 5,
+      appearances: 6,
     });
+    expect(overview.currentSeasonFinancial?.seasonId).toBe(fixture.seasonId);
+    expect(overview).not.toHaveProperty("seasonFinancials");
     expect(overview.member).not.toHaveProperty("clerkId");
   }, 15_000);
 
@@ -203,6 +270,24 @@ describe("earnings settlements", () => {
     const owner = await ensureMember(t, "settlement-guard-owner");
     const regular = await ensureMember(t, "settlement-guard-regular");
     const fixture = await seedCompletedSeason(t, owner.member._id, 20_000);
+    const historicalSeasonId = await t.run(async (ctx) =>
+      ctx.db.insert("seasons", {
+        year: 2025,
+        number: 1,
+        startDate: Date.now() - 200_000,
+        endDate: Date.now() - 100_000,
+      }),
+    );
+
+    await expect(
+      owner.authenticated.mutation(api.functions.settlements.submitMyRequest, {
+        seasonId: historicalSeasonId,
+        transferCents: 0,
+        charityCents: 0,
+        leagueCents: 0,
+        nextSeasonCardCents: 0,
+      }),
+    ).rejects.toThrow("only available for the current season");
 
     await expect(
       owner.authenticated.mutation(api.functions.settlements.submitMyRequest, {

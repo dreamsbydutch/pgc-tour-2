@@ -27,7 +27,6 @@ export function useAccountPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
 
-  const [selectedSeasonId, setSelectedSeasonId] = useState("");
   const [transferAmount, setTransferAmount] = useState("");
   const [charityAmount, setCharityAmount] = useState("");
   const [leagueAmount, setLeagueAmount] = useState("");
@@ -44,24 +43,7 @@ export function useAccountPage() {
     setPayoutEmail(overview.member.email);
   }, [overview]);
 
-  useEffect(() => {
-    if (!overview || selectedSeasonId) return;
-    setSelectedSeasonId(
-      overview.currentSeasonFinancial?.seasonId ??
-        overview.seasonFinancials[0]?.seasonId ??
-        "",
-    );
-  }, [overview, selectedSeasonId]);
-
-  const selectedFinancial = useMemo(
-    () =>
-      overview?.seasonFinancials.find(
-        (financial) => financial.seasonId === selectedSeasonId,
-      ) ??
-      overview?.currentSeasonFinancial ??
-      null,
-    [overview, selectedSeasonId],
-  );
+  const currentSeasonFinancial = overview?.currentSeasonFinancial ?? null;
 
   const parsedAmounts = useMemo(() => {
     const transferCents = cadInputToCents(transferAmount);
@@ -83,20 +65,21 @@ export function useAccountPage() {
       charityCents: charityCents ?? 0,
       leagueCents: leagueCents ?? 0,
       allocatedCents,
-      remainingCents: (selectedFinancial?.availableCents ?? 0) - allocatedCents,
+      remainingCents:
+        (currentSeasonFinancial?.availableCents ?? 0) - allocatedCents,
     };
   }, [
     charityAmount,
     leagueAmount,
     nextSeasonCard,
-    selectedFinancial,
+    currentSeasonFinancial,
     transferAmount,
   ]);
 
-  const request = selectedFinancial?.request ?? null;
+  const request = currentSeasonFinancial?.request ?? null;
   const canSubmitSettlement = Boolean(
-    selectedFinancial?.isComplete &&
-      selectedFinancial.availableCents > 0 &&
+    currentSeasonFinancial?.isComplete &&
+      currentSeasonFinancial.availableCents > 0 &&
       (!request || request.status === "cancelled"),
   );
 
@@ -116,20 +99,20 @@ export function useAccountPage() {
   }
 
   function allocateRemainingToTransfer() {
-    if (!selectedFinancial || !parsedAmounts.valid) return;
+    if (!currentSeasonFinancial || !parsedAmounts.valid) return;
     const nonTransfer =
       parsedAmounts.charityCents +
       parsedAmounts.leagueCents +
       (nextSeasonCard ? NEXT_SEASON_CARD_CENTS : 0);
     setTransferAmount(
       centsToCadInput(
-        Math.max(0, selectedFinancial.availableCents - nonTransfer),
+        Math.max(0, currentSeasonFinancial.availableCents - nonTransfer),
       ),
     );
   }
 
   async function onSubmitSettlement() {
-    if (!selectedFinancial || !canSubmitSettlement) return;
+    if (!currentSeasonFinancial || !canSubmitSettlement) return;
     setSubmitError(null);
     setSubmitSuccess(null);
     if (!parsedAmounts.valid) {
@@ -147,7 +130,7 @@ export function useAccountPage() {
     setSubmitting(true);
     try {
       await submitSettlement({
-        seasonId: selectedFinancial.seasonId as Id<"seasons">,
+        seasonId: currentSeasonFinancial.seasonId as Id<"seasons">,
         transferCents: parsedAmounts.transferCents,
         charityCents: parsedAmounts.charityCents,
         leagueCents: parsedAmounts.leagueCents,
@@ -184,9 +167,7 @@ export function useAccountPage() {
     saveError,
     saveSuccess,
     onSaveProfile,
-    selectedSeasonId,
-    setSelectedSeasonId,
-    selectedFinancial,
+    currentSeasonFinancial,
     transferAmount,
     setTransferAmount,
     charityAmount,

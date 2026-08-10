@@ -229,6 +229,9 @@ bragging rights.
 
 - One 10-golfer roster carries through all three events.
 - Scores are intended to carry forward for all 12 rounds.
+- The first two event positions are interim playoff checkpoints, not standalone
+  career finishes. Only the final TOUR Championship result counts as one
+  playoff appearance and may add a career win, top five, or top ten.
 - Gold starting strokes scale from `-10` for the highest qualifier to `0` for
   the lowest.
 - Silver starting strokes scale from `-10` to the configured floor, with lower
