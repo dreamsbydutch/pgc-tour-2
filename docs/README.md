@@ -19,7 +19,7 @@ Different sources answer different questions:
 
 | Question                        | Source of truth                                                                  |
 | ------------------------------- | -------------------------------------------------------------------------------- |
-| What the league intends         | The in-app rulebook in `src/lib/rules.ts`, confirmed by league organizers        |
+| What the league intends         | The in-app rulebook in `src/utils/rules.ts`, confirmed by league organizers      |
 | What the app currently enforces | Convex functions, utilities, schema, and tests                                   |
 | How code should be organized    | `AGENTS.md`, summarized in `APP_ARCHITECTURE.md`                                 |
 | What data is persisted          | `convex/schema.ts`                                                               |

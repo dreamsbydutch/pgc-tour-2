@@ -125,6 +125,32 @@ Local presentation state such as an open dialog or focused tab may remain in a
 component. If a calculation affects league behavior or could be reused, it does
 not belong there.
 
+### Place frontend code by responsibility
+
+Use this order when deciding where new frontend code belongs:
+
+1. Put framework-required URL declarations, search validation, and page assembly
+   in a route.
+2. Put markup, styling, composition, interaction wiring, and truly local visual
+   state in a component.
+3. Put Convex calls, mutations, asynchronous workflows, shared state, and the
+   transformation from server data to a UI-ready view model in a hook.
+4. Extract a focused calculation from a hook into a utility when it is pure,
+   independently testable, or reusable.
+5. Put an app-owned shape used across files in `src/types/`; infer local and
+   provider-generated types where TypeScript already knows them.
+
+A component may call a hook and render its result. A hook may import utilities
+and types. A utility must not import hooks or components. Do not create a hook
+only to hide static markup, and do not leave a domain calculation in a
+component merely because only one screen currently uses it.
+
+For a typical data-backed feature, design the typed Convex boundary and hook
+result together: return the smallest data the screen needs, transform it once
+in the hook or a pure utility, and make loading, empty, error, authorization,
+and mutation states explicit to the component. Test pure calculations at the
+utility boundary and stateful orchestration at the hook boundary.
+
 ## Backend boundaries
 
 Convex function type must match the work:
