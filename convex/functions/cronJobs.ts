@@ -11,7 +11,11 @@ import type {
   DataGolfFieldPlayer,
   DataGolfRankedPlayer,
 } from "../types/datagolf";
-import { EXCLUDED_GOLFER_IDS, GROUP_LIMITS } from "./_constants";
+import {
+  EXCLUDED_GOLFER_IDS,
+  GROUP_LIMITS,
+  PLAYOFF_SILVER_PAYOUT_OFFSET,
+} from "./_constants";
 import {
   checkCompatabilityOfEventNames,
   normalizePlayerNameFromDataGolf,
@@ -23,6 +27,7 @@ import {
   buildUsageRateByGolferApiId,
   earliestTimeStr,
   roundToDecimalPlace,
+  selectionCountByPlayoffTournamentRound,
 } from "../utils";
 import {
   recomputeStandingsRanksForSeason,
@@ -254,9 +259,13 @@ function getTeamGolferEventEarningsTotal(team: TournamentSyncTeam): {
   return { total, golferCount, earningsCount };
 }
 
-function getTeamTourKey(
-  team: Pick<TournamentSyncTeam, "tour" | "tourCard">,
+function getTeamCompetitionKey(
+  team: Pick<TournamentSyncTeam, "tour" | "tourCard" | "playoff">,
+  isPlayoff = false,
 ): string {
+  if (isPlayoff) {
+    return `playoff:${team.playoff ?? 0}`;
+  }
   return String(team.tour?._id ?? team.tourCard?.tourId ?? "");
 }
 
@@ -272,11 +281,12 @@ function isNonRankingTeamPosition(
 
 export function buildFirstPlaceTiebreakSummary(args: {
   teams: TournamentSyncTeam[];
+  isPlayoff?: boolean;
 }): FirstPlaceTiebreakSummary {
   const teamsByTourKey = new Map<string, TournamentSyncTeam[]>();
 
   for (const team of args.teams) {
-    const tourKey = getTeamTourKey(team);
+    const tourKey = getTeamCompetitionKey(team, args.isPlayoff);
     const existing = teamsByTourKey.get(tourKey) ?? [];
     existing.push(team);
     teamsByTourKey.set(tourKey, existing);
@@ -417,9 +427,11 @@ export function getTeamTournamentRank(args: {
   teams: TournamentSyncTeam[];
   firstPlaceTiebreakSummary?: FirstPlaceTiebreakSummary;
   tournamentCompleted: boolean;
+  isPlayoff?: boolean;
 }): TeamTournamentRank {
   const sameTour = (team: TournamentSyncTeam) =>
-    getTeamTourKey(team) === getTeamTourKey(args.team);
+    getTeamCompetitionKey(team, args.isPlayoff) ===
+    getTeamCompetitionKey(args.team, args.isPlayoff);
   const isRankEligibleTeam = (team: TournamentSyncTeam) =>
     sameTour(team) && !isNonRankingTeamPosition(team.position);
   const teamScore = args.team.score ?? 0;
@@ -449,7 +461,7 @@ export function getTeamTournamentRank(args: {
   }
 
   const firstPlaceResolution = args.firstPlaceTiebreakSummary?.byTourKey.get(
-    getTeamTourKey(args.team),
+    getTeamCompetitionKey(args.team, args.isPlayoff),
   );
   if (!firstPlaceResolution || firstPlaceResolution.status !== "resolved") {
     return { teamsAhead, teamsTied, position: `T${teamsAhead + 1}` };
@@ -470,6 +482,7 @@ function applyComputedTeamPositions(args: {
   teams: TournamentSyncTeam[];
   firstPlaceTiebreakSummary?: FirstPlaceTiebreakSummary;
   tournamentCompleted: boolean;
+  isPlayoff?: boolean;
 }): TournamentSyncTeam[] {
   return args.teams.map((team) => ({
     ...team,
@@ -478,6 +491,7 @@ function applyComputedTeamPositions(args: {
       teams: args.teams,
       firstPlaceTiebreakSummary: args.firstPlaceTiebreakSummary,
       tournamentCompleted: args.tournamentCompleted,
+      isPlayoff: args.isPlayoff,
     }).position,
   }));
 }
@@ -566,11 +580,31 @@ function isWithdrawnOrDisqualifiedPosition(
   return position === "WD" || position === "DQ";
 }
 
-function shouldApplyPreStartNonStarterReplacement(args: {
+export function shouldApplyPreStartNonStarterReplacement(args: {
   isPlayoff: boolean;
   eventIndex?: number;
 }): boolean {
   return !args.isPlayoff || args.eventIndex === 1;
+}
+
+/** Playoff legs one and two are checkpoints; only the final awards results. */
+export function shouldAwardTournamentResults(args: {
+  isPlayoff: boolean;
+  eventIndex?: number;
+}): boolean {
+  return !args.isPlayoff || args.eventIndex === 3;
+}
+
+/** Silver payouts always occupy positions 76-150 in the playoff payout table. */
+export function getTournamentPayoutAheadCount(args: {
+  isPlayoff: boolean;
+  playoff?: number;
+  teamsAhead: number;
+}): number {
+  return (
+    args.teamsAhead +
+    (args.isPlayoff && args.playoff === 2 ? PLAYOFF_SILVER_PAYOUT_OFFSET : 0)
+  );
 }
 
 function hasTournamentPlayEvidence(golfer: EnhancedGolfer): boolean {
@@ -1309,8 +1343,10 @@ function isTeamWeekendCut(args: {
   golfers: EnhancedGolfer[];
   roundNumber: RoundNumber;
   allowPreStartNonStarterReplacement: boolean;
+  eventIndex?: 0 | 1 | 2 | 3;
 }): boolean {
-  if (args.roundNumber < 3) {
+  const eventIndex = args.eventIndex ?? 0;
+  if (eventIndex <= 1 && args.roundNumber < 3) {
     return false;
   }
 
@@ -1323,7 +1359,8 @@ function isTeamWeekendCut(args: {
             args.allowPreStartNonStarterReplacement,
         }),
       ),
-    ).length < 5
+    ).length <
+    selectionCountByPlayoffTournamentRound(eventIndex, args.roundNumber)
   );
 }
 
@@ -1340,6 +1377,7 @@ export function getTeamRoundWindowGolfers(args: {
   >;
   coursePar: number;
   allowPreStartNonStarterReplacement: boolean;
+  eventIndex?: 0 | 1 | 2 | 3;
 }): EnhancedGolfer[] {
   if (
     isTeamWeekendCut({
@@ -1347,12 +1385,16 @@ export function getTeamRoundWindowGolfers(args: {
       roundNumber: args.roundNumber,
       allowPreStartNonStarterReplacement:
         args.allowPreStartNonStarterReplacement,
+      eventIndex: args.eventIndex,
     })
   ) {
     return [];
   }
 
-  const selectionSize = args.roundNumber >= 3 ? 5 : 10;
+  const selectionSize = selectionCountByPlayoffTournamentRound(
+    args.eventIndex ?? 0,
+    args.roundNumber,
+  );
 
   return args.golfers
     .filter((golfer) =>
@@ -1395,12 +1437,16 @@ function getTeamRoundWindowMean(args: {
   coursePar: number;
   metric: "today" | "thru";
   allowPreStartNonStarterReplacement: boolean;
+  eventIndex?: 0 | 1 | 2 | 3;
 }): number | undefined {
   if (args.golfers.length === 0) {
     return undefined;
   }
 
-  const selectionSize = args.roundNumber >= 3 ? 5 : 10;
+  const selectionSize = selectionCountByPlayoffTournamentRound(
+    args.eventIndex ?? 0,
+    args.roundNumber,
+  );
   const total = args.golfers.reduce((sum, golfer) => {
     const metrics = getTournamentRoundWindowMetrics({ ...args, golfer });
     return (
@@ -1424,6 +1470,7 @@ function isTeamRoundComplete(args: {
   >;
   coursePar: number;
   allowPreStartNonStarterReplacement: boolean;
+  eventIndex?: 0 | 1 | 2 | 3;
 }): boolean {
   if (!isRoundPublishedForTimeline(args.timeline, args.roundNumber)) {
     return false;
@@ -1440,7 +1487,11 @@ function isTeamRoundComplete(args: {
     }),
   );
 
-  if (args.roundNumber <= 2) {
+  const selectionSize = selectionCountByPlayoffTournamentRound(
+    args.eventIndex ?? 0,
+    args.roundNumber,
+  );
+  if (selectionSize === 10) {
     return roundScores.every((score) => typeof score === "number");
   }
 
@@ -1450,18 +1501,22 @@ function isTeamRoundComplete(args: {
       roundNumber: args.roundNumber,
       allowPreStartNonStarterReplacement:
         args.allowPreStartNonStarterReplacement,
+      eventIndex: args.eventIndex,
     })
   ) {
     return false;
   }
 
-  return roundScores.filter((score) => typeof score === "number").length >= 5;
+  return (
+    roundScores.filter((score) => typeof score === "number").length >=
+    selectionSize
+  );
 }
 
 /**
  * Returns the published team round average once that round is complete.
  */
-function getTeamRoundScore(args: {
+export function getTeamRoundScore(args: {
   golfers: EnhancedGolfer[];
   roundNumber: RoundNumber;
   timeline: Pick<
@@ -1470,6 +1525,7 @@ function getTeamRoundScore(args: {
   >;
   coursePar: number;
   allowPreStartNonStarterReplacement: boolean;
+  eventIndex?: 0 | 1 | 2 | 3;
 }): number | undefined {
   if (!isTeamRoundComplete(args)) {
     return undefined;
@@ -1488,9 +1544,14 @@ function getTeamRoundScore(args: {
     )
     .filter((score): score is number => typeof score === "number");
 
-  if (args.roundNumber <= 2) {
+  const selectionSize = selectionCountByPlayoffTournamentRound(
+    args.eventIndex ?? 0,
+    args.roundNumber,
+  );
+
+  if (selectionSize === 10) {
     return roundToDecimalPlace(
-      (roundScores.reduce((sum, score) => sum + score, 0) ?? 0) / 10,
+      (roundScores.reduce((sum, score) => sum + score, 0) ?? 0) / selectionSize,
       1,
     );
   }
@@ -1498,8 +1559,8 @@ function getTeamRoundScore(args: {
   return roundToDecimalPlace(
     (roundScores
       .sort((a, b) => (a === 0 ? 500 : a) - (b === 0 ? 500 : b))
-      .slice(0, 5)
-      .reduce((sum, score) => sum + score, 0) ?? 0) / 5,
+      .slice(0, selectionSize)
+      .reduce((sum, score) => sum + score, 0) ?? 0) / selectionSize,
     1,
   );
 }
@@ -1531,12 +1592,15 @@ function getTeamPreviousStandingScore(args: {
     roundTwo?: number | null;
     roundThree?: number | null;
     roundFour?: number | null;
+    playoffCarryoverScore?: number | null;
   };
   timeline: Pick<TournamentTimelineState, "currentRound" | "status">;
   coursePar: number;
 }): number {
+  const carryover = args.team.playoffCarryoverScore ?? 0;
   if (args.timeline.status === "completed") {
     return (
+      carryover +
       getPublishedTeamScoreToPar(args.team, 1, args.coursePar) +
       getPublishedTeamScoreToPar(args.team, 2, args.coursePar) +
       getPublishedTeamScoreToPar(args.team, 3, args.coursePar)
@@ -1544,10 +1608,10 @@ function getTeamPreviousStandingScore(args: {
   }
 
   if (args.timeline.currentRound <= 1) {
-    return 0;
+    return carryover;
   }
 
-  let total = 0;
+  let total = carryover;
   for (const round of TOURNAMENT_ROUNDS) {
     if (round >= args.timeline.currentRound) {
       break;
@@ -2147,12 +2211,17 @@ export const recomputeStandings: ReturnType<typeof internalMutation> =
         await recomputeStandingsRowForCard(ctx, tourCard._id);
       }
       await recomputeStandingsRanksForSeason(ctx, season._id);
+      const playoffTeams = await ctx.runMutation(
+        internal.functions.teams.reconcilePlayoffTeamsForSeason,
+        { seasonId: season._id },
+      );
 
       return {
         ok: true,
         skipped: false,
         seasonId: season._id,
         tourCardsUpdated: tourCards.length,
+        playoffTeams,
       } as const;
     },
   });
@@ -2207,6 +2276,12 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           skipped: true,
           reason: "no_active_tournament",
         } as const;
+      }
+      if (activeTournamentData.isPlayoff) {
+        await ctx.runMutation(
+          internal.functions.teams.reconcilePlayoffTeamsForSeason,
+          { seasonId: activeTournamentData.tournament.seasonId },
+        );
       }
       const syncState = await ctx.runQuery(
         internal.functions.tournamentSyncState.get,
@@ -2303,6 +2378,10 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         historicalData,
         historicalEventData: _historicalEventData,
       } = tournamentStats;
+      const shouldAwardResults = shouldAwardTournamentResults({
+        isPlayoff,
+        eventIndex,
+      });
 
       if (tournamentType === "recent") {
         console.log("runTournamentSync: skipped (recent_tournament)", {
@@ -2731,7 +2810,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           { updates },
         );
       }
-      const updatedTeams: TournamentSyncTeam[] = [];
+      const activeTournamentUpdatedTeams: TournamentSyncTeam[] = [];
       for (const t of teams) {
         const roundOne = getTeamRoundScore({
           golfers: t.golfers,
@@ -2739,6 +2818,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           timeline,
           coursePar: course.par,
           allowPreStartNonStarterReplacement,
+          eventIndex,
         });
         const roundTwo = getTeamRoundScore({
           golfers: t.golfers,
@@ -2746,6 +2826,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           timeline,
           coursePar: course.par,
           allowPreStartNonStarterReplacement,
+          eventIndex,
         });
         const roundThree = getTeamRoundScore({
           golfers: t.golfers,
@@ -2753,6 +2834,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           timeline,
           coursePar: course.par,
           allowPreStartNonStarterReplacement,
+          eventIndex,
         });
         const roundFour = getTeamRoundScore({
           golfers: t.golfers,
@@ -2760,11 +2842,13 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           timeline,
           coursePar: course.par,
           allowPreStartNonStarterReplacement,
+          eventIndex,
         });
         const teamWeekendCut = isTeamWeekendCut({
           golfers: t.golfers,
           roundNumber: visibleRound !== 0 ? visibleRound : 1,
           allowPreStartNonStarterReplacement,
+          eventIndex,
         });
         const teamVisibleRoundGolfers =
           visibleRound === 0
@@ -2776,6 +2860,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                 timeline,
                 coursePar: course.par,
                 allowPreStartNonStarterReplacement,
+                eventIndex,
               });
         const teamLiveTodayMean =
           visibleRound === 0
@@ -2788,6 +2873,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                 coursePar: course.par,
                 metric: "today",
                 allowPreStartNonStarterReplacement,
+                eventIndex,
               });
         const teamLiveThruMean =
           visibleRound === 0
@@ -2800,6 +2886,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                 coursePar: course.par,
                 metric: "thru",
                 allowPreStartNonStarterReplacement,
+                eventIndex,
               });
         const overlapTodayMean =
           timeline.overlapRound === undefined
@@ -2812,6 +2899,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                   timeline,
                   coursePar: course.par,
                   allowPreStartNonStarterReplacement,
+                  eventIndex,
                 }),
                 roundNumber: timeline.overlapRound,
                 roundStarted: timeline.rounds[timeline.overlapRound].started,
@@ -2819,6 +2907,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                 coursePar: course.par,
                 metric: "today",
                 allowPreStartNonStarterReplacement,
+                eventIndex,
               });
         const completedScoreTotal =
           getPublishedTeamScoreToPar(
@@ -2845,13 +2934,20 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           (timeline.livePlay ? (teamLiveTodayMean ?? 0) : 0) +
           (timeline.livePlay ? (overlapTodayMean ?? 0) : 0);
 
-        updatedTeams.push({
+        activeTournamentUpdatedTeams.push({
           ...t,
           position: teamWeekendCut ? "CUT" : t.position,
           score:
             timeline.status === "upcoming"
-              ? undefined
-              : roundToDecimalPlace(completedScoreTotal + liveScoreTotal, 1),
+              ? isPlayoff
+                ? t.playoffCarryoverScore
+                : undefined
+              : roundToDecimalPlace(
+                  (isPlayoff ? (t.playoffCarryoverScore ?? 0) : 0) +
+                    completedScoreTotal +
+                    liveScoreTotal,
+                  1,
+                ),
           today:
             typeof teamLiveTodayMean === "number"
               ? roundToDecimalPlace(teamLiveTodayMean, 1)
@@ -2972,7 +3068,8 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         });
       }
       const firstPlaceTiebreakSummary = buildFirstPlaceTiebreakSummary({
-        teams: updatedTeams,
+        teams: activeTournamentUpdatedTeams,
+        isPlayoff,
       });
       const persistedTournamentState = derivePersistedTournamentState({
         timeline,
@@ -2982,9 +3079,10 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
       const tournamentCurrentRound = persistedTournamentState.currentRound;
       const tournamentLivePlay = persistedTournamentState.livePlay;
       const teamsWithComputedPositions = applyComputedTeamPositions({
-        teams: updatedTeams,
+        teams: activeTournamentUpdatedTeams,
         firstPlaceTiebreakSummary,
         tournamentCompleted: tournamentStatus === "completed",
+        isPlayoff,
       });
 
       if (persistedTournamentState.holdReason) {
@@ -3027,7 +3125,8 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         if (t._id) {
           const teamsAheadPast = teamsWithComputedPositions.filter(
             (ut) =>
-              ut.tour?._id === t.tour?._id &&
+              getTeamCompetitionKey(ut, isPlayoff) ===
+                getTeamCompetitionKey(t, isPlayoff) &&
               getTeamPreviousStandingScore({
                 team: ut,
                 timeline,
@@ -3041,7 +3140,8 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
           ).length;
           const teamsTiedPast = teamsWithComputedPositions.filter(
             (ut) =>
-              ut.tour?._id === t.tour?._id &&
+              getTeamCompetitionKey(ut, isPlayoff) ===
+                getTeamCompetitionKey(t, isPlayoff) &&
               getTeamPreviousStandingScore({
                 team: ut,
                 timeline,
@@ -3058,6 +3158,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             teams: teamsWithComputedPositions,
             firstPlaceTiebreakSummary,
             tournamentCompleted: tournamentStatus === "completed",
+            isPlayoff,
           });
           teamUpdates.push({
             _id: t._id,
@@ -3078,16 +3179,24 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             roundThree: t.roundThree ?? null,
             roundFourTeeTime: t.roundFourTeeTime ?? null,
             roundFour: t.roundFour ?? null,
-            earnings: awardTeamEarnings(
-              tier,
-              teamRank.teamsAhead,
-              teamRank.teamsTied,
-            ),
-            points: awardTeamPlayoffPoints(
-              tier,
-              teamRank.teamsAhead,
-              teamRank.teamsTied,
-            ),
+            earnings: shouldAwardResults
+              ? awardTeamEarnings(
+                  tier,
+                  getTournamentPayoutAheadCount({
+                    isPlayoff,
+                    playoff: t.playoff,
+                    teamsAhead: teamRank.teamsAhead,
+                  }),
+                  teamRank.teamsTied,
+                )
+              : 0,
+            points: shouldAwardResults
+              ? awardTeamPlayoffPoints(
+                  tier,
+                  teamRank.teamsAhead,
+                  teamRank.teamsTied,
+                )
+              : 0,
             position: teamRank.position,
             pastPosition:
               teamsTiedPast > 1
@@ -3335,6 +3444,12 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           reason: "no_active_tournament",
         } as const;
       }
+      if (activeTournamentData.isPlayoff) {
+        await ctx.runMutation(
+          internal.functions.teams.reconcilePlayoffTeamsForSeason,
+          { seasonId: activeTournamentData.tournament.seasonId },
+        );
+      }
       const syncState = await ctx.runQuery(
         internal.functions.tournamentSyncState.get,
         { tournamentId: activeTournamentData.tournament._id },
@@ -3383,6 +3498,10 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         historicalData,
         historicalEventData: _historicalEventData,
       } = tournamentStats;
+      const shouldAwardResults = shouldAwardTournamentResults({
+        isPlayoff,
+        eventIndex,
+      });
 
       const allowPreStartNonStarterReplacement =
         shouldApplyPreStartNonStarterReplacement({
@@ -3807,6 +3926,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           timeline,
           coursePar: course.par,
           allowPreStartNonStarterReplacement,
+          eventIndex,
         });
         const roundTwo = getTeamRoundScore({
           golfers: t.golfers,
@@ -3814,6 +3934,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           timeline,
           coursePar: course.par,
           allowPreStartNonStarterReplacement,
+          eventIndex,
         });
         const roundThree = getTeamRoundScore({
           golfers: t.golfers,
@@ -3821,6 +3942,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           timeline,
           coursePar: course.par,
           allowPreStartNonStarterReplacement,
+          eventIndex,
         });
         const roundFour = getTeamRoundScore({
           golfers: t.golfers,
@@ -3828,11 +3950,13 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           timeline,
           coursePar: course.par,
           allowPreStartNonStarterReplacement,
+          eventIndex,
         });
         const teamWeekendCut = isTeamWeekendCut({
           golfers: t.golfers,
           roundNumber: visibleRound !== 0 ? visibleRound : 1,
           allowPreStartNonStarterReplacement,
+          eventIndex,
         });
         const teamVisibleRoundGolfers =
           visibleRound === 0
@@ -3844,6 +3968,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                 timeline,
                 coursePar: course.par,
                 allowPreStartNonStarterReplacement,
+                eventIndex,
               });
         const teamLiveTodayMean =
           visibleRound === 0
@@ -3856,6 +3981,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                 coursePar: course.par,
                 metric: "today",
                 allowPreStartNonStarterReplacement,
+                eventIndex,
               });
         const teamLiveThruMean =
           visibleRound === 0
@@ -3868,6 +3994,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                 coursePar: course.par,
                 metric: "thru",
                 allowPreStartNonStarterReplacement,
+                eventIndex,
               });
         const overlapTodayMean =
           timeline.overlapRound === undefined
@@ -3880,6 +4007,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                   timeline,
                   coursePar: course.par,
                   allowPreStartNonStarterReplacement,
+                  eventIndex,
                 }),
                 roundNumber: timeline.overlapRound,
                 roundStarted: timeline.rounds[timeline.overlapRound].started,
@@ -3887,6 +4015,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                 coursePar: course.par,
                 metric: "today",
                 allowPreStartNonStarterReplacement,
+                eventIndex,
               });
         const completedScoreTotal =
           getPublishedTeamScoreToPar(
@@ -3918,8 +4047,15 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           position: teamWeekendCut ? "CUT" : t.position,
           score:
             timeline.status === "upcoming"
-              ? undefined
-              : roundToDecimalPlace(completedScoreTotal + liveScoreTotal, 1),
+              ? isPlayoff
+                ? t.playoffCarryoverScore
+                : undefined
+              : roundToDecimalPlace(
+                  (isPlayoff ? (t.playoffCarryoverScore ?? 0) : 0) +
+                    completedScoreTotal +
+                    liveScoreTotal,
+                  1,
+                ),
           today:
             typeof teamLiveTodayMean === "number"
               ? roundToDecimalPlace(teamLiveTodayMean, 1)
@@ -4041,6 +4177,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
       }
       const firstPlaceTiebreakSummary = buildFirstPlaceTiebreakSummary({
         teams: updatedTeams,
+        isPlayoff,
       });
       const persistedTournamentState = derivePersistedTournamentState({
         timeline,
@@ -4053,6 +4190,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         teams: updatedTeams,
         firstPlaceTiebreakSummary,
         tournamentCompleted: tournamentStatus === "completed",
+        isPlayoff,
       });
 
       if (persistedTournamentState.holdReason) {
@@ -4096,7 +4234,8 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         if (t._id) {
           const teamsAheadPast = teamsWithComputedPositions.filter(
             (ut) =>
-              ut.tour?._id === t.tour?._id &&
+              getTeamCompetitionKey(ut, isPlayoff) ===
+                getTeamCompetitionKey(t, isPlayoff) &&
               getTeamPreviousStandingScore({
                 team: ut,
                 timeline,
@@ -4110,7 +4249,8 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
           ).length;
           const teamsTiedPast = teamsWithComputedPositions.filter(
             (ut) =>
-              ut.tour?._id === t.tour?._id &&
+              getTeamCompetitionKey(ut, isPlayoff) ===
+                getTeamCompetitionKey(t, isPlayoff) &&
               getTeamPreviousStandingScore({
                 team: ut,
                 timeline,
@@ -4127,6 +4267,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             teams: teamsWithComputedPositions,
             firstPlaceTiebreakSummary,
             tournamentCompleted: tournamentStatus === "completed",
+            isPlayoff,
           });
           teamUpdates.push({
             _id: t._id,
@@ -4147,16 +4288,24 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             roundThree: t.roundThree ?? null,
             roundFourTeeTime: t.roundFourTeeTime ?? null,
             roundFour: t.roundFour ?? null,
-            earnings: awardTeamEarnings(
-              tier,
-              teamRank.teamsAhead,
-              teamRank.teamsTied,
-            ),
-            points: awardTeamPlayoffPoints(
-              tier,
-              teamRank.teamsAhead,
-              teamRank.teamsTied,
-            ),
+            earnings: shouldAwardResults
+              ? awardTeamEarnings(
+                  tier,
+                  getTournamentPayoutAheadCount({
+                    isPlayoff,
+                    playoff: t.playoff,
+                    teamsAhead: teamRank.teamsAhead,
+                  }),
+                  teamRank.teamsTied,
+                )
+              : 0,
+            points: shouldAwardResults
+              ? awardTeamPlayoffPoints(
+                  tier,
+                  teamRank.teamsAhead,
+                  teamRank.teamsTied,
+                )
+              : 0,
             position: teamRank.position,
             pastPosition:
               teamsTiedPast > 1

@@ -38,4 +38,6 @@ export const GROUP_LIMITS = {
 export const MAX_PRETOURNAMENT_LEADTIME = 3 * 24 * 60 * 60 * 1000;
 
 export const DEFAULT_MAX_PARTICIPANTS = 75;
+// Playoff tier payouts reserve slots 1-75 for Gold and 76-150 for Silver.
+export const PLAYOFF_SILVER_PAYOUT_OFFSET = 75;
 export const PRE_TOURNAMENT_PICK_WINDOW_MS = 4 * MS_PER_DAY;

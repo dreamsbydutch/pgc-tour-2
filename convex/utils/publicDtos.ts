@@ -117,6 +117,7 @@ function projectPublicTeamFields(
     position: team.position,
     pastPosition: team.pastPosition,
     score: team.score,
+    playoffCarryoverScore: team.playoffCarryoverScore,
     topTen: team.topTen,
     topFive: team.topFive,
     topThree: team.topThree,

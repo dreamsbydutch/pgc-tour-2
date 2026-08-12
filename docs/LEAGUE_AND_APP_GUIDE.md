@@ -229,12 +229,18 @@ bragging rights.
 
 - One 10-golfer roster carries through all three events.
 - Scores are intended to carry forward for all 12 rounds.
+- The first two event positions are interim playoff checkpoints, not standalone
+  career finishes. Only the final TOUR Championship result counts as one
+  playoff appearance, awards playoff points and payouts, and may add a career
+  win, top five, or top ten.
 - Gold starting strokes scale from `-10` for the highest qualifier to `0` for
   the lowest.
 - Silver starting strokes scale from `-10` to the configured floor, with lower
   qualifiers starting at `0`.
 - Point ties receive the average of the starting-stroke slots occupied by the
   tie.
+- Playoff tier payout slots are fixed: Gold uses positions 1-75 and Silver uses
+  positions 76-150, regardless of the actual bracket sizes.
 
 Counting golfers change by event:
 
@@ -244,15 +250,17 @@ Counting golfers change by event:
 | BMW Championship            | Best 5 in every round                  |
 | TOUR Championship           | Best 3 in every round                  |
 
-### Playoff implementation caution
+### Playoff implementation
 
-The code contains event-specific selection counts and copies rosters plus prior
-scores into later events. Starting strokes are currently calculated for the
-standings display, and the live-sync scoring path has no explicit persisted
-starting-stroke field. The live ranking key currently derives from tour
-identity, so Gold/Silver isolation must also be verified rather than assumed.
-Before changing or relying on playoff scoring, verify with end-to-end tests
-that:
+The backend derives qualification from regular-season point totals whenever a
+playoff roster is submitted or reconciled; it does not trust a stale playoff
+flag. It persists starting strokes and each prior-event score as the next
+event's carryover baseline. Live synchronization adds only the current leg to
+that baseline and ranks Gold and Silver independently of the cards' original
+tours. Reconciliation removes ineligible or out-of-sequence playoff teams and
+audits each deletion.
+
+Before changing playoff scoring, continue to verify with end-to-end tests that:
 
 - Gold and Silver are ranked and awarded as separate competitions;
 - starting strokes affect the first playoff leaderboard score;
@@ -260,8 +268,8 @@ that:
 - TOUR Championship rounds always count 3; and
 - live synchronization preserves prior-event carryover.
 
-Do not treat display output as proof that the persisted competition score is
-correct.
+Do not treat display output alone as proof that the persisted competition score
+is correct.
 
 ## Automated operating cycle
 

@@ -9,10 +9,13 @@ import {
   getEffectiveGolferLeaderboardScore,
   getAdaptiveSyncDelayMs,
   getGolferLeaderboardRankMetrics,
+  getTournamentPayoutAheadCount,
   getTeamRoundWindowGolfers,
+  getTeamRoundScore,
   getTournamentRoundWindowMetrics,
   getTeamTournamentRank,
   isRoundPublishedForTimeline,
+  shouldAwardTournamentResults,
 } from "./cronJobs";
 
 describe("sync batching and adaptive cadence", () => {
@@ -64,6 +67,7 @@ function makeGolfer(
 function makeTeam(args: {
   id: string;
   tourId?: string;
+  playoff?: number;
   score: number;
   position?: string;
   golferEarnings?: Array<number | undefined>;
@@ -74,6 +78,7 @@ function makeTeam(args: {
     _id: args.id,
     score: args.score,
     position: args.position ?? "T1",
+    playoff: args.playoff,
     golfers: (args.golferEarnings ?? []).map((earnings, index) =>
       makeGolfer({
         golfer: { apiId: index + 1 },
@@ -549,6 +554,93 @@ describe("getTeamRoundWindowGolfers", () => {
   });
 });
 
+describe("playoff round scoring", () => {
+  const completedTimeline = {
+    currentRound: 4,
+    livePlay: false,
+    status: "completed" as const,
+  };
+  const golfers = Array.from({ length: 10 }, (_, index) =>
+    makeGolfer({ live: { R1: 60 + index, current_pos: `${index + 1}` } }),
+  );
+
+  it("counts all ten golfers in St. Jude rounds one and two", () => {
+    expect(
+      getTeamRoundScore({
+        golfers,
+        roundNumber: 1,
+        timeline: completedTimeline,
+        coursePar: 72,
+        allowPreStartNonStarterReplacement: false,
+        eventIndex: 1,
+      }),
+    ).toBe(64.5);
+  });
+
+  it("counts the best five golfers in every BMW round", () => {
+    expect(
+      getTeamRoundScore({
+        golfers,
+        roundNumber: 1,
+        timeline: completedTimeline,
+        coursePar: 72,
+        allowPreStartNonStarterReplacement: false,
+        eventIndex: 2,
+      }),
+    ).toBe(62);
+  });
+
+  it("counts the best three golfers in every TOUR Championship round", () => {
+    expect(
+      getTeamRoundScore({
+        golfers,
+        roundNumber: 1,
+        timeline: completedTimeline,
+        coursePar: 72,
+        allowPreStartNonStarterReplacement: false,
+        eventIndex: 3,
+      }),
+    ).toBe(61);
+  });
+
+  it("awards only the final playoff leg", () => {
+    expect(shouldAwardTournamentResults({ isPlayoff: false })).toBe(true);
+    expect(
+      shouldAwardTournamentResults({ isPlayoff: true, eventIndex: 1 }),
+    ).toBe(false);
+    expect(
+      shouldAwardTournamentResults({ isPlayoff: true, eventIndex: 2 }),
+    ).toBe(false);
+    expect(
+      shouldAwardTournamentResults({ isPlayoff: true, eventIndex: 3 }),
+    ).toBe(true);
+  });
+
+  it("always starts Silver payouts at payout position 76", () => {
+    expect(
+      getTournamentPayoutAheadCount({
+        isPlayoff: true,
+        playoff: 1,
+        teamsAhead: 2,
+      }),
+    ).toBe(2);
+    expect(
+      getTournamentPayoutAheadCount({
+        isPlayoff: true,
+        playoff: 2,
+        teamsAhead: 2,
+      }),
+    ).toBe(77);
+    expect(
+      getTournamentPayoutAheadCount({
+        isPlayoff: false,
+        playoff: 2,
+        teamsAhead: 2,
+      }),
+    ).toBe(2);
+  });
+});
+
 describe("buildFirstPlaceTiebreakSummary", () => {
   it("marks tours without a first-place tie as resolved enough to complete", () => {
     const summary = buildFirstPlaceTiebreakSummary({
@@ -761,6 +853,46 @@ describe("derivePersistedTournamentState", () => {
 });
 
 describe("getTeamTournamentRank", () => {
+  it("ranks Gold and Silver separately across original tours", () => {
+    const teams = [
+      makeTeam({
+        id: "gold-tour-a",
+        tourId: "tour-a",
+        playoff: 1,
+        score: -10,
+      }),
+      makeTeam({
+        id: "gold-tour-b",
+        tourId: "tour-b",
+        playoff: 1,
+        score: -8,
+      }),
+      makeTeam({
+        id: "silver-tour-a",
+        tourId: "tour-a",
+        playoff: 2,
+        score: -20,
+      }),
+    ];
+
+    expect(
+      getTeamTournamentRank({
+        team: teams[1],
+        teams,
+        tournamentCompleted: false,
+        isPlayoff: true,
+      }),
+    ).toMatchObject({ teamsAhead: 1, position: "2" });
+    expect(
+      getTeamTournamentRank({
+        team: teams[2],
+        teams,
+        tournamentCompleted: false,
+        isPlayoff: true,
+      }),
+    ).toMatchObject({ teamsAhead: 0, position: "1" });
+  });
+
   it("ignores CUT teams when ranking active teams in the same tour", () => {
     const teams = [
       makeTeam({ id: "team-1", score: -12, position: "1" }),

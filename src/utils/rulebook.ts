@@ -1,4 +1,5 @@
 import type { TierPayoutsRow, TierPointsRow } from "@/types";
+import { PLAYOFF_SILVER_PAYOUT_OFFSET } from "./constants";
 import type { TierDoc } from "convex/types/types";
 
 export function buildRulebookPointsTiers(tiers: TierDoc[] | undefined) {
@@ -27,13 +28,17 @@ export function buildRulebookPayoutsTiers(tiers: TierDoc[] | undefined) {
     )
     .sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
   const playoffTier = rows.find((tier) => tier.name === "Playoff");
-  if (!playoffTier || playoffTier.payouts.length <= 75) return rows;
+  if (
+    !playoffTier ||
+    playoffTier.payouts.length <= PLAYOFF_SILVER_PAYOUT_OFFSET
+  )
+    return rows;
   const playoffIndex = rows.indexOf(playoffTier);
   rows.splice(playoffIndex + 1, 0, {
     ...playoffTier,
     key: "silver-tier",
     name: "Silver",
-    payouts: playoffTier.payouts.slice(75),
+    payouts: playoffTier.payouts.slice(PLAYOFF_SILVER_PAYOUT_OFFSET),
   });
   return rows;
 }
