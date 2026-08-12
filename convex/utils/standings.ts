@@ -1,6 +1,7 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { parsePositionNumber } from "./misc";
+import { getPlayoffLevel } from "./playoffs";
 
 type StandingsAggregationTeam = Pick<
   Doc<"teams">,
@@ -289,14 +290,24 @@ export async function recomputeStandingsRanksForSeason(
       ).length;
       const rank = betterPointsCount + 1;
       const currentPosition = `${samePointsCount > 1 ? "T" : ""}${rank}`;
-      const playoff = !tour
-        ? 0
-        : betterPointsCount < (tour.playoffSpots[0] ?? 0)
-          ? 1
-          : betterPointsCount <
-              (tour.playoffSpots[0] ?? 0) + (tour.playoffSpots[1] ?? 0)
-            ? 2
-            : 0;
+      const playoff = getPlayoffLevel({
+        card: {
+          id: String(row.tourCardId),
+          tourId: String(row.tourId),
+          points: row.points,
+        },
+        cards: tourRows.map((candidate) => ({
+          id: String(candidate.tourCardId),
+          tourId: String(candidate.tourId),
+          points: candidate.points,
+        })),
+        tour: tour
+          ? {
+              id: String(tour._id),
+              playoffSpots: tour.playoffSpots,
+            }
+          : undefined,
+      });
       const next = {
         rank,
         currentPosition,

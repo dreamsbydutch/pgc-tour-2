@@ -6,6 +6,8 @@ import type {
 } from "@/types";
 
 export const DEFAULT_MAX_PARTICIPANTS = 75;
+// Playoff tier payouts reserve slots 1-75 for Gold and 76-150 for Silver.
+export const PLAYOFF_SILVER_PAYOUT_OFFSET = 75;
 
 export const PGC_LOGO_URL =
   "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPJiXqZRs47Fgtd9BSMeHQ2WnVuLfP8IaTAp6E";

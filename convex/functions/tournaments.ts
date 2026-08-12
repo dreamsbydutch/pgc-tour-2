@@ -22,6 +22,7 @@ import {
   projectPublicTournament,
   projectPublicTournamentGolfer,
 } from "../utils/publicDtos";
+import { buildPlayoffAssignments } from "../utils/playoffs";
 
 const TOURNAMENT_DEFAULT_HANDOFF_WINDOW_MS = 72 * 60 * 60 * 1000;
 
@@ -112,6 +113,76 @@ export const duplicateFromPreviousPlayoff = internalMutation({
     previousPlayoffTournamentId: v.id("tournaments"),
   },
   handler: async (ctx, args) => {
+    const [currentTournament, previousTournament] = await Promise.all([
+      ctx.db.get(args.currentTournamentId),
+      ctx.db.get(args.previousPlayoffTournamentId),
+    ]);
+    if (
+      !currentTournament ||
+      !previousTournament ||
+      currentTournament.seasonId !== previousTournament.seasonId
+    ) {
+      throw new Error("Playoff tournaments must exist in the same season");
+    }
+    const seasonTournaments = await ctx.db
+      .query("tournaments")
+      .withIndex("by_season", (q) =>
+        q.eq("seasonId", currentTournament.seasonId),
+      )
+      .take(100);
+    const tiers = await Promise.all(
+      [...new Set(seasonTournaments.map((item) => item.tierId))].map((tierId) =>
+        ctx.db.get(tierId),
+      ),
+    );
+    const tierNameById = new Map(
+      tiers.filter(Boolean).map((tier) => [tier!._id, tier!.name] as const),
+    );
+    const playoffTournaments = seasonTournaments
+      .filter(
+        (item) =>
+          (tierNameById.get(item.tierId) ?? "")
+            .toLowerCase()
+            .includes("playoff") || item.name.toLowerCase().includes("playoff"),
+      )
+      .sort((a, b) => a.startDate - b.startDate);
+    const currentIndex = playoffTournaments.findIndex(
+      (item) => item._id === currentTournament._id,
+    );
+    if (
+      currentIndex < 1 ||
+      playoffTournaments[currentIndex - 1]?._id !== previousTournament._id
+    ) {
+      throw new Error(
+        "Playoff teams must carry over from the immediately prior leg",
+      );
+    }
+    const [tourCards, tours] = await Promise.all([
+      ctx.db
+        .query("tourCards")
+        .withIndex("by_season", (q) =>
+          q.eq("seasonId", currentTournament.seasonId),
+        )
+        .take(500),
+      ctx.db
+        .query("tours")
+        .withIndex("by_season", (q) =>
+          q.eq("seasonId", currentTournament.seasonId),
+        )
+        .take(20),
+    ]);
+    const cardById = new Map(tourCards.map((card) => [card._id, card]));
+    const assignments = buildPlayoffAssignments({
+      cards: tourCards.map((card) => ({
+        id: String(card._id),
+        tourId: String(card.tourId),
+        points: card.points,
+      })),
+      tours: tours.map((tour) => ({
+        id: String(tour._id),
+        playoffSpots: tour.playoffSpots,
+      })),
+    });
     const tournamentGolfersFrompreviousPlayoffTournament = await ctx.db
       .query("tournamentGolfers")
       .withIndex("by_tournament", (q) =>
@@ -128,6 +199,8 @@ export const duplicateFromPreviousPlayoff = internalMutation({
 
     let golfersCopied = 0;
     let teamsCopied = 0;
+    let teamsUpdated = 0;
+    let teamsRemoved = 0;
     const groupSet = new Set<number>();
 
     for (const tg of tournamentGolfersFrompreviousPlayoffTournament) {
@@ -158,6 +231,9 @@ export const duplicateFromPreviousPlayoff = internalMutation({
     }
 
     for (const team of teamsFrompreviousPlayoffTournament) {
+      const card = cardById.get(team.tourCardId);
+      const playoff = assignments.get(String(team.tourCardId)) ?? 0;
+      if (!card || playoff === 0) continue;
       const teamFromCurrentTournament = await ctx.db
         .query("teams")
         .withIndex("by_tournament_tour_card", (q) =>
@@ -166,23 +242,85 @@ export const duplicateFromPreviousPlayoff = internalMutation({
             .eq("tourCardId", team.tourCardId),
         )
         .first();
-      if (teamFromCurrentTournament) continue;
-
-      await ctx.db.insert("teams", {
-        tournamentId: args.currentTournamentId,
-        tourCardId: team.tourCardId,
+      const carryover = team.score ?? team.playoffCarryoverScore ?? 0;
+      const value = {
         golferIds: team.golferIds,
-        seasonId: team.seasonId,
-        tourId: team.tourId,
+        seasonId: card.seasonId,
+        tourId: card.tourId,
+        memberId: card.memberId,
+        displayName: card.displayName,
+        playoff,
+        playoffCarryoverScore: carryover,
+        pastPosition: team.position,
+      };
+      if (teamFromCurrentTournament) {
+        const hasScoringData =
+          (teamFromCurrentTournament.round ?? 0) > 0 ||
+          teamFromCurrentTournament.today !== undefined ||
+          teamFromCurrentTournament.thru !== undefined ||
+          teamFromCurrentTournament.roundOne !== undefined ||
+          teamFromCurrentTournament.roundTwo !== undefined ||
+          teamFromCurrentTournament.roundThree !== undefined ||
+          teamFromCurrentTournament.roundFour !== undefined;
+        await ctx.db.patch(teamFromCurrentTournament._id, {
+          ...value,
+          score: hasScoringData
+            ? (teamFromCurrentTournament.score ?? 0) -
+              (teamFromCurrentTournament.playoffCarryoverScore ?? 0) +
+              carryover
+            : carryover,
+          updatedAt: Date.now(),
+        });
+        teamsUpdated += 1;
+      } else {
+        await ctx.db.insert("teams", {
+          tournamentId: args.currentTournamentId,
+          tourCardId: team.tourCardId,
+          ...value,
+          score: carryover,
+          updatedAt: Date.now(),
+        });
+        teamsCopied += 1;
+      }
+    }
+
+    const previousCardIds = new Set(
+      teamsFrompreviousPlayoffTournament
+        .filter((team) => (assignments.get(String(team.tourCardId)) ?? 0) > 0)
+        .map((team) => String(team.tourCardId)),
+    );
+    const currentTeams = await ctx.db
+      .query("teams")
+      .withIndex("by_tournament", (q) =>
+        q.eq("tournamentId", args.currentTournamentId),
+      )
+      .take(500);
+    for (const team of currentTeams) {
+      const qualified = (assignments.get(String(team.tourCardId)) ?? 0) > 0;
+      if (qualified && previousCardIds.has(String(team.tourCardId))) continue;
+      const contribution = await ctx.db
+        .query("standingsContributions")
+        .withIndex("by_tour_card_tournament", (q) =>
+          q
+            .eq("tourCardId", team.tourCardId)
+            .eq("tournamentId", args.currentTournamentId),
+        )
+        .first();
+      if (contribution) await ctx.db.delete(contribution._id);
+      await ctx.db.insert("auditLogs", {
         memberId: team.memberId,
-        displayName: team.displayName,
-        playoff: team.playoff,
-        score: team.score,
-        position: team.position,
-        pastPosition: team.pastPosition,
-        updatedAt: Date.now(),
+        entityType: "team",
+        entityId: String(team._id),
+        action: "deleted",
+        changes: {
+          reason: qualified
+            ? "missing_previous_playoff_team"
+            : "tour_card_not_qualified_for_playoffs",
+          snapshot: team,
+        },
       });
-      teamsCopied += 1;
+      await ctx.db.delete(team._id);
+      teamsRemoved += 1;
     }
 
     return {
@@ -192,6 +330,8 @@ export const duplicateFromPreviousPlayoff = internalMutation({
       copiedFromTournamentId: args.previousPlayoffTournamentId,
       golfersCopied,
       teamsCopied,
+      teamsUpdated,
+      teamsRemoved,
       groupsCreated: groupSet.size,
     } as const;
   },

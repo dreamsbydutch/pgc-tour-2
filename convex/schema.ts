@@ -233,6 +233,9 @@ const schema = defineSchema({
     position: v.optional(v.string()),
     pastPosition: v.optional(v.string()),
     score: v.optional(v.number()), // Score relative to par
+    // Initial score for this playoff leg: season starting strokes for St. Jude,
+    // then the prior leg's cumulative score for BMW/TOUR Championship.
+    playoffCarryoverScore: v.optional(v.number()),
 
     // Performance metrics
     topTen: v.optional(v.number()),

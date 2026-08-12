@@ -15,6 +15,7 @@ import {
   parsePositionToNumber,
 } from "@/utils/app";
 import { buildPlayoffStartingStrokes } from "@/utils";
+import { PLAYOFF_SILVER_PAYOUT_OFFSET } from "@/utils/constants";
 import { useAnalytics } from "./useAnalytics";
 import { useFriendManagement } from "./useFriendManagement";
 
@@ -296,14 +297,8 @@ export function useStandingsPage(props: StandingsViewProps) {
         .slice()
         .sort(sortCards);
 
-      if (goldCount > 0) {
-        goldTeams.push(...cardsInTour.slice(0, goldCount));
-      }
-      if (silverCount > 0) {
-        silverTeams.push(
-          ...cardsInTour.slice(goldCount, goldCount + silverCount),
-        );
-      }
+      goldTeams.push(...cardsInTour.filter((card) => card.playoff === 1));
+      silverTeams.push(...cardsInTour.filter((card) => card.playoff === 2));
 
       if (cutoff > 0) {
         for (let i = cutoff; i < cardsInTour.length; i++) {
@@ -359,8 +354,8 @@ export function useStandingsPage(props: StandingsViewProps) {
     return {
       points: playoffTier.points.slice(0, playoffSpotTotals.silverTotal),
       payouts: playoffTier.payouts.slice(
-        75,
-        75 + playoffSpotTotals.silverTotal,
+        PLAYOFF_SILVER_PAYOUT_OFFSET,
+        PLAYOFF_SILVER_PAYOUT_OFFSET + playoffSpotTotals.silverTotal,
       ),
     };
   }, [playoffTier, playoffSpotTotals.silverTotal]);
