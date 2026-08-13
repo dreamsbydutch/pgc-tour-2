@@ -14,6 +14,87 @@ import {
   DataGolfHistoricalEventDataResponse,
   DataGolfHistoricalRoundDataResponse,
 } from "../types/datagolf";
+import { chunkArray } from "../utils/golfers";
+
+type MissingTournamentGolferInput = {
+  dg_id: number;
+  player_name: string;
+  country?: string;
+  worldRank?: number;
+  dg_skill_estimate?: number;
+  r1_teetime?: number;
+  r2_teetime?: number;
+};
+
+export function collectMissingTournamentGolfers(args: {
+  existingApiIds: ReadonlySet<number>;
+  fieldData: DataGolfFieldUpdatesResponse;
+  rankingData: DataGolfRankingsResponse;
+  liveData: DataGolfLiveModelPredictionsResponse;
+  historicalData?: DataGolfHistoricalRoundDataResponse;
+}): MissingTournamentGolferInput[] {
+  const fieldById = new Map(
+    (args.fieldData.field ?? []).map((player) => [player.dg_id, player]),
+  );
+  const rankingById = new Map(
+    (args.rankingData.rankings ?? []).map((player) => [player.dg_id, player]),
+  );
+  const namesById = new Map<number, string>();
+  for (const player of args.fieldData.field ?? []) {
+    namesById.set(player.dg_id, player.player_name);
+  }
+  for (const player of args.liveData.data ?? []) {
+    namesById.set(player.dg_id, player.player_name);
+  }
+  for (const player of args.historicalData?.scores ?? []) {
+    namesById.set(player.dg_id, player.player_name);
+  }
+
+  const missing: MissingTournamentGolferInput[] = [];
+  for (const [dgId, playerName] of namesById) {
+    if (
+      args.existingApiIds.has(dgId) ||
+      !Number.isSafeInteger(dgId) ||
+      dgId <= 0 ||
+      !playerName.trim()
+    ) {
+      continue;
+    }
+    const field = fieldById.get(dgId);
+    const ranking = rankingById.get(dgId);
+    const fieldWorldRank = field?.owgr_rank;
+    const rankingWorldRank = ranking?.owgr_rank;
+    const worldRank =
+      Number.isFinite(fieldWorldRank) && (fieldWorldRank ?? 0) > 0
+        ? fieldWorldRank
+        : Number.isFinite(rankingWorldRank) && (rankingWorldRank ?? 0) > 0
+          ? rankingWorldRank
+          : undefined;
+    const skillEstimate = ranking?.dg_skill_estimate;
+    const roundOneTeeTime = field?.teetimes.find(
+      (time) => time.round_num === 1,
+    )?.teetime;
+    const roundTwoTeeTime = field?.teetimes.find(
+      (time) => time.round_num === 2,
+    )?.teetime;
+    missing.push({
+      dg_id: dgId,
+      player_name: playerName,
+      ...(field?.country ? { country: field.country } : {}),
+      ...(worldRank !== undefined ? { worldRank } : {}),
+      ...(Number.isFinite(skillEstimate)
+        ? { dg_skill_estimate: skillEstimate }
+        : {}),
+      ...(typeof roundOneTeeTime === "number"
+        ? { r1_teetime: roundOneTeeTime }
+        : {}),
+      ...(typeof roundTwoTeeTime === "number"
+        ? { r2_teetime: roundTwoTeeTime }
+        : {}),
+    });
+  }
+  return missing;
+}
 
 export const getActiveTournamentData = internalQuery({
   handler: async (
@@ -591,7 +672,7 @@ export const getAllDataForTournament = internalAction({
       }
     | { ok: false }
   > => {
-    const databaseData = await ctx.runQuery(
+    let databaseData = await ctx.runQuery(
       internal.functions.utils.getDatabaseDataForTournament,
       {
         tournamentId: args.tournament._id,
@@ -611,6 +692,36 @@ export const getAllDataForTournament = internalAction({
       return {
         ok: false,
       };
+    }
+    const missingGolfers = collectMissingTournamentGolfers({
+      existingApiIds: new Set(
+        databaseData.golfers.flatMap((golfer) =>
+          golfer.golfer?.apiId ? [golfer.golfer.apiId] : [],
+        ),
+      ),
+      fieldData: externalData.fieldData,
+      rankingData: externalData.rankingData,
+      liveData: externalData.liveData,
+      historicalData: externalData.historicalData,
+    });
+    for (const golferBatch of chunkArray(missingGolfers, 50)) {
+      await ctx.runMutation(
+        internal.functions.golfers.createMissingTournamentGolfers,
+        {
+          tournamentId: args.tournament._id,
+          golfers: golferBatch,
+        },
+      );
+    }
+    if (missingGolfers.length > 0) {
+      databaseData = await ctx.runQuery(
+        internal.functions.utils.getDatabaseDataForTournament,
+        {
+          tournamentId: args.tournament._id,
+          seasonId: args.tournament.seasonId,
+        },
+      );
+      if (!databaseData.ok) return { ok: false };
     }
     const outputGolfers = databaseData.golfers.map((g) => ({
       ...g,

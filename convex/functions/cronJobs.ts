@@ -9,6 +9,7 @@ import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type {
   DataGolfFieldPlayer,
+  DataGolfPlayer,
   DataGolfRankedPlayer,
 } from "../types/datagolf";
 import {
@@ -35,7 +36,11 @@ import {
   upsertStandingsContributionForTeam,
 } from "../utils/standings";
 export { buildTourCardStandingsTotals } from "../utils/standings";
-import { determineGroupIndex } from "../utils/golfers";
+import {
+  chunkArray,
+  determineGroupIndex,
+  fetchDataGolfPlayerList,
+} from "../utils/golfers";
 import { EnhancedGolfer } from "../types/types";
 import type { TournamentGolferUpdate } from "./golfers";
 import type { TeamUpdate } from "./teams";
@@ -1804,7 +1809,8 @@ function getChangedTournamentLifecycleFields(args: {
 }
 
 /**
- * Fetches the latest DataGolf rankings and applies OWGR/country/name updates into `golfers`.
+ * Synchronizes DataGolf's complete player directory, then applies the latest
+ * ranking metadata to the canonical golfer records.
  *
  * This is an `internalAction` because it needs to call the DataGolf API.
  */
@@ -1812,6 +1818,55 @@ export const updateGolfersWorldRankFromDataGolfInput: ReturnType<
   typeof internalAction
 > = internalAction({
   handler: async (ctx) => {
+    let players: DataGolfPlayer[];
+    try {
+      players = await fetchDataGolfPlayerList();
+    } catch (err) {
+      return {
+        ok: false,
+        skipped: false,
+        reason: "datagolf_player_list_fetch_failed",
+        error: err instanceof Error ? err.message : String(err),
+      } as const;
+    }
+    if (players.length === 0) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: "no_players",
+        playersFetched: 0,
+      } as const;
+    }
+
+    const uniquePlayers = Array.from(
+      new Map(players.map((player) => [player.dg_id, player])).values(),
+    );
+    const directoryTotals = {
+      processed: 0,
+      inserted: 0,
+      updated: 0,
+      unchanged: 0,
+      invalid: 0,
+    };
+    for (const playerBatch of chunkArray(uniquePlayers, 100)) {
+      const result = await ctx.runMutation(
+        internal.functions.golfers.upsertGolfersFromDataGolfPlayerList,
+        {
+          players: playerBatch.map((player) => ({
+            dg_id: player.dg_id,
+            player_name: player.player_name,
+            country:
+              typeof player.country === "string" ? player.country : undefined,
+          })),
+        },
+      );
+      directoryTotals.processed += result.processed;
+      directoryTotals.inserted += result.inserted;
+      directoryTotals.updated += result.updated;
+      directoryTotals.unchanged += result.unchanged;
+      directoryTotals.invalid += result.invalid;
+    }
+
     let rankings: unknown;
     try {
       rankings = await ctx.runAction(
@@ -1822,8 +1877,10 @@ export const updateGolfersWorldRankFromDataGolfInput: ReturnType<
       return {
         ok: false,
         skipped: false,
-        reason: "datagolf_fetch_failed",
+        reason: "datagolf_rankings_fetch_failed",
         error: err instanceof Error ? err.message : String(err),
+        playersFetched: players.length,
+        directory: directoryTotals,
       } as const;
     }
     const rankingsList = Array.isArray(
@@ -1837,18 +1894,34 @@ export const updateGolfersWorldRankFromDataGolfInput: ReturnType<
         ok: true,
         skipped: true,
         reason: "no_rankings",
+        playersFetched: players.length,
+        directory: directoryTotals,
         rankingsFetched: 0,
       } as const;
     }
-    const result = await ctx.runMutation(
-      internal.functions.golfers.applyGolfersWorldRankFromDataGolfInput,
-      {
-        rankings: rankingsList,
-      },
-    );
+
+    const rankingTotals = {
+      golfersMatched: 0,
+      golfersUpdated: 0,
+      rankingsProcessed: 0,
+    };
+    for (const rankingBatch of chunkArray(rankingsList, 25)) {
+      const result = await ctx.runMutation(
+        internal.functions.golfers.applyGolfersWorldRankFromDataGolfInput,
+        { rankings: rankingBatch },
+      );
+      rankingTotals.golfersMatched += result.golfersMatched;
+      rankingTotals.golfersUpdated += result.golfersUpdated;
+      rankingTotals.rankingsProcessed += result.rankingsProcessed;
+    }
 
     return {
-      ...result,
+      ok: true,
+      skipped: false,
+      playersFetched: players.length,
+      uniquePlayersFetched: uniquePlayers.length,
+      directory: directoryTotals,
+      ...rankingTotals,
       rankingsFetched: rankingsList.length,
     } as const;
   },
@@ -1860,7 +1933,7 @@ export const updateGolfersWorldRankFromDataGolfInput_Public: ReturnType<
     const actorMemberId = await requireAdminForAction(ctx);
     await ctx.runMutation(internal.functions.syncRuns.recordAdminInvocation, {
       memberId: actorMemberId,
-      jobName: "update_golfer_world_ranks",
+      jobName: "sync_golfer_directory",
     });
     return await ctx.runAction(
       internal.functions.cronJobs.updateGolfersWorldRankFromDataGolfInput,
@@ -2583,7 +2656,9 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
                 dg_id: fg.dg_id!,
                 player_name: normalizePlayerNameFromDataGolf(fg.player_name),
                 country: fg.country,
-                world_rank: focusGolfer?.ranking?.owgr_rank ?? undefined,
+                worldRank: Number.isFinite(fg.owgr_rank)
+                  ? fg.owgr_rank
+                  : undefined,
                 dg_skill_estimate:
                   focusGolfer?.ranking?.dg_skill_estimate ?? undefined,
                 r1_teetime:
@@ -3701,7 +3776,9 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
                 dg_id: fg.dg_id!,
                 player_name: normalizePlayerNameFromDataGolf(fg.player_name),
                 country: fg.country,
-                world_rank: focusGolfer?.ranking?.owgr_rank ?? undefined,
+                worldRank: Number.isFinite(fg.owgr_rank)
+                  ? fg.owgr_rank
+                  : undefined,
                 dg_skill_estimate:
                   focusGolfer?.ranking?.dg_skill_estimate ?? undefined,
                 r1_teetime:

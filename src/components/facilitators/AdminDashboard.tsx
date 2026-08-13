@@ -95,7 +95,7 @@ export function AdminDashboard() {
             href="#event-setup"
             icon={CalendarCheck2}
             title="Set up next event"
-            detail="Rankings and groups"
+            detail="Golfers and groups"
           />
           <TaskShortcut
             href="#live-scoring"
@@ -128,7 +128,7 @@ export function AdminDashboard() {
           id="event-setup"
           category="Before the tournament"
           title="Prepare the next tournament"
-          description="Refresh the source data first, then create the five golfer groups."
+          description="Sync the complete golfer directory and rankings, then create the five golfer groups."
           whenToUse="It is Monday before an event and the player groups are not final yet."
           icon={Trophy}
           status={groupStatus.eventSetup}
@@ -140,10 +140,10 @@ export function AdminDashboard() {
                   1
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold">Refresh world rankings</p>
+                  <p className="font-semibold">Sync all golfers</p>
                   <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                    Pull the newest golfer rankings and country data from
-                    DataGolf.
+                    Add new DataGolf player identities and refresh golfer names,
+                    countries, and world rankings.
                   </p>
                   <Button
                     className="mt-3"
@@ -154,7 +154,7 @@ export function AdminDashboard() {
                     <BusyIcon busy={operationStatus.updateWorldRank.isBusy} />
                     {operationStatus.updateWorldRank.isBusy
                       ? "Refreshing rankings..."
-                      : "Refresh rankings"}
+                      : "Sync golfers"}
                   </Button>
                 </div>
               </div>
@@ -185,7 +185,7 @@ export function AdminDashboard() {
           </ol>
           <div className="space-y-2">
             <AdminOperationFeedback
-              label="Rankings"
+              label="Golfer directory"
               status={operationStatus.updateWorldRank}
             />
             <AdminOperationFeedback

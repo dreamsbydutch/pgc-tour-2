@@ -6,6 +6,69 @@ import {
   normalizeDgSkillEstimateToPgcRating,
   normalizePlayerNameFromDataGolf,
 } from "../utils/datagolf";
+import { normalizeCountry } from "../utils/golfers";
+
+/** Upserts one bounded page from DataGolf's complete player directory. */
+export const upsertGolfersFromDataGolfPlayerList = internalMutation({
+  args: {
+    players: v.array(
+      v.object({
+        dg_id: v.number(),
+        player_name: v.string(),
+        country: v.optional(v.string()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    let inserted = 0;
+    let updated = 0;
+    let unchanged = 0;
+    let invalid = 0;
+
+    for (const player of args.players) {
+      const apiId = player.dg_id;
+      const playerName = normalizePlayerNameFromDataGolf(player.player_name);
+      if (!Number.isSafeInteger(apiId) || apiId <= 0 || !playerName) {
+        invalid += 1;
+        continue;
+      }
+      const country = normalizeCountry(player.country);
+      const existing = await ctx.db
+        .query("golfers")
+        .withIndex("by_api_id", (q) => q.eq("apiId", apiId))
+        .first();
+      if (!existing) {
+        await ctx.db.insert("golfers", {
+          apiId,
+          playerName,
+          ...(country ? { country } : {}),
+          updatedAt: Date.now(),
+        });
+        inserted += 1;
+        continue;
+      }
+
+      const patch: Partial<Doc<"golfers">> = {};
+      if (existing.playerName !== playerName) patch.playerName = playerName;
+      if (country && existing.country !== country) patch.country = country;
+      if (Object.keys(patch).length === 0) {
+        unchanged += 1;
+        continue;
+      }
+      await ctx.db.patch(existing._id, { ...patch, updatedAt: Date.now() });
+      updated += 1;
+    }
+
+    return {
+      ok: true,
+      processed: args.players.length,
+      inserted,
+      updated,
+      unchanged,
+      invalid,
+    } as const;
+  },
+});
 
 /**
  * Applies country + OWGR (and normalized player name) updates to `golfers` from an input ranking array.
@@ -241,13 +304,19 @@ export const createMissingTournamentGolfers = internalMutation({
           golferApiId: g.dg_id,
           playerName,
           country: g.country ?? existingGolfer?.country,
-          worldRank: g.worldRank ?? 501,
+          worldRank: g.worldRank ?? existingGolfer?.worldRank ?? 501,
           group: 0,
           usage: 0,
           round: 0,
           rating: normalizeDgSkillEstimateToPgcRating(
             g.dg_skill_estimate ?? -1.875,
           ),
+          ...(typeof g.r1_teetime === "number"
+            ? { roundOneTeeTime: g.r1_teetime }
+            : {}),
+          ...(typeof g.r2_teetime === "number"
+            ? { roundTwoTeeTime: g.r2_teetime }
+            : {}),
           updatedAt: Date.now(),
         });
         inserted += 1;

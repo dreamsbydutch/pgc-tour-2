@@ -86,7 +86,8 @@ administrator can also run it manually.
 
 Once groups are final:
 
-- Late additions to the PGA field are not normal selectable PGC golfers.
+- Late additions to the PGA field are added to the tournament leaderboard as
+  ungrouped golfers, but are not normal selectable PGC golfers.
 - A group belongs to the tournament golfer, not the global golfer.
 - Excluded golfer IDs remain excluded until the league deliberately changes the
   policy.
@@ -287,7 +288,8 @@ is correct.
 - A 30-minute repair job restores a broken live-sync chain.
 - Standings recompute daily at 04:00 UTC and after completion.
 - Groups run Monday at 17:00 UTC with retry protection.
-- Golfer world rank/country refresh runs Monday at 16:00 UTC.
+- The complete golfer directory and world-rank metadata refresh daily at 15:00
+  UTC. An administrator can also run the same sync before creating groups.
 - Admin actions exist for grouping, live sync, prior-event repair, standings,
   read-model rebuilds, and identity resolution.
 

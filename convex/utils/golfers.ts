@@ -114,7 +114,13 @@ export async function fetchDataGolfPlayerList(): Promise<DataGolfPlayer[]> {
         (json.length === 0 ||
           json.every(
             (p) =>
-              p && typeof p === "object" && "player_name" in p && "dg_id" in p,
+              p &&
+              typeof p === "object" &&
+              "player_name" in p &&
+              typeof p.player_name === "string" &&
+              "dg_id" in p &&
+              typeof p.dg_id === "number" &&
+              (!("country" in p) || typeof p.country === "string"),
           )),
       logPrefix: "DataGolf Sync",
     },

@@ -137,6 +137,12 @@ Important operational records:
 - `espnIdentityAudit` — external identities needing safe operator resolution.
 - `auditLogs` — sensitive entity changes.
 
+The golfer-directory sync uses DataGolf's complete player list to idempotently
+insert new identities in bounded pages, then applies the top-500 ranking feed.
+It runs daily at 15:00 UTC and is available from the admin tournament-setup
+task. Tournament field and live feeds also create missing tournament golfers as
+ungrouped rows so late PGA entrants remain visible without reopening picks.
+
 ## Data repair and migrations
 
 Migration functions live in `convex/functions/migrations.ts`; materialized
