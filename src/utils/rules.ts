@@ -129,6 +129,10 @@ export const ruleList: {
       },
       {
         ruleText:
+          "A playoff qualifier who does not submit a team before the first event starts will remain on the Gold or Silver leaderboard with no golfers and receive an even-par score for every round of all three playoff tournaments.",
+      },
+      {
+        ruleText:
           "The FedEx-St. Jude Championship runs just like a normal tournament.",
       },
       {

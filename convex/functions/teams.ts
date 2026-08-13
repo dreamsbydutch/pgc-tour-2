@@ -444,10 +444,11 @@ export const reconcilePlayoffTeamsForSeason = internalMutation({
       .sort((a, b) => a.startDate - b.startDate);
     const firstPlayoffTournament = playoffTournaments[0];
     if (!firstPlayoffTournament) {
-      return { scanned: 0, removed: 0, repaired: 0 } as const;
+      return { scanned: 0, created: 0, removed: 0, repaired: 0 } as const;
     }
 
     const context = await getPlayoffContext(ctx, firstPlayoffTournament);
+    const playoffPicksClosed = Date.now() >= firstPlayoffTournament.startDate;
     const affectedCardIds = new Set<Id<"tourCards">>();
     for (const card of context.tourCards) {
       const playoff = context.assignments.get(String(card._id)) ?? 0;
@@ -457,6 +458,7 @@ export const reconcilePlayoffTeamsForSeason = internalMutation({
     }
 
     let scanned = 0;
+    let created = 0;
     let removed = 0;
     let repaired = 0;
     let previousTeamsByCard = new Map<string, Doc<"teams">>();
@@ -466,7 +468,58 @@ export const reconcilePlayoffTeamsForSeason = internalMutation({
         .query("teams")
         .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
         .take(500);
+      const course = await ctx.db.get(tournament.courseId);
       const currentTeamsByCard = new Map<string, Doc<"teams">>();
+
+      const cardsNeedingAutomaticTeam = !playoffPicksClosed
+        ? []
+        : eventIndex === 0
+          ? context.tourCards.filter(
+              (card) =>
+                (context.assignments.get(String(card._id)) ?? 0) > 0 &&
+                !teams.some((team) => team.tourCardId === card._id),
+            )
+          : context.tourCards.filter((card) => {
+              const previousTeam = previousTeamsByCard.get(String(card._id));
+              return (
+                previousTeam?.golferIds.length === 0 &&
+                !teams.some((team) => team.tourCardId === card._id)
+              );
+            });
+
+      for (const card of cardsNeedingAutomaticTeam) {
+        const playoff = context.assignments.get(String(card._id)) ?? 0;
+        const previousTeam = previousTeamsByCard.get(String(card._id));
+        const carryover =
+          eventIndex === 0
+            ? (context.startingStrokes.get(String(card._id)) ?? 0)
+            : (previousTeam?.score ?? previousTeam?.playoffCarryoverScore ?? 0);
+        const teamId = await ctx.db.insert("teams", {
+          tournamentId: tournament._id,
+          tourCardId: card._id,
+          golferIds: [],
+          seasonId: card.seasonId,
+          tourId: card.tourId,
+          memberId: card.memberId,
+          displayName: card.displayName,
+          playoff,
+          playoffCarryoverScore: carryover,
+          score: carryover,
+          ...(course
+            ? {
+                roundOne: course.par,
+                roundTwo: course.par,
+                roundThree: course.par,
+                roundFour: course.par,
+              }
+            : {}),
+          updatedAt: Date.now(),
+        });
+        const automaticTeam = await ctx.db.get(teamId);
+        if (automaticTeam) teams.push(automaticTeam);
+        affectedCardIds.add(card._id);
+        created += 1;
+      }
 
       for (const team of teams) {
         scanned += 1;
@@ -527,6 +580,14 @@ export const reconcilePlayoffTeamsForSeason = internalMutation({
             nextCarryover: carryover,
             hasScoringData: hasTeamScoringData(team),
           }),
+          ...(team.golferIds.length === 0 && course
+            ? {
+                roundOne: course.par,
+                roundTwo: course.par,
+                roundThree: course.par,
+                roundFour: course.par,
+              }
+            : {}),
           ...(previousTeam
             ? {
                 golferIds: previousTeam.golferIds,
@@ -576,7 +637,7 @@ export const reconcilePlayoffTeamsForSeason = internalMutation({
       await recomputeStandingsRanksForSeason(ctx, args.seasonId);
     }
 
-    return { scanned, removed, repaired } as const;
+    return { scanned, created, removed, repaired } as const;
   },
 });
 

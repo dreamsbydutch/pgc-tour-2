@@ -132,6 +132,16 @@ describe("playoff roster enforcement", () => {
       }),
     ).rejects.toThrow("carry over");
 
+    const beforeDeadline = await t.mutation(
+      internal.functions.teams.reconcilePlayoffTeamsForSeason,
+      { seasonId: fixture.seasonId },
+    );
+    expect(beforeDeadline.created).toBe(0);
+
+    await t.run((ctx) =>
+      ctx.db.patch(fixture.tournamentIds[0], { startDate: Date.now() - 1 }),
+    );
+
     const accidentalTeamId = await t.run((ctx) =>
       ctx.db.insert("teams", {
         tournamentId: fixture.tournamentIds[0],
@@ -147,11 +157,24 @@ describe("playoff roster enforcement", () => {
       internal.functions.teams.reconcilePlayoffTeamsForSeason,
       { seasonId: fixture.seasonId },
     );
+    expect(result.created).toBe(6);
     expect(result.removed).toBe(1);
     const state = await t.run(async (ctx) => ({
       accidental: await ctx.db.get(accidentalTeamId),
       leaderCard: await ctx.db.get(fixture.cards[0].cardId),
       outsideCard: await ctx.db.get(fixture.cards[3].cardId),
+      automaticTeams: await Promise.all(
+        fixture.tournamentIds.map((tournamentId) =>
+          ctx.db
+            .query("teams")
+            .withIndex("by_tournament_tour_card", (q) =>
+              q
+                .eq("tournamentId", tournamentId)
+                .eq("tourCardId", fixture.cards[1].cardId),
+            )
+            .unique(),
+        ),
+      ),
       audits: await ctx.db
         .query("auditLogs")
         .withIndex("by_entity", (q) =>
@@ -162,9 +185,28 @@ describe("playoff roster enforcement", () => {
     expect(state.accidental).toBeNull();
     expect(state.leaderCard?.playoff).toBe(1);
     expect(state.outsideCard?.playoff).toBe(0);
+    expect(state.automaticTeams).toHaveLength(3);
+    for (const automaticTeam of state.automaticTeams) {
+      expect(automaticTeam).toMatchObject({
+        golferIds: [],
+        playoff: 1,
+        playoffCarryoverScore: 0,
+        score: 0,
+        roundOne: 72,
+        roundTwo: 72,
+        roundThree: 72,
+        roundFour: 72,
+      });
+    }
     expect(state.audits[0]?.changes).toMatchObject({
       reason: "tour_card_not_qualified_for_playoffs",
     });
+
+    const rerun = await t.mutation(
+      internal.functions.teams.reconcilePlayoffTeamsForSeason,
+      { seasonId: fixture.seasonId },
+    );
+    expect(rerun.created).toBe(0);
 
     await t.run((ctx) => ctx.db.patch(leaderTeam!._id, { score: -15 }));
     const copied = await t.mutation(
@@ -207,7 +249,7 @@ describe("playoff roster enforcement", () => {
         previousPlayoffTournamentId: fixture.tournamentIds[0],
       },
     );
-    expect(recopied.teamsUpdated).toBe(1);
+    expect(recopied.teamsUpdated).toBe(3);
     const repairedBmwTeam = await t.run((ctx) => ctx.db.get(bmwTeam!._id));
     expect(repairedBmwTeam).toMatchObject({
       playoffCarryoverScore: -17,

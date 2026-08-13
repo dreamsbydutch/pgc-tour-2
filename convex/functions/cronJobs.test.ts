@@ -15,10 +15,23 @@ import {
   getTournamentRoundWindowMetrics,
   getTeamTournamentRank,
   isRoundPublishedForTimeline,
+  isAutomaticEvenParPlayoffTeam,
   shouldAwardTournamentResults,
 } from "./cronJobs";
 
 describe("sync batching and adaptive cadence", () => {
+  it("treats only empty playoff rosters as automatic even-par teams", () => {
+    expect(
+      isAutomaticEvenParPlayoffTeam({ isPlayoff: true, golferIds: [] }),
+    ).toBe(true);
+    expect(
+      isAutomaticEvenParPlayoffTeam({ isPlayoff: false, golferIds: [] }),
+    ).toBe(false);
+    expect(
+      isAutomaticEvenParPlayoffTeam({ isPlayoff: true, golferIds: [1] }),
+    ).toBe(false);
+  });
+
   it("chunks writes at the configured boundary without losing order", () => {
     const updates = Array.from({ length: 57 }, (_, index) => index);
     const chunks = chunkSyncUpdates(updates);
@@ -684,6 +697,27 @@ describe("buildFirstPlaceTiebreakSummary", () => {
     expect(summary.byTourKey.get("tour-a")).toMatchObject({
       status: "resolved",
       winnerTeamId: "winner",
+    });
+  });
+
+  it("treats an automatic empty playoff team as a known zero-earnings roster", () => {
+    const summary = buildFirstPlaceTiebreakSummary({
+      isPlayoff: true,
+      teams: [
+        makeTeam({
+          id: "picked-team",
+          playoff: 1,
+          score: 0,
+          golferEarnings: [100],
+        }),
+        makeTeam({ id: "automatic-team", playoff: 1, score: 0 }),
+      ],
+    });
+
+    expect(summary.unresolved).toHaveLength(0);
+    expect(summary.byTourKey.get("playoff:1")).toMatchObject({
+      status: "resolved",
+      winnerTeamId: "picked-team",
     });
   });
 
