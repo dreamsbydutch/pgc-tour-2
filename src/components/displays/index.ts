@@ -10,6 +10,8 @@ export { AdminHub } from "./admin/AdminHub";
 export { AdminTaskPanel } from "./admin/AdminTaskPanel";
 export { SettlementHub } from "./admin/SettlementHub";
 export const loadNotificationCenter = () => import("./NotificationCenter");
+export const loadNotificationPreferencesCard = () =>
+  import("./NotificationPreferencesCard");
 
 export { ChampionsPopup } from "./standings/ChampionsPopup";
 export { ClubhousePulse, ClubhousePulseSkeleton } from "./ClubhousePulse";
