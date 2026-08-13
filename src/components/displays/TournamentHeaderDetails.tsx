@@ -8,6 +8,7 @@ import {
   formatMoney,
   formatToPar,
 } from "@/utils/app";
+import { getPlayoffPayoutColumns } from "@/utils/tournamentAwards";
 import {
   Dialog,
   DialogContent,
@@ -46,16 +47,26 @@ export function TournamentAwardsDialog(props: {
   tournament: TournamentHeaderModel;
 }) {
   const tier = props.tournament.tier;
-  const rowCount = Math.max(
+  const isPlayoff = tier?.name.trim().toLowerCase() === "playoff";
+  const playoffPayouts =
+    isPlayoff && tier ? getPlayoffPayoutColumns(tier.payouts) : null;
+  const regularRowCount = Math.max(
     tier?.points.length ?? 0,
     tier?.payouts.length ?? 0,
   );
+  const playoffRowCount = Math.max(
+    playoffPayouts?.gold.length ?? 0,
+    playoffPayouts?.silver.length ?? 0,
+  );
+  const hasAwards = isPlayoff ? playoffRowCount > 0 : regularRowCount > 0;
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent className="max-h-[85vh] max-w-lg overflow-hidden">
         <DialogHeader>
-          <DialogTitle>Points &amp; payouts</DialogTitle>
+          <DialogTitle>
+            {isPlayoff ? "Payouts" : "Points & payouts"}
+          </DialogTitle>
           <DialogDescription>
             {props.tournament.name}
             {tier ? ` · ${tier.name} Tournament` : ""}
@@ -63,40 +74,104 @@ export function TournamentAwardsDialog(props: {
         </DialogHeader>
 
         <div className="max-h-[calc(85vh-7rem)] overflow-y-auto px-6 pb-6">
-          {tier && rowCount > 0 ? (
-            <table className="w-full text-center text-sm">
-              <thead className="sticky top-0 bg-background">
-                <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-2 py-2 text-left font-semibold">Finish</th>
-                  <th className="px-2 py-2 font-semibold">Points</th>
-                  <th className="px-2 py-2 text-right font-semibold">Payout</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Array.from({ length: rowCount }).map((_, index) => (
-                  <tr key={index} className="border-b last:border-0">
-                    <td className="px-2 py-2 text-left font-medium">
-                      {index + 1}
-                    </td>
-                    <td className="px-2 py-2">{tier.points[index] ?? "-"}</td>
-                    <td className="px-2 py-2 text-right">
-                      {tier.payouts[index]
-                        ? formatMoney(tier.payouts[index] ?? 0, true)
-                        : "-"}
-                    </td>
+          {tier && hasAwards ? (
+            isPlayoff && playoffPayouts ? (
+              <PlayoffPayoutsTable
+                gold={playoffPayouts.gold}
+                silver={playoffPayouts.silver}
+              />
+            ) : (
+              <table className="w-full text-center text-sm">
+                <thead className="sticky top-0 bg-background">
+                  <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
+                    <th className="px-2 py-2 text-left font-semibold">
+                      Finish
+                    </th>
+                    <th className="px-2 py-2 font-semibold">Points</th>
+                    <th className="px-2 py-2 text-right font-semibold">
+                      Payout
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {Array.from({ length: regularRowCount }).map((_, index) => (
+                    <tr key={index} className="border-b last:border-0">
+                      <td className="px-2 py-2 text-left font-medium">
+                        {index + 1}
+                      </td>
+                      <td className="px-2 py-2">{tier.points[index] ?? "-"}</td>
+                      <td className="px-2 py-2 text-right">
+                        {tier.payouts[index]
+                          ? formatMoney(tier.payouts[index] ?? 0, true)
+                          : "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
           ) : (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              No points or payout breakdown has been published for this
-              tournament.
+              No {isPlayoff ? "payout" : "points or payout"} breakdown has been
+              published for this tournament.
             </p>
           )}
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function PlayoffPayoutsTable(props: {
+  gold: readonly number[];
+  silver: readonly number[];
+}) {
+  const rowCount = Math.max(props.gold.length, props.silver.length);
+
+  return (
+    <table className="w-full table-fixed text-sm">
+      <thead className="sticky top-0 bg-background">
+        <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
+          <th className="w-1/2 px-2 py-2 font-semibold">Gold payouts</th>
+          <th className="w-1/2 border-l px-2 py-2 font-semibold">
+            Silver payouts
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {Array.from({ length: rowCount }).map((_, index) => (
+          <tr key={index} className="border-b last:border-0">
+            <PlayoffPayoutCell finish={index + 1} payout={props.gold[index]} />
+            <PlayoffPayoutCell
+              finish={index + 1}
+              payout={props.silver[index]}
+              className="border-l"
+            />
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function PlayoffPayoutCell(props: {
+  finish: number;
+  payout: number | undefined;
+  className?: string;
+}) {
+  return (
+    <td className={cn("px-2 py-2", props.className)}>
+      {props.payout ? (
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-medium text-muted-foreground">
+            {props.finish}
+          </span>
+          <span>{formatMoney(props.payout, true)}</span>
+        </div>
+      ) : (
+        <span className="block text-center text-muted-foreground">-</span>
+      )}
+    </td>
   );
 }
 

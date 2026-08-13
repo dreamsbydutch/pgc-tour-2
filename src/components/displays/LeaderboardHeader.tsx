@@ -121,7 +121,11 @@ export function LeaderboardHeader(props: {
             aria-haspopup="dialog"
             onClick={() => setAwardsOpen(true)}
             className="group col-span-7 row-span-1 mx-auto flex max-w-full flex-wrap items-center justify-center gap-x-1.5 gap-y-0 rounded-sm px-1 py-0.5 text-center text-xs text-gray-700 transition-colors hover:bg-gray-50 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring xs:text-sm sm:text-base md:text-lg"
-            title="View the full points and payout breakdown"
+            title={
+              props.tournament.tier?.name.trim().toLowerCase() === "playoff"
+                ? "View the full playoff payout breakdown"
+                : "View the full points and payout breakdown"
+            }
           >
             {props.tournament.tier && (
               <>

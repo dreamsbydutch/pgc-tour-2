@@ -176,7 +176,7 @@ export function NavigationContainer(props: NavigationContainerProps) {
                   )}
                 </div>
 
-                <div className="flex flex-1 justify-center lg:flex-none">
+                <div className="hidden lg:flex lg:flex-none">
                   <Suspense fallback={<Skeleton className="h-10 w-10" />}>
                     <NotificationCenter />
                   </Suspense>
