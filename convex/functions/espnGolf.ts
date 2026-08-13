@@ -23,8 +23,9 @@ import {
 } from "../utils/espnGolf";
 import { requireAdmin } from "../utils/auth";
 
+// ESPN's site.api host rejects Convex runtime traffic at its edge.
 const ESPN_SCOREBOARD_URL =
-  "https://site.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard";
+  "https://site.web.api.espn.com/apis/site/v2/sports/golf/pga/scoreboard";
 
 const holeValidator = v.object({
   hole: v.number(),
@@ -610,13 +611,7 @@ export const syncTournamentScorecards: ReturnType<typeof internalAction> =
       try {
         const result = await fetchWithRetry<unknown>(
           `${ESPN_SCOREBOARD_URL}?dates=${formatEspnDate(syncContext.startDate)}`,
-          {
-            headers: {
-              Accept: "application/json",
-              // ESPN's edge rejects generic server-runtime user agents.
-              "User-Agent": "curl/8.0.0",
-            },
-          },
+          { headers: { Accept: "application/json" } },
           {
             timeout: 20_000,
             retries: 2,
