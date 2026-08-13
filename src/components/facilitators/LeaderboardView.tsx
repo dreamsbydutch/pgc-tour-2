@@ -64,6 +64,10 @@ export function LeaderboardView(props: {
     tours: props.tours,
     pgaLogoUrl:
       "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPHn0reMa1Sl6K8NiXDVstIvkZcpyWUmEoY3xj",
+    goldLogoUrl:
+      "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPNsO8w6FZhY1BamONzvl3bLgdn0IXVM8fEoTC",
+    silverLogoUrl:
+      "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPNDs7T9FZhY1BamONzvl3bLgdn0IXVM8fEoTC",
   });
   const { trackLeaderboardTabChanged } = useAnalytics();
   const activeTourShortForm =

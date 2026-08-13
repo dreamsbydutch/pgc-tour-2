@@ -26,8 +26,14 @@ describe("tournament leaderboard competition selection", () => {
         variant: "playoff",
         tours,
         pgaLogoUrl: "/pga.png",
-      }).map((toggle) => toggle.shortForm),
-    ).toEqual(["Gold", "Silver", "PGA"]);
+        goldLogoUrl: "/gold.png",
+        silverLogoUrl: "/silver.png",
+      }),
+    ).toEqual([
+      { _id: "gold", shortForm: "Gold", logoUrl: "/gold.png" },
+      { _id: "silver", shortForm: "Silver", logoUrl: "/silver.png" },
+      { _id: "pga", shortForm: "PGA", logoUrl: "/pga.png" },
+    ]);
   });
 
   it("rejects a stale regular-tour selection on a playoff event", () => {

@@ -16,6 +16,8 @@ export function getTournamentLeaderboardToggles(args: {
   variant: TournamentLeaderboardVariant;
   tours: TournamentLeaderboardToggle[];
   pgaLogoUrl: string;
+  goldLogoUrl: string;
+  silverLogoUrl: string;
 }): TournamentLeaderboardToggle[] {
   const pga = {
     _id: "pga",
@@ -24,8 +26,8 @@ export function getTournamentLeaderboardToggles(args: {
   };
   if (args.variant === "playoff") {
     return [
-      { _id: "gold", shortForm: "Gold" },
-      { _id: "silver", shortForm: "Silver" },
+      { _id: "gold", shortForm: "Gold", logoUrl: args.goldLogoUrl },
+      { _id: "silver", shortForm: "Silver", logoUrl: args.silverLogoUrl },
       pga,
     ];
   }
