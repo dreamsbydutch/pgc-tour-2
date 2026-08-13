@@ -7,11 +7,14 @@ import {
 } from "@/convex";
 import { useRoleAccess } from "@/hooks/useRoleAccess";
 import { useTournamentLeaderboard } from "@/hooks/useTournamentLeaderboard";
+import {
+  getActiveTournamentLeaderboardId,
+  getTournamentLeaderboardVariant,
+} from "@/utils/tournamentLeaderboard";
 
 export function useTournamentPage(args: {
   tournamentId?: string;
   tourId?: string;
-  variant: "regular" | "playoff";
 }) {
   const bootstrap = useViewerBootstrap();
   const connection = useConvexConnectionState();
@@ -22,19 +25,27 @@ export function useTournamentPage(args: {
       : undefined,
   });
   const tournament = shell?.tournament ?? null;
-  const userTourCard =
+  const variant = getTournamentLeaderboardVariant(tournament);
+  const seasonTourCards =
     tournament && bootstrap
-      ? (bootstrap.tourCards.find(
+      ? bootstrap.tourCards.filter(
           (card) => card.seasonId === tournament.seasonId,
-        ) ?? null)
-      : null;
-  const activeTourId =
-    args.tourId ||
-    (userTourCard
-      ? String(userTourCard.tourId)
-      : shell?.tours[0]
-        ? String(shell.tours[0]._id)
-        : "pga");
+        )
+      : [];
+  const defaultTourCard = seasonTourCards[0] ?? null;
+  const activeTourId = getActiveTournamentLeaderboardId({
+    variant,
+    requestedTourId: args.tourId,
+    viewerTourId: defaultTourCard ? String(defaultTourCard.tourId) : undefined,
+    viewerPlayoff: defaultTourCard?.playoff,
+    tours: shell?.tours ?? [],
+  });
+  const requestedTourCard = seasonTourCards.find((card) =>
+    variant === "playoff"
+      ? (card.playoff ?? 0) === (activeTourId === "silver" ? 2 : 1)
+      : String(card.tourId) === activeTourId,
+  );
+  const userTourCard = requestedTourCard ?? defaultTourCard;
   const isUpcoming = tournament?.status === "upcoming";
 
   const preTournament = useQuery(
@@ -48,7 +59,7 @@ export function useTournamentPage(args: {
   const leaderboard = useTournamentLeaderboard({
     tournament,
     activeTourId,
-    variant: args.variant,
+    variant,
   });
   const existingTeam = preTournament?.teams.find(
     (team) => team.tourCardId === userTourCard?._id,
@@ -88,6 +99,7 @@ export function useTournamentPage(args: {
     member,
     userTourCard,
     activeTourId,
+    variant,
     preTournament,
     preTournamentView,
     pgcLeaderboard: leaderboard.pgcLeaderboard,

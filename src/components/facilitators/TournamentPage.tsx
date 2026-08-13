@@ -7,17 +7,15 @@ import { LeaderboardView, LeaderboardViewSkeleton } from "./LeaderboardView";
 import { PreTournamentContent } from "./PreTournamentContent";
 
 export function TournamentPage({ search, navigate }: TournamentPageProps) {
-  const variant = search.variant ?? "regular";
   const page = useTournamentPage({
     tournamentId: search.tournamentId,
     tourId: search.tourId,
-    variant,
   });
 
   useEffect(() => {
     if (!page.tournament || !page.activeTourId) return;
     const tournamentId = String(page.tournament._id);
-    const canonicalVariant = variant === "playoff" ? "playoff" : undefined;
+    const canonicalVariant = page.variant === "playoff" ? "playoff" : undefined;
     if (
       search.tournamentId === tournamentId &&
       search.tourId === page.activeTourId &&
@@ -29,7 +27,7 @@ export function TournamentPage({ search, navigate }: TournamentPageProps) {
       { tournamentId, tourId: page.activeTourId, variant: canonicalVariant },
       { replace: true },
     );
-  }, [navigate, page.activeTourId, page.tournament, search, variant]);
+  }, [navigate, page.activeTourId, page.tournament, page.variant, search]);
 
   if (page.isLoading) return <LeaderboardViewSkeleton />;
 
@@ -51,12 +49,12 @@ export function TournamentPage({ search, navigate }: TournamentPageProps) {
   }
 
   const tournamentId = String(page.tournament._id);
-  const canonicalVariant = variant === "playoff" ? "playoff" : undefined;
+  const canonicalVariant = page.variant === "playoff" ? "playoff" : undefined;
   const changeTournament = (nextTournamentId: string) =>
     navigate({
       tournamentId: nextTournamentId,
       tourId: undefined,
-      variant: canonicalVariant,
+      variant: undefined,
     });
 
   if (page.tournament.status === "upcoming" && page.preTournamentView) {
@@ -91,7 +89,7 @@ export function TournamentPage({ search, navigate }: TournamentPageProps) {
       onChangeTourId={(tourId) =>
         navigate({ tournamentId, tourId, variant: canonicalVariant })
       }
-      variant={variant}
+      variant={page.variant}
       isPreTournament={false}
       majorChampionBadgesByMemberId={page.shell.majorChampionBadgesByMemberId}
       freshness={page.freshness}

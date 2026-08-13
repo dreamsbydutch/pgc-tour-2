@@ -14,6 +14,7 @@ import {
 import { Skeleton } from "@/ui";
 import { cn } from "@/utils/app";
 import { resolveTournamentLeaderboardState } from "@/utils";
+import { getTournamentLeaderboardToggles } from "@/utils/tournamentLeaderboard";
 import type {
   PgaLeaderboardDto,
   PgaLeaderboardGolfer,
@@ -58,9 +59,16 @@ export function LeaderboardView(props: {
   majorChampionBadgesByMemberId: TournamentShellDto["majorChampionBadgesByMemberId"];
   freshness: "live" | "stale";
 }) {
+  const leaderboardToggles = getTournamentLeaderboardToggles({
+    variant: props.variant,
+    tours: props.tours,
+    pgaLogoUrl:
+      "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPHn0reMa1Sl6K8NiXDVstIvkZcpyWUmEoY3xj",
+  });
   const { trackLeaderboardTabChanged } = useAnalytics();
   const activeTourShortForm =
-    props.tours?.find((t) => t._id === props.activeTourId)?.shortForm ?? "";
+    leaderboardToggles.find((t) => t._id === props.activeTourId)?.shortForm ??
+    "";
   const viewerFriendIds = new Set(
     (props.viewerMember?.friends ?? []).map((friendId) => String(friendId)),
   );
@@ -130,15 +138,7 @@ export function LeaderboardView(props: {
           </span>
         </div>
         <ToursToggle
-          tours={[
-            ...props.tours,
-            {
-              _id: "pga",
-              shortForm: "PGA",
-              logoUrl:
-                "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPHn0reMa1Sl6K8NiXDVstIvkZcpyWUmEoY3xj",
-            },
-          ]}
+          tours={leaderboardToggles}
           activeTourId={props.activeTourId}
           onChangeTourId={(nextTourId) => {
             trackLeaderboardTabChanged(nextTourId === "pga" ? "pga" : "pgc");
