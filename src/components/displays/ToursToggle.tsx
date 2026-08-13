@@ -20,7 +20,7 @@ import { cn } from "@/utils/app";
  * - The active tour uses the `default` button variant and a subtle shadow.
  * - Toggle ordering is deterministic:
  *   - First: tours from the DB (`props.tours`, preserving their given order).
- *   - Then: `PGA`, `Gold`, `Silver`, `Playoff`/`Playoffs`.
+ *   - Then: `Gold`, `Silver`, `PGA`, `Playoff`/`Playoffs`.
  *   - Finally: any remaining extra toggles in their given order.
  * - `sort` (when true) alphabetically sorts only the DB-tour group by `shortForm`.
  * - When the active tour is not `PGA`, `Gold`, or `Silver`, its logo is inverted for contrast.
@@ -146,9 +146,9 @@ function useToursToggle({
       const isPlayoffs =
         id === "playoff" || id === "playoffs" || playoffLike(shortForm);
 
-      if (isPga) return 1;
-      if (isGold) return 2;
-      if (isSilver) return 3;
+      if (isGold) return 1;
+      if (isSilver) return 2;
+      if (isPga) return 3;
       if (isPlayoffs) return 4;
 
       const isDbTour = !isPga && !isGold && !isSilver && !isPlayoffs;
