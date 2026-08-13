@@ -176,15 +176,22 @@ export const getMyOverview = query({
         })()
       : null;
 
-    const achievements = contributions
-      .filter(
-        (item) =>
-          item.tournamentStatus === "completed" &&
-          parseRank(item.position) === 1 &&
-          (!isPlayoffContribution(item) ||
-            finalPlayoffTournamentIdBySeason.get(item.seasonId) ===
-              item.tournamentId),
-      )
+    const careerWinContributions = contributions.filter(
+      (item) =>
+        item.tournamentStatus === "completed" &&
+        parseRank(item.position) === 1 &&
+        (!isPlayoffContribution(item) ||
+          finalPlayoffTournamentIdBySeason.get(item.seasonId) ===
+            item.tournamentId),
+    );
+    const careerWinsByCardId = new Map(
+      cards.map((card) => [
+        card._id,
+        careerWinContributions.filter((item) => item.tourCardId === card._id)
+          .length,
+      ]),
+    );
+    const achievements = careerWinContributions
       .map((item) => ({
         id: item._id,
         tournamentName: item.tournamentName,
@@ -220,7 +227,7 @@ export const getMyOverview = query({
           currentPosition: card.currentPosition ?? "-",
           points: card.points,
           earningsCents: card.earnings,
-          wins: (card.wins ?? 0) + (finalPlayoffRank === 1 ? 1 : 0),
+          wins: careerWinsByCardId.get(card._id) ?? 0,
           topFive: (card.topFive ?? 0) + (finalPlayoffRank <= 5 ? 1 : 0),
           topTen: card.topTen + (finalPlayoffRank <= 10 ? 1 : 0),
           madeCut: card.madeCut + madeFinalPlayoffCut,

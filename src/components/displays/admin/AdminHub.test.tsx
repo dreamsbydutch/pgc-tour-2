@@ -23,6 +23,7 @@ const operationStatus = {
   updateWorldRank: readyStatus,
   weeklyRecapTest: readyStatus,
   weeklyRecapSendAll: readyStatus,
+  missingTeamReminderSend: readyStatus,
   createPayment: readyStatus,
   recomputeStandings: readyStatus,
   backfillStandings: readyStatus,
@@ -69,6 +70,9 @@ describe("AdminHub", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Live scoring" }));
     expect(onOpenTask).toHaveBeenCalledWith("liveScoring");
+
+    fireEvent.click(screen.getByRole("button", { name: "Remind picks" }));
+    expect(onOpenTask).toHaveBeenCalledWith("pickReminder");
   });
 
   it("keeps recovery tools collapsed by default", () => {

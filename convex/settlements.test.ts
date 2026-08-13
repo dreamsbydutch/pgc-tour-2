@@ -175,6 +175,10 @@ describe("earnings settlements", () => {
           updatedAt: now,
         });
       }
+
+      // Reproduce the legacy aggregate that counted all three playoff legs.
+      // The account overview must use the canonical filtered results instead.
+      await ctx.db.patch(fixture.cardId, { wins: 4 });
     });
 
     const overview = await owner.authenticated.query(

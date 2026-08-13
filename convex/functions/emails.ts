@@ -8,6 +8,7 @@ import {
   internalQuery,
   query,
 } from "../_generated/server";
+import type { QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import type { GroupsEmailContext } from "../types/emails";
@@ -34,6 +35,8 @@ import {
   sendBrevoTemplateEmailBatch,
   sendGroupsEmailImpl,
 } from "../utils/emails";
+import { buildPlayoffAssignments } from "../utils/playoffs";
+import { includesPlayoffLabel } from "../utils/standings";
 
 /**
  * Lists unique email recipients for the tournament based on “active” tour cards.
@@ -128,134 +131,179 @@ export const getActiveTourCardRecipientsForTournament = internalQuery({
 
 /**
  * Lists unique email recipients for the “missing team” reminder.
- * Targets members where `isActive !== false` who have no team submitted for that upcoming tournament,
- * including members with no tour card.
+ * Targets active members whose eligible tour card has no team for the upcoming
+ * tournament. The first playoff field is derived from current points; later
+ * playoff rosters are inherited and never receive this reminder.
  */
+async function loadMissingTeamReminderContext(
+  ctx: QueryCtx,
+  tournamentId?: Id<"tournaments">,
+) {
+  const tournament = tournamentId
+    ? await ctx.db.get(tournamentId)
+    : await getUpcomingTournament(ctx);
+
+  if (!tournament) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "no_upcoming_tournament",
+    } as const;
+  }
+
+  const [teams, tourCards, tournamentTier, seasonTournaments, tours] =
+    await Promise.all([
+      ctx.db
+        .query("teams")
+        .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
+        .take(500),
+      ctx.db
+        .query("tourCards")
+        .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
+        .take(500),
+      ctx.db.get(tournament.tierId),
+      ctx.db
+        .query("tournaments")
+        .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
+        .take(100),
+      ctx.db
+        .query("tours")
+        .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
+        .take(20),
+    ]);
+
+  const isPlayoff =
+    includesPlayoffLabel(tournamentTier?.name) ||
+    includesPlayoffLabel(tournament.name);
+  let eligibleTourCards = tourCards;
+  if (isPlayoff) {
+    const tierIds = [...new Set(seasonTournaments.map((item) => item.tierId))];
+    const tiers = await Promise.all(
+      tierIds.map((tierId) => ctx.db.get(tierId)),
+    );
+    const tierNameById = new Map(
+      tiers.filter(Boolean).map((tier) => [tier!._id, tier!.name] as const),
+    );
+    const playoffTournaments = seasonTournaments
+      .filter(
+        (item) =>
+          includesPlayoffLabel(tierNameById.get(item.tierId)) ||
+          includesPlayoffLabel(item.name),
+      )
+      .sort((a, b) => a.startDate - b.startDate);
+    if (playoffTournaments[0]?._id !== tournament._id) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: "playoff_roster_inherited",
+        tournament,
+      } as const;
+    }
+    const assignments = buildPlayoffAssignments({
+      cards: tourCards.map((card) => ({
+        id: String(card._id),
+        tourId: String(card.tourId),
+        points: card.points,
+      })),
+      tours: tours.map((tour) => ({
+        id: String(tour._id),
+        playoffSpots: tour.playoffSpots,
+      })),
+    });
+    eligibleTourCards = tourCards.filter(
+      (card) => (assignments.get(String(card._id)) ?? 0) > 0,
+    );
+  }
+
+  const tourCardsWithTeams = new Set(
+    teams.map((team) => String(team.tourCardId)),
+  );
+  const missingTourCards = eligibleTourCards.filter(
+    (card) => !tourCardsWithTeams.has(String(card._id)),
+  );
+
+  const missingByMemberId = new Map<Id<"members">, number>();
+  for (const card of missingTourCards) {
+    missingByMemberId.set(
+      card.memberId,
+      (missingByMemberId.get(card.memberId) ?? 0) + 1,
+    );
+  }
+
+  const members = await Promise.all(
+    [...missingByMemberId.keys()].map((memberId) => ctx.db.get(memberId)),
+  );
+
+  const missingByEmail = new Map<
+    string,
+    { email: string; name: string; missingTeamCount: number }
+  >();
+
+  for (const member of members.filter((item): item is Doc<"members"> =>
+    Boolean(item),
+  )) {
+    if (member.isActive === false) continue;
+    const email = (member.email ?? "").trim();
+    if (!email) continue;
+    const key = email.toLowerCase();
+    const count = missingByMemberId.get(member._id) ?? 1;
+    const existing = missingByEmail.get(key);
+    if (existing) existing.missingTeamCount += count;
+    else {
+      missingByEmail.set(key, {
+        email,
+        name: formatMemberName(member),
+        missingTeamCount: count,
+      });
+    }
+  }
+
+  const recipients = [...missingByEmail.values()].sort((a, b) =>
+    a.email.localeCompare(b.email),
+  );
+
+  return {
+    ok: true,
+    skipped: false,
+    tournament,
+    recipients,
+    eligibleTourCardCount: eligibleTourCards.length,
+    missingTourCardCount: missingTourCards.length,
+    isPlayoff,
+  } as const;
+}
+
 export const getMissingTeamReminderRecipientsForUpcomingTournament =
   internalQuery({
     args: emailsValidators.args
       .getMissingTeamReminderRecipientsForUpcomingTournament,
-    handler: async (ctx, args) => {
-      const tournament = args.tournamentId
-        ? await ctx.db.get(args.tournamentId)
-        : await getUpcomingTournament(ctx);
-
-      if (!tournament) {
-        return {
-          ok: true,
-          skipped: true,
-          reason: "no_upcoming_tournament",
-        } as const;
-      }
-
-      const teams = await ctx.db
-        .query("teams")
-        .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
-        .collect();
-
-      const tourCards = await ctx.db
-        .query("tourCards")
-        .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
-        .collect();
-
-      const tourCardsWithTeams = new Set<string>(
-        teams.map((t) => t.tourCardId),
-      );
-
-      const missingTourCards = tourCards.filter(
-        (tc) => !tourCardsWithTeams.has(tc._id),
-      );
-
-      const missingByMemberId = new Map<Id<"members">, number>();
-      for (const tc of missingTourCards) {
-        missingByMemberId.set(
-          tc.memberId,
-          (missingByMemberId.get(tc.memberId) ?? 0) + 1,
-        );
-      }
-
-      const members = await Promise.all(
-        [...missingByMemberId.keys()].map((memberId) => ctx.db.get(memberId)),
-      );
-
-      const activeMembers = (await ctx.db.query("members").collect()).filter(
-        (m) => m.isActive !== false,
-      );
-
-      const membersWithTourCards = new Set<Id<"members">>();
-      for (const tc of tourCards) membersWithTourCards.add(tc.memberId);
-
-      const missingByEmail = new Map<
-        string,
-        {
-          email: string;
-          name: string;
-          missingTeamCount: number;
-        }
-      >();
-
-      for (const member of members.filter((m): m is Doc<"members"> =>
-        Boolean(m),
-      )) {
-        if (member.isActive === false) continue;
-        const email = (member.email ?? "").trim();
-        if (!email) continue;
-        const key = email.toLowerCase();
-        const count = missingByMemberId.get(member._id) ?? 1;
-        if (!missingByEmail.has(key)) {
-          missingByEmail.set(key, {
-            email,
-            name: formatMemberName(member),
-            missingTeamCount: count,
-          });
-        } else {
-          const existing = missingByEmail.get(key)!;
-          existing.missingTeamCount = Math.max(
-            existing.missingTeamCount,
-            count,
-          );
-        }
-      }
-
-      const teamTourCardIds = Array.from(
-        new Set(teams.map((t) => t.tourCardId)),
-      ) as Id<"tourCards">[];
-      const teamTourCards = await Promise.all(
-        teamTourCardIds.map((id) => ctx.db.get(id)),
-      );
-      const membersWithAnyTeam = new Set<Id<"members">>();
-      for (const tc of teamTourCards) {
-        if (tc) membersWithAnyTeam.add(tc.memberId);
-      }
-
-      for (const member of activeMembers) {
-        if (!member || member.isActive === false) continue;
-        const email = (member.email ?? "").trim();
-        if (!email) continue;
-        if (membersWithAnyTeam.has(member._id)) continue;
-        const key = email.toLowerCase();
-        if (missingByEmail.has(key)) continue;
-
-        const missingTeamCount = membersWithTourCards.has(member._id) ? 1 : 1;
-        missingByEmail.set(key, {
-          email,
-          name: formatMemberName(member),
-          missingTeamCount,
-        });
-      }
-
-      const recipients = [...missingByEmail.values()].sort((a, b) =>
-        a.email.localeCompare(b.email),
-      );
-
-      return {
-        ok: true,
-        skipped: false,
-        tournament,
-        recipients,
-      } as const;
-    },
+    handler: async (ctx, args) =>
+      await loadMissingTeamReminderContext(ctx, args.tournamentId),
   });
+
+export const adminGetMissingTeamReminderPreview = query({
+  args: emailsValidators.args.adminGetMissingTeamReminderPreview,
+  handler: async (ctx, args) => {
+    await requireAdminForQuery(ctx);
+    const context = await loadMissingTeamReminderContext(
+      ctx,
+      args.tournamentId,
+    );
+    if (context.skipped) return context;
+    return {
+      ok: true,
+      skipped: false,
+      tournamentId: context.tournament._id,
+      tournamentName: context.tournament.name,
+      recipientCount: context.recipients.length,
+      eligibleTourCardCount: context.eligibleTourCardCount,
+      missingTourCardCount: context.missingTourCardCount,
+      isPlayoff: context.isPlayoff,
+      alreadySent: Boolean(context.tournament.reminderEmailSentAt),
+      groupsEmailSent: Boolean(context.tournament.groupsEmailSentAt),
+    } as const;
+  },
+});
 
 export const markGroupsEmailSent = internalMutation({
   args: emailsValidators.args.markGroupsEmailSent,
@@ -620,7 +668,7 @@ export const adminSendWeeklyRecapEmailToActiveTourCards = action({
     });
     await completeEmailDispatchGuard(ctx, dispatchLease);
 
-    if (summary.sent > 0) {
+    if (summary.attempted > 0 && summary.failed === 0) {
       await ctx.runMutation(
         internal.functions.notifications.publishWeeklyRecap,
         {
@@ -859,6 +907,20 @@ export const sendMissingTeamReminderForUpcomingTournament: ReturnType<
       failed: summary.failed,
       recipientCount: context.recipients.length,
     } as const;
+  },
+});
+
+/** Admin-only manual send for eligible cards still missing an upcoming roster. */
+export const adminSendMissingTeamReminderForUpcomingTournament: ReturnType<
+  typeof action
+> = action({
+  args: emailsValidators.args.adminSendMissingTeamReminderForUpcomingTournament,
+  handler: async (ctx, args) => {
+    await requireAdminForAction(ctx);
+    return await ctx.runAction(
+      internal.functions.emails.sendMissingTeamReminderForUpcomingTournament,
+      { tournamentId: args.tournamentId },
+    );
   },
 });
 

@@ -32,6 +32,7 @@ const taskIcons: Record<AdminTaskKey, typeof Activity> = {
   eventSetup: CalendarCheck2,
   liveScoring: Radio,
   weeklyRecap: Mail,
+  pickReminder: Mail,
   memberPayment: WalletCards,
   settlements: CircleDollarSign,
   standings: BarChart3,
@@ -136,6 +137,11 @@ export function AdminHub(props: AdminHubProps) {
             onOpenTask={props.onOpenTask}
           />
           <QuickAction
+            task="pickReminder"
+            label="Remind picks"
+            onOpenTask={props.onOpenTask}
+          />
+          <QuickAction
             task="memberPayment"
             label="Record payment"
             onOpenTask={props.onOpenTask}
@@ -193,6 +199,13 @@ export function AdminHub(props: AdminHubProps) {
             title="Send weekly recap"
             description="Test and bulk member email"
             status={props.groupStatus.weeklyRecap}
+            onOpenTask={props.onOpenTask}
+          />
+          <TaskRow
+            task="pickReminder"
+            title="Remind missing picks"
+            description="Eligible cards without an upcoming roster"
+            status={props.operationStatus.missingTeamReminderSend}
             onOpenTask={props.onOpenTask}
           />
         </ToolGroup>

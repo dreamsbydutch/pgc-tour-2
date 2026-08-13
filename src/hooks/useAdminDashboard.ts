@@ -28,6 +28,10 @@ export function useAdminDashboard() {
   const settlementRequests = useQuery(
     api.functions.settlements.adminListRequests,
   );
+  const missingTeamReminderPreview = useQuery(
+    api.functions.emails.adminGetMissingTeamReminderPreview,
+    {},
+  );
   const tournaments = dashboard?.tournaments ?? null;
   const members = dashboard?.members ?? null;
   const seasons = dashboard?.seasons ?? null;
@@ -50,6 +54,9 @@ export function useAdminDashboard() {
   );
   const sendWeeklyRecapEmailToAll = useAction(
     api.functions.emails.adminSendWeeklyRecapEmailToActiveTourCards,
+  );
+  const sendMissingTeamReminder = useAction(
+    api.functions.emails.adminSendMissingTeamReminderForUpcomingTournament,
   );
   const runRepairTournament = useAction(
     api.functions.cronJobs.updatePreviousTournament_Public,
@@ -144,6 +151,48 @@ export function useAdminDashboard() {
             : (dashboard.weeklyRecapPreview?.recipientCount ?? 0),
         customBlurb: weeklyRecapBody,
       }),
+      missingTeamReminderSend: (() => {
+        const base = buildBulkEmailPreview({
+          tournamentName:
+            missingTeamReminderPreview && !missingTeamReminderPreview.skipped
+              ? missingTeamReminderPreview.tournamentName
+              : undefined,
+          recipientCount:
+            missingTeamReminderPreview === undefined
+              ? undefined
+              : missingTeamReminderPreview.skipped
+                ? 0
+                : missingTeamReminderPreview.recipientCount,
+          customBlurb: "",
+        });
+        if (!missingTeamReminderPreview) return base;
+        if (missingTeamReminderPreview.skipped) {
+          const reason =
+            missingTeamReminderPreview.reason === "playoff_roster_inherited"
+              ? "This playoff roster carries over from the first playoff event."
+              : "There is no upcoming tournament to remind members about.";
+          return { ...base, warnings: [reason], canRun: false };
+        }
+        if (missingTeamReminderPreview.alreadySent) {
+          return {
+            ...base,
+            warnings: [
+              "The reminder has already been sent for this tournament.",
+            ],
+            canRun: false,
+          };
+        }
+        if (!missingTeamReminderPreview.groupsEmailSent) {
+          return {
+            ...base,
+            warnings: [
+              "Send the weekly groups email before the picks reminder.",
+            ],
+            canRun: false,
+          };
+        }
+        return base;
+      })(),
       createPayment: buildPaymentPreview({
         memberName: selectedPaymentMember?.fullName,
         seasonName: selectedPaymentSeason
@@ -165,6 +214,7 @@ export function useAdminDashboard() {
     }),
     [
       dashboard,
+      missingTeamReminderPreview,
       paymentAmountDollars,
       selectedImportTournament,
       selectedPaymentMember,
@@ -191,6 +241,9 @@ export function useAdminDashboard() {
     updateWorldRank: toAdminOperationStatus(updateWorldRankRun),
     weeklyRecapTest: toAdminOperationStatus(runs.weeklyRecapTest),
     weeklyRecapSendAll: toAdminOperationStatus(runs.weeklyRecapSendAll),
+    missingTeamReminderSend: toAdminOperationStatus(
+      runs.missingTeamReminderSend,
+    ),
     createPayment: toAdminOperationStatus(runs.createPayment),
     recomputeStandings: toAdminOperationStatus(runs.recomputeStandings),
     backfillStandings: toAdminOperationStatus(runs.backfillStandings),
@@ -243,6 +296,15 @@ export function useAdminDashboard() {
             "Review the recipient estimate and message details before starting the bulk send.",
           confirmLabel: "Send bulk email",
           preview: previews.weeklyRecapSendAll,
+        };
+      case "missingTeamReminderSend":
+        return {
+          operation: confirmationOperation,
+          title: "Send the picks reminder?",
+          description:
+            "This emails only eligible active members who have not submitted their upcoming roster.",
+          confirmLabel: "Send reminder",
+          preview: previews.missingTeamReminderSend,
         };
       case "createPayment":
         return {
@@ -382,6 +444,9 @@ export function useAdminDashboard() {
         await runJob(operation, () =>
           sendWeeklyRecapEmailToAll({ customBlurb: weeklyRecapBody }),
         );
+        break;
+      case "missingTeamReminderSend":
+        await runJob(operation, () => sendMissingTeamReminder({}));
         break;
       case "createPayment":
         await runJob(operation, async () => {

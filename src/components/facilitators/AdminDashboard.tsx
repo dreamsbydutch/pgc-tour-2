@@ -227,6 +227,40 @@ export function AdminDashboard() {
       </AdminTaskPanel>
 
       <AdminTaskPanel
+        open={model.activeTask === "pickReminder"}
+        title="Remind missing picks"
+        description="Email active members who are eligible for the upcoming tournament and have not submitted their roster. Playoff qualification is calculated from current points."
+        tone="communication"
+        onClose={model.closeTask}
+        footer={
+          <Button
+            className="min-h-11 w-full bg-violet-700 text-white hover:bg-violet-800 sm:w-auto"
+            onClick={() => model.requestConfirmation("missingTeamReminderSend")}
+            disabled={
+              !model.previews.missingTeamReminderSend.canRun ||
+              model.operationStatus.missingTeamReminderSend.isBusy
+            }
+          >
+            <BusyIcon
+              busy={model.operationStatus.missingTeamReminderSend.isBusy}
+            />
+            {model.operationStatus.missingTeamReminderSend.isBusy
+              ? "Sending…"
+              : "Review & send reminder"}
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          <AdminDryRunPreview
+            preview={model.previews.missingTeamReminderSend}
+          />
+          <AdminOperationFeedback
+            status={model.operationStatus.missingTeamReminderSend}
+          />
+        </div>
+      </AdminTaskPanel>
+
+      <AdminTaskPanel
         open={model.activeTask === "memberPayment"}
         title="Record a member payment"
         description="Create a completed payment and add it to the member’s account balance."

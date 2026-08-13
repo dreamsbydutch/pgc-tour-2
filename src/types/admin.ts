@@ -23,6 +23,7 @@ export type AdminOperationKey =
   | "updateWorldRank"
   | "weeklyRecapTest"
   | "weeklyRecapSendAll"
+  | "missingTeamReminderSend"
   | "createPayment"
   | "recomputeStandings"
   | "backfillStandings"
@@ -65,7 +66,11 @@ export type AdminDryRunPreview = {
 export type AdminConfirmationRequest = {
   operation: Extract<
     AdminOperationKey,
-    "weeklyRecapSendAll" | "createPayment" | "repairTournament" | "importTeams"
+    | "weeklyRecapSendAll"
+    | "missingTeamReminderSend"
+    | "createPayment"
+    | "repairTournament"
+    | "importTeams"
   >;
   title: string;
   description: string;
@@ -124,6 +129,7 @@ export type AdminTaskKey =
   | "eventSetup"
   | "liveScoring"
   | "weeklyRecap"
+  | "pickReminder"
   | "memberPayment"
   | "settlements"
   | "standings"
