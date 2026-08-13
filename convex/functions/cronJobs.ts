@@ -95,6 +95,17 @@ export function chunkSyncUpdates<T>(
   return chunks;
 }
 
+export function projectDataGolfRankingsForMutation(
+  rankings: DataGolfRankedPlayer[],
+) {
+  return rankings.map((ranking) => ({
+    dg_id: ranking.dg_id,
+    owgr_rank: ranking.owgr_rank,
+    player_name: ranking.player_name,
+    country: ranking.country,
+  }));
+}
+
 export function getAdaptiveSyncDelayMs(args: {
   livePlay?: boolean;
   status?: string;
@@ -1908,7 +1919,7 @@ export const updateGolfersWorldRankFromDataGolfInput: ReturnType<
     for (const rankingBatch of chunkArray(rankingsList, 25)) {
       const result = await ctx.runMutation(
         internal.functions.golfers.applyGolfersWorldRankFromDataGolfInput,
-        { rankings: rankingBatch },
+        { rankings: projectDataGolfRankingsForMutation(rankingBatch) },
       );
       rankingTotals.golfersMatched += result.golfersMatched;
       rankingTotals.golfersUpdated += result.golfersUpdated;

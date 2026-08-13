@@ -8,6 +8,7 @@ import {
   deriveTournamentTimelineState,
   getEffectiveGolferLeaderboardScore,
   getAdaptiveSyncDelayMs,
+  projectDataGolfRankingsForMutation,
   getGolferLeaderboardRankMetrics,
   getTournamentPayoutAheadCount,
   getTeamRoundWindowGolfers,
@@ -20,6 +21,30 @@ import {
 } from "./cronJobs";
 
 describe("sync batching and adaptive cadence", () => {
+  it("projects ranking rows to the exact mutation validator shape", () => {
+    expect(
+      projectDataGolfRankingsForMutation([
+        {
+          am: 0,
+          country: "USA",
+          datagolf_rank: 1,
+          dg_id: 18417,
+          dg_skill_estimate: 2.706696665071,
+          owgr_rank: 1,
+          player_name: "Scottie Scheffler",
+          primary_tour: "PGA",
+        },
+      ]),
+    ).toEqual([
+      {
+        country: "USA",
+        dg_id: 18417,
+        owgr_rank: 1,
+        player_name: "Scottie Scheffler",
+      },
+    ]);
+  });
+
   it("treats only empty playoff rosters as automatic even-par teams", () => {
     expect(
       isAutomaticEvenParPlayoffTeam({ isPlayoff: true, golferIds: [] }),
