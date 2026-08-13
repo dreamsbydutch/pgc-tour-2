@@ -314,7 +314,7 @@ Before merging a league-affecting change:
 
 Primary implementation references:
 
-- `src/lib/rules.ts`
+- `src/utils/rules.ts`
 - `convex/functions/cronJobs.ts`
 - `convex/functions/teams.ts`
 - `convex/functions/tournaments.ts`
