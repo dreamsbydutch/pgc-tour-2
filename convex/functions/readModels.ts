@@ -17,6 +17,26 @@ import {
 } from "../utils/tournamentBadges";
 
 const APP_STATE_KEY = "primary" as const;
+const ADMIN_DASHBOARD_JOB_NAMES = [
+  "update_golfer_world_ranks",
+  "create_tournament_groups",
+  "tournament_sync",
+  "repair_tournament",
+] as const;
+
+function projectAdminSyncRun(run: Doc<"syncRuns"> | null) {
+  if (!run) return null;
+  return {
+    status: run.status,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    durationMs: run.durationMs,
+    changedRows: run.changedRows,
+    skipReason: run.skipReason,
+    error: run.error,
+    trigger: run.trigger,
+  };
+}
 
 function chooseCurrentSeason(seasons: Doc<"seasons">[], now: number) {
   const year = new Date(now).getFullYear();
@@ -78,6 +98,18 @@ function deriveTimeline(
     pickWindowTournament,
     seasonPhase,
   };
+}
+
+export function shouldScheduleLiveSyncBoundary(args: {
+  scheduledTournamentId?: string;
+  scheduledAt?: number;
+  tournamentId: string;
+  startDate: number;
+}) {
+  return (
+    args.scheduledTournamentId !== args.tournamentId ||
+    args.scheduledAt !== args.startDate
+  );
 }
 
 async function loadOrDeriveAppState(ctx: QueryCtx) {
@@ -186,14 +218,55 @@ export const adminGetDashboard = query({
   args: {},
   handler: async (ctx) => {
     await requireAdmin(ctx);
-    const [members, tournaments, seasons] = await Promise.all([
-      ctx.db
-        .query("members")
-        .withIndex("by_active", (q) => q.eq("isActive", true))
-        .take(500),
-      ctx.db.query("tournaments").take(500),
-      ctx.db.query("seasons").take(100),
+    const [members, tournaments, seasons, appState, recentRunRows] =
+      await Promise.all([
+        ctx.db
+          .query("members")
+          .withIndex("by_active", (q) => q.eq("isActive", true))
+          .take(500),
+        ctx.db.query("tournaments").take(500),
+        ctx.db.query("seasons").take(100),
+        loadOrDeriveAppState(ctx),
+        Promise.all(
+          ADMIN_DASHBOARD_JOB_NAMES.map((jobName) =>
+            ctx.db
+              .query("syncRuns")
+              .withIndex("by_job_started", (q) => q.eq("jobName", jobName))
+              .order("desc")
+              .first(),
+          ),
+        ),
+      ]);
+    const focusTournamentId =
+      appState.activeTournamentId ??
+      appState.pickWindowTournamentId ??
+      appState.nextTournamentId;
+    const focusTournament = focusTournamentId
+      ? tournaments.find((tournament) => tournament._id === focusTournamentId)
+      : undefined;
+    const [focusGolfers, focusSyncState] = await Promise.all([
+      focusTournamentId
+        ? ctx.db
+            .query("tournamentGolfers")
+            .withIndex("by_tournament", (q) =>
+              q.eq("tournamentId", focusTournamentId),
+            )
+            .take(500)
+        : Promise.resolve([]),
+      focusTournamentId
+        ? ctx.db
+            .query("tournamentSyncState")
+            .withIndex("by_tournament", (q) =>
+              q.eq("tournamentId", focusTournamentId),
+            )
+            .unique()
+        : Promise.resolve(null),
     ]);
+    const populatedGroups = new Set(
+      focusGolfers.flatMap((golfer) =>
+        golfer.group === undefined ? [] : [golfer.group],
+      ),
+    );
     const upcomingTournament = tournaments
       .filter(
         (tournament) =>
@@ -221,6 +294,33 @@ export const adminGetDashboard = query({
     );
 
     return {
+      appState: projectPublicAppState(appState),
+      focusTournament: focusTournament
+        ? {
+            _id: focusTournament._id,
+            name: focusTournament.name,
+            startDate: focusTournament.startDate,
+            endDate: focusTournament.endDate,
+            status: focusTournament.status,
+            groupedGolferCount: focusGolfers.filter(
+              (golfer) => golfer.group !== undefined,
+            ).length,
+            totalGolferCount: focusGolfers.length,
+            groupsReady: [1, 2, 3, 4, 5].every((group) =>
+              populatedGroups.has(group),
+            ),
+            lastSyncSuccessAt: focusSyncState?.lastSuccessAt,
+            lastSyncAttemptAt: focusSyncState?.lastAttemptAt,
+            syncFailureCount: focusSyncState?.failureCount ?? 0,
+            syncSkipReason: focusSyncState?.skipReason,
+          }
+        : null,
+      recentRuns: {
+        updateWorldRank: projectAdminSyncRun(recentRunRows[0]),
+        createGroups: projectAdminSyncRun(recentRunRows[1]),
+        liveSync: projectAdminSyncRun(recentRunRows[2]),
+        repairTournament: projectAdminSyncRun(recentRunRows[3]),
+      },
       members: members.map((member) => ({
         _id: member._id,
         firstname: member.firstname,
@@ -303,18 +403,26 @@ export const refreshAppState = internalMutation({
       }
       if (
         timeline.nextTournament &&
-        existing.liveSyncScheduledTournamentId !== timeline.nextTournament._id
+        shouldScheduleLiveSyncBoundary({
+          scheduledTournamentId: existing.liveSyncScheduledTournamentId,
+          scheduledAt: existing.liveSyncScheduledAt,
+          tournamentId: timeline.nextTournament._id,
+          startDate: timeline.nextTournament.startDate,
+        })
       ) {
         await ctx.scheduler.runAt(
-          timeline.nextTournament.startDate,
+          Math.max(timeline.nextTournament.startDate, Date.now()),
           internal.functions.cronJobs.runAdaptiveTournamentSync,
           {
             chainId: `tournament:${timeline.nextTournament._id}`,
             repair: true,
+            tournamentId: timeline.nextTournament._id,
+            scheduledFor: timeline.nextTournament.startDate,
           },
         );
         await ctx.db.patch(existing._id, {
           liveSyncScheduledTournamentId: timeline.nextTournament._id,
+          liveSyncScheduledAt: timeline.nextTournament.startDate,
         });
       }
       const pickWindowOpensAt = timeline.nextTournament
@@ -344,15 +452,18 @@ export const refreshAppState = internalMutation({
     });
     if (timeline.nextTournament) {
       await ctx.scheduler.runAt(
-        timeline.nextTournament.startDate,
+        Math.max(timeline.nextTournament.startDate, Date.now()),
         internal.functions.cronJobs.runAdaptiveTournamentSync,
         {
           chainId: `tournament:${timeline.nextTournament._id}`,
           repair: true,
+          tournamentId: timeline.nextTournament._id,
+          scheduledFor: timeline.nextTournament.startDate,
         },
       );
       await ctx.db.patch(id, {
         liveSyncScheduledTournamentId: timeline.nextTournament._id,
+        liveSyncScheduledAt: timeline.nextTournament.startDate,
       });
       const pickWindowOpensAt =
         timeline.nextTournament.startDate - PRE_TOURNAMENT_PICK_WINDOW_MS;
@@ -375,6 +486,8 @@ export const claimLiveSyncChain = internalMutation({
   args: {
     chainId: v.string(),
     repair: v.boolean(),
+    tournamentId: v.optional(v.id("tournaments")),
+    scheduledFor: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -383,6 +496,17 @@ export const claimLiveSyncChain = internalMutation({
       .withIndex("by_key", (q) => q.eq("key", APP_STATE_KEY))
       .unique();
     if (!state) return { claimed: false, reason: "missing_app_state" } as const;
+    if (
+      args.tournamentId &&
+      shouldScheduleLiveSyncBoundary({
+        scheduledTournamentId: state.liveSyncScheduledTournamentId,
+        scheduledAt: state.liveSyncScheduledAt,
+        tournamentId: args.tournamentId,
+        startDate: args.scheduledFor ?? Number.NaN,
+      })
+    ) {
+      return { claimed: false, reason: "stale_boundary" } as const;
+    }
     if (
       args.repair &&
       state.liveSyncLeaseUntil &&

@@ -2,6 +2,8 @@ import { useCallback, useEffect } from "react";
 import { useLocation } from "@tanstack/react-router";
 
 import type {
+  ClubhousePulseAnalyticsDestination,
+  ClubhousePulseAnalyticsPhase,
   LeaderboardAnalyticsView,
   StandingsAnalyticsView,
   TeamSubmissionOperation,
@@ -54,10 +56,32 @@ export function useAnalytics() {
     [],
   );
 
+  const trackClubhousePulseCtaClicked = useCallback(
+    (
+      phase: ClubhousePulseAnalyticsPhase,
+      destination: ClubhousePulseAnalyticsDestination,
+    ) => {
+      void captureAnalyticsEvent("clubhouse_pulse_cta_clicked", {
+        phase,
+        destination,
+      });
+    },
+    [],
+  );
+
+  const trackClubhousePulseTourChanged = useCallback(
+    (phase: ClubhousePulseAnalyticsPhase) => {
+      void captureAnalyticsEvent("clubhouse_pulse_tour_changed", { phase });
+    },
+    [],
+  );
+
   return {
     trackLeaderboardTabChanged,
     trackStandingsViewChanged,
     trackTeamSubmissionSucceeded,
     trackTeamSubmissionFailed,
+    trackClubhousePulseCtaClicked,
+    trackClubhousePulseTourChanged,
   };
 }

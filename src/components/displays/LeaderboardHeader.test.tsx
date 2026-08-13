@@ -117,8 +117,8 @@ describe("LeaderboardHeader", () => {
     expect(
       within(dialog).getByText("Round 4 · DataGolf live scoring"),
     ).toBeTruthy();
-    expect(within(dialog).getByText("3.82")).toBeTruthy();
-    expect(within(dialog).getByText("-0.18")).toBeTruthy();
+    expect(within(dialog).getByText("3.8")).toBeTruthy();
+    expect(within(dialog).getByText("-0.2")).toBeTruthy();
     expect(within(dialog).getByText("30.0%")).toBeTruthy();
     expect(within(dialog).getByText("52.0%")).toBeTruthy();
     expect(within(dialog).getByText("18.0%")).toBeTruthy();

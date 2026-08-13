@@ -66,7 +66,8 @@ export function HomePage() {
                 tournaments={model.seasonTournaments}
               />
             ) : null}
-            {model.nextTournament ? (
+            {model.member &&
+            model.seasonTourCards.length > 0 ? null : model.nextTournament ? (
               <TournamentCountdown {...model.nextTournament} />
             ) : (
               <div className="rounded-lg border bg-white p-6 text-center text-slate-600">

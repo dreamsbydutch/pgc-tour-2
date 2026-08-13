@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { getCurrentMember, requireAdmin } from "../utils/auth";
 import { writeAuditLog } from "../utils/audit";
 import { projectMyTransaction } from "../utils/publicDtos";
+import { publishNotifications } from "../utils/notifications";
 
 export const getMyTransactions = query({
   args: {
@@ -73,6 +74,18 @@ export const createPayment = mutation({
         amount: args.amount,
         transactionType: "Payment",
       },
+    });
+    await publishNotifications(ctx, {
+      dedupeKey: `payment-recorded:${transactionId}`,
+      category: "financial",
+      recipients: [
+        {
+          memberId: member._id,
+          title: "Your payment was recorded",
+          body: "An administrator confirmed the payment on your PGC account.",
+          href: "/account",
+        },
+      ],
     });
     const transaction = await ctx.db.get(transactionId);
     return transaction ? projectMyTransaction(transaction) : null;

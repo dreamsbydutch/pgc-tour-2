@@ -249,6 +249,19 @@ describe("email action hardening", () => {
         {},
       ),
     ).rejects.toThrow("Admin access required");
+
+    await expect(
+      t.action(
+        api.functions.emails.adminSendMissingTeamReminderForUpcomingTournament,
+        {},
+      ),
+    ).rejects.toThrow("Unauthorized");
+    await expect(
+      regular.authenticated.action(
+        api.functions.emails.adminSendMissingTeamReminderForUpcomingTournament,
+        {},
+      ),
+    ).rejects.toThrow("Admin access required");
   });
 
   it("blocks concurrent sends and enforces the completed-send cooldown", async () => {

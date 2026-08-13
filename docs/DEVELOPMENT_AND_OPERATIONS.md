@@ -143,6 +143,12 @@ It runs daily at 15:00 UTC and is available from the admin tournament-setup
 task. Tournament field and live feeds also create missing tournament golfers as
 ungrouped rows so late PGA entrants remain visible without reopening picks.
 
+The `tournament_preflight` sync run is intentionally database-only unless the
+next configured event is inside its four-day pick window. In that window it
+uses the DataGolf field feed to keep the opening tee-time boundary current; a
+changed boundary is rescheduled immediately, including when the new time has
+already passed.
+
 ## Data repair and migrations
 
 Migration functions live in `convex/functions/migrations.ts`; materialized

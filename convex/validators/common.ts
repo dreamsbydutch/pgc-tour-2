@@ -95,6 +95,7 @@ export const emailsValidators = {
     getActiveTourCardRecipientsForTournament: sharedArgs.tournamentId,
     getMissingTeamReminderRecipientsForUpcomingTournament:
       sharedArgs.optionalTournamentId,
+    adminGetMissingTeamReminderPreview: sharedArgs.optionalTournamentId,
     markGroupsEmailSent: sharedArgs.tournamentId,
     getActiveMemberEmailRecipients: sharedArgs.none,
     markReminderEmailSent: sharedArgs.tournamentId,
@@ -111,6 +112,8 @@ export const emailsValidators = {
       force: v.optional(v.boolean()),
     },
     sendMissingTeamReminderForUpcomingTournament:
+      sharedArgs.optionalTournamentId,
+    adminSendMissingTeamReminderForUpcomingTournament:
       sharedArgs.optionalTournamentId,
     sendGroupsEmailTest: {
       tournamentId: idValidators.tournamentId,

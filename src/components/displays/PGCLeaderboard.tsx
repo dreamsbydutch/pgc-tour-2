@@ -30,6 +30,7 @@ import type {
 import { calculateScoreForSorting } from "convex/utils";
 import { Id } from "@/convex";
 import { useTeamDetail, useTeamHoleScorecards } from "@/hooks";
+import { getTournamentPulseRowId } from "@/hooks";
 import { PGAHoleScorecard } from "./PGALeaderboard";
 import { LeaderboardStandingsCard } from "./LeaderboardStandingsCard";
 import type {
@@ -214,8 +215,10 @@ function LeaderboardListing({
   });
   return (
     <div
+      id={isUser ? getTournamentPulseRowId(String(team.tourCardId)) : undefined}
+      tabIndex={isUser ? -1 : undefined}
       onClick={onToggleOpen}
-      className="mx-auto my-0.5 grid w-full min-w-0 max-w-4xl cursor-pointer grid-flow-row grid-cols-10 rounded-md text-center"
+      className="mx-auto my-0.5 grid w-full min-w-0 max-w-4xl cursor-pointer scroll-m-24 grid-flow-row grid-cols-10 rounded-md text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
     >
       <div className={rowClass}>
         <div className="col-span-2 flex place-self-center font-varela text-base sm:col-span-5">

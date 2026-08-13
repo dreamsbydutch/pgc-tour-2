@@ -246,13 +246,29 @@ export function toAdminOperationStatus(
   }
 
   const finishedAt = run.finishedAt ?? run.startedAt;
-  const duration = Math.max(0, finishedAt - run.startedAt);
+  const duration = run.durationMs ?? Math.max(0, finishedAt - run.startedAt);
+  const failed = run.status === "failed" || run.status === "abandoned";
+  const statusLabel =
+    run.status === "succeeded"
+      ? "Completed"
+      : run.status === "skipped"
+        ? "Checked"
+        : run.status === "abandoned"
+          ? "Interrupted"
+          : "Failed";
+  const result =
+    run.result ??
+    run.error ??
+    run.skipReason ??
+    (run.changedRows !== undefined
+      ? `${run.changedRows} row${run.changedRows === 1 ? "" : "s"} changed.`
+      : undefined);
   return {
     isBusy: false,
-    statusLabel: run.status === "succeeded" ? "Completed" : "Failed",
+    statusLabel,
     lastRunLabel: `${formatDateTime(finishedAt)} · ${formatDuration(duration)}`,
-    result: run.result,
-    tone: run.status === "succeeded" ? "success" : "error",
+    result,
+    tone: failed ? "error" : "success",
   };
 }
 

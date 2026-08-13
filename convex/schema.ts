@@ -473,6 +473,7 @@ const schema = defineSchema({
   transactions: defineTable({
     memberId: v.optional(v.id("members")),
     seasonId: v.id("seasons"),
+    settlementRequestId: v.optional(v.id("settlementRequests")),
     amount: v.number(), // Amount in cents (positive = credit, negative = debit)
 
     payoutEmail: v.optional(v.string()),
@@ -506,9 +507,51 @@ const schema = defineSchema({
     .index("by_season", ["seasonId"])
     .index("by_member_season", ["memberId", "seasonId"])
     .index("by_member_season_type", ["memberId", "seasonId", "transactionType"])
+    .index("by_settlement_request", ["settlementRequestId"])
     .index("by_type", ["transactionType"])
     .index("by_status", ["status"])
     .index("by_amount", ["amount"]),
+
+  /**
+   * Season-end instructions for distributing a member's official earnings.
+   * Item completion timestamps let administrators reconcile each real-world
+   * transfer independently while keeping the overall request auditable.
+   */
+  settlementRequests: defineTable({
+    memberId: v.id("members"),
+    seasonId: v.id("seasons"),
+    earningsCents: v.number(),
+    accountOffsetCents: v.number(),
+    availableCents: v.number(),
+    transferCents: v.number(),
+    charityCents: v.number(),
+    leagueCents: v.number(),
+    nextSeasonCardCents: v.number(),
+    payoutEmail: v.optional(v.string()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("in_progress"),
+      v.literal("completed"),
+      v.literal("cancelled"),
+    ),
+    submittedAt: v.number(),
+    transferCompletedAt: v.optional(v.number()),
+    transferCompletedBy: v.optional(v.id("members")),
+    charityCompletedAt: v.optional(v.number()),
+    charityCompletedBy: v.optional(v.id("members")),
+    leagueCompletedAt: v.optional(v.number()),
+    leagueCompletedBy: v.optional(v.id("members")),
+    nextSeasonCardCompletedAt: v.optional(v.number()),
+    nextSeasonCardCompletedBy: v.optional(v.id("members")),
+    completedAt: v.optional(v.number()),
+    cancelledAt: v.optional(v.number()),
+    cancelledBy: v.optional(v.id("members")),
+    cancellationReason: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_member", ["memberId"])
+    .index("by_member_season", ["memberId", "seasonId"])
+    .index("by_status_submitted", ["status", "submittedAt"]),
 
   // =========================================================================
   // SYSTEM & NOTIFICATIONS
@@ -524,10 +567,86 @@ const schema = defineSchema({
     p256dh: v.string(),
     auth: v.string(),
     userAgent: v.optional(v.string()),
+    enabled: v.optional(v.boolean()),
+    failureCount: v.optional(v.number()),
+    lastSuccessAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
     .index("by_member", ["memberId"])
-    .index("by_member_endpoint", ["memberId", "endpoint"]),
+    .index("by_member_endpoint", ["memberId", "endpoint"])
+    .index("by_endpoint", ["endpoint"]),
+
+  notificationPreferences: defineTable({
+    memberId: v.id("members"),
+    leagueUpdates: v.boolean(),
+    pickReminders: v.boolean(),
+    finalResults: v.boolean(),
+    teamMoments: v.boolean(),
+    financial: v.boolean(),
+    milestones: v.boolean(),
+    updatedAt: v.number(),
+  }).index("by_member", ["memberId"]),
+
+  notificationEvents: defineTable({
+    dedupeKey: v.string(),
+    category: v.union(
+      v.literal("leagueUpdates"),
+      v.literal("pickReminders"),
+      v.literal("finalResults"),
+      v.literal("teamMoments"),
+      v.literal("financial"),
+      v.literal("milestones"),
+    ),
+    tournamentId: v.optional(v.id("tournaments")),
+    settlementRequestId: v.optional(v.id("settlementRequests")),
+    createdAt: v.number(),
+  })
+    .index("by_dedupe_key", ["dedupeKey"])
+    .index("by_created_at", ["createdAt"]),
+
+  notifications: defineTable({
+    eventId: v.id("notificationEvents"),
+    memberId: v.id("members"),
+    category: v.union(
+      v.literal("leagueUpdates"),
+      v.literal("pickReminders"),
+      v.literal("finalResults"),
+      v.literal("teamMoments"),
+      v.literal("financial"),
+      v.literal("milestones"),
+    ),
+    title: v.string(),
+    body: v.string(),
+    href: v.string(),
+    readAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_member_created_at", ["memberId", "createdAt"])
+    .index("by_member_read_at", ["memberId", "readAt"])
+    .index("by_event_member", ["eventId", "memberId"]),
+
+  notificationDeliveries: defineTable({
+    notificationId: v.id("notifications"),
+    subscriptionId: v.id("pushSubscriptions"),
+    memberId: v.id("members"),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("processing"),
+      v.literal("sent"),
+      v.literal("failed"),
+      v.literal("skipped"),
+    ),
+    attempts: v.number(),
+    nextAttemptAt: v.number(),
+    leaseToken: v.optional(v.string()),
+    leaseExpiresAt: v.optional(v.number()),
+    lastError: v.optional(v.string()),
+    sentAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    .index("by_status_next_attempt", ["status", "nextAttemptAt"])
+    .index("by_notification_subscription", ["notificationId", "subscriptionId"])
+    .index("by_member", ["memberId"]),
 
   /**
    * Audit Logs - Track important system changes for compliance and debugging
@@ -608,6 +727,7 @@ const schema = defineSchema({
     liveSyncChainId: v.optional(v.string()),
     liveSyncLeaseUntil: v.optional(v.number()),
     liveSyncScheduledTournamentId: v.optional(v.id("tournaments")),
+    liveSyncScheduledAt: v.optional(v.number()),
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
 

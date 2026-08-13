@@ -1,5 +1,7 @@
 export * from "./useAdminDashboard";
 export * from "./useAnalytics";
+export * from "./useClubhousePulse";
+export * from "./useTournamentPulseStrip";
 export * from "./useFriendManagement";
 export * from "./useCurrentSeasonMajorChampionBadges";
 export * from "./useRoleAccess";
@@ -19,3 +21,4 @@ export * from "./useTournamentTeam";
 export * from "./useStandingsPage";
 export * from "./useRulebookPage";
 export * from "./useNavigationContainer";
+export * from "./useNotifications";

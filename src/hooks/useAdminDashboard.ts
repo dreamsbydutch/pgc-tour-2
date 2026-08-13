@@ -6,8 +6,12 @@ import type {
   AdminConfirmationRequest,
   AdminOperationKey,
   AdminOperationRun,
+  AdminTaskKey,
   StandingsBackfillResult,
   TeamMetadataBackfillResult,
+  SettlementAdminFilter,
+  SettlementFeedback,
+  SettlementItemKind,
 } from "@/types";
 import {
   buildBulkEmailPreview,
@@ -17,9 +21,17 @@ import {
   toAdminOperationStatus,
   toLatestAdminOperationStatus,
 } from "@/utils/adminOperations";
+import { buildAdminHubOverview } from "@/utils/adminHub";
 
 export function useAdminDashboard() {
   const dashboard = useQuery(api.functions.readModels.adminGetDashboard);
+  const settlementRequests = useQuery(
+    api.functions.settlements.adminListRequests,
+  );
+  const missingTeamReminderPreview = useQuery(
+    api.functions.emails.adminGetMissingTeamReminderPreview,
+    {},
+  );
   const tournaments = dashboard?.tournaments ?? null;
   const members = dashboard?.members ?? null;
   const seasons = dashboard?.seasons ?? null;
@@ -43,6 +55,9 @@ export function useAdminDashboard() {
   const sendWeeklyRecapEmailToAll = useAction(
     api.functions.emails.adminSendWeeklyRecapEmailToActiveTourCards,
   );
+  const sendMissingTeamReminder = useAction(
+    api.functions.emails.adminSendMissingTeamReminderForUpcomingTournament,
+  );
   const runRepairTournament = useAction(
     api.functions.cronJobs.updatePreviousTournament_Public,
   );
@@ -57,6 +72,12 @@ export function useAdminDashboard() {
   );
   const createTransaction = useMutation(
     api.functions.transactions.createPayment,
+  );
+  const completeSettlementItem = useMutation(
+    api.functions.settlements.adminCompleteItem,
+  );
+  const cancelSettlementRequest = useMutation(
+    api.functions.settlements.adminCancelRequest,
   );
   const importTeamsFromJson = useMutation(
     api.functions.teams.adminImportTeamsFromJson,
@@ -73,6 +94,14 @@ export function useAdminDashboard() {
   const [paymentSeasonId, setPaymentSeasonId] = useState("");
   const [paymentAmountDollars, setPaymentAmountDollars] = useState("");
   const [recomputeSeasonId, setRecomputeSeasonId] = useState("");
+  const [settlementFilter, setSettlementFilter] =
+    useState<SettlementAdminFilter>("open");
+  const [settlementBusyKey, setSettlementBusyKey] = useState<string | null>(
+    null,
+  );
+  const [settlementFeedback, setSettlementFeedback] =
+    useState<SettlementFeedback | null>(null);
+  const [activeTask, setActiveTask] = useState<AdminTaskKey | null>(null);
   const [confirmationOperation, setConfirmationOperation] = useState<
     AdminConfirmationRequest["operation"] | null
   >(null);
@@ -89,6 +118,27 @@ export function useAdminDashboard() {
   const selectedImportTournament = tournaments?.find(
     (tournament) => tournament._id === tournamentId,
   );
+  const visibleSettlementRequests = useMemo(() => {
+    const rows = settlementRequests ?? [];
+    if (settlementFilter === "all") return rows;
+    if (settlementFilter === "open") {
+      return rows.filter(
+        (request) =>
+          request.status === "pending" || request.status === "in_progress",
+      );
+    }
+    return rows.filter((request) => request.status === settlementFilter);
+  }, [settlementFilter, settlementRequests]);
+  const openSettlementRequests = (settlementRequests ?? []).filter(
+    (request) =>
+      request.status === "pending" || request.status === "in_progress",
+  );
+  const pendingSettlementCount = openSettlementRequests.length;
+  const pendingTransferTotal = openSettlementRequests.reduce(
+    (total, request) =>
+      total + (request.transferCompletedAt ? 0 : request.transferCents),
+    0,
+  );
 
   const previews = useMemo(
     () => ({
@@ -101,6 +151,48 @@ export function useAdminDashboard() {
             : (dashboard.weeklyRecapPreview?.recipientCount ?? 0),
         customBlurb: weeklyRecapBody,
       }),
+      missingTeamReminderSend: (() => {
+        const base = buildBulkEmailPreview({
+          tournamentName:
+            missingTeamReminderPreview && !missingTeamReminderPreview.skipped
+              ? missingTeamReminderPreview.tournamentName
+              : undefined,
+          recipientCount:
+            missingTeamReminderPreview === undefined
+              ? undefined
+              : missingTeamReminderPreview.skipped
+                ? 0
+                : missingTeamReminderPreview.recipientCount,
+          customBlurb: "",
+        });
+        if (!missingTeamReminderPreview) return base;
+        if (missingTeamReminderPreview.skipped) {
+          const reason =
+            missingTeamReminderPreview.reason === "playoff_roster_inherited"
+              ? "This playoff roster carries over from the first playoff event."
+              : "There is no upcoming tournament to remind members about.";
+          return { ...base, warnings: [reason], canRun: false };
+        }
+        if (missingTeamReminderPreview.alreadySent) {
+          return {
+            ...base,
+            warnings: [
+              "The reminder has already been sent for this tournament.",
+            ],
+            canRun: false,
+          };
+        }
+        if (!missingTeamReminderPreview.groupsEmailSent) {
+          return {
+            ...base,
+            warnings: [
+              "Send the weekly groups email before the picks reminder.",
+            ],
+            canRun: false,
+          };
+        }
+        return base;
+      })(),
       createPayment: buildPaymentPreview({
         memberName: selectedPaymentMember?.fullName,
         seasonName: selectedPaymentSeason
@@ -122,6 +214,7 @@ export function useAdminDashboard() {
     }),
     [
       dashboard,
+      missingTeamReminderPreview,
       paymentAmountDollars,
       selectedImportTournament,
       selectedPaymentMember,
@@ -133,18 +226,29 @@ export function useAdminDashboard() {
     ],
   );
 
+  const persistentRuns = dashboard?.recentRuns;
+  const updateWorldRankRun =
+    runs.updateWorldRank ?? persistentRuns?.updateWorldRank ?? undefined;
+  const createGroupsRun =
+    runs.createGroups ?? persistentRuns?.createGroups ?? undefined;
+  const liveSyncRun = runs.liveSync ?? persistentRuns?.liveSync ?? undefined;
+  const repairTournamentRun =
+    runs.repairTournament ?? persistentRuns?.repairTournament ?? undefined;
   const operationStatus = {
-    createGroups: toAdminOperationStatus(runs.createGroups),
-    liveSync: toAdminOperationStatus(runs.liveSync),
+    createGroups: toAdminOperationStatus(createGroupsRun),
+    liveSync: toAdminOperationStatus(liveSyncRun),
     liveSyncForce: toAdminOperationStatus(runs.liveSyncForce),
-    updateWorldRank: toAdminOperationStatus(runs.updateWorldRank),
+    updateWorldRank: toAdminOperationStatus(updateWorldRankRun),
     weeklyRecapTest: toAdminOperationStatus(runs.weeklyRecapTest),
     weeklyRecapSendAll: toAdminOperationStatus(runs.weeklyRecapSendAll),
+    missingTeamReminderSend: toAdminOperationStatus(
+      runs.missingTeamReminderSend,
+    ),
     createPayment: toAdminOperationStatus(runs.createPayment),
     recomputeStandings: toAdminOperationStatus(runs.recomputeStandings),
     backfillStandings: toAdminOperationStatus(runs.backfillStandings),
     backfillTeamMetadata: toAdminOperationStatus(runs.backfillTeamMetadata),
-    repairTournament: toAdminOperationStatus(runs.repairTournament),
+    repairTournament: toAdminOperationStatus(repairTournamentRun),
     importTeams: toAdminOperationStatus(runs.importTeams),
   } satisfies Record<
     AdminOperationKey,
@@ -152,10 +256,10 @@ export function useAdminDashboard() {
   >;
   const groupStatus = {
     eventSetup: toLatestAdminOperationStatus([
-      runs.updateWorldRank,
-      runs.createGroups,
+      updateWorldRankRun,
+      createGroupsRun,
     ]),
-    liveSync: toLatestAdminOperationStatus([runs.liveSync, runs.liveSyncForce]),
+    liveSync: toLatestAdminOperationStatus([liveSyncRun, runs.liveSyncForce]),
     weeklyRecap: toLatestAdminOperationStatus([
       runs.weeklyRecapTest,
       runs.weeklyRecapSendAll,
@@ -165,6 +269,22 @@ export function useAdminDashboard() {
       runs.backfillStandings,
     ]),
   };
+  const hubOverview = useMemo(
+    () =>
+      buildAdminHubOverview({
+        now: Date.now(),
+        appState: dashboard?.appState,
+        focusTournament: dashboard?.focusTournament ?? undefined,
+        recentLiveSync: liveSyncRun,
+        pendingSettlementCount,
+      }),
+    [
+      dashboard?.appState,
+      dashboard?.focusTournament,
+      liveSyncRun,
+      pendingSettlementCount,
+    ],
+  );
 
   const confirmation = useMemo<AdminConfirmationRequest | null>(() => {
     switch (confirmationOperation) {
@@ -176,6 +296,15 @@ export function useAdminDashboard() {
             "Review the recipient estimate and message details before starting the bulk send.",
           confirmLabel: "Send bulk email",
           preview: previews.weeklyRecapSendAll,
+        };
+      case "missingTeamReminderSend":
+        return {
+          operation: confirmationOperation,
+          title: "Send the picks reminder?",
+          description:
+            "This emails only eligible active members who have not submitted their upcoming roster.",
+          confirmLabel: "Send reminder",
+          preview: previews.missingTeamReminderSend,
         };
       case "createPayment":
         return {
@@ -316,6 +445,9 @@ export function useAdminDashboard() {
           sendWeeklyRecapEmailToAll({ customBlurb: weeklyRecapBody }),
         );
         break;
+      case "missingTeamReminderSend":
+        await runJob(operation, () => sendMissingTeamReminder({}));
+        break;
       case "createPayment":
         await runJob(operation, async () => {
           const cents = Math.round(Number(paymentAmountDollars) * 100);
@@ -354,6 +486,62 @@ export function useAdminDashboard() {
     await runConfirmedOperation(operation);
   }
 
+  async function completeSettlement(
+    requestId: Id<"settlementRequests">,
+    item: SettlementItemKind,
+  ) {
+    if (
+      !globalThis.confirm(
+        "Mark this allocation complete? This records the financial transaction and cannot be unchecked.",
+      )
+    ) {
+      return;
+    }
+    const key = `${requestId}:${item}`;
+    setSettlementBusyKey(key);
+    setSettlementFeedback(null);
+    try {
+      await completeSettlementItem({ requestId, item });
+      setSettlementFeedback({
+        tone: "success",
+        message: "Allocation marked complete.",
+      });
+    } catch (error) {
+      setSettlementFeedback({
+        tone: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unable to complete allocation.",
+      });
+    } finally {
+      setSettlementBusyKey(null);
+    }
+  }
+
+  async function cancelSettlement(requestId: Id<"settlementRequests">) {
+    const reason = globalThis.prompt("Why is this request being cancelled?");
+    if (!reason) return;
+    const key = `${requestId}:cancel`;
+    setSettlementBusyKey(key);
+    setSettlementFeedback(null);
+    try {
+      await cancelSettlementRequest({ requestId, reason });
+      setSettlementFeedback({
+        tone: "success",
+        message: "Settlement request cancelled.",
+      });
+    } catch (error) {
+      setSettlementFeedback({
+        tone: "error",
+        message:
+          error instanceof Error ? error.message : "Unable to cancel request.",
+      });
+    } finally {
+      setSettlementBusyKey(null);
+    }
+  }
+
   return {
     tournaments,
     sortedTournaments,
@@ -380,6 +568,20 @@ export function useAdminDashboard() {
     operationStatus,
     groupStatus,
     confirmation,
+    activeTask,
+    openTask: setActiveTask,
+    closeTask: () => setActiveTask(null),
+    hubOverview,
+    settlementRequests,
+    visibleSettlementRequests,
+    settlementFilter,
+    setSettlementFilter,
+    pendingSettlementCount,
+    pendingTransferTotal,
+    settlementBusyKey,
+    settlementFeedback,
+    completeSettlement,
+    cancelSettlement,
     requestConfirmation: setConfirmationOperation,
     dismissConfirmation: () => setConfirmationOperation(null),
     confirmOperation,
