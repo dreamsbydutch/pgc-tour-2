@@ -302,6 +302,20 @@ export function isAutomaticEvenParPlayoffTeam(args: {
   return args.isPlayoff && args.golferIds.length === 0;
 }
 
+export function shouldAutoFillIncompleteTeamRoster(args: {
+  isPlayoff: boolean;
+  golferIds: readonly number[];
+  rosteredGolferCount: number;
+}): boolean {
+  return (
+    args.rosteredGolferCount < 10 &&
+    !isAutomaticEvenParPlayoffTeam({
+      isPlayoff: args.isPlayoff,
+      golferIds: args.golferIds,
+    })
+  );
+}
+
 export function buildFirstPlaceTiebreakSummary(args: {
   teams: TournamentSyncTeam[];
   isPlayoff?: boolean;
@@ -2502,7 +2516,13 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         allowPreStartNonStarterReplacement,
       });
       for (const t of teams) {
-        if (t.golfers?.length < 10) {
+        if (
+          shouldAutoFillIncompleteTeamRoster({
+            isPlayoff,
+            golferIds: t.golferIds,
+            rosteredGolferCount: t.golfers?.length ?? 0,
+          })
+        ) {
           const groupCounts = [
             {
               group: 1,
@@ -3622,7 +3642,13 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
       });
 
       for (const t of teams) {
-        if (t.golfers?.length < 10) {
+        if (
+          shouldAutoFillIncompleteTeamRoster({
+            isPlayoff,
+            golferIds: t.golferIds,
+            rosteredGolferCount: t.golfers?.length ?? 0,
+          })
+        ) {
           const groupCounts = [
             {
               group: 1,

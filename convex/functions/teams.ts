@@ -567,6 +567,15 @@ export const reconcilePlayoffTeamsForSeason = internalMutation({
           eventIndex === 0
             ? (context.startingStrokes.get(String(team.tourCardId)) ?? 0)
             : (previousTeam?.score ?? previousTeam?.playoffCarryoverScore ?? 0);
+        const isLegacyAutoFilledTeam =
+          eventIndex === 0 &&
+          team._creationTime >= tournament.startDate &&
+          team.golferIds.length > 0 &&
+          team.golferIds.length < 10;
+        const shouldRemainAutomatic =
+          team.golferIds.length === 0 ||
+          isLegacyAutoFilledTeam ||
+          previousTeam?.golferIds.length === 0;
         const next: Partial<Doc<"teams">> = {
           seasonId: card!.seasonId,
           tourId: card!.tourId,
@@ -574,24 +583,28 @@ export const reconcilePlayoffTeamsForSeason = internalMutation({
           displayName: card!.displayName,
           playoff,
           playoffCarryoverScore: carryover,
-          score: applyPlayoffCarryoverToScore({
-            score: team.score,
-            previousCarryover: team.playoffCarryoverScore,
-            nextCarryover: carryover,
-            hasScoringData: hasTeamScoringData(team),
-          }),
-          ...(team.golferIds.length === 0 && course
+          score: shouldRemainAutomatic
+            ? carryover
+            : applyPlayoffCarryoverToScore({
+                score: team.score,
+                previousCarryover: team.playoffCarryoverScore,
+                nextCarryover: carryover,
+                hasScoringData: hasTeamScoringData(team),
+              }),
+          ...(shouldRemainAutomatic
+            ? { golferIds: [], today: 0 }
+            : previousTeam
+              ? {
+                  golferIds: previousTeam.golferIds,
+                  pastPosition: previousTeam.position,
+                }
+              : {}),
+          ...(shouldRemainAutomatic && course
             ? {
                 roundOne: course.par,
                 roundTwo: course.par,
                 roundThree: course.par,
                 roundFour: course.par,
-              }
-            : {}),
-          ...(previousTeam
-            ? {
-                golferIds: previousTeam.golferIds,
-                pastPosition: previousTeam.position,
               }
             : {}),
         };

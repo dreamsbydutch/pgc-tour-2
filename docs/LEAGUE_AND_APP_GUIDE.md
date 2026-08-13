@@ -244,6 +244,7 @@ bragging rights.
   event starts remains on the Gold or Silver leaderboard with an empty
   automatic team. That team records even par for every round in all three
   playoff events while retaining its starting strokes and cumulative carryover.
+  Incomplete-roster repair and pre-start replacement must leave that team empty.
 - Playoff tier payout slots are fixed: Gold uses positions 1-75 and Silver uses
   positions 76-150, regardless of the actual bracket sizes.
 

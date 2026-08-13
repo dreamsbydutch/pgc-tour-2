@@ -17,6 +17,7 @@ import {
   getTeamTournamentRank,
   isRoundPublishedForTimeline,
   isAutomaticEvenParPlayoffTeam,
+  shouldAutoFillIncompleteTeamRoster,
   shouldAwardTournamentResults,
 } from "./cronJobs";
 
@@ -54,6 +55,37 @@ describe("sync batching and adaptive cadence", () => {
     ).toBe(false);
     expect(
       isAutomaticEvenParPlayoffTeam({ isPlayoff: true, golferIds: [1] }),
+    ).toBe(false);
+  });
+
+  it("never fills an intentionally empty playoff roster", () => {
+    expect(
+      shouldAutoFillIncompleteTeamRoster({
+        isPlayoff: true,
+        golferIds: [],
+        rosteredGolferCount: 0,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAutoFillIncompleteTeamRoster({
+        isPlayoff: true,
+        golferIds: [1, 2],
+        rosteredGolferCount: 2,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAutoFillIncompleteTeamRoster({
+        isPlayoff: false,
+        golferIds: [],
+        rosteredGolferCount: 0,
+      }),
+    ).toBe(true);
+    expect(
+      shouldAutoFillIncompleteTeamRoster({
+        isPlayoff: true,
+        golferIds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        rosteredGolferCount: 10,
+      }),
     ).toBe(false);
   });
 

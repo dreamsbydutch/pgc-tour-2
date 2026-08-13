@@ -208,6 +208,42 @@ describe("playoff roster enforcement", () => {
     );
     expect(rerun.created).toBe(0);
 
+    await t.run((ctx) =>
+      ctx.db.patch(state.automaticTeams[0]!._id, {
+        golferIds: [fixture.golferApiIds[0]!],
+        score: -7,
+        roundOne: 65,
+        updatedRosterAt: Date.now(),
+      }),
+    );
+    await t.mutation(internal.functions.teams.reconcilePlayoffTeamsForSeason, {
+      seasonId: fixture.seasonId,
+    });
+    const restoredAutomaticTeams = await t.run((ctx) =>
+      Promise.all(
+        fixture.tournamentIds.map((tournamentId) =>
+          ctx.db
+            .query("teams")
+            .withIndex("by_tournament_tour_card", (q) =>
+              q
+                .eq("tournamentId", tournamentId)
+                .eq("tourCardId", fixture.cards[1].cardId),
+            )
+            .unique(),
+        ),
+      ),
+    );
+    for (const automaticTeam of restoredAutomaticTeams) {
+      expect(automaticTeam).toMatchObject({
+        golferIds: [],
+        score: 0,
+        roundOne: 72,
+        roundTwo: 72,
+        roundThree: 72,
+        roundFour: 72,
+      });
+    }
+
     await t.run((ctx) => ctx.db.patch(leaderTeam!._id, { score: -15 }));
     const copied = await t.mutation(
       internal.functions.tournaments.duplicateFromPreviousPlayoff,
