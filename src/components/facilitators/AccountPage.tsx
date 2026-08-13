@@ -3,7 +3,10 @@ import { Flag, LogOut, ShieldCheck, Trophy, WalletCards } from "lucide-react";
 import { lazy, Suspense } from "react";
 
 import { useAccountPage } from "@/hooks";
-import { loadNotificationPreferencesCard } from "@/displays";
+import {
+  loadNotificationCenter,
+  loadNotificationPreferencesCard,
+} from "@/displays";
 import type {
   AccountStatProps,
   FinancialSummaryProps,
@@ -27,6 +30,11 @@ const inputClassName =
 const NotificationPreferencesCard = lazy(async () => {
   const module = await loadNotificationPreferencesCard();
   return { default: module.NotificationPreferencesCard };
+});
+
+const NotificationCenter = lazy(async () => {
+  const module = await loadNotificationCenter();
+  return { default: module.NotificationCenter };
 });
 
 export function AccountPage() {
@@ -63,7 +71,14 @@ export function AccountPage() {
                 Your tour record, earnings instructions, notification settings,
                 and profile details.
               </p>
-              <div className="mt-5 flex justify-center">
+              <div className="mt-5 flex items-center justify-center gap-2">
+                <div className="lg:hidden">
+                  <Suspense
+                    fallback={<Skeleton className="h-10 w-10 rounded-md" />}
+                  >
+                    <NotificationCenter />
+                  </Suspense>
+                </div>
                 <Button
                   variant="outline"
                   onClick={() => vm.signOut({ redirectUrl: "/" })}
