@@ -610,7 +610,13 @@ export const syncTournamentScorecards: ReturnType<typeof internalAction> =
       try {
         const result = await fetchWithRetry<unknown>(
           `${ESPN_SCOREBOARD_URL}?dates=${formatEspnDate(syncContext.startDate)}`,
-          { headers: { Accept: "application/json" } },
+          {
+            headers: {
+              Accept: "application/json",
+              // ESPN's edge rejects generic server-runtime user agents.
+              "User-Agent": "curl/8.0.0",
+            },
+          },
           {
             timeout: 20_000,
             retries: 2,
