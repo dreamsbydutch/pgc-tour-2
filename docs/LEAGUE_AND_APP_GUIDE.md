@@ -239,6 +239,10 @@ bragging rights.
   qualifiers starting at `0`.
 - Point ties receive the average of the starting-stroke slots occupied by the
   tie.
+- A qualified member who does not submit a playoff roster before the first
+  event starts remains on the Gold or Silver leaderboard with an empty
+  automatic team. That team records even par for every round in all three
+  playoff events while retaining its starting strokes and cumulative carryover.
 - Playoff tier payout slots are fixed: Gold uses positions 1-75 and Silver uses
   positions 76-150, regardless of the actual bracket sizes.
 

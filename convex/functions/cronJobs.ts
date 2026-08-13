@@ -281,6 +281,13 @@ function isNonRankingTeamPosition(
   );
 }
 
+export function isAutomaticEvenParPlayoffTeam(args: {
+  isPlayoff: boolean;
+  golferIds: readonly number[];
+}): boolean {
+  return args.isPlayoff && args.golferIds.length === 0;
+}
+
 export function buildFirstPlaceTiebreakSummary(args: {
   teams: TournamentSyncTeam[];
   isPlayoff?: boolean;
@@ -336,11 +343,7 @@ export function buildFirstPlaceTiebreakSummary(args: {
       ...getTeamGolferEventEarningsTotal(team),
     }));
 
-    if (
-      tiebreakRows.some(
-        (row) => row.golferCount === 0 || row.earningsCount < row.golferCount,
-      )
-    ) {
+    if (tiebreakRows.some((row) => row.earningsCount < row.golferCount)) {
       const resolution = {
         status: "unresolved_missing_earnings",
         tourKey,
@@ -1582,6 +1585,14 @@ export function getTeamRoundScore(args: {
       .reduce((sum, score) => sum + score, 0) ?? 0) / selectionSize,
     1,
   );
+}
+
+function getTeamRoundScoreForSync(
+  args: Parameters<typeof getTeamRoundScore>[0] & {
+    automaticEvenPar: boolean;
+  },
+): number | undefined {
+  return args.automaticEvenPar ? args.coursePar : getTeamRoundScore(args);
 }
 
 function getPublishedTeamScoreToPar(
@@ -2831,44 +2842,54 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
       }
       const activeTournamentUpdatedTeams: TournamentSyncTeam[] = [];
       for (const t of teams) {
-        const roundOne = getTeamRoundScore({
+        const isAutomaticEvenParTeam = isAutomaticEvenParPlayoffTeam({
+          isPlayoff,
+          golferIds: t.golferIds,
+        });
+        const roundOne = getTeamRoundScoreForSync({
           golfers: t.golfers,
           roundNumber: 1,
           timeline,
           coursePar: course.par,
           allowPreStartNonStarterReplacement,
           eventIndex,
+          automaticEvenPar: isAutomaticEvenParTeam,
         });
-        const roundTwo = getTeamRoundScore({
+        const roundTwo = getTeamRoundScoreForSync({
           golfers: t.golfers,
           roundNumber: 2,
           timeline,
           coursePar: course.par,
           allowPreStartNonStarterReplacement,
           eventIndex,
+          automaticEvenPar: isAutomaticEvenParTeam,
         });
-        const roundThree = getTeamRoundScore({
+        const roundThree = getTeamRoundScoreForSync({
           golfers: t.golfers,
           roundNumber: 3,
           timeline,
           coursePar: course.par,
           allowPreStartNonStarterReplacement,
           eventIndex,
+          automaticEvenPar: isAutomaticEvenParTeam,
         });
-        const roundFour = getTeamRoundScore({
+        const roundFour = getTeamRoundScoreForSync({
           golfers: t.golfers,
           roundNumber: 4,
           timeline,
           coursePar: course.par,
           allowPreStartNonStarterReplacement,
           eventIndex,
+          automaticEvenPar: isAutomaticEvenParTeam,
         });
-        const teamWeekendCut = isTeamWeekendCut({
-          golfers: t.golfers,
-          roundNumber: visibleRound !== 0 ? visibleRound : 1,
-          allowPreStartNonStarterReplacement,
-          eventIndex,
-        });
+        const teamWeekendCut = isAutomaticEvenParTeam
+          ? false
+          : isTeamWeekendCut({
+              golfers: t.golfers,
+              roundNumber: visibleRound !== 0 ? visibleRound : 1,
+              allowPreStartNonStarterReplacement,
+              eventIndex,
+            });
         const teamVisibleRoundGolfers =
           visibleRound === 0
             ? []
@@ -4104,44 +4125,54 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
       }
       const updatedTeams: TournamentSyncTeam[] = [];
       for (const t of teams) {
-        const roundOne = getTeamRoundScore({
+        const isAutomaticEvenParTeam = isAutomaticEvenParPlayoffTeam({
+          isPlayoff,
+          golferIds: t.golferIds,
+        });
+        const roundOne = getTeamRoundScoreForSync({
           golfers: t.golfers,
           roundNumber: 1,
           timeline,
           coursePar: course.par,
           allowPreStartNonStarterReplacement,
           eventIndex,
+          automaticEvenPar: isAutomaticEvenParTeam,
         });
-        const roundTwo = getTeamRoundScore({
+        const roundTwo = getTeamRoundScoreForSync({
           golfers: t.golfers,
           roundNumber: 2,
           timeline,
           coursePar: course.par,
           allowPreStartNonStarterReplacement,
           eventIndex,
+          automaticEvenPar: isAutomaticEvenParTeam,
         });
-        const roundThree = getTeamRoundScore({
+        const roundThree = getTeamRoundScoreForSync({
           golfers: t.golfers,
           roundNumber: 3,
           timeline,
           coursePar: course.par,
           allowPreStartNonStarterReplacement,
           eventIndex,
+          automaticEvenPar: isAutomaticEvenParTeam,
         });
-        const roundFour = getTeamRoundScore({
+        const roundFour = getTeamRoundScoreForSync({
           golfers: t.golfers,
           roundNumber: 4,
           timeline,
           coursePar: course.par,
           allowPreStartNonStarterReplacement,
           eventIndex,
+          automaticEvenPar: isAutomaticEvenParTeam,
         });
-        const teamWeekendCut = isTeamWeekendCut({
-          golfers: t.golfers,
-          roundNumber: visibleRound !== 0 ? visibleRound : 1,
-          allowPreStartNonStarterReplacement,
-          eventIndex,
-        });
+        const teamWeekendCut = isAutomaticEvenParTeam
+          ? false
+          : isTeamWeekendCut({
+              golfers: t.golfers,
+              roundNumber: visibleRound !== 0 ? visibleRound : 1,
+              allowPreStartNonStarterReplacement,
+              eventIndex,
+            });
         const teamVisibleRoundGolfers =
           visibleRound === 0
             ? []
