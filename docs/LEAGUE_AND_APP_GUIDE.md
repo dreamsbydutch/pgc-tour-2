@@ -277,9 +277,12 @@ is correct.
   public version.
 - The application timeline refreshes every 15 minutes and schedules exact pick
   and tournament-start boundaries.
+- A 30-minute preflight stays database-only between events. During the four-day
+  pick window it fetches the DataGolf field, updates the opening boundary from
+  the earliest round-one tee time, and reschedules that boundary when it moves.
 - Live tournament synchronization starts at the event boundary, repeats every
-  4 minutes while the event is active, and uses leases to prevent overlapping
-  runs.
+  4 minutes while golfers are playing, falls back to 12 minutes during active
+  off-hours, and uses leases to prevent overlapping runs.
 - A 30-minute repair job restores a broken live-sync chain.
 - Standings recompute daily at 04:00 UTC and after completion.
 - Groups run Monday at 17:00 UTC with retry protection.

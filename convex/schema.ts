@@ -727,6 +727,7 @@ const schema = defineSchema({
     liveSyncChainId: v.optional(v.string()),
     liveSyncLeaseUntil: v.optional(v.number()),
     liveSyncScheduledTournamentId: v.optional(v.id("tournaments")),
+    liveSyncScheduledAt: v.optional(v.number()),
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
 

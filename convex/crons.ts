@@ -20,6 +20,14 @@ crons.interval(
   {},
 );
 
+// Fetch one lightweight field feed only while the next event's picks are open.
+crons.interval(
+  "refresh_next_tournament_opening_tee_time",
+  { minutes: 30 },
+  internal.functions.cronJobs.runTournamentPreflight,
+  {},
+);
+
 crons.interval(
   "publish_due_pick_reminders",
   { minutes: 15 },

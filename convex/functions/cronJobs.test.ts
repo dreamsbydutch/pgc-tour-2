@@ -8,6 +8,7 @@ import {
   deriveTournamentTimelineState,
   getEffectiveGolferLeaderboardScore,
   getAdaptiveSyncDelayMs,
+  getFieldRoundOneTeeTimeMs,
   getGolferLeaderboardRankMetrics,
   getTournamentPayoutAheadCount,
   getTeamRoundWindowGolfers,
@@ -15,8 +16,10 @@ import {
   getTournamentRoundWindowMetrics,
   getTeamTournamentRank,
   isRoundPublishedForTimeline,
+  shouldRunTournamentPreflight,
   shouldAwardTournamentResults,
 } from "./cronJobs";
+import { PRE_TOURNAMENT_PICK_WINDOW_MS } from "./_constants";
 
 describe("sync batching and adaptive cadence", () => {
   it("chunks writes at the configured boundary without losing order", () => {
@@ -38,6 +41,67 @@ describe("sync batching and adaptive cadence", () => {
     expect(getAdaptiveSyncDelayMs({ failureCount: 1 })).toBe(8 * 60_000);
     expect(getAdaptiveSyncDelayMs({ failureCount: 2 })).toBe(16 * 60_000);
     expect(getAdaptiveSyncDelayMs({ failureCount: 9 })).toBe(30 * 60_000);
+  });
+
+  it("calls the preflight feed only for the next event inside the pick window", () => {
+    const nowMs = Date.UTC(2026, 7, 10, 12);
+    expect(
+      shouldRunTournamentPreflight({
+        tournamentType: "next",
+        tournamentStatus: "upcoming",
+        startDate: nowMs + PRE_TOURNAMENT_PICK_WINDOW_MS,
+        endDate: nowMs + PRE_TOURNAMENT_PICK_WINDOW_MS + 4 * 24 * 60 * 60_000,
+        nowMs,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRunTournamentPreflight({
+        tournamentType: "next",
+        tournamentStatus: "upcoming",
+        startDate: nowMs + PRE_TOURNAMENT_PICK_WINDOW_MS + 1,
+        endDate: nowMs + PRE_TOURNAMENT_PICK_WINDOW_MS + 4 * 24 * 60 * 60_000,
+        nowMs,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRunTournamentPreflight({
+        tournamentType: "recent",
+        tournamentStatus: "upcoming",
+        startDate: nowMs + 60_000,
+        endDate: nowMs + 4 * 24 * 60 * 60_000,
+        nowMs,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRunTournamentPreflight({
+        tournamentType: "active",
+        tournamentStatus: "upcoming",
+        startDate: nowMs - 60_000,
+        endDate: nowMs + 4 * 24 * 60 * 60_000,
+        nowMs,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRunTournamentPreflight({
+        tournamentType: "active",
+        tournamentStatus: "active",
+        startDate: nowMs - 60_000,
+        endDate: nowMs + 4 * 24 * 60 * 60_000,
+        nowMs,
+      }),
+    ).toBe(false);
+  });
+
+  it("uses the earliest valid round-one tee time from the field", () => {
+    const early = Date.parse("2026-08-13T12:10:00Z");
+    const late = Date.parse("2026-08-13T17:05:00Z");
+    const field = [
+      { teetimes: [{ round_num: 2, teetime: early }] },
+      { teetimes: [{ round_num: 1, teetime: late }] },
+      { teetimes: [{ round_num: 1, teetime: early }] },
+    ] as never;
+
+    expect(getFieldRoundOneTeeTimeMs(field)).toBe(early);
   });
 });
 

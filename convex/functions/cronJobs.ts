@@ -15,6 +15,8 @@ import {
   EXCLUDED_GOLFER_IDS,
   GROUP_LIMITS,
   PLAYOFF_SILVER_PAYOUT_OFFSET,
+  PRE_TOURNAMENT_PICK_WINDOW_MS,
+  TOURNAMENT_PREFLIGHT_INTERVAL_MS,
 } from "./_constants";
 import {
   checkCompatabilityOfEventNames,
@@ -499,7 +501,7 @@ function applyComputedTeamPositions(args: {
 /**
  * Returns the first round-one tee time across a tournament field feed.
  */
-function getFieldRoundOneTeeTimeMs(
+export function getFieldRoundOneTeeTimeMs(
   field: DataGolfFieldPlayer[] | undefined,
 ): number | undefined {
   return earliestTimeStr(
@@ -507,6 +509,23 @@ function getFieldRoundOneTeeTimeMs(
       (golfer) =>
         golfer.teetimes.find((teetime) => teetime.round_num === 1)?.teetime,
     ),
+  );
+}
+
+export function shouldRunTournamentPreflight(args: {
+  tournamentType?: "active" | "next" | "recent";
+  tournamentStatus?: string;
+  startDate?: number;
+  endDate?: number;
+  nowMs: number;
+}) {
+  return (
+    (args.tournamentType === "next" || args.tournamentType === "active") &&
+    args.tournamentStatus === "upcoming" &&
+    typeof args.startDate === "number" &&
+    typeof args.endDate === "number" &&
+    args.startDate - args.nowMs <= PRE_TOURNAMENT_PICK_WINDOW_MS &&
+    args.endDate >= args.nowMs
   );
 }
 
@@ -3322,11 +3341,154 @@ export const runTournamentSyncWithLease: ReturnType<typeof internalAction> =
     },
   });
 
+/**
+ * Refreshes only the next event's opening tee time while picks are open.
+ * The cron remains cheap between events because it exits before calling DataGolf.
+ */
+export const runTournamentPreflight: ReturnType<typeof internalAction> =
+  internalAction({
+    args: {},
+    handler: async (ctx): Promise<unknown> => {
+      const now = Date.now();
+      const tournamentData = await ctx.runQuery(
+        internal.functions.utils.getActiveTournamentData,
+        {},
+      );
+      if (
+        !tournamentData.ok ||
+        !shouldRunTournamentPreflight({
+          tournamentType: tournamentData.type,
+          tournamentStatus: tournamentData.tournament.status,
+          startDate: tournamentData.tournament.startDate,
+          endDate: tournamentData.tournament.endDate,
+          nowMs: now,
+        })
+      ) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: tournamentData.ok
+            ? "outside_preflight_window"
+            : "no_tournament",
+        } as const;
+      }
+
+      const tournament = tournamentData.tournament;
+      const lease = await ctx.runMutation(internal.functions.syncRuns.acquire, {
+        jobName: "tournament_preflight",
+        runKey: `tournament_preflight:${Math.floor(now / TOURNAMENT_PREFLIGHT_INTERVAL_MS)}`,
+        trigger: "scheduled",
+        tournamentId: tournament._id,
+        leaseMs: 10 * 60_000,
+      });
+      if (!lease.acquired) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: "already_running",
+          runId: lease.runId,
+        } as const;
+      }
+
+      try {
+        const fieldData = await ctx.runAction(
+          internal.functions.datagolf.fetchFieldUpdates,
+          {
+            tournament: {
+              _id: tournament._id,
+              name: tournament.name,
+              apiId: tournament.apiId,
+              seasonId: tournament.seasonId,
+            },
+          },
+        );
+        if (!("field" in fieldData)) {
+          await ctx.runMutation(internal.functions.syncRuns.finalize, {
+            runId: lease.runId,
+            status: "skipped",
+            skipReason: fieldData.reason,
+          });
+          return fieldData;
+        }
+
+        const openingTeeTime = getFieldRoundOneTeeTimeMs(fieldData.field);
+        if (openingTeeTime === undefined) {
+          await ctx.runMutation(internal.functions.syncRuns.finalize, {
+            runId: lease.runId,
+            status: "skipped",
+            skipReason: "missing_round_one_tee_time",
+          });
+          return {
+            ok: true,
+            skipped: true,
+            reason: "missing_round_one_tee_time",
+            tournamentId: tournament._id,
+          } as const;
+        }
+
+        const update = await ctx.runMutation(
+          internal.functions.utils.updateTournamentInfo,
+          {
+            tournament: {
+              _id: tournament._id,
+              startDate: openingTeeTime,
+            },
+          },
+        );
+        if (update.changed || openingTeeTime <= Date.now()) {
+          await ctx.runMutation(
+            internal.functions.readModels.refreshAppState,
+            {},
+          );
+        }
+        if (openingTeeTime <= Date.now()) {
+          await ctx.scheduler.runAfter(
+            0,
+            internal.functions.cronJobs.runAdaptiveTournamentSync,
+            {
+              chainId: `tournament:${tournament._id}`,
+              repair: true,
+              tournamentId: tournament._id,
+              scheduledFor: openingTeeTime,
+            },
+          );
+        }
+
+        await ctx.runMutation(internal.functions.syncRuns.finalize, {
+          runId: lease.runId,
+          status: update.changed ? "succeeded" : "skipped",
+          changedRows: update.changed ? 1 : 0,
+          skipReason: update.changed ? undefined : "tee_time_unchanged",
+          coalesceWithinMs: update.changed ? undefined : 6 * 60 * 60_000,
+        });
+        return {
+          ok: true,
+          skipped: !update.changed,
+          reason: update.changed
+            ? "opening_tee_time_updated"
+            : "tee_time_unchanged",
+          tournamentId: tournament._id,
+          previousStartDate: tournament.startDate,
+          startDate: openingTeeTime,
+        } as const;
+      } catch (error) {
+        await ctx.runMutation(internal.functions.syncRuns.finalize, {
+          runId: lease.runId,
+          status: "failed",
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    },
+  });
+
 export const runAdaptiveTournamentSync: ReturnType<typeof internalAction> =
   internalAction({
     args: {
       chainId: v.string(),
       repair: v.boolean(),
+      tournamentId: v.optional(v.id("tournaments")),
+      scheduledFor: v.optional(v.number()),
     },
     handler: async (ctx, args): Promise<unknown> => {
       const claim = await ctx.runMutation(
@@ -3377,7 +3539,16 @@ export const runAdaptiveTournamentSync: ReturnType<typeof internalAction> =
         await ctx.scheduler.runAfter(
           delay ?? 30 * 60_000,
           internal.functions.cronJobs.runAdaptiveTournamentSync,
-          { chainId: args.chainId, repair: false },
+          {
+            chainId: args.chainId,
+            repair: false,
+            ...(args.tournamentId
+              ? {
+                  tournamentId: args.tournamentId,
+                  scheduledFor: args.scheduledFor,
+                }
+              : {}),
+          },
         );
         return {
           ok: false,
@@ -3402,7 +3573,16 @@ export const runAdaptiveTournamentSync: ReturnType<typeof internalAction> =
         await ctx.scheduler.runAfter(
           nextDelay,
           internal.functions.cronJobs.runAdaptiveTournamentSync,
-          { chainId: args.chainId, repair: false },
+          {
+            chainId: args.chainId,
+            repair: false,
+            ...(args.tournamentId
+              ? {
+                  tournamentId: args.tournamentId,
+                  scheduledFor: args.scheduledFor,
+                }
+              : {}),
+          },
         );
       } else {
         await ctx.runMutation(

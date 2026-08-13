@@ -137,6 +137,12 @@ Important operational records:
 - `espnIdentityAudit` — external identities needing safe operator resolution.
 - `auditLogs` — sensitive entity changes.
 
+The `tournament_preflight` sync run is intentionally database-only unless the
+next configured event is inside its four-day pick window. In that window it
+uses the DataGolf field feed to keep the opening tee-time boundary current; a
+changed boundary is rescheduled immediately, including when the new time has
+already passed.
+
 ## Data repair and migrations
 
 Migration functions live in `convex/functions/migrations.ts`; materialized

@@ -100,6 +100,18 @@ function deriveTimeline(
   };
 }
 
+export function shouldScheduleLiveSyncBoundary(args: {
+  scheduledTournamentId?: string;
+  scheduledAt?: number;
+  tournamentId: string;
+  startDate: number;
+}) {
+  return (
+    args.scheduledTournamentId !== args.tournamentId ||
+    args.scheduledAt !== args.startDate
+  );
+}
+
 async function loadOrDeriveAppState(ctx: QueryCtx) {
   const stored = await ctx.db
     .query("appState")
@@ -391,18 +403,26 @@ export const refreshAppState = internalMutation({
       }
       if (
         timeline.nextTournament &&
-        existing.liveSyncScheduledTournamentId !== timeline.nextTournament._id
+        shouldScheduleLiveSyncBoundary({
+          scheduledTournamentId: existing.liveSyncScheduledTournamentId,
+          scheduledAt: existing.liveSyncScheduledAt,
+          tournamentId: timeline.nextTournament._id,
+          startDate: timeline.nextTournament.startDate,
+        })
       ) {
         await ctx.scheduler.runAt(
-          timeline.nextTournament.startDate,
+          Math.max(timeline.nextTournament.startDate, Date.now()),
           internal.functions.cronJobs.runAdaptiveTournamentSync,
           {
             chainId: `tournament:${timeline.nextTournament._id}`,
             repair: true,
+            tournamentId: timeline.nextTournament._id,
+            scheduledFor: timeline.nextTournament.startDate,
           },
         );
         await ctx.db.patch(existing._id, {
           liveSyncScheduledTournamentId: timeline.nextTournament._id,
+          liveSyncScheduledAt: timeline.nextTournament.startDate,
         });
       }
       const pickWindowOpensAt = timeline.nextTournament
@@ -432,15 +452,18 @@ export const refreshAppState = internalMutation({
     });
     if (timeline.nextTournament) {
       await ctx.scheduler.runAt(
-        timeline.nextTournament.startDate,
+        Math.max(timeline.nextTournament.startDate, Date.now()),
         internal.functions.cronJobs.runAdaptiveTournamentSync,
         {
           chainId: `tournament:${timeline.nextTournament._id}`,
           repair: true,
+          tournamentId: timeline.nextTournament._id,
+          scheduledFor: timeline.nextTournament.startDate,
         },
       );
       await ctx.db.patch(id, {
         liveSyncScheduledTournamentId: timeline.nextTournament._id,
+        liveSyncScheduledAt: timeline.nextTournament.startDate,
       });
       const pickWindowOpensAt =
         timeline.nextTournament.startDate - PRE_TOURNAMENT_PICK_WINDOW_MS;
@@ -463,6 +486,8 @@ export const claimLiveSyncChain = internalMutation({
   args: {
     chainId: v.string(),
     repair: v.boolean(),
+    tournamentId: v.optional(v.id("tournaments")),
+    scheduledFor: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -471,6 +496,17 @@ export const claimLiveSyncChain = internalMutation({
       .withIndex("by_key", (q) => q.eq("key", APP_STATE_KEY))
       .unique();
     if (!state) return { claimed: false, reason: "missing_app_state" } as const;
+    if (
+      args.tournamentId &&
+      shouldScheduleLiveSyncBoundary({
+        scheduledTournamentId: state.liveSyncScheduledTournamentId,
+        scheduledAt: state.liveSyncScheduledAt,
+        tournamentId: args.tournamentId,
+        startDate: args.scheduledFor ?? Number.NaN,
+      })
+    ) {
+      return { claimed: false, reason: "stale_boundary" } as const;
+    }
     if (
       args.repair &&
       state.liveSyncLeaseUntil &&
