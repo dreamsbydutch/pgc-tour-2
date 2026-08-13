@@ -1,8 +1,22 @@
 import { Show } from "@clerk/tanstack-react-start";
+import { lazy, Suspense } from "react";
 
-import { Button, Card, CardContent, CardHeader, CardTitle } from "@/ui";
+import { loadNotificationCenter } from "@/displays";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Skeleton,
+} from "@/ui";
 import { formatMoney } from "@/utils/app";
 import { useAccountPage } from "@/hooks";
+
+const NotificationCenter = lazy(async () => {
+  const module = await loadNotificationCenter();
+  return { default: module.NotificationCenter };
+});
 
 /**
  * Renders the `/account` screen.
@@ -38,12 +52,21 @@ export function AccountPage() {
           </div>
 
           <Show when="signed-in">
-            <Button
-              variant="destructive"
-              onClick={() => vm.signOut({ redirectUrl: "/" })}
-            >
-              Log out
-            </Button>
+            <div className="flex items-center gap-2">
+              <div className="lg:hidden">
+                <Suspense
+                  fallback={<Skeleton className="h-10 w-10 rounded-md" />}
+                >
+                  <NotificationCenter />
+                </Suspense>
+              </div>
+              <Button
+                variant="destructive"
+                onClick={() => vm.signOut({ redirectUrl: "/" })}
+              >
+                Log out
+              </Button>
+            </div>
           </Show>
         </div>
 
