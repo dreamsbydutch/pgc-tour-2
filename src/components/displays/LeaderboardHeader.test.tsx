@@ -123,4 +123,49 @@ describe("LeaderboardHeader", () => {
     expect(within(dialog).getByText("52.0%")).toBeTruthy();
     expect(within(dialog).getByText("18.0%")).toBeTruthy();
   });
+
+  it("shows playoff Gold and Silver payouts in separate columns", async () => {
+    const playoffPayouts = Array.from({ length: 125 }, (_, index) => {
+      if (index < 30) return (30 - index) * 100;
+      if (index >= 75) return (125 - index) * 100;
+      return 0;
+    });
+    const playoffTournament: TournamentHeaderModel = {
+      ...tournament,
+      _id: "playoff-1",
+      name: "TOUR Championship",
+      tier: {
+        name: "Playoff",
+        points: [],
+        payouts: playoffPayouts,
+      },
+    };
+
+    render(
+      <LeaderboardHeader
+        tournament={playoffTournament}
+        allTournaments={[playoffTournament]}
+        onTournamentChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByTitle("View the full playoff payout breakdown"),
+    );
+
+    const dialog = await screen.findByRole("dialog", {}, { timeout: 3_000 });
+    expect(within(dialog).getByText("Payouts")).toBeTruthy();
+    expect(within(dialog).queryByText("Points")).toBeNull();
+    expect(
+      within(dialog)
+        .getAllByRole("columnheader")
+        .map((header) => header.textContent),
+    ).toEqual(["Gold payouts", "Silver payouts"]);
+
+    const rows = within(dialog).getAllByRole("row");
+    expect(rows).toHaveLength(51);
+    expect(rows[1]?.textContent).toBe("1$30.001$50.00");
+    expect(rows[30]?.textContent).toBe("30$1.0030$21.00");
+    expect(rows[50]?.textContent).toBe("-50$1.00");
+  });
 });
