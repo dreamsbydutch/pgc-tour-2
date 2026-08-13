@@ -2,7 +2,12 @@
 
 import { useTournamentCourseStats } from "@/hooks";
 import type { TournamentHeaderModel } from "@/types";
-import { cn, formatMoney } from "@/utils/app";
+import {
+  cn,
+  formatGolfDisplayNumber,
+  formatMoney,
+  formatToPar,
+} from "@/utils/app";
 import {
   Dialog,
   DialogContent,
@@ -157,7 +162,9 @@ export function TournamentCourseDialog(props: {
                         </td>
                         <td className="px-3 py-2">{row.par}</td>
                         <td className="px-3 py-2">{row.yardage}</td>
-                        <td className="px-3 py-2">{row.average.toFixed(2)}</td>
+                        <td className="px-3 py-2">
+                          {formatGolfDisplayNumber(row.average)}
+                        </td>
                         <td
                           className={cn(
                             "px-3 py-2 font-semibold tabular-nums",
@@ -218,8 +225,7 @@ function CourseStatsUnavailable(props: {
 }
 
 function formatRelativeToPar(value: number): string {
-  if (Math.abs(value) < 0.005) return "E";
-  return `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
+  return formatToPar(value);
 }
 
 function formatPercent(value: number): string {

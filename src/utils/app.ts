@@ -675,11 +675,18 @@ export function getTournamentTimeline<
     future,
   };
 }
+export function formatGolfDisplayNumber(value: number): string {
+  if (!Number.isFinite(value)) return "-";
+  return String(Number(value.toFixed(1)));
+}
+
 export function formatScore(score: number | null): string {
   if (score === null) return "E";
-  if (score === 0) return "E";
-  if (score > 0) return `+${score}`;
-  return score.toString();
+  const display = formatGolfDisplayNumber(score);
+  if (display === "-") return "-";
+  if (display === "0") return "E";
+  if (score > 0) return `+${display}`;
+  return display;
 }
 
 export function hasItems<T>(array: T[] | null | undefined): array is T[] {
@@ -1076,9 +1083,11 @@ export function formatCompactTournamentDateRange(
 
 export function formatToPar(score: number | null | undefined): string {
   if (score === null || score === undefined) return "-";
-  if (score === 0) return "E";
-  if (score > 0) return `+${score}`;
-  return `${score}`;
+  const display = formatGolfDisplayNumber(score);
+  if (display === "-") return "-";
+  if (display === "0") return "E";
+  if (score > 0) return `+${display}`;
+  return display;
 }
 
 export function formatNumberToPercentage(
@@ -1307,11 +1316,15 @@ export function formatLeaderboardThruDisplay(args: {
   thru: number | null | undefined;
   teeTimeDisplay?: string | number | null | undefined;
 }): string {
-  if (args.thru === 18) return "F";
-  if (args.thru == null || args.thru === 0) {
+  if (args.thru == null || !Number.isFinite(args.thru)) {
     return formatTeeTimeTimeOfDay(args.teeTimeDisplay) ?? "-";
   }
-  return String(args.thru);
+  const display = formatGolfDisplayNumber(args.thru);
+  if (Number(display) >= 18) return "F";
+  if (display === "0") {
+    return formatTeeTimeTimeOfDay(args.teeTimeDisplay) ?? "-";
+  }
+  return display;
 }
 
 export function formatLeaderboardStandingsPosition(args: {
