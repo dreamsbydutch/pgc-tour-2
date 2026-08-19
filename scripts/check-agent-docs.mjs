@@ -86,13 +86,27 @@ function markdownTargets(source) {
   return targets;
 }
 
+function stripHtmlTags(value) {
+  let result = "";
+  let insideTag = false;
+  for (const character of value) {
+    if (!insideTag && character === "<") {
+      insideTag = true;
+    } else if (insideTag && character === ">") {
+      insideTag = false;
+    } else if (!insideTag) {
+      result += character;
+    }
+  }
+  return result;
+}
+
 function markdownAnchors(source) {
   const anchors = new Set();
   const duplicates = new Map();
   const headingPattern = /^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/gmu;
   for (const match of source.matchAll(headingPattern)) {
-    const label = match[1]
-      .replace(/<[^>]*>/gu, "")
+    const label = stripHtmlTags(match[1])
       .replace(/!?\[([^\]]+)\]\([^)]+\)/gu, "$1")
       .replace(/[`*_~]/gu, "")
       .trim()
