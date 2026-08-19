@@ -94,7 +94,9 @@ The detailed boundaries, exceptions, and legacy hotspots are in [frontend archit
 - Store money as safe integer cents. Keep golf strokes, relative-to-par values, positions, points, and money explicitly distinct.
 - Keep jobs bounded, idempotent, restartable, leased when concurrent, and audited when sensitive.
 - A correction to canonical tournament data must refresh affected teams, awards, standings, badges/read models, notifications, and `appState` in dependency order.
-- Keep secrets, member data, live payloads, and production exports out of source, logs, fixtures, screenshots, artifacts, and docs. Every `VITE_` value is browser-visible.
+- Never commit secrets under any circumstances—not temporarily, in examples, fixtures, screenshots, generated artifacts, encrypted files, or commits intended to be removed later. Keep secrets only in approved environment or secret stores; every `VITE_` value is browser-visible and must not contain a secret.
+- If a secret may have entered the working tree or Git history, stop before committing or pushing, avoid printing or sharing it, notify the user, and rotate or revoke it. Deleting it from the latest file or commit does not make earlier history safe.
+- Keep member data, live payloads, and production exports out of source, logs, fixtures, screenshots, artifacts, and docs.
 - Test against a development Convex deployment. Never point experiments at live data.
 - Prefer inferred TypeScript types; do not introduce `any` to avoid modeling a boundary.
 - Treat oversized subscriptions, unbounded reads, browser-side joins, expensive rendering, large bundles, and continuous animation as regressions.
