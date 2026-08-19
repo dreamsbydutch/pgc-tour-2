@@ -1,46 +1,43 @@
 # PGC Tour
 
-PGC is a season-long fantasy golf application built with TanStack Start,
-React, Convex, Clerk, and Tailwind CSS.
+PGC Tour is a mobile-first fantasy golf PWA for a private friends-and-family league. Members register for seasonal tours, submit a new 10-golfer roster for each event, follow live PGC and PGA leaderboards, compete through the playoffs, and settle season earnings. Organizers use authenticated workflows for fields, synchronization, standings, messaging, finance, and recovery.
+
+The application uses TanStack Start, React, Convex, Clerk, Tailwind CSS, DataGolf, ESPN scorecards, Brevo, web push, PostHog, and Vercel.
 
 ## Documentation
 
-The maintained project and league documentation lives in
-[docs/README.md](docs/README.md):
+The [PGC wiki](docs/README.md) is the entry point for product intent, league behavior, system architecture, operations, code maps, and known gaps. Start with:
 
-- [App architecture](docs/APP_ARCHITECTURE.md)
+- [Product and end goal](docs/PRODUCT.md)
 - [League and app guide](docs/LEAGUE_AND_APP_GUIDE.md)
+- [Application architecture](docs/APP_ARCHITECTURE.md)
 - [Development and operations](docs/DEVELOPMENT_AND_OPERATIONS.md)
+- [Repository agent guide](AGENTS.md)
 
-League-affecting work must start with the league and app guide. Code-placement
-rules are also enforced by [AGENTS.md](AGENTS.md).
+## Local development
 
-## Quick start
+Use Node 22 (`.nvmrc` pins 22.23.1), npm, and a development Convex deployment.
 
-Node.js 22.12 or newer within Node 22, plus access to the project's Convex and
-Clerk configuration, are required. The repository pins Node 22.23.1 in
-`.nvmrc` and CI.
-
-```bash
-npm install
+```powershell
+npm ci
 npx convex dev --configure
 ```
 
-Run the frontend and backend development processes in separate terminals:
+Run the web and Convex processes in separate terminals:
 
-```bash
+```powershell
 npm run dev
 npm run convex:dev
 ```
 
-The app runs at `http://localhost:3000`.
+The web app is available at `http://localhost:3000`. The dev script binds with `--host`, so use it only on a trusted network.
 
 ## Verification
 
-Run the complete local quality gate before release:
+Use focused checks while iterating. Before a release or broad change, run:
 
-```bash
+```powershell
 npm run check
 ```
 
-`package.json` is the authoritative list of available commands.
+`package.json` is the command source of truth; the [command reference](docs/reference/COMMANDS.md) explains prerequisites and outputs.

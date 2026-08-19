@@ -1,0 +1,4 @@
+interface:
+  display_name: "PGC Standings Read Model"
+  short_description: "Maintain PGC standings and qualification models"
+  default_prompt: "Use $pgc-standings-read-model to diagnose and refresh this standings behavior."

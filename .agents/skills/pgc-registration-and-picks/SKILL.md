@@ -1,36 +1,35 @@
 ---
 name: pgc-registration-and-picks
-description: Explain, diagnose, test, or change PGC tour-card registration, tour switching, fees, tournament pick windows, roster validation, pre-start privacy, substitutions, and playoff roster inheritance.
+description: Explain, diagnose, test, or change PGC registration, tour-card switching or deletion, capacity, pick windows, ten-golfer group validation, pre-start privacy and substitution, playoff picks, and roster inheritance. Use for eligibility and roster state; ledger and scoring use their domain skills.
+metadata:
+  short-description: Maintain PGC registration and picks
 ---
 
 # PGC registration and picks
 
-Read `docs/LEAGUE_AND_APP_GUIDE.md` before changing registration or roster rules. Keep member, tour card, tournament team, golfer, and tournament golfer identities distinct.
+Read [registration and rosters](../../../docs/domain/REGISTRATION_AND_ROSTERS.md), [product surfaces and states](../../../docs/product/SURFACES_AND_STATES.md), and [finance and settlements](../../../docs/domain/FINANCE_AND_SETTLEMENTS.md) when fees affect the workflow.
 
-## Register and change tour cards
+## Scope and handoffs
 
-- Derive the member from authentication. Require the tour and season to exist and match, registration to be before its deadline, no duplicate card for the same tour, and destination capacity to remain available.
-- Create the card, increment the exact tour count, and charge one season fee atomically. Multiple cards in one season do not create multiple fees.
-- Close tour-card switching and deletion at the exact start of the season's first non-cancelled tournament; admin role does not bypass this self-service boundary.
-- On a same-season switch, enforce ownership/capacity, decrement/increment tour counts, update only future non-cancelled/non-completed teams, and audit affected IDs.
-- On deletion, remove the card's teams and decrement its tour count. Remove and reverse the fee only when no other card remains for that member/season. Audit the deleted rows and account adjustment.
+Own tour-card registration/switch/delete eligibility, tour capacity, pick-window enforcement, roster validation and privacy, pre-start substitution, playoff qualification checks at submission, and later-event roster inheritance.
 
-## Accept tournament picks
+- Use `$pgc-financial-ledger` for fee/refund transaction and account invariants.
+- Use `$datagolf-api` for provider field, ranking, or golfer identity.
+- Use `$pgc-golf-scoring` for terminal-state and carryover calculations.
+- Use `$pgc-standings-read-model` for qualification derivation and persisted standings.
 
-- Picks open four days before `tournament.startDate` and close at the exact start. Reject active, completed, cancelled, early, and start-boundary submissions.
-- Require the caller to own the card, card and tournament to share a season, and the member account to be non-negative.
-- Require exactly 10 distinct DataGolf golfer IDs, each in that tournament's grouped field, with no more than two from any group. Five valid groups therefore produce two per group.
-- Upsert one team per tournament+tour card and refresh denormalized `seasonId`, `tourId`, `memberId`, `displayName`, and roster timestamp together.
-- Before first tee, expose only the authenticated member's own roster/team detail. Reveal the tournament field of teams only at the exact start boundary.
+## Preserve roster invariants
 
-## Handle withdrawals and playoffs
+- Derive the member from server authentication and enforce ownership, season/tour alignment, capacity, status, balance, and exact time boundaries.
+- Keep member, tour card, tournament team, golfer, and tournament-golfer identities distinct.
+- Create or update the card/team and required denormalized counts/identity atomically and idempotently.
+- Validate roster size, uniqueness, tournament-specific grouped eligibility, and per-group limit on the server.
+- Before the tournament starts, expose only the authenticated member's own roster detail.
+- Replace a pre-start non-starter only with sufficient provider evidence and the documented same-group eligibility; never substitute after evidence of play.
+- Derive playoff eligibility from current standings, accept picks only at the documented playoff entry point, and audit inherited/reconciled roster changes.
 
-Replace a pre-start non-starter only before evidence of play, with the best eligible world-ranked golfer from the same group who is participating and absent from the roster. Apply this to regular events and the first playoff event only. Use `$datagolf-api` for feed identity/status and `$golf-scoring-czar` for terminal-state behavior.
+## Trace and verify
 
-Derive playoff qualification from current regular-season points, not a stale card flag. Accept picks only for the first playoff event; later events inherit the prior roster and carryover. Rank Gold and Silver separately and audit removal of ineligible or out-of-sequence teams.
+Trace registration UI/hook to `convex/functions/tourCards.ts` and ledger/count changes; trace picks UI/hook to pick-pool reads, `convex/functions/teams.ts`, pre-start private detail, and public leaderboard. Tournament timing comes from `convex/functions/tournaments.ts` and lifecycle state.
 
-## Trace and test changes
-
-Trace registration UI/hook -> `tourCards` mutation -> transaction/account/tour count, and picks UI/hook -> pick pool -> `saveMyTournamentTeam` -> pre-start/public leaderboard. Primary code is in `convex/functions/tourCards.ts`, `teams.ts`, `tournaments.ts`, `convex/utils/tourCards.ts`, and the registration/pick hooks.
-
-Test exact time boundaries, cancelled first events, ownership, same-season checks, capacity, duplicate fee/card, last-card refund, 10/distinct/group rules, negative balances, create/update idempotency, pre-start privacy, substitution evidence, playoff qualification, and later-event carryover.
+Test exact boundaries, cancelled first events, ownership, season alignment, capacity, duplicate fee/card behavior, last-card refund trigger, roster/group validation, negative balance, create/update retry, pre-start privacy, substitution evidence, qualification, and carryover inheritance.

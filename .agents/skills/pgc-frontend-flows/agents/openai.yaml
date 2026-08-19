@@ -1,0 +1,4 @@
+interface:
+  display_name: "PGC Frontend Flows"
+  short_description: "Build responsive PGC routes and UI flows"
+  default_prompt: "Use $pgc-frontend-flows to build and verify this PGC user-facing flow."
