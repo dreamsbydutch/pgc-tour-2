@@ -111,6 +111,15 @@ describe("PGAHoleScorecard", () => {
     expect(screen.getByText("Hole-by-hole scoring unavailable.")).toBeTruthy();
   });
 
+  it("renders a blank scorecard grid when no golfer has started", () => {
+    render(<PGAHoleScorecard scorecard={{ rounds: [] }} />);
+
+    expect(screen.getByLabelText("Hole-by-hole scorecard")).toBeTruthy();
+    expect(screen.queryByText("Hole-by-hole scoring unavailable.")).toBeNull();
+    expect(screen.getByRole("columnheader", { name: "1" })).toBeTruthy();
+    expect(screen.getAllByText("-").length).toBeGreaterThan(0);
+  });
+
   it("marks invented WD penalty holes without changing normal holes", () => {
     render(
       <PGAHoleScorecard

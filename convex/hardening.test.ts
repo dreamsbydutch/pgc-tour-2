@@ -1458,6 +1458,72 @@ describe("phase two bounded tournament reads", () => {
     expect(legacyScorecard?.rounds[0]?.holes[0]?.strokes).toBe(4);
   });
 
+  it("returns later-playoff non-qualifiers as cut roster rows", async () => {
+    const seeded = await seedCompetition(t);
+    const owner = await ensureMember(t, "later-playoff-owner");
+    const teamId = await t.run(async (ctx) => {
+      const tournament = await ctx.db.get(seeded.tournamentId);
+      if (!tournament) throw new Error("Expected tournament");
+      await ctx.db.patch(tournament.tierId, { name: "Playoff" });
+      await ctx.db.insert("tournaments", {
+        name: "Playoff opener",
+        startDate: tournament.startDate - 14 * 24 * 60 * 60_000,
+        endDate: tournament.startDate - 10 * 24 * 60 * 60_000,
+        tierId: tournament.tierId,
+        courseId: tournament.courseId,
+        seasonId: tournament.seasonId,
+        status: "completed",
+      });
+      await ctx.db.patch(tournament._id, {
+        name: "Playoff second leg",
+        status: "active",
+        startDate: Date.now() - 60_000,
+      });
+      const cardId = await ctx.db.insert("tourCards", {
+        displayName: "Four Qualifiers",
+        memberId: owner.member._id,
+        seasonId: seeded.seasonId,
+        tourId: seeded.tourId,
+        earnings: 0,
+        points: 0,
+        topTen: 0,
+        madeCut: 0,
+        appearances: 0,
+        playoff: 1,
+      });
+      const teamId = await ctx.db.insert("teams", {
+        tournamentId: tournament._id,
+        tourCardId: cardId,
+        golferIds: seeded.golferApiIds,
+        seasonId: seeded.seasonId,
+        tourId: seeded.tourId,
+        memberId: owner.member._id,
+        displayName: "Four Qualifiers",
+        playoff: 1,
+      });
+      const tournamentGolfers = await ctx.db
+        .query("tournamentGolfers")
+        .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
+        .take(10);
+      for (const [index, golfer] of tournamentGolfers.slice(0, 4).entries()) {
+        await ctx.db.patch(golfer._id, {
+          position: `T${index + 1}`,
+          roundOneTeeTime: Date.now() + index * 60_000,
+        });
+      }
+      return teamId;
+    });
+
+    const detail = await t.query(api.functions.tournaments.getTeamDetail, {
+      teamId,
+    });
+
+    expect(detail?.golfers).toHaveLength(10);
+    expect(
+      detail?.golfers.filter((golfer) => golfer.position === "CUT"),
+    ).toHaveLength(6);
+  });
+
   it("prefers isolated scorecards while preserving the legacy fallback", async () => {
     const seeded = await seedCompetition(t);
     const golfer = await t.run((ctx) =>
@@ -1495,6 +1561,50 @@ describe("phase two bounded tournament reads", () => {
       { tournamentId: seeded.tournamentId, golferId: golfer.golferId },
     );
     expect(scorecard?.rounds[0]?.holes[0]?.strokes).toBe(3);
+  });
+
+  it("returns partial and empty scorecard sets for valid teams", async () => {
+    const seeded = await seedCompetition(t);
+    const golferIds = await t.run(async (ctx) => {
+      const tournamentGolfers = await ctx.db
+        .query("tournamentGolfers")
+        .withIndex("by_tournament", (q) =>
+          q.eq("tournamentId", seeded.tournamentId),
+        )
+        .take(10);
+      return tournamentGolfers.map((golfer) => golfer.golferId);
+    });
+
+    const empty = await t.query(api.functions.espnGolf.getTeamHoleScorecards, {
+      tournamentId: seeded.tournamentId,
+      golferIds,
+    });
+    expect(empty).toEqual([]);
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("tournamentGolferScorecards", {
+        tournamentId: seeded.tournamentId,
+        golferId: golferIds[0]!,
+        rounds: [
+          {
+            round: 1,
+            holes: [{ hole: 1, strokes: 3, relativeToPar: -1 }],
+          },
+        ],
+        updatedAt: Date.now(),
+      });
+    });
+
+    const partial = await t.query(
+      api.functions.espnGolf.getTeamHoleScorecards,
+      { tournamentId: seeded.tournamentId, golferIds },
+    );
+    expect(partial).toHaveLength(1);
+    expect(partial?.[0]?.rounds[0]?.holes[0]).toMatchObject({
+      hole: 1,
+      strokes: 3,
+      relativeToPar: -1,
+    });
   });
 
   it("does not rewrite a scorecard whose normalized rounds are unchanged", async () => {

@@ -4,6 +4,7 @@ import type {
   EspnHoleScore,
   TeamAverageGolfer,
 } from "@/types";
+import { selectionCountByPlayoffTournamentRound } from "convex/utils";
 
 /** Returns a segment total only after every counting golfer finished every hole. */
 export function getCompletedHoleSegmentTotal(
@@ -81,7 +82,18 @@ export function buildTeamAverageScorecard(args: BuildTeamAverageScorecardArgs) {
 function selectCountingGolfersForRound(
   args: BuildTeamAverageScorecardArgs & { roundNumber: number },
 ) {
-  if (args.roundNumber <= 2) return args.teamGolfers.slice(0, 10);
+  const eventIndex = Math.min(Math.max(args.eventIndex ?? 0, 0), 3) as
+    | 0
+    | 1
+    | 2
+    | 3;
+  const selectionSize = selectionCountByPlayoffTournamentRound(
+    eventIndex,
+    args.roundNumber as 1 | 2 | 3 | 4,
+  );
+  if (eventIndex <= 1 && args.roundNumber <= 2) {
+    return args.teamGolfers.slice(0, selectionSize);
+  }
   if (!args.tournamentCompleted && args.roundNumber > args.currentRound) {
     return [];
   }
@@ -89,7 +101,7 @@ function selectCountingGolfersForRound(
   const eligible = args.teamGolfers.filter(
     (golfer) => !isPlayerCut(golfer.position),
   );
-  if (eligible.length < 5) return [];
+  if (eligible.length < selectionSize) return [];
   const isCompletedRound =
     args.tournamentCompleted || args.roundNumber < args.currentRound;
   if (isCompletedRound) {
@@ -97,7 +109,7 @@ function selectCountingGolfersForRound(
       (golfer) =>
         typeof getGolferRoundScore(golfer, args.roundNumber) === "number",
     );
-    if (withRoundScores.length < 5) return [];
+    if (withRoundScores.length < selectionSize) return [];
     return withRoundScores
       .sort((a, b) => {
         const scoreDifference =
@@ -108,7 +120,7 @@ function selectCountingGolfersForRound(
           : (a.apiId ?? Number.POSITIVE_INFINITY) -
               (b.apiId ?? Number.POSITIVE_INFINITY);
       })
-      .slice(0, 5);
+      .slice(0, selectionSize);
   }
 
   return [...eligible]
@@ -126,7 +138,7 @@ function selectCountingGolfersForRound(
         (b.apiId ?? Number.POSITIVE_INFINITY)
       );
     })
-    .slice(0, 5);
+    .slice(0, selectionSize);
 }
 
 function getGolferRoundScore(golfer: TeamAverageGolfer, roundNumber: number) {

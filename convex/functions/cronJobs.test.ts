@@ -49,7 +49,7 @@ describe("sync batching and adaptive cadence", () => {
     ]);
   });
 
-  it("treats only empty playoff rosters as automatic even-par teams", () => {
+  it("treats empty and undersized later-playoff fields as even-par teams", () => {
     expect(
       isAutomaticEvenParPlayoffTeam({ isPlayoff: true, golferIds: [] }),
     ).toBe(true);
@@ -59,9 +59,33 @@ describe("sync batching and adaptive cadence", () => {
     expect(
       isAutomaticEvenParPlayoffTeam({ isPlayoff: true, golferIds: [1] }),
     ).toBe(false);
+    expect(
+      isAutomaticEvenParPlayoffTeam({
+        isPlayoff: true,
+        golferIds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        activeGolferCount: 4,
+        eventIndex: 2,
+      }),
+    ).toBe(true);
+    expect(
+      isAutomaticEvenParPlayoffTeam({
+        isPlayoff: true,
+        golferIds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        activeGolferCount: 3,
+        eventIndex: 3,
+      }),
+    ).toBe(false);
+    expect(
+      isAutomaticEvenParPlayoffTeam({
+        isPlayoff: true,
+        golferIds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        activeGolferCount: 2,
+        eventIndex: 3,
+      }),
+    ).toBe(true);
   });
 
-  it("never fills an intentionally empty playoff roster", () => {
+  it("never fills an intentionally empty or inherited later-playoff roster", () => {
     expect(
       shouldAutoFillIncompleteTeamRoster({
         isPlayoff: true,
@@ -88,6 +112,14 @@ describe("sync batching and adaptive cadence", () => {
         isPlayoff: true,
         golferIds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         rosteredGolferCount: 10,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAutoFillIncompleteTeamRoster({
+        isPlayoff: true,
+        golferIds: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        rosteredGolferCount: 4,
+        eventIndex: 2,
       }),
     ).toBe(false);
   });

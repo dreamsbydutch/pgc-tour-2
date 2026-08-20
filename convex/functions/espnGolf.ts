@@ -132,7 +132,7 @@ export const getPlayerHoleScorecard = query({
   },
 });
 
-/** Returns a team only when all ten scorecard identities are available. */
+/** Returns the available scorecards for one valid ten-golfer roster. */
 export const getTeamHoleScorecards = query({
   args: {
     tournamentId: v.id("tournaments"),
@@ -160,10 +160,8 @@ export const getTeamHoleScorecards = query({
       (tournamentGolfer, index) =>
         storedScorecards[index]?.rounds ?? tournamentGolfer?.espnRounds,
     );
-    if (roundsByIndex.some((rounds) => !Array.isArray(rounds))) {
-      return null;
-    }
     const tournament = await ctx.db.get(args.tournamentId);
+    if (!tournament) return null;
     const course = tournament ? await ctx.db.get(tournament.courseId) : null;
     if (
       course &&
@@ -181,10 +179,10 @@ export const getTeamHoleScorecards = query({
     ) {
       return null;
     }
-    return uniqueGolferIds.map((golferId, index) => ({
-      golferId,
-      rounds: roundsByIndex[index]!,
-    }));
+    return uniqueGolferIds.flatMap((golferId, index) => {
+      const rounds = roundsByIndex[index];
+      return Array.isArray(rounds) ? [{ golferId, rounds }] : [];
+    });
   },
 });
 

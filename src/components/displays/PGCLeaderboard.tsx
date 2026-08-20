@@ -27,7 +27,10 @@ import type {
   TournamentShell,
   TournamentTeamDetailGolfer,
 } from "@/types";
-import { calculateScoreForSorting } from "convex/utils";
+import {
+  calculateScoreForSorting,
+  selectionCountByPlayoffTournamentRound,
+} from "convex/utils";
 import { Id } from "@/convex";
 import { useTeamDetail, useTeamHoleScorecards } from "@/hooks";
 import { getTournamentPulseRowId } from "@/hooks";
@@ -185,6 +188,7 @@ function LeaderboardListing({
     livePlay?: boolean | null;
     status?: TournamentShell["status"];
     name: string;
+    eventIndex?: number;
   };
   team: PgcLeaderboardTeam & { posChange: number };
   currentTourCardId?: string | null;
@@ -283,6 +287,7 @@ function TeamGolfersTable(props: {
     name: string;
     currentRound?: number | undefined;
     status?: TournamentShell["status"];
+    eventIndex?: number;
   };
   teamGolfers?: TournamentTeamDetailGolfer[];
   teamHoleScorecards: TeamSourceScorecard[] | null | undefined;
@@ -290,7 +295,16 @@ function TeamGolfersTable(props: {
   const sortedTeamGolfers = useTeamGolfersTable({
     teamGolfers: props.teamGolfers!,
     currentRound: props.tournament.currentRound,
+    eventIndex: props.tournament.eventIndex,
   });
+  const selectionSize = getTeamTableSelectionSize({
+    currentRound: props.tournament.currentRound,
+    eventIndex: props.tournament.eventIndex,
+  });
+  const activeRosterSize = Math.min(
+    selectionSize,
+    sortedTeamGolfers.filter((golfer) => !isPlayerCut(golfer.position)).length,
+  );
 
   const GolferScoreCells = ({
     golfer,
@@ -342,11 +356,8 @@ function TeamGolfersTable(props: {
             scorecards: props.teamHoleScorecards,
             currentRound: props.tournament.currentRound ?? 0,
             tournamentCompleted: props.tournament.status === "completed",
+            eventIndex: props.tournament.eventIndex,
           });
-  const hasTeamHoleScores = teamAverageScorecard?.rounds.some(
-    (round) => round.holes.length > 0,
-  );
-
   return (
     <>
       <Table className="scrollbar-hidden mx-auto w-full max-w-3xl border border-gray-700 text-center font-varela">
@@ -370,18 +381,8 @@ function TeamGolfersTable(props: {
         <TableBody>
           {sortedTeamGolfers.map((golfer, i) => {
             const borderClasses: string[] = [];
-            if ((props.tournament.currentRound ?? 0) >= 3) {
-              if (i === 4) {
-                borderClasses.push("border-b border-black");
-              }
-            } else if (props.tournament.name === "TOUR Championship") {
-              if (i === 2 || i === 9)
-                borderClasses.push("border-b border-gray-700");
-            } else if (props.tournament.name === "BMW Championship") {
-              if (i === 4 || i === 9)
-                borderClasses.push("border-b border-gray-700");
-            } else {
-              if (i === 9) borderClasses.push("border-b border-gray-700");
+            if (activeRosterSize > 0 && i === activeRosterSize - 1) {
+              borderClasses.push("border-b border-gray-700");
             }
 
             return (
@@ -435,9 +436,7 @@ function TeamGolfersTable(props: {
           scorecard={
             teamAverageScorecard === undefined
               ? undefined
-              : teamAverageScorecard !== null && hasTeamHoleScores
-                ? teamAverageScorecard
-                : null
+              : teamAverageScorecard
           }
         />
       </div>
@@ -455,113 +454,146 @@ function TeamGolfersTable(props: {
 function useTeamGolfersTable(args: {
   teamGolfers: TournamentTeamDetailGolfer[];
   currentRound?: number;
+  eventIndex?: number;
 }) {
-  return useMemo(() => {
-    const nonCut = args.teamGolfers.filter((g) => !isPlayerCut(g.position));
-    const cut = args.teamGolfers.filter((g) => isPlayerCut(g.position));
+  return useMemo(
+    () =>
+      orderTeamGolfersForTable({
+        teamGolfers: args.teamGolfers,
+        currentRound: args.currentRound,
+        eventIndex: args.eventIndex,
+      }),
+    [args.currentRound, args.eventIndex, args.teamGolfers],
+  );
+}
 
-    const toTimeMs = (teeTime?: string | number | null) => {
-      const ms = parseTeeTimeValueToMs(teeTime);
-      return ms === null ? Number.POSITIVE_INFINITY : ms;
-    };
-    const sortByLive = (
-      rows: {
-        thru?: number;
-        teeTimeDisplay?: string | number | null;
-        playerName?: string;
-        today?: number;
-        score?: number;
-      }[],
-    ) => {
-      return [...rows].sort((a, b) => {
-        const aStarted = typeof a.thru === "number" && a.thru > 0;
-        const bStarted = typeof b.thru === "number" && b.thru > 0;
-        const aTodayValue = aStarted
-          ? typeof a.today === "number"
-            ? a.today
-            : Number.POSITIVE_INFINITY
-          : 0;
-        const bTodayValue = bStarted
-          ? typeof b.today === "number"
-            ? b.today
-            : Number.POSITIVE_INFINITY
-          : 0;
-        if (aTodayValue !== bTodayValue) return aTodayValue - bTodayValue;
+function getTeamTableSelectionSize(args: {
+  currentRound?: number;
+  eventIndex?: number;
+}) {
+  const round = Math.min(Math.max(args.currentRound ?? 1, 1), 4) as
+    | 1
+    | 2
+    | 3
+    | 4;
+  const eventIndex = Math.min(Math.max(args.eventIndex ?? 0, 0), 3) as
+    | 0
+    | 1
+    | 2
+    | 3;
+  return selectionCountByPlayoffTournamentRound(eventIndex, round);
+}
 
-        if (aStarted !== bStarted) {
-          return aStarted ? -1 : 1;
-        }
+export function orderTeamGolfersForTable(args: {
+  teamGolfers: TournamentTeamDetailGolfer[];
+  currentRound?: number;
+  eventIndex?: number;
+}) {
+  const nonCut = args.teamGolfers.filter((g) => !isPlayerCut(g.position));
+  const cut = args.teamGolfers.filter((g) => isPlayerCut(g.position));
 
-        if (!aStarted && !bStarted) {
-          const ta = toTimeMs(a.teeTimeDisplay ?? null);
-          const tb = toTimeMs(b.teeTimeDisplay ?? null);
-          if (ta !== tb) return ta - tb;
-          return (a.playerName ?? "").localeCompare(b.playerName ?? "");
-        }
+  const toTimeMs = (teeTime?: string | number | null) => {
+    const ms = parseTeeTimeValueToMs(teeTime);
+    return ms === null ? Number.POSITIVE_INFINITY : ms;
+  };
+  const sortByLive = (
+    rows: {
+      thru?: number;
+      teeTimeDisplay?: string | number | null;
+      playerName?: string;
+      today?: number;
+      score?: number;
+    }[],
+  ) => {
+    return [...rows].sort((a, b) => {
+      const aStarted = typeof a.thru === "number" && a.thru > 0;
+      const bStarted = typeof b.thru === "number" && b.thru > 0;
+      const aTodayValue = aStarted
+        ? typeof a.today === "number"
+          ? a.today
+          : Number.POSITIVE_INFINITY
+        : 0;
+      const bTodayValue = bStarted
+        ? typeof b.today === "number"
+          ? b.today
+          : Number.POSITIVE_INFINITY
+        : 0;
+      if (aTodayValue !== bTodayValue) return aTodayValue - bTodayValue;
 
-        const aThru =
-          typeof a.thru === "number" ? a.thru : Number.NEGATIVE_INFINITY;
-        const bThru =
-          typeof b.thru === "number" ? b.thru : Number.NEGATIVE_INFINITY;
-        if (aThru !== bThru) return bThru - aThru;
+      if (aStarted !== bStarted) {
+        return aStarted ? -1 : 1;
+      }
 
-        const aScore =
-          typeof a.score === "number" ? a.score : Number.POSITIVE_INFINITY;
-        const bScore =
-          typeof b.score === "number" ? b.score : Number.POSITIVE_INFINITY;
-        if (aScore !== bScore) return aScore - bScore;
-
+      if (!aStarted && !bStarted) {
+        const ta = toTimeMs(a.teeTimeDisplay ?? null);
+        const tb = toTimeMs(b.teeTimeDisplay ?? null);
+        if (ta !== tb) return ta - tb;
         return (a.playerName ?? "").localeCompare(b.playerName ?? "");
-      });
-    };
-    const sortByWeekendSelection = (
-      rows: TournamentTeamDetailGolfer[],
-    ): TournamentTeamDetailGolfer[] => {
-      return [...rows].sort((a, b) => {
-        const aToday =
-          typeof a.today === "number" ? a.today : Number.POSITIVE_INFINITY;
-        const bToday =
-          typeof b.today === "number" ? b.today : Number.POSITIVE_INFINITY;
-        if (aToday !== bToday) return aToday - bToday;
+      }
 
-        const aThru =
-          typeof a.thru === "number" ? a.thru : Number.POSITIVE_INFINITY;
-        const bThru =
-          typeof b.thru === "number" ? b.thru : Number.POSITIVE_INFINITY;
-        if (aThru !== bThru) return aThru - bThru;
+      const aThru =
+        typeof a.thru === "number" ? a.thru : Number.NEGATIVE_INFINITY;
+      const bThru =
+        typeof b.thru === "number" ? b.thru : Number.NEGATIVE_INFINITY;
+      if (aThru !== bThru) return bThru - aThru;
 
-        const aScore =
-          typeof a.score === "number" ? a.score : Number.POSITIVE_INFINITY;
-        const bScore =
-          typeof b.score === "number" ? b.score : Number.POSITIVE_INFINITY;
-        if (aScore !== bScore) return aScore - bScore;
+      const aScore =
+        typeof a.score === "number" ? a.score : Number.POSITIVE_INFINITY;
+      const bScore =
+        typeof b.score === "number" ? b.score : Number.POSITIVE_INFINITY;
+      if (aScore !== bScore) return aScore - bScore;
 
-        return (a.playerName ?? "").localeCompare(b.playerName ?? "");
-      });
-    };
+      return (a.playerName ?? "").localeCompare(b.playerName ?? "");
+    });
+  };
+  const sortByWeekendSelection = (
+    rows: TournamentTeamDetailGolfer[],
+  ): TournamentTeamDetailGolfer[] => {
+    return [...rows].sort((a, b) => {
+      const aToday =
+        typeof a.today === "number" ? a.today : Number.POSITIVE_INFINITY;
+      const bToday =
+        typeof b.today === "number" ? b.today : Number.POSITIVE_INFINITY;
+      if (aToday !== bToday) return aToday - bToday;
 
-    const sortedNonCut = sortByLive(nonCut);
-    const sortedCut = [...cut].sort((a, b) =>
-      (a.playerName ?? "").localeCompare(b.playerName ?? ""),
-    );
+      const aThru =
+        typeof a.thru === "number" ? a.thru : Number.POSITIVE_INFINITY;
+      const bThru =
+        typeof b.thru === "number" ? b.thru : Number.POSITIVE_INFINITY;
+      if (aThru !== bThru) return aThru - bThru;
 
-    if ((args.currentRound ?? 0) < 3) {
-      return [...sortedNonCut, ...sortedCut] as TournamentTeamDetailGolfer[];
-    }
+      const aScore =
+        typeof a.score === "number" ? a.score : Number.POSITIVE_INFINITY;
+      const bScore =
+        typeof b.score === "number" ? b.score : Number.POSITIVE_INFINITY;
+      if (aScore !== bScore) return aScore - bScore;
 
-    const weekendOrdered = sortByWeekendSelection(nonCut);
-    const countedGolfers = weekendOrdered.slice(0, 5);
-    const countedIds = new Set(countedGolfers.map((golfer) => golfer._id));
-    const remainingGolfers = sortByLive(
-      nonCut.filter((golfer) => !countedIds.has(golfer._id)),
-    );
+      return (a.playerName ?? "").localeCompare(b.playerName ?? "");
+    });
+  };
 
-    return [
-      ...countedGolfers,
-      ...remainingGolfers,
-      ...sortedCut,
-    ] as TournamentTeamDetailGolfer[];
-  }, [args.currentRound, args.teamGolfers]);
+  const sortedNonCut = sortByLive(nonCut);
+  const sortedCut = [...cut].sort((a, b) =>
+    (a.playerName ?? "").localeCompare(b.playerName ?? ""),
+  );
+  const selectionSize = getTeamTableSelectionSize(args);
+
+  if (selectionSize === 10) {
+    return [...sortedNonCut, ...sortedCut] as TournamentTeamDetailGolfer[];
+  }
+
+  const weekendOrdered = sortByWeekendSelection(nonCut);
+  const countedGolfers = weekendOrdered.slice(0, selectionSize);
+  const countedIds = new Set(countedGolfers.map((golfer) => golfer._id));
+  const remainingGolfers = sortByLive(
+    nonCut.filter((golfer) => !countedIds.has(golfer._id)),
+  );
+
+  return [
+    ...countedGolfers,
+    ...remainingGolfers,
+    ...sortedCut,
+  ] as TournamentTeamDetailGolfer[];
 }
 
 function ScoreDisplay(props: {
