@@ -157,6 +157,11 @@ The feed can briefly contain overlapping rounds. The app keeps the earliest
 unfinished round as the current scoring window and must not publish a future
 round early.
 
+Expanded-team hole scoring uses every available ESPN scorecard while retaining
+the full event counting denominator. A valid team with no completed holes shows
+an empty scorecard grid; the unavailable message is reserved for an invalid
+roster or an unreconciled WD/DQ penalty scorecard.
+
 ## 4. Rank teams and award results
 
 Teams are ranked within their tour/division by total PGC score. Normal ties use

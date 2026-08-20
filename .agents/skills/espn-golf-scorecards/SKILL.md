@@ -40,7 +40,9 @@ Map `E`/`EVEN` to numeric zero and signed integers normally. Drop only malformed
 - Merge by round then hole. Incoming same-hole data corrects the cell; omitted cells and omitted round totals preserve stored values, including a WD who disappears.
 - Normalize before equality checks to avoid order-only writes. Apply deltas in chunks of 50.
 - Run ESPN after DataGolf succeeds or confirms an unchanged marker; log/audit ESPN failure without rolling back DataGolf.
-- Return the team scorecard only for exactly ten unique golfers with all scorecard identities available.
+- Require exactly ten unique roster golfer IDs, then return every available
+  scorecard. An empty result represents a valid team with no holes yet; reserve
+  `null` for an invalid roster or an unreconciled WD/DQ penalty round.
 
 ## Apply PGC-only display transformations
 

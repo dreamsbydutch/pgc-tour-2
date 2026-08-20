@@ -886,6 +886,26 @@ async function getPlayoffEventIndex(
   return index < 0 ? 0 : index + 1;
 }
 
+function hasCurrentTournamentParticipationEvidence(
+  golfer: Doc<"tournamentGolfers">,
+): boolean {
+  return (
+    String(golfer.position ?? "").trim().length > 0 ||
+    golfer.score !== undefined ||
+    golfer.today !== undefined ||
+    golfer.thru !== undefined ||
+    golfer.endHole !== undefined ||
+    golfer.roundOne !== undefined ||
+    golfer.roundTwo !== undefined ||
+    golfer.roundThree !== undefined ||
+    golfer.roundFour !== undefined ||
+    golfer.roundOneTeeTime !== undefined ||
+    golfer.roundTwoTeeTime !== undefined ||
+    golfer.roundThreeTeeTime !== undefined ||
+    golfer.roundFourTeeTime !== undefined
+  );
+}
+
 /** Active subscription for exactly one PGC tour or playoff bracket. */
 export const getPgcLeaderboard = query({
   args: {
@@ -1015,10 +1035,14 @@ export const getTeamDetail = query({
           : Promise.resolve(null),
       ),
     );
-    const hasMissingTournamentGolfers = tournamentGolfers.some(
-      (item, index) => !item && golferDocs[index],
+    const hasMissingOrInactiveTournamentGolfers = tournamentGolfers.some(
+      (item, index) =>
+        golferDocs[index] &&
+        (!item ||
+          (tournament.status !== "upcoming" &&
+            !hasCurrentTournamentParticipationEvidence(item))),
     );
-    const playoffEventIndex = hasMissingTournamentGolfers
+    const playoffEventIndex = hasMissingOrInactiveTournamentGolfers
       ? await getPlayoffEventIndex(ctx, tournament)
       : 0;
     return {
@@ -1027,7 +1051,14 @@ export const getTeamDetail = query({
       golfers: tournamentGolfers
         .map((item, index) => {
           const golfer = golferDocs[index];
-          if (item) return projectPublicTournamentGolfer(item, golfer);
+          if (item) {
+            const projected = projectPublicTournamentGolfer(item, golfer);
+            return playoffEventIndex >= 2 &&
+              tournament.status !== "upcoming" &&
+              !hasCurrentTournamentParticipationEvidence(item)
+              ? { ...projected, position: "CUT" as const }
+              : projected;
+          }
           if (!golfer || playoffEventIndex < 2) return null;
 
           return {

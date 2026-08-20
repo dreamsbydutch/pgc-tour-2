@@ -1505,8 +1505,11 @@ describe("phase two bounded tournament reads", () => {
         .query("tournamentGolfers")
         .withIndex("by_tournament", (q) => q.eq("tournamentId", tournament._id))
         .take(10);
-      for (const golfer of tournamentGolfers.slice(4)) {
-        await ctx.db.delete(golfer._id);
+      for (const [index, golfer] of tournamentGolfers.slice(0, 4).entries()) {
+        await ctx.db.patch(golfer._id, {
+          position: `T${index + 1}`,
+          roundOneTeeTime: Date.now() + index * 60_000,
+        });
       }
       return teamId;
     });
@@ -1558,6 +1561,50 @@ describe("phase two bounded tournament reads", () => {
       { tournamentId: seeded.tournamentId, golferId: golfer.golferId },
     );
     expect(scorecard?.rounds[0]?.holes[0]?.strokes).toBe(3);
+  });
+
+  it("returns partial and empty scorecard sets for valid teams", async () => {
+    const seeded = await seedCompetition(t);
+    const golferIds = await t.run(async (ctx) => {
+      const tournamentGolfers = await ctx.db
+        .query("tournamentGolfers")
+        .withIndex("by_tournament", (q) =>
+          q.eq("tournamentId", seeded.tournamentId),
+        )
+        .take(10);
+      return tournamentGolfers.map((golfer) => golfer.golferId);
+    });
+
+    const empty = await t.query(api.functions.espnGolf.getTeamHoleScorecards, {
+      tournamentId: seeded.tournamentId,
+      golferIds,
+    });
+    expect(empty).toEqual([]);
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("tournamentGolferScorecards", {
+        tournamentId: seeded.tournamentId,
+        golferId: golferIds[0]!,
+        rounds: [
+          {
+            round: 1,
+            holes: [{ hole: 1, strokes: 3, relativeToPar: -1 }],
+          },
+        ],
+        updatedAt: Date.now(),
+      });
+    });
+
+    const partial = await t.query(
+      api.functions.espnGolf.getTeamHoleScorecards,
+      { tournamentId: seeded.tournamentId, golferIds },
+    );
+    expect(partial).toHaveLength(1);
+    expect(partial?.[0]?.rounds[0]?.holes[0]).toMatchObject({
+      hole: 1,
+      strokes: 3,
+      relativeToPar: -1,
+    });
   });
 
   it("does not rewrite a scorecard whose normalized rounds are unchanged", async () => {

@@ -358,10 +358,6 @@ function TeamGolfersTable(props: {
             tournamentCompleted: props.tournament.status === "completed",
             eventIndex: props.tournament.eventIndex,
           });
-  const hasTeamHoleScores = teamAverageScorecard?.rounds.some(
-    (round) => round.holes.length > 0,
-  );
-
   return (
     <>
       <Table className="scrollbar-hidden mx-auto w-full max-w-3xl border border-gray-700 text-center font-varela">
@@ -440,9 +436,7 @@ function TeamGolfersTable(props: {
           scorecard={
             teamAverageScorecard === undefined
               ? undefined
-              : teamAverageScorecard !== null && hasTeamHoleScores
-                ? teamAverageScorecard
-                : null
+              : teamAverageScorecard
           }
         />
       </div>
