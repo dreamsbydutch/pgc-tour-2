@@ -44,4 +44,5 @@ export type BuildTeamAverageScorecardArgs = {
   scorecards: TeamSourceScorecard[] | null | undefined;
   currentRound: number;
   tournamentCompleted: boolean;
+  eventIndex?: number;
 };

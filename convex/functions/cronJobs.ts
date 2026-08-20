@@ -300,20 +300,34 @@ function isNonRankingTeamPosition(
 export function isAutomaticEvenParPlayoffTeam(args: {
   isPlayoff: boolean;
   golferIds: readonly number[];
+  activeGolferCount?: number;
+  eventIndex?: 0 | 1 | 2 | 3;
 }): boolean {
-  return args.isPlayoff && args.golferIds.length === 0;
+  if (!args.isPlayoff) return false;
+  if (args.golferIds.length === 0) return true;
+
+  const minimumActiveGolfers =
+    args.eventIndex === 2 ? 5 : args.eventIndex === 3 ? 3 : undefined;
+  return (
+    minimumActiveGolfers !== undefined &&
+    (args.activeGolferCount ?? args.golferIds.length) < minimumActiveGolfers
+  );
 }
 
 export function shouldAutoFillIncompleteTeamRoster(args: {
   isPlayoff: boolean;
   golferIds: readonly number[];
   rosteredGolferCount: number;
+  eventIndex?: 0 | 1 | 2 | 3;
 }): boolean {
   return (
+    !(args.isPlayoff && (args.eventIndex ?? 0) > 1) &&
     args.rosteredGolferCount < 10 &&
     !isAutomaticEvenParPlayoffTeam({
       isPlayoff: args.isPlayoff,
       golferIds: args.golferIds,
+      activeGolferCount: args.rosteredGolferCount,
+      eventIndex: args.eventIndex,
     })
   );
 }
@@ -2540,6 +2554,7 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
             isPlayoff,
             golferIds: t.golferIds,
             rosteredGolferCount: t.golfers?.length ?? 0,
+            eventIndex,
           })
         ) {
           const groupCounts = [
@@ -2951,6 +2966,8 @@ export const runTournamentSync: ReturnType<typeof internalAction> =
         const isAutomaticEvenParTeam = isAutomaticEvenParPlayoffTeam({
           isPlayoff,
           golferIds: t.golferIds,
+          activeGolferCount: t.golfers.length,
+          eventIndex,
         });
         const roundOne = getTeamRoundScoreForSync({
           golfers: t.golfers,
@@ -3831,6 +3848,7 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
             isPlayoff,
             golferIds: t.golferIds,
             rosteredGolferCount: t.golfers?.length ?? 0,
+            eventIndex,
           })
         ) {
           const groupCounts = [
@@ -4242,6 +4260,8 @@ export const updatePreviousTournament: ReturnType<typeof internalAction> =
         const isAutomaticEvenParTeam = isAutomaticEvenParPlayoffTeam({
           isPlayoff,
           golferIds: t.golferIds,
+          activeGolferCount: t.golfers.length,
+          eventIndex,
         });
         const roundOne = getTeamRoundScoreForSync({
           golfers: t.golfers,

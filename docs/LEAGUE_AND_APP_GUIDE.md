@@ -245,6 +245,13 @@ bragging rights.
   automatic team. That team records even par for every round in all three
   playoff events while retaining its starting strokes and cumulative carryover.
   Incomplete-roster repair and pre-start replacement must leave that team empty.
+- A rostered golfer absent from the BMW or TOUR Championship field is treated
+  as `CUT` for that leg and appears below the active golfers in the expanded
+  roster. The original 10-golfer roster remains unchanged.
+- A team with fewer than 5 active golfers at BMW or fewer than 3 at the TOUR
+  Championship records even par for every round of that leg while retaining
+  its incoming carryover. Eligibility is recalculated for each field, so a
+  golfer can become active again at the TOUR Championship after missing BMW.
 - Playoff tier payout slots are fixed: Gold uses positions 1-75 and Silver uses
   positions 76-150, regardless of the actual bracket sizes.
 

@@ -848,6 +848,44 @@ async function getAuthenticatedMember(ctx: QueryCtx) {
     .unique();
 }
 
+async function getPlayoffEventIndex(
+  ctx: QueryCtx,
+  tournament: Doc<"tournaments">,
+): Promise<number> {
+  const currentTier = await ctx.db.get(tournament.tierId);
+  const isPlayoff = [currentTier?.name, tournament.name].some((value) =>
+    String(value ?? "")
+      .toLowerCase()
+      .includes("playoff"),
+  );
+  if (!isPlayoff) return 0;
+
+  const seasonTournaments = await ctx.db
+    .query("tournaments")
+    .withIndex("by_season", (q) => q.eq("seasonId", tournament.seasonId))
+    .take(100);
+  const tierIds = Array.from(
+    new Set(seasonTournaments.map((item) => item.tierId)),
+  );
+  const tiers = await Promise.all(tierIds.map((tierId) => ctx.db.get(tierId)));
+  const tierNameById = new Map(
+    tiers.filter(Boolean).map((tier) => [tier!._id, tier!.name] as const),
+  );
+  const playoffTournaments = seasonTournaments
+    .filter((item) =>
+      [tierNameById.get(item.tierId), item.name].some((value) =>
+        String(value ?? "")
+          .toLowerCase()
+          .includes("playoff"),
+      ),
+    )
+    .sort((a, b) => a.startDate - b.startDate);
+  const index = playoffTournaments.findIndex(
+    (item) => item._id === tournament._id,
+  );
+  return index < 0 ? 0 : index + 1;
+}
+
 /** Active subscription for exactly one PGC tour or playoff bracket. */
 export const getPgcLeaderboard = query({
   args: {
@@ -977,13 +1015,53 @@ export const getTeamDetail = query({
           : Promise.resolve(null),
       ),
     );
+    const hasMissingTournamentGolfers = tournamentGolfers.some(
+      (item, index) => !item && golferDocs[index],
+    );
+    const playoffEventIndex = hasMissingTournamentGolfers
+      ? await getPlayoffEventIndex(ctx, tournament)
+      : 0;
     return {
       teamId: team._id,
       golferIds: team.golferIds.slice(0, 10),
       golfers: tournamentGolfers
-        .map((item, index) =>
-          item ? projectPublicTournamentGolfer(item, golferDocs[index]) : null,
-        )
+        .map((item, index) => {
+          const golfer = golferDocs[index];
+          if (item) return projectPublicTournamentGolfer(item, golfer);
+          if (!golfer || playoffEventIndex < 2) return null;
+
+          return {
+            _id: golfer._id,
+            golferId: golfer._id,
+            tournamentId: tournament._id,
+            apiId: golfer.apiId,
+            playerName: golfer.playerName,
+            country: golfer.country,
+            worldRank: golfer.worldRank,
+            position: "CUT" as const,
+            posChange: undefined,
+            score: undefined,
+            makeCut: undefined,
+            topTen: undefined,
+            win: undefined,
+            earnings: undefined,
+            today: undefined,
+            thru: undefined,
+            round: undefined,
+            endHole: undefined,
+            group: undefined,
+            roundOneTeeTime: undefined,
+            roundOne: undefined,
+            roundTwoTeeTime: undefined,
+            roundTwo: undefined,
+            roundThreeTeeTime: undefined,
+            roundThree: undefined,
+            roundFourTeeTime: undefined,
+            roundFour: undefined,
+            rating: undefined,
+            usage: undefined,
+          };
+        })
         .filter((item) => item !== null),
     };
   },

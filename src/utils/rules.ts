@@ -141,11 +141,11 @@ export const ruleList: {
       },
       {
         ruleText:
-          "The BMW Championship only counts your top 5 golfers in each of the 4 rounds.",
+          "The BMW Championship only counts your top 5 golfers in each of the 4 rounds. Rostered golfers who did not qualify for the BMW field are treated as CUT for that event. A team with fewer than 5 active golfers receives even par for all 4 rounds.",
       },
       {
         ruleText:
-          "The TOUR Championship only counts your top 3 golfers in each of the 4 rounds.",
+          "The TOUR Championship only counts your top 3 golfers in each of the 4 rounds. Rostered golfers who did not qualify for the TOUR Championship field are treated as CUT for that event. A team with fewer than 3 active golfers receives even par for all 4 rounds; golfers who qualify for this field become active again even if they missed the BMW field.",
       },
     ],
   },

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Id } from "convex/_generated/dataModel";
 import { buildTeamAverageScorecard } from "@/utils/teamHoleScorecard";
+import { orderTeamGolfersForTable } from "./PGCLeaderboard";
+import type { TournamentTeamDetailGolfer } from "@/types";
 
 function golferId(value: number) {
   return `golfer-${value}` as Id<"golfers">;
@@ -232,5 +234,91 @@ describe("buildTeamAverageScorecard", () => {
       relativeToPar: 1,
       completion: { completed: 10, total: 10 },
     });
+  });
+
+  it("does not build BMW hole averages when fewer than five golfers qualified", () => {
+    const teamGolfers = buildGolfers().map((golfer, index) => ({
+      ...golfer,
+      position: index < 4 ? golfer.position : "CUT",
+    }));
+    const scorecard = buildTeamAverageScorecard({
+      teamGolfers,
+      currentRound: 1,
+      eventIndex: 2,
+      tournamentCompleted: false,
+      scorecards: teamGolfers.slice(0, 4).map((golfer) => ({
+        golferId: golfer.golferId,
+        rounds: [
+          {
+            round: 1,
+            holes: [{ hole: 1, strokes: 4, relativeToPar: 0 }],
+          },
+        ],
+      })),
+    });
+
+    expect(scorecard.rounds.every((round) => round.holes.length === 0)).toBe(
+      true,
+    );
+  });
+
+  it("uses three requalified golfers in TOUR Championship hole averages", () => {
+    const teamGolfers = buildGolfers().map((golfer, index) => ({
+      ...golfer,
+      position: index < 3 ? golfer.position : "CUT",
+    }));
+    const scorecard = buildTeamAverageScorecard({
+      teamGolfers,
+      currentRound: 1,
+      eventIndex: 3,
+      tournamentCompleted: false,
+      scorecards: teamGolfers.slice(0, 3).map((golfer, index) => ({
+        golferId: golfer.golferId,
+        rounds: [
+          {
+            round: 1,
+            holes: [
+              {
+                hole: 1,
+                strokes: 3 + index,
+                relativeToPar: index - 1,
+              },
+            ],
+          },
+        ],
+      })),
+    });
+
+    expect(scorecard.rounds[0]?.holes[0]).toEqual({
+      hole: 1,
+      strokes: 4,
+      relativeToPar: 0,
+      completion: { completed: 3, total: 3 },
+    });
+  });
+});
+
+describe("orderTeamGolfersForTable", () => {
+  it("puts later-playoff non-qualifiers below the active top three", () => {
+    const golfers = buildGolfers().map((golfer, index) => ({
+      ...golfer,
+      _id: `row-${index + 1}`,
+      tournamentId: "tournament",
+      playerName: `Golfer ${index + 1}`,
+      position: index < 3 ? golfer.position : "CUT",
+    })) as unknown as TournamentTeamDetailGolfer[];
+
+    const ordered = orderTeamGolfersForTable({
+      teamGolfers: golfers,
+      currentRound: 1,
+      eventIndex: 3,
+    });
+
+    expect(
+      ordered.slice(0, 3).every((golfer) => golfer.position !== "CUT"),
+    ).toBe(true);
+    expect(ordered.slice(3).every((golfer) => golfer.position === "CUT")).toBe(
+      true,
+    );
   });
 });
