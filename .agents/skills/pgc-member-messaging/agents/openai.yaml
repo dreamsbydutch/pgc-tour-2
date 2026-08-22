@@ -1,0 +1,4 @@
+interface:
+  display_name: "PGC Member Messaging"
+  short_description: "Maintain PGC notifications, push, and email"
+  default_prompt: "Use $pgc-member-messaging to diagnose this PGC notification or delivery issue."

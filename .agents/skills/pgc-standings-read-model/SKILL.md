@@ -1,51 +1,35 @@
 ---
 name: pgc-standings-read-model
-description: Explain, diagnose, test, backfill, or change PGC standings contributions, materialized standings rows, competition ranks, position deltas, playoff qualification, history queries, and downstream rebuilds after corrected results.
+description: Explain, diagnose, test, backfill, or change PGC standings contributions, aggregate rows, history, competition ranks, movement, playoff qualification, and refresh after corrected results. Use for standings persistence and queries; scoring math and repair execution use their own skills.
+metadata:
+  short-description: Maintain the PGC standings model
 ---
 
 # PGC standings read model
 
-Read `docs/LEAGUE_AND_APP_GUIDE.md` before changing standings or qualification. Use `$golf-scoring-czar` when the upstream tournament result or award is in question.
+Read [standings and playoffs](../../../docs/domain/STANDINGS_AND_PLAYOFFS.md), [scoring](../../../docs/domain/SCORING.md), and the [data repair runbook](../../../docs/operations/DATA_REPAIRS.md) before backfill execution.
 
-## Preserve the model
+## Scope and handoffs
 
-```text
-completed team result
-  -> one standingsContribution per tourCard+tournament
-  -> one regular standingsRow per tourCard+season
-  -> tour ranks, movement, playoff level
-  -> mirrored legacy tourCard totals
-```
+Own canonical standings contributions, materialized season rows, history queries, competition rank and movement, playoff qualification, legacy aggregate mirrors, and standings refresh after corrected results.
 
-Treat team results as canonical, contributions as tournament snapshots/history, and rows as lean aggregates for hot reads. Upserts must skip unchanged snapshots and preserve unique logical keys.
+- Use `$pgc-golf-scoring` when the upstream team score, position, points, or award is disputed.
+- Use `$pgc-data-repairs` for paged execution, production safeguards, or cleanup mechanics.
+- Use `$pgc-registration-and-picks` for roster submission and inheritance.
 
-## Apply the canonical formula
+## Preserve the read model
 
-- Only completed regular-season tournaments contribute points, wins, top-five/top-ten finishes, made cuts, and appearances.
-- Completed playoff earnings count toward total league earnings; playoff points and finishes do not alter regular-season standing.
-- `pastPoints` removes the most recent completed regular contribution so movement compares equivalent snapshots.
-- Rank cards within their tour by regular points. Equal point totals share competition rank (`Tn`) and skip subsequent occupied positions; do not invent an earnings, wins, or countback tiebreak.
-- Deterministic name/ID sorting may stabilize processing but must not break equal-point competition rank.
-- Derive playoff level from how many cards have strictly more points and the tour's `[gold, silver]` allocation. A tie across a boundary currently gives every tied card the same level.
+Completed team results are canonical; one contribution snapshots each eligible card/tournament result; one row aggregates each card/season for hot reads.
 
-## Refresh corrections completely
+- Include only domain-eligible completed results and keep regular-season and playoff effects distinct.
+- Preserve competition ranking for equal points; deterministic processing order must not invent a tiebreak.
+- Derive movement from equivalent snapshots and qualification from current regular points and configured allocations.
+- Skip unchanged upserts and preserve unique logical keys.
+- After a correction, refresh contributions, rows, ranks, movement, qualification, legacy mirrors, and dependent playoff teams/badges/read models.
+- Keep public standings DTOs indexed, bounded, display-safe, and free of rosters or private member identity.
 
-After a canonical team/tournament correction:
+## Trace and verify
 
-1. upsert the affected contribution;
-2. recompute each affected card row;
-3. recompute ranks, movement, and playoff levels for every affected season;
-4. mirror the maintained aggregate fields to tour cards;
-5. reconcile playoff teams and dependent badges/read models when the correction crosses those boundaries.
+Trace completed team result through `convex/utils/standings.ts`, `convex/functions/standings.ts`, team completion, season queries, `convex/schema.ts`, and downstream consumers.
 
-Upcoming or active events are not official standings inputs. Completion refreshes standings immediately; the maintenance job also recomputes daily at 04:00 UTC.
-
-## Keep reads lean and repairs bounded
-
-Use indexed `standingsRows` for standings screens and paginated contributions for history. Do not return roster arrays, private member identity, or raw source documents. Preserve the representative constraint that a 500-row standings response stays at or below 250 KiB and history pages cap at 50.
-
-Backfill one season in bounded tour-card pages, upsert eligible tournament contributions, recompute each row, and recompute ranks only when the final page completes. Rerun to prove parity and idempotency; use `$pgc-data-repairs` for production execution.
-
-Primary code is `convex/utils/standings.ts`, `convex/functions/standings.ts`, `teams.ts`, season standings queries, `convex/schema.ts`, and `convex/standingsReadModel.test.ts`.
-
-Test canonical/materialized parity, completed versus active events, regular versus playoff contributions, equal-point ranks, past/current movement, qualification boundary ties, corrected results, unique contribution keys, backfill cursors/reruns, DTO privacy, pagination, and payload size.
+Test canonical/materialized parity, active versus completed events, regular versus playoff effects, equal-point ranks, movement, qualification-boundary ties, corrected results, unique keys, cursor/rerun behavior, DTO privacy, pagination, and payload budgets.

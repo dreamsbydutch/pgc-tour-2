@@ -1,0 +1,4 @@
+interface:
+  display_name: "ESPN Golf Scorecards"
+  short_description: "Maintain PGC ESPN hole-scorecard ingestion"
+  default_prompt: "Use $espn-golf-scorecards to diagnose this ESPN scorecard pipeline problem."

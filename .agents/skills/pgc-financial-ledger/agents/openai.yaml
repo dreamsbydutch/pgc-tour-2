@@ -1,0 +1,4 @@
+interface:
+  display_name: "PGC Financial Ledger"
+  short_description: "Protect PGC balances, fees, and settlements"
+  default_prompt: "Use $pgc-financial-ledger to trace and verify this PGC money workflow."

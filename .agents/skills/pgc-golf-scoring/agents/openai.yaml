@@ -1,0 +1,4 @@
+interface:
+  display_name: "PGC Golf Scoring"
+  short_description: "Diagnose PGC scoring units and calculations"
+  default_prompt: "Use $pgc-golf-scoring to trace and verify this PGC scoring behavior."
