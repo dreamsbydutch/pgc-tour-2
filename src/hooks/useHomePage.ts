@@ -68,6 +68,7 @@ export function useHomePage(): HomePageModel {
     seasonTourCards: bootstrap.tourCards as TourCardDoc[],
     role,
     account: typeof member?.account === "number" ? member.account : null,
+    seasonHonors: dashboard.seasonHonors,
     freshness,
   };
 }

@@ -13,6 +13,7 @@ export const loadNotificationCenter = () => import("./NotificationCenter");
 
 export { ChampionsPopup } from "./standings/ChampionsPopup";
 export { ClubhousePulse, ClubhousePulseSkeleton } from "./ClubhousePulse";
+export { SeasonChampions } from "./SeasonChampions";
 
 // COMPLETED
 export { LeaderboardHeader } from "./LeaderboardHeader";

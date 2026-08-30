@@ -51,6 +51,58 @@ export const getPublicHomeDashboard = query({
     const tierById = new Map(
       tiers.filter(Boolean).map((item) => [item!._id, item!] as const),
     );
+    const playoffTournaments = tournaments
+      .filter((item) =>
+        (tierById.get(item.tierId)?.name ?? "")
+          .toLowerCase()
+          .includes("playoff"),
+      )
+      .sort((a, b) => a.startDate - b.startDate);
+    const finalPlayoffTournament = playoffTournaments.at(-1) ?? null;
+    let seasonHonors: null | {
+      tournamentId: string;
+      champion: { displayName: string; score: number | null };
+      silverChampion: { displayName: string; score: number | null } | null;
+    } = null;
+
+    if (finalPlayoffTournament?.status === "completed") {
+      const firstPlaceTeams = await ctx.db
+        .query("teams")
+        .withIndex("by_tournament_position", (q) =>
+          q.eq("tournamentId", finalPlayoffTournament._id).eq("position", "1"),
+        )
+        .take(10);
+      const firstPlaceCards = await Promise.all(
+        firstPlaceTeams.map((team) => ctx.db.get(team.tourCardId)),
+      );
+      const winners = firstPlaceTeams.map((team, index) => ({
+        team,
+        card: firstPlaceCards[index],
+        playoff: team.playoff ?? firstPlaceCards[index]?.playoff,
+      }));
+      const projectWinner = (playoff: 1 | 2) => {
+        const bracketWinners = winners.filter(
+          (winner) => winner.playoff === playoff,
+        );
+        if (bracketWinners.length !== 1) return null;
+        const winner = bracketWinners[0]!;
+        const displayName = winner.team.displayName ?? winner.card?.displayName;
+        if (!displayName) return null;
+        return {
+          displayName,
+          score:
+            typeof winner.team.score === "number" ? winner.team.score : null,
+        };
+      };
+      const champion = projectWinner(1);
+      if (champion) {
+        seasonHonors = {
+          tournamentId: String(finalPlayoffTournament._id),
+          champion,
+          silverChampion: projectWinner(2),
+        };
+      }
+    }
     return {
       season: projectPublicSeason(season),
       tours: tours.map(projectPublicTour),
@@ -63,6 +115,7 @@ export const getPublicHomeDashboard = query({
             tier: tierById.get(tournament.tierId),
           }),
         ),
+      seasonHonors,
     };
   },
 });
