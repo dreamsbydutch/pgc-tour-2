@@ -30,11 +30,12 @@ export function useHomePage(): HomePageModel {
   const dashboardHasSeasonHonors =
     dashboard !== undefined &&
     Object.prototype.hasOwnProperty.call(dashboard, "seasonHonors");
-  const finalPlayoffTournament = dashboard?.tournaments
-    .filter((tournament) =>
+  const playoffTournaments =
+    dashboard?.tournaments.filter((tournament) =>
       tournament.tier?.name.toLowerCase().includes("playoff"),
-    )
-    .at(-1);
+    ) ?? [];
+  const finalPlayoffTournament =
+    playoffTournaments[playoffTournaments.length - 1];
   const needsLeaderboardFallback =
     dashboard !== undefined &&
     !dashboardHasSeasonHonors &&

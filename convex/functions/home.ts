@@ -58,7 +58,8 @@ export const getPublicHomeDashboard = query({
           .includes("playoff"),
       )
       .sort((a, b) => a.startDate - b.startDate);
-    const finalPlayoffTournament = playoffTournaments.at(-1) ?? null;
+    const finalPlayoffTournament =
+      playoffTournaments[playoffTournaments.length - 1] ?? null;
     let seasonHonors: null | {
       tournamentId: string;
       champion: { displayName: string; score: number | null };
