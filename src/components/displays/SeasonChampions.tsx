@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { Medal, Trophy } from "lucide-react";
+import { ArrowRight, Medal, Trophy } from "lucide-react";
 
 import type { SeasonHonors } from "@/types";
+import { Card, CardContent } from "@/ui";
 import { formatScore } from "@/utils/app";
 
 export function SeasonChampions(props: {
@@ -9,70 +10,85 @@ export function SeasonChampions(props: {
   seasonYear: number;
 }) {
   return (
-    <section
-      aria-labelledby="season-champion-title"
-      className="relative overflow-hidden rounded-3xl border border-amber-300/70 bg-gradient-to-br from-amber-50 via-yellow-100 to-amber-200 px-5 py-7 shadow-lg sm:px-8 sm:py-9"
-    >
-      <div
-        className="absolute -right-12 -top-16 h-44 w-44 rounded-full bg-white/35"
-        aria-hidden="true"
-      />
-      <div className="relative text-center">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-500 text-white shadow-md sm:h-16 sm:w-16">
-          <Trophy className="h-8 w-8 sm:h-9 sm:w-9" aria-hidden="true" />
-        </div>
-        <p className="mt-4 text-xs font-bold uppercase tracking-[0.24em] text-amber-900/70">
-          {props.seasonYear} season
-        </p>
-        <h2
-          id="season-champion-title"
-          className="mt-1 text-2xl font-black uppercase tracking-wide text-amber-950 sm:text-3xl"
-        >
-          PGC Champion
-        </h2>
-        <p className="mt-2 text-4xl font-bold text-slate-950 sm:text-5xl">
-          {props.honors.champion.displayName}
-        </p>
-        {props.honors.champion.score !== null ? (
-          <p className="mt-2 text-lg font-semibold text-amber-950/75">
-            Final score {formatScore(props.honors.champion.score)}
-          </p>
-        ) : null}
-
-        {props.honors.silverChampion ? (
-          <div className="mx-auto mt-6 flex max-w-md items-center justify-center gap-3 rounded-2xl border border-slate-300/80 bg-white/65 px-4 py-3 text-left shadow-sm">
-            <Medal
-              className="h-7 w-7 shrink-0 text-slate-500"
-              aria-hidden="true"
-            />
+    <Card className="relative overflow-hidden border-slate-300 bg-white shadow-sm">
+      <div className="absolute inset-x-0 top-0 h-1 bg-slate-950" />
+      <CardContent className="p-5 pt-6 sm:p-7 sm:pt-8">
+        <section aria-labelledby="season-champion-title">
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-slate-300 bg-slate-100 text-slate-900">
+              <Trophy className="h-5 w-5" aria-hidden="true" />
+            </span>
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Silver Champion
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                {props.seasonYear} season / Official
               </p>
-              <p className="text-lg font-bold text-slate-900">
-                {props.honors.silverChampion.displayName}
-                {props.honors.silverChampion.score !== null ? (
-                  <span className="ml-2 font-semibold text-slate-600">
-                    {formatScore(props.honors.silverChampion.score)}
-                  </span>
-                ) : null}
-              </p>
+              <h2
+                id="season-champion-title"
+                className="font-varela text-xl font-black tracking-tight text-slate-950 sm:text-2xl"
+              >
+                PGC Champion
+              </h2>
             </div>
           </div>
-        ) : null}
 
-        <Link
-          to="/tournament"
-          search={{
-            tournamentId: props.honors.tournamentId,
-            tourId: "gold",
-            variant: "playoff",
-          }}
-          className="mt-6 inline-flex min-h-11 items-center rounded-full border border-amber-800/30 bg-white/75 px-5 py-2 text-sm font-semibold text-amber-950 transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-700"
-        >
-          View final playoff leaderboard
-        </Link>
-      </div>
-    </section>
+          <div className="mt-6 grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Overall season champion
+              </p>
+              <p className="mt-1 text-4xl font-black tracking-tight text-slate-950 sm:text-5xl">
+                {props.honors.champion.displayName}
+              </p>
+            </div>
+            {props.honors.champion.score !== null ? (
+              <div className="border-t border-slate-200 pt-3 sm:border-l sm:border-t-0 sm:pb-1 sm:pl-6 sm:pt-0 sm:text-right">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                  Final score
+                </p>
+                <p className="mt-0.5 text-2xl font-black tabular-nums text-slate-950">
+                  {formatScore(props.honors.champion.score)}
+                </p>
+              </div>
+            ) : null}
+          </div>
+
+          {props.honors.silverChampion ? (
+            <div className="mt-6 flex items-center gap-3 border-t border-slate-200 pt-5">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500">
+                <Medal className="h-4 w-4" aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                  Silver Champion
+                </p>
+                <p className="truncate text-base font-bold text-slate-900 sm:text-lg">
+                  {props.honors.silverChampion.displayName}
+                </p>
+              </div>
+              {props.honors.silverChampion.score !== null ? (
+                <span className="shrink-0 text-sm font-bold tabular-nums text-slate-600">
+                  {formatScore(props.honors.silverChampion.score)}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="mt-5 border-t border-slate-200 pt-4">
+            <Link
+              to="/tournament"
+              search={{
+                tournamentId: props.honors.tournamentId,
+                tourId: "gold",
+                variant: "playoff",
+              }}
+              className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-slate-600 transition-colors hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              View final playoff leaderboard
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          </div>
+        </section>
+      </CardContent>
+    </Card>
   );
 }

@@ -28,6 +28,7 @@ describe("SeasonChampions", () => {
 
     expect(screen.getByRole("heading", { name: "PGC Champion" })).toBeTruthy();
     expect(screen.getByText("Gold Winner")).toBeTruthy();
+    expect(screen.getByText("Overall season champion")).toBeTruthy();
     expect(screen.getByText("Silver Champion")).toBeTruthy();
     expect(screen.getByText("Silver Winner")).toBeTruthy();
     expect(
