@@ -1230,8 +1230,24 @@ describe("registration, picks, payments, and leases", () => {
     );
     expect(completedDashboard.seasonHonors).toEqual({
       tournamentId: finalPlayoffTournamentId,
-      champion: { displayName: "Gold Winner", score: -22 },
-      silverChampion: { displayName: "Silver Winner", score: -14 },
+      champion: {
+        displayName: "Gold Winner",
+        score: -22,
+        tour: {
+          name: "Test Tour",
+          shortForm: "TEST",
+          logoUrl: "https://example.com/tour.png",
+        },
+      },
+      silverChampion: {
+        displayName: "Silver Winner",
+        score: -14,
+        tour: {
+          name: "Test Tour",
+          shortForm: "TEST",
+          logoUrl: "https://example.com/tour.png",
+        },
+      },
     });
   });
 

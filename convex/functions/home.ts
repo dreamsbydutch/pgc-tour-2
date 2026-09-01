@@ -60,10 +60,19 @@ export const getPublicHomeDashboard = query({
       .sort((a, b) => a.startDate - b.startDate);
     const finalPlayoffTournament =
       playoffTournaments[playoffTournaments.length - 1] ?? null;
+    const tourById = new Map(tours.map((tour) => [tour._id, tour] as const));
     let seasonHonors: null | {
       tournamentId: string;
-      champion: { displayName: string; score: number | null };
-      silverChampion: { displayName: string; score: number | null } | null;
+      champion: {
+        displayName: string;
+        score: number | null;
+        tour: { name: string; shortForm: string; logoUrl: string } | null;
+      };
+      silverChampion: {
+        displayName: string;
+        score: number | null;
+        tour: { name: string; shortForm: string; logoUrl: string } | null;
+      } | null;
     } = null;
 
     if (finalPlayoffTournament?.status === "completed") {
@@ -89,10 +98,19 @@ export const getPublicHomeDashboard = query({
         const winner = bracketWinners[0]!;
         const displayName = winner.team.displayName ?? winner.card?.displayName;
         if (!displayName) return null;
+        const winnerTourId = winner.team.tourId ?? winner.card?.tourId;
+        const tour = winnerTourId ? tourById.get(winnerTourId) : undefined;
         return {
           displayName,
           score:
             typeof winner.team.score === "number" ? winner.team.score : null,
+          tour: tour
+            ? {
+                name: tour.name,
+                shortForm: tour.shortForm,
+                logoUrl: tour.logoUrl,
+              }
+            : null,
         };
       };
       const champion = projectWinner(1);

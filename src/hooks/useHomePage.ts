@@ -96,6 +96,7 @@ export function useHomePage(): HomePageModel {
       ? dashboard.seasonHonors
       : undefined,
     tournamentId: String(finalPlayoffTournament?._id ?? ""),
+    tours: dashboard.tours,
     goldResult: goldPlayoffResult,
     silverResult: silverPlayoffResult,
   });

@@ -20,8 +20,20 @@ describe("SeasonChampions", () => {
         seasonYear={2026}
         honors={{
           tournamentId: "tour-championship",
-          champion: { displayName: "Gold Winner", score: -22 },
-          silverChampion: { displayName: "Silver Winner", score: -14 },
+          champion: {
+            displayName: "Gold Winner",
+            score: -22,
+            tour: { name: "PGC Tour", shortForm: "PGC", logoUrl: "/pgc.png" },
+          },
+          silverChampion: {
+            displayName: "Silver Winner",
+            score: -14,
+            tour: {
+              name: "Champions Tour",
+              shortForm: "CHAMP",
+              logoUrl: "/champ.png",
+            },
+          },
         }}
       />,
     );
@@ -31,6 +43,14 @@ describe("SeasonChampions", () => {
     expect(screen.getByText("Overall season champion")).toBeTruthy();
     expect(screen.getByText("Silver Champion")).toBeTruthy();
     expect(screen.getByText("Silver Winner")).toBeTruthy();
+    expect(
+      screen.getByRole("img", { name: "Gold championship trophy" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("img", { name: "Silver championship trophy" }),
+    ).toBeTruthy();
+    expect(screen.getByText("PGC")).toBeTruthy();
+    expect(screen.getByText("CHAMP")).toBeTruthy();
     expect(
       screen.getByRole("link", { name: "View final playoff leaderboard" }),
     ).toBeTruthy();
