@@ -6,8 +6,8 @@ import {
   AdminHub,
   AdminOperationFeedback,
   AdminTaskPanel,
-  SettlementHub,
 } from "@/displays";
+import { SettlementHub } from "@/displays/admin/SettlementHub";
 import { useAdminDashboard } from "@/hooks";
 import type { AdminBusyIconProps } from "@/types";
 import { Button } from "@/ui";
@@ -357,6 +357,8 @@ export function AdminDashboard() {
           pendingTransferTotal={model.pendingTransferTotal}
           busyKey={model.settlementBusyKey}
           feedback={model.settlementFeedback}
+          creditingWinnings={model.creditingWinnings}
+          onCreditWinnings={model.creditSeasonWinnings}
           onComplete={model.completeSettlement}
           onCancel={model.cancelSettlement}
         />

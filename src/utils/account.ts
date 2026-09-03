@@ -17,14 +17,27 @@ export function getAllocationTotal(args: {
   transferCents: number;
   charityCents: number;
   leagueCents: number;
-  nextSeasonCard: boolean;
+  retainedCents: number;
 }) {
   return (
     args.transferCents +
     args.charityCents +
     args.leagueCents +
-    (args.nextSeasonCard ? NEXT_SEASON_CARD_CENTS : 0)
+    args.retainedCents
   );
+}
+
+export function topUpRetainedForTourCard(retainedCents: number) {
+  return Math.max(retainedCents, NEXT_SEASON_CARD_CENTS);
+}
+
+export function getRetainedCentsForSettlement(
+  retainedCents: number,
+  nextSeasonCard: boolean,
+) {
+  return nextSeasonCard
+    ? Math.max(0, retainedCents - NEXT_SEASON_CARD_CENTS)
+    : retainedCents;
 }
 
 export function settlementStatusLabel(status: string) {

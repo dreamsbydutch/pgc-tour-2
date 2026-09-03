@@ -9,6 +9,22 @@ import type { Doc } from "@/convex";
 
 export type DataFreshness = "live" | "stale";
 
+export type SeasonHonorWinner = {
+  displayName: string;
+  score: number | null;
+  tour: {
+    name: string;
+    shortForm: string;
+    logoUrl: string | null;
+  } | null;
+};
+
+export type SeasonHonors = {
+  tournamentId: string;
+  champion: SeasonHonorWinner;
+  silverChampion: SeasonHonorWinner | null;
+};
+
 export type HomePageModel =
   | { kind: "loading" }
   | {
@@ -32,6 +48,7 @@ export type HomePageModel =
       seasonTourCards: TourCardDoc[];
       role: string | null;
       account: number | null;
+      seasonHonors: SeasonHonors | null;
       freshness: DataFreshness;
     };
 

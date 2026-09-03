@@ -2,11 +2,15 @@
 
 import { describe, expect, it } from "vitest";
 import { convexTest } from "convex-test";
+import type { FunctionReturnType } from "convex/server";
 import schema from "./schema";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 
 const modules = import.meta.glob("./**/*.ts");
+type CreditWinningsPage = FunctionReturnType<
+  typeof api.functions.settlements.adminCreditCurrentSeasonWinnings
+>;
 
 function createTestBackend() {
   return convexTest(schema, modules);
@@ -271,6 +275,120 @@ describe("earnings settlements", () => {
     ).toEqual([-20_000, -10_000, 50_000]);
   }, 15_000);
 
+  it("credits completed-season winnings for every member exactly once", async () => {
+    const t = createTestBackend();
+    const owner = await ensureMember(t, "credit-owner");
+    const admin = await ensureMember(t, "credit-admin");
+    const fixture = await seedCompletedSeason(t, owner.member._id);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(owner.member._id, { account: -10_000 });
+      await ctx.db.patch(admin.member._id, { role: "admin" });
+    });
+
+    for (let run = 0; run < 2; run += 1) {
+      let cursor: string | null = null;
+      do {
+        const page: CreditWinningsPage = await admin.authenticated.mutation(
+          api.functions.settlements.adminCreditCurrentSeasonWinnings,
+          { cursor, limit: 1 },
+        );
+        cursor = page.isDone ? null : page.continueCursor;
+      } while (cursor);
+    }
+
+    const result = await t.run(async (ctx) => ({
+      member: await ctx.db.get(owner.member._id),
+      winnings: await ctx.db
+        .query("transactions")
+        .withIndex("by_member_season_type", (query) =>
+          query
+            .eq("memberId", owner.member._id)
+            .eq("seasonId", fixture.seasonId)
+            .eq("transactionType", "TournamentWinnings"),
+        )
+        .collect(),
+    }));
+    expect(result.member?.account).toBe(40_000);
+    expect(result.winnings).toHaveLength(1);
+    expect(result.winnings[0]).toMatchObject({
+      amount: 50_000,
+      status: "completed",
+    });
+
+    const overview = await owner.authenticated.query(
+      api.functions.account.getMyOverview,
+      {},
+    );
+    expect(overview.currentSeasonFinancial).toMatchObject({
+      earningsCents: 50_000,
+      accountOffsetCents: 10_000,
+      availableCents: 40_000,
+    });
+  }, 15_000);
+
+  it("adds an existing positive account balance to the distributable total", async () => {
+    const t = createTestBackend();
+    const owner = await ensureMember(t, "positive-balance-owner");
+    const fixture = await seedCompletedSeason(t, owner.member._id, 50_000);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(owner.member._id, { account: 12_500 });
+    });
+
+    const overview = await owner.authenticated.query(
+      api.functions.account.getMyOverview,
+      {},
+    );
+    expect(overview.currentSeasonFinancial).toMatchObject({
+      earningsCents: 50_000,
+      accountOffsetCents: 0,
+      availableCents: 62_500,
+    });
+
+    const request = await owner.authenticated.mutation(
+      api.functions.settlements.submitMyRequest,
+      {
+        seasonId: fixture.seasonId,
+        transferCents: 0,
+        charityCents: 0,
+        leagueCents: 0,
+        nextSeasonCardCents: 0,
+        retainedCents: 62_500,
+      },
+    );
+    expect(request).toMatchObject({
+      availableCents: 62_500,
+      retainedCents: 62_500,
+      status: "completed",
+    });
+    const member = await t.run(async (ctx) => ctx.db.get(owner.member._id));
+    expect(member?.account).toBe(62_500);
+  });
+
+  it("lets a member retain all winnings without creating admin work", async () => {
+    const t = createTestBackend();
+    const owner = await ensureMember(t, "retained-owner");
+    const fixture = await seedCompletedSeason(t, owner.member._id, 20_000);
+
+    const request = await owner.authenticated.mutation(
+      api.functions.settlements.submitMyRequest,
+      {
+        seasonId: fixture.seasonId,
+        transferCents: 0,
+        charityCents: 0,
+        leagueCents: 0,
+        nextSeasonCardCents: 0,
+        retainedCents: 20_000,
+      },
+    );
+
+    expect(request).toMatchObject({
+      retainedCents: 20_000,
+      status: "completed",
+    });
+    const member = await t.run(async (ctx) => ctx.db.get(owner.member._id));
+    expect(member?.account).toBe(20_000);
+  });
+
   it("rejects early, over-allocated, duplicate, and unauthorized requests", async () => {
     const t = createTestBackend();
     const owner = await ensureMember(t, "settlement-guard-owner");
@@ -331,6 +449,12 @@ describe("earnings settlements", () => {
     await expect(
       regular.authenticated.query(
         api.functions.settlements.adminListRequests,
+        {},
+      ),
+    ).rejects.toThrow("Admin access required");
+    await expect(
+      regular.authenticated.mutation(
+        api.functions.settlements.adminCreditCurrentSeasonWinnings,
         {},
       ),
     ).rejects.toThrow("Admin access required");

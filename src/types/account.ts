@@ -14,6 +14,9 @@ export type AccountSeasonFinancial = NonNullable<
 export type AdminSettlementRequestsDto = FunctionReturnType<
   typeof api.functions.settlements.adminListRequests
 >;
+export type CreditSeasonWinningsPage = FunctionReturnType<
+  typeof api.functions.settlements.adminCreditCurrentSeasonWinnings
+>;
 export type AdminSettlementRequest = AdminSettlementRequestsDto[number];
 export type SettlementItemKind =
   | "transfer"
@@ -59,6 +62,8 @@ export type AdminSettlementHubProps = {
   pendingTransferTotal: number;
   busyKey: string | null;
   feedback: SettlementFeedback | null;
+  creditingWinnings: boolean;
+  onCreditWinnings: () => void;
   onComplete: (
     requestId: Id<"settlementRequests">,
     item: SettlementItemKind,

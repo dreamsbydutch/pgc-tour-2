@@ -1,7 +1,11 @@
 import { Link as RouterLink } from "@tanstack/react-router";
 import { Shield, Star, WifiOff } from "lucide-react";
 
-import { LeagueSchedule, TournamentCountdown } from "@/displays";
+import {
+  LeagueSchedule,
+  SeasonChampions,
+  TournamentCountdown,
+} from "@/displays";
 import { useHomePage } from "@/hooks";
 import { Button, Skeleton } from "@/ui";
 import { formatMoney } from "@/utils/app";
@@ -57,6 +61,12 @@ export function HomePage() {
           </div>
         ) : (
           <>
+            {model.seasonHonors ? (
+              <SeasonChampions
+                honors={model.seasonHonors}
+                seasonYear={model.currentSeason.year}
+              />
+            ) : null}
             {model.member ? (
               <TourCardForm
                 currentSeason={model.currentSeason}

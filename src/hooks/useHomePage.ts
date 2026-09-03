@@ -15,6 +15,7 @@ import type {
   TourCardDoc,
   TourDoc,
 } from "convex/types/types";
+import { resolveHomeSeasonHonors } from "@/utils";
 
 export function useHomePage(): HomePageModel {
   const convex = useConvex();
@@ -26,6 +27,39 @@ export function useHomePage(): HomePageModel {
   const [isRetrying, setIsRetrying] = useState(false);
   const dashboard = queriedDashboard ?? retriedDashboard;
   const freshness = connection.isWebSocketConnected ? "live" : "stale";
+  const dashboardHasSeasonHonors =
+    dashboard !== undefined &&
+    Object.prototype.hasOwnProperty.call(dashboard, "seasonHonors");
+  const playoffTournaments =
+    dashboard?.tournaments.filter((tournament) =>
+      tournament.tier?.name.toLowerCase().includes("playoff"),
+    ) ?? [];
+  const finalPlayoffTournament =
+    playoffTournaments[playoffTournaments.length - 1];
+  const needsLeaderboardFallback =
+    dashboard !== undefined &&
+    !dashboardHasSeasonHonors &&
+    finalPlayoffTournament?.status === "completed";
+  const goldPlayoffResult = useQuery(
+    api.functions.tournaments.getPgcLeaderboard,
+    needsLeaderboardFallback && finalPlayoffTournament
+      ? {
+          tournamentId: finalPlayoffTournament._id,
+          tourId: "gold",
+          variant: "playoff",
+        }
+      : "skip",
+  );
+  const silverPlayoffResult = useQuery(
+    api.functions.tournaments.getPgcLeaderboard,
+    needsLeaderboardFallback && finalPlayoffTournament
+      ? {
+          tournamentId: finalPlayoffTournament._id,
+          tourId: "silver",
+          variant: "playoff",
+        }
+      : "skip",
+  );
 
   const retry = () => {
     if (isRetrying) return;
@@ -57,6 +91,15 @@ export function useHomePage(): HomePageModel {
 
   const tournaments = dashboard.tournaments as EnhancedTournamentDoc[];
   const now = Date.now();
+  const seasonHonors = resolveHomeSeasonHonors({
+    backendHonors: dashboardHasSeasonHonors
+      ? dashboard.seasonHonors
+      : undefined,
+    tournamentId: String(finalPlayoffTournament?._id ?? ""),
+    tours: dashboard.tours,
+    goldResult: goldPlayoffResult,
+    silverResult: silverPlayoffResult,
+  });
   return {
     kind: "ready",
     currentSeason: dashboard.season as SeasonDoc,
@@ -68,6 +111,7 @@ export function useHomePage(): HomePageModel {
     seasonTourCards: bootstrap.tourCards as TourCardDoc[],
     role,
     account: typeof member?.account === "number" ? member.account : null,
+    seasonHonors,
     freshness,
   };
 }

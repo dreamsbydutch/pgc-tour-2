@@ -1150,6 +1150,107 @@ describe("registration, picks, payments, and leases", () => {
     );
   });
 
+  it("publishes Gold and Silver champions only after the final playoff completes", async () => {
+    const seeded = await seedCompetition(t);
+    const goldMember = await ensureMember(t, "gold-champion");
+    const silverMember = await ensureMember(t, "silver-champion");
+    const finalPlayoffTournamentId = await t.run(async (ctx) => {
+      const regularTournament = await ctx.db.get(seeded.tournamentId);
+      if (!regularTournament) throw new Error("Expected tournament");
+      const playoffTierId = await ctx.db.insert("tiers", {
+        name: "Playoff",
+        seasonId: seeded.seasonId,
+        payouts: [],
+        points: [],
+      });
+      const tournamentId = await ctx.db.insert("tournaments", {
+        name: "TOUR Championship",
+        startDate: regularTournament.startDate + 30 * 24 * 60 * 60 * 1000,
+        endDate: regularTournament.endDate + 30 * 24 * 60 * 60 * 1000,
+        tierId: playoffTierId,
+        courseId: regularTournament.courseId,
+        seasonId: seeded.seasonId,
+        status: "active",
+      });
+      const goldCardId = await ctx.db.insert("tourCards", {
+        displayName: "Gold Winner",
+        memberId: goldMember.member._id,
+        seasonId: seeded.seasonId,
+        tourId: seeded.tourId,
+        earnings: 0,
+        points: 1_000,
+        topTen: 0,
+        madeCut: 0,
+        appearances: 0,
+        playoff: 1,
+      });
+      const silverCardId = await ctx.db.insert("tourCards", {
+        displayName: "Silver Winner",
+        memberId: silverMember.member._id,
+        seasonId: seeded.seasonId,
+        tourId: seeded.tourId,
+        earnings: 0,
+        points: 500,
+        topTen: 0,
+        madeCut: 0,
+        appearances: 0,
+        playoff: 2,
+      });
+      await ctx.db.insert("teams", {
+        tournamentId,
+        tourCardId: goldCardId,
+        golferIds: [],
+        position: "1",
+        score: -22,
+        playoff: 1,
+      });
+      await ctx.db.insert("teams", {
+        tournamentId,
+        tourCardId: silverCardId,
+        golferIds: [],
+        position: "1",
+        score: -14,
+        playoff: 2,
+      });
+      return tournamentId;
+    });
+
+    const activeDashboard = await t.query(
+      api.functions.home.getPublicHomeDashboard,
+      {},
+    );
+    expect(activeDashboard.seasonHonors).toBeNull();
+
+    await t.run((ctx) =>
+      ctx.db.patch(finalPlayoffTournamentId, { status: "completed" }),
+    );
+    const completedDashboard = await t.query(
+      api.functions.home.getPublicHomeDashboard,
+      {},
+    );
+    expect(completedDashboard.seasonHonors).toEqual({
+      tournamentId: finalPlayoffTournamentId,
+      champion: {
+        displayName: "Gold Winner",
+        score: -22,
+        tour: {
+          name: "Test Tour",
+          shortForm: "TEST",
+          logoUrl: "https://example.com/tour.png",
+        },
+      },
+      silverChampion: {
+        displayName: "Silver Winner",
+        score: -14,
+        tour: {
+          name: "Test Tour",
+          shortForm: "TEST",
+          logoUrl: "https://example.com/tour.png",
+        },
+      },
+    });
+  });
+
   it("maintains registration counts and denormalized team metadata", async () => {
     const seeded = await seedCompetition(t);
     const { authenticated, member } = await ensureMember(t, "read-models");

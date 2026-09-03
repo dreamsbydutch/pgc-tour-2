@@ -194,6 +194,30 @@ The tournament tier is the only award source.
 Any correction to a completed team's points or earnings requires a standings
 recompute.
 
+### Season-end accounts and winnings
+
+After the current season is complete, an administrator credits each member's
+official season earnings to that member's PGC account. The operation is
+paginated, audited, and safe to rerun; completed `TournamentWinnings`
+transactions are the credit ledger.
+
+An existing negative account balance is paid first from the season earnings.
+The member then allocates their full positive account balance, including any
+funds carried into the season, across any combination of:
+
+- an e-transfer to an email address they specify;
+- the season-end charity donation;
+- a donation to PGC league costs;
+- a fixed $100 reserve for a next-season tour card; and
+- funds left unreserved in their PGC account for future fees.
+
+The full available account balance must be accounted for. E-transfers and
+donations debit the member account when an administrator confirms the real-world
+action. The next-season card choice earmarks $100 but does not create a tour card
+or choose a tour; the member completes that choice when registration opens.
+The admin payout queue lists each requested e-transfer destination and amount;
+marking a transfer paid records its withdrawal exactly once.
+
 ## 5. Maintain standings
 
 Standings are separate for each tour. Completed regular-season teams contribute:

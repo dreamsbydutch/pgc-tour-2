@@ -8,6 +8,7 @@ import { publishNotifications } from "../utils/notifications";
 import {
   NEXT_SEASON_CARD_CENTS,
   areAllSettlementItemsComplete,
+  getCompletedSeasonWinningsCredit,
   getOfficialMemberSeasonEarnings,
   getSettlementAmounts,
   isSettlementSeasonComplete,
@@ -32,6 +33,7 @@ export const submitMyRequest = mutation({
     charityCents: v.number(),
     leagueCents: v.number(),
     nextSeasonCardCents: v.number(),
+    retainedCents: v.optional(v.number()),
     payoutEmail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -87,6 +89,10 @@ export const submitMyRequest = mutation({
       args.nextSeasonCardCents,
       "Next-season card amount",
     );
+    const retainedCents = requirePositiveIntegerCents(
+      args.retainedCents ?? 0,
+      "Amount left in account",
+    );
     if (
       nextSeasonCardCents !== 0 &&
       nextSeasonCardCents !== NEXT_SEASON_CARD_CENTS
@@ -99,23 +105,35 @@ export const submitMyRequest = mutation({
       member._id,
       args.seasonId,
     );
+    const creditedEarningsCents = await getCompletedSeasonWinningsCredit(
+      ctx,
+      member._id,
+      args.seasonId,
+    );
     const { accountOffsetCents, availableCents } = getSettlementAmounts({
       earningsCents,
       accountCents: member.account,
+      creditedEarningsCents,
     });
     if (availableCents <= 0) {
-      throw new Error("There are no earnings available to allocate");
+      throw new Error("There are no account funds available to allocate");
     }
     const allocatedCents =
-      transferCents + charityCents + leagueCents + nextSeasonCardCents;
+      transferCents +
+      charityCents +
+      leagueCents +
+      nextSeasonCardCents +
+      retainedCents;
     if (allocatedCents !== availableCents) {
-      throw new Error("Allocate the full available earnings amount");
+      throw new Error("Allocate the full available account balance");
     }
     const payoutEmail =
       transferCents > 0
         ? normalizePayoutEmail(args.payoutEmail ?? member.email)
         : undefined;
     const now = Date.now();
+    const hasAdminWork =
+      transferCents + charityCents + leagueCents + nextSeasonCardCents > 0;
     const value = {
       memberId: member._id,
       seasonId: season._id,
@@ -126,8 +144,9 @@ export const submitMyRequest = mutation({
       charityCents,
       leagueCents,
       nextSeasonCardCents,
+      retainedCents,
       payoutEmail,
-      status: "pending" as const,
+      status: hasAdminWork ? ("pending" as const) : ("completed" as const),
       submittedAt: now,
       transferCompletedAt: undefined,
       transferCompletedBy: undefined,
@@ -137,7 +156,7 @@ export const submitMyRequest = mutation({
       leagueCompletedBy: undefined,
       nextSeasonCardCompletedAt: undefined,
       nextSeasonCardCompletedBy: undefined,
-      completedAt: undefined,
+      completedAt: hasAdminWork ? undefined : now,
       cancelledAt: undefined,
       cancelledBy: undefined,
       cancellationReason: undefined,
@@ -148,6 +167,14 @@ export const submitMyRequest = mutation({
       ? sameSeasonRequest._id
       : await ctx.db.insert("settlementRequests", value);
     if (sameSeasonRequest) await ctx.db.patch(sameSeasonRequest._id, value);
+    await creditOfficialWinnings(ctx, {
+      member,
+      seasonId: season._id,
+      officialEarnings: earningsCents,
+      creditedEarnings: creditedEarningsCents,
+      now,
+      settlementRequestId: requestId,
+    });
 
     await writeAuditLog(ctx, {
       memberId: member._id,
@@ -163,25 +190,28 @@ export const submitMyRequest = mutation({
         charityCents,
         leagueCents,
         nextSeasonCardCents,
+        retainedCents,
       },
     });
-    const admins = await ctx.db
-      .query("members")
-      .withIndex("by_role", (query) => query.eq("role", "admin"))
-      .take(100);
-    await publishNotifications(ctx, {
-      dedupeKey: `settlement-submitted:${requestId}:${now}`,
-      category: "financial",
-      settlementRequestId: requestId,
-      recipients: admins
-        .filter((admin) => admin.isActive !== false)
-        .map((admin) => ({
-          memberId: admin._id,
-          title: "New earnings request",
-          body: `${[member.firstname, member.lastname].filter(Boolean).join(" ") || member.email} submitted season earnings instructions.`,
-          href: "/admin#payout-requests",
-        })),
-    });
+    if (hasAdminWork) {
+      const admins = await ctx.db
+        .query("members")
+        .withIndex("by_role", (query) => query.eq("role", "admin"))
+        .take(100);
+      await publishNotifications(ctx, {
+        dedupeKey: `settlement-submitted:${requestId}:${now}`,
+        category: "financial",
+        settlementRequestId: requestId,
+        recipients: admins
+          .filter((admin) => admin.isActive !== false)
+          .map((admin) => ({
+            memberId: admin._id,
+            title: "New earnings request",
+            body: `${[member.firstname, member.lastname].filter(Boolean).join(" ") || member.email} submitted season earnings instructions.`,
+            href: "/admin#payout-requests",
+          })),
+      });
+    }
     return await ctx.db.get(requestId);
   },
 });
@@ -227,6 +257,125 @@ export const adminListRequests = query({
   },
 });
 
+export const adminCreditCurrentSeasonWinnings = mutation({
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const admin = await getCurrentMember(ctx);
+    await requireAdmin(ctx);
+    const appState = await ctx.db
+      .query("appState")
+      .withIndex("by_key", (query) => query.eq("key", "primary"))
+      .unique();
+    if (!appState?.currentSeasonId) throw new Error("Current season not found");
+    const season = await ctx.db.get(appState.currentSeasonId);
+    if (!season) throw new Error("Current season not found");
+    if (!isSettlementSeasonComplete({ season, appState, now: Date.now() })) {
+      throw new Error("Season winnings can only be credited after completion");
+    }
+
+    const limit = Math.min(Math.max(Math.trunc(args.limit ?? 50), 1), 100);
+    const page = await ctx.db.query("members").paginate({
+      cursor: args.cursor ?? null,
+      numItems: limit,
+    });
+    let creditedMembers = 0;
+    let creditedCents = 0;
+    let unchanged = 0;
+    let noEarnings = 0;
+
+    for (const member of page.page) {
+      const officialEarnings = await getOfficialMemberSeasonEarnings(
+        ctx,
+        member._id,
+        season._id,
+      );
+      if (officialEarnings === 0) {
+        noEarnings += 1;
+        continue;
+      }
+      const creditedEarnings = await getCompletedSeasonWinningsCredit(
+        ctx,
+        member._id,
+        season._id,
+      );
+      const now = Date.now();
+      const credited = await creditOfficialWinnings(ctx, {
+        member,
+        seasonId: season._id,
+        officialEarnings,
+        creditedEarnings,
+        now,
+      });
+      if (credited === 0) {
+        unchanged += 1;
+        continue;
+      }
+      creditedMembers += 1;
+      creditedCents += credited;
+      await writeAuditLog(ctx, {
+        memberId: admin._id,
+        entityType: "member",
+        entityId: String(member._id),
+        action: "updated",
+        changes: {
+          reason: "season_winnings_credit",
+          seasonId: String(season._id),
+          amountCents: credited,
+        },
+      });
+    }
+
+    return {
+      seasonId: season._id,
+      seasonLabel: `${season.year} Season ${season.number}`,
+      scanned: page.page.length,
+      creditedMembers,
+      creditedCents,
+      unchanged,
+      noEarnings,
+      isDone: page.isDone,
+      continueCursor: page.continueCursor,
+    };
+  },
+});
+
+async function creditOfficialWinnings(
+  ctx: MutationCtx,
+  args: {
+    member: Doc<"members">;
+    seasonId: Doc<"seasons">["_id"];
+    officialEarnings: number;
+    creditedEarnings: number;
+    now: number;
+    settlementRequestId?: Doc<"settlementRequests">["_id"];
+  },
+) {
+  if (args.creditedEarnings > args.officialEarnings) {
+    throw new Error("Recorded winnings exceed the official season earnings");
+  }
+  const missingCredit = args.officialEarnings - args.creditedEarnings;
+  if (missingCredit === 0) return 0;
+
+  await ctx.db.insert("transactions", {
+    memberId: args.member._id,
+    seasonId: args.seasonId,
+    settlementRequestId: args.settlementRequestId,
+    amount: missingCredit,
+    transactionType: "TournamentWinnings",
+    status: "completed",
+    processedAt: args.now,
+    updatedAt: args.now,
+  });
+  await ctx.db.patch(args.member._id, {
+    account: args.member.account + missingCredit,
+    updatedAt: args.now,
+  });
+  return missingCredit;
+}
+
 async function ensureOfficialWinningsCredited(
   ctx: MutationCtx,
   request: Doc<"settlementRequests">,
@@ -241,43 +390,20 @@ async function ensureOfficialWinningsCredited(
       "Official earnings changed after submission. Cancel this request and ask the member to resubmit.",
     );
   }
-  const winnings = await ctx.db
-    .query("transactions")
-    .withIndex("by_member_season_type", (query) =>
-      query
-        .eq("memberId", request.memberId)
-        .eq("seasonId", request.seasonId)
-        .eq("transactionType", "TournamentWinnings"),
-    )
-    .take(100);
-  const credited = winnings
-    .filter(
-      (transaction) =>
-        transaction.status === undefined || transaction.status === "completed",
-    )
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
-  if (credited > officialEarnings) {
-    throw new Error("Recorded winnings exceed the official season earnings");
-  }
-  const missingCredit = officialEarnings - credited;
-  if (missingCredit === 0) return;
-
+  const credited = await getCompletedSeasonWinningsCredit(
+    ctx,
+    request.memberId,
+    request.seasonId,
+  );
   const member = await ctx.db.get(request.memberId);
   if (!member) throw new Error("Member not found");
-  const now = Date.now();
-  await ctx.db.insert("transactions", {
-    memberId: member._id,
+  await creditOfficialWinnings(ctx, {
+    member,
     seasonId: request.seasonId,
+    officialEarnings,
+    creditedEarnings: credited,
+    now: Date.now(),
     settlementRequestId: request._id,
-    amount: missingCredit,
-    transactionType: "TournamentWinnings",
-    status: "completed",
-    processedAt: now,
-    updatedAt: now,
-  });
-  await ctx.db.patch(member._id, {
-    account: member.account + missingCredit,
-    updatedAt: now,
   });
 }
 

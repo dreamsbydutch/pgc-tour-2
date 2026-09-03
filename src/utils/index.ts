@@ -6,3 +6,4 @@ export * from "./schedule";
 export * from "./tourCardRegistration";
 export * from "./rulebook";
 export * from "./tournamentLeaderboardStatus";
+export * from "./seasonHonors";
