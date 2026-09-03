@@ -366,7 +366,7 @@ function AllocationInput(props: {
         <Icon className="h-4 w-4 text-golf-700" aria-hidden="true" />
         {props.label}
       </span>
-      <span className="relative mt-2 block">
+      <span className="relative mt-2 block w-36 max-w-full">
         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
           $
         </span>
