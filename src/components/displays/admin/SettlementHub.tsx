@@ -15,14 +15,7 @@ import type {
   SettlementAdminFilter,
   SettlementChecklistItemProps,
 } from "@/types";
-import {
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Skeleton,
-} from "@/ui";
+import { Button, Skeleton } from "@/ui";
 import { settlementStatusLabel } from "@/utils";
 import { formatMoney } from "@/utils/app";
 import { cn } from "@/utils/classNames";
@@ -65,12 +58,12 @@ export function SettlementHub(props: AdminSettlementHubProps) {
     >
       {props.embedded ? (
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-xl border bg-muted/20 px-4 py-3">
+          <div className="grid grid-cols-2 divide-x py-2">
+            <div className="pr-4">
               <p className="text-xs text-muted-foreground">Open requests</p>
               <p className="mt-1 text-xl font-bold">{props.pendingCount}</p>
             </div>
-            <div className="rounded-xl border bg-muted/20 px-4 py-3">
+            <div className="pl-4">
               <p className="text-xs text-muted-foreground">E-transfers due</p>
               <p className="mt-1 text-xl font-bold">
                 {formatMoney(props.pendingTransferTotal, true)}
@@ -80,31 +73,20 @@ export function SettlementHub(props: AdminSettlementHubProps) {
           <CreditWinningsButton {...props} />
         </div>
       ) : (
-        <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-5 sm:p-6">
+        <div>
           <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-800">
-                Financial operations
-              </p>
-              <h2
-                id="payout-requests-title"
-                className="mt-1 text-2xl font-bold"
-              >
+              <h2 id="payout-requests-title" className="text-2xl font-bold">
                 Payout request hub
               </h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                Work through each real-world transfer or allocation, then check
-                it off. The request closes automatically when every item is
-                complete.
-              </p>
             </div>
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl border bg-white px-4 py-3">
+              <div className="grid grid-cols-2 divide-x">
+                <div className="pr-4">
                   <p className="text-xs text-muted-foreground">Open requests</p>
                   <p className="mt-1 text-xl font-bold">{props.pendingCount}</p>
                 </div>
-                <div className="rounded-xl border bg-white px-4 py-3">
+                <div className="pl-4">
                   <p className="text-xs text-muted-foreground">
                     E-transfers due
                   </p>
@@ -170,28 +152,23 @@ export function SettlementHub(props: AdminSettlementHubProps) {
           <Skeleton className="h-72" />
         </div>
       ) : props.visibleRequests.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="flex flex-col items-center py-12 text-center">
-            <CheckCircle2
-              className="h-10 w-10 text-golf-600"
-              aria-hidden="true"
-            />
-            <p className="mt-3 font-semibold">No requests in this view</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              The payout queue is clear.
-            </p>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col items-center py-12 text-center">
+          <CheckCircle2
+            className="h-10 w-10 text-golf-600"
+            aria-hidden="true"
+          />
+          <p className="mt-3 font-semibold">No requests in this view</p>
+        </div>
       ) : (
-        <div className="grid items-start gap-4 lg:grid-cols-2">
+        <div className="divide-y">
           {props.visibleRequests.map((request) => (
-            <Card key={request._id} className="overflow-hidden">
-              <CardHeader className="border-b bg-muted/30 pb-4">
+            <article key={request._id} className="py-5 first:pt-2">
+              <header className="pb-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <CardTitle className="text-lg">
+                    <h4 className="text-lg font-semibold">
                       {request.memberName}
-                    </CardTitle>
+                    </h4>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {request.seasonLabel}
                     </p>
@@ -228,10 +205,10 @@ export function SettlementHub(props: AdminSettlementHubProps) {
                     </span>
                   ) : null}
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-3 p-5">
+              </header>
+              <div className="space-y-2">
                 {request.transferCents > 0 ? (
-                  <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3 text-sm">
+                  <div className="flex items-center justify-between gap-3 py-2 text-sm">
                     <span className="font-semibold">E-transfer</span>
                     <span className="text-right text-muted-foreground">
                       {formatMoney(request.transferCents, true)} ·{" "}
@@ -279,7 +256,7 @@ export function SettlementHub(props: AdminSettlementHubProps) {
                   onComplete={props.onComplete}
                 />
                 {(request.retainedCents ?? 0) > 0 ? (
-                  <div className="rounded-lg border border-golf-200 bg-golf-50/60 p-3">
+                  <div className="bg-golf-50/60 px-3 py-2">
                     <p className="text-sm font-semibold">
                       Left in member account
                     </p>
@@ -309,8 +286,8 @@ export function SettlementHub(props: AdminSettlementHubProps) {
                     Cancelled: {request.cancellationReason}
                   </p>
                 ) : null}
-              </CardContent>
-            </Card>
+              </div>
+            </article>
           ))}
         </div>
       )}
@@ -344,8 +321,8 @@ function SettlementChecklistItem(props: SettlementChecklistItemProps) {
   return (
     <div
       className={cn(
-        "flex items-center gap-3 rounded-lg border p-3",
-        complete && "border-green-200 bg-green-50/60",
+        "flex items-center gap-3 py-2",
+        complete && "bg-green-50/60 px-3",
       )}
     >
       <div

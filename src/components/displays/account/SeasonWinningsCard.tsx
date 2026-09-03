@@ -57,16 +57,15 @@ export function SeasonWinningsCard(props: Props) {
       <div className="bg-golf-950 border-b border-golf-800/20 px-5 py-5 text-white sm:px-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-golf-200">
-              PGC member account
-            </p>
-            <div className="mt-2 flex items-center gap-3">
+            <div className="flex items-center gap-3">
               <WalletCards
                 className="h-7 w-7 text-amber-300"
                 aria-hidden="true"
               />
               <div>
-                <p className="text-sm text-golf-100">Available balance</p>
+                <h2 className="text-sm font-medium text-golf-100">
+                  Available balance
+                </h2>
                 <p className="text-3xl font-bold tracking-tight">
                   {formatMoney(props.balanceCents, true)}
                 </p>
@@ -97,7 +96,7 @@ export function SeasonWinningsCard(props: Props) {
           </p>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <div className="grid grid-cols-3 divide-x py-1">
               <FinancialStat
                 label="Season winnings"
                 value={formatMoney(summary?.earningsCents ?? 0, true)}
@@ -114,7 +113,7 @@ export function SeasonWinningsCard(props: Props) {
             </div>
 
             {!financial.isComplete ? (
-              <div className="flex items-start gap-3 rounded-lg border bg-muted/30 p-4">
+              <div className="flex items-start gap-3 bg-muted/30 p-4">
                 <Clock3
                   className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground"
                   aria-hidden="true"
@@ -132,7 +131,7 @@ export function SeasonWinningsCard(props: Props) {
             ) : request && request.status !== "cancelled" ? (
               <RequestSummary request={request} />
             ) : financial.availableCents <= 0 ? (
-              <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+              <div className="bg-muted/30 p-4 text-sm text-muted-foreground">
                 There are no season winnings available to distribute.
               </div>
             ) : (
@@ -153,18 +152,13 @@ export function SeasonWinningsCard(props: Props) {
                   <h2 className="text-lg font-bold">
                     Choose where your winnings go
                   </h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Split the full amount in any combination. Your instructions
-                    are sent to the PGC administrators.
-                  </p>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
                   <AllocationInput
                     id="settlement-transfer"
                     icon={Send}
                     label="E-transfer"
-                    description="Cash sent to the email below"
                     value={props.transferAmount}
                     onChange={props.onTransferAmountChange}
                     disabled={!props.canSubmit || props.submitting}
@@ -173,7 +167,6 @@ export function SeasonWinningsCard(props: Props) {
                     id="settlement-charity"
                     icon={HeartHandshake}
                     label="Donate to charity"
-                    description="PGC's season-end charity donation"
                     value={props.charityAmount}
                     onChange={props.onCharityAmountChange}
                     disabled={!props.canSubmit || props.submitting}
@@ -182,7 +175,6 @@ export function SeasonWinningsCard(props: Props) {
                     id="settlement-league"
                     icon={Flag}
                     label="Donate to the PGC"
-                    description="Support league costs and events"
                     value={props.leagueAmount}
                     onChange={props.onLeagueAmountChange}
                     disabled={!props.canSubmit || props.submitting}
@@ -191,7 +183,6 @@ export function SeasonWinningsCard(props: Props) {
                     id="settlement-retained"
                     icon={PiggyBank}
                     label="Leave in my account"
-                    description="Keep it for future PGC fees"
                     value={props.retainedAmount}
                     onChange={props.onRetainedAmountChange}
                     disabled={!props.canSubmit || props.submitting}
@@ -228,7 +219,7 @@ export function SeasonWinningsCard(props: Props) {
                   </label>
                 ) : null}
 
-                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4">
+                <label className="flex cursor-pointer items-start gap-3 bg-amber-50 p-4">
                   <input
                     type="checkbox"
                     checked={props.nextSeasonCard}
@@ -257,7 +248,7 @@ export function SeasonWinningsCard(props: Props) {
                   </span>
                 </label>
 
-                <div className="rounded-lg border bg-muted/25 p-4">
+                <div className="border-y py-4">
                   <div className="flex items-center justify-between gap-3 text-sm">
                     <span className="text-muted-foreground">Allocated</span>
                     <span className="font-semibold">
@@ -341,8 +332,8 @@ function FinancialStat(props: {
   return (
     <div
       className={cn(
-        "rounded-lg border px-3 py-3",
-        props.accent && "border-golf-200 bg-golf-50",
+        "min-w-0 px-3 py-2 first:pl-0 last:pr-0 sm:px-4",
+        props.accent && "text-golf-800",
       )}
     >
       <p className="text-[0.68rem] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -364,22 +355,18 @@ function AllocationInput(props: {
   id: string;
   icon: typeof Landmark;
   label: string;
-  description: string;
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
 }) {
   const Icon = props.icon;
   return (
-    <label htmlFor={props.id} className="rounded-lg border p-3">
+    <label htmlFor={props.id} className="block">
       <span className="flex items-center gap-2 text-sm font-semibold">
         <Icon className="h-4 w-4 text-golf-700" aria-hidden="true" />
         {props.label}
       </span>
-      <span className="mt-0.5 block text-xs text-muted-foreground">
-        {props.description}
-      </span>
-      <span className="relative mt-3 block">
+      <span className="relative mt-2 block">
         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
           $
         </span>
@@ -411,7 +398,7 @@ function RequestSummary(props: {
     ["Left in account", request.retainedCents],
   ] as const;
   return (
-    <div className="rounded-lg border bg-muted/20 p-4">
+    <div className="bg-muted/20 p-4">
       <div className="flex items-start gap-3">
         {request.status === "completed" ? (
           <CheckCircle2

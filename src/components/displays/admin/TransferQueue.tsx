@@ -1,14 +1,7 @@
 import { Check, CheckCircle2, Loader2, Mail } from "lucide-react";
 
 import type { AdminSettlementHubProps } from "@/types";
-import {
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Skeleton,
-} from "@/ui";
+import { Button, Skeleton } from "@/ui";
 import { formatMoney } from "@/utils/app";
 import { cn } from "@/utils/classNames";
 
@@ -21,37 +14,25 @@ export function TransferQueue(props: {
   onComplete: AdminSettlementHubProps["onComplete"];
 }) {
   return (
-    <Card className="overflow-hidden border-amber-200 shadow-none">
-      <CardHeader className="border-b border-amber-200 bg-amber-50 p-5">
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+    <section>
+      <header className="flex flex-col justify-between gap-4 border-b pb-4 sm:flex-row sm:items-end">
+        <h3 className="text-xl font-bold">Requested e-transfers</h3>
+        <div className="flex gap-6 sm:text-right">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-800">
-              Payment queue
-            </p>
-            <CardTitle className="mt-1 text-xl">
-              Requested e-transfers
-            </CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Send each transfer to the requested email, then mark it paid.
+            <p className="text-xs text-muted-foreground">Outstanding</p>
+            <p className="mt-0.5 font-bold text-amber-900">
+              {formatMoney(props.outstandingTotal, true)}
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:min-w-64">
-            <div className="rounded-lg border border-amber-200 bg-white px-3 py-2">
-              <p className="text-xs text-muted-foreground">Outstanding</p>
-              <p className="mt-0.5 font-bold text-amber-900">
-                {formatMoney(props.outstandingTotal, true)}
-              </p>
-            </div>
-            <div className="rounded-lg border border-amber-200 bg-white px-3 py-2">
-              <p className="text-xs text-muted-foreground">Total requested</p>
-              <p className="mt-0.5 font-bold">
-                {formatMoney(props.requestedTotal, true)}
-              </p>
-            </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Total requested</p>
+            <p className="mt-0.5 font-bold">
+              {formatMoney(props.requestedTotal, true)}
+            </p>
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="p-0">
+      </header>
+      <div>
         {props.loading ? (
           <div className="space-y-2 p-4">
             <Skeleton className="h-16 w-full" />
@@ -111,7 +92,7 @@ export function TransferQueue(props: {
             })}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

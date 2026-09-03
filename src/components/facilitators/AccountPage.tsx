@@ -46,9 +46,6 @@ export function AccountPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold">Account</h1>
-            <p className="text-sm text-muted-foreground">
-              Review your balance, winnings, and profile.
-            </p>
           </div>
 
           <Show when="signed-in">
