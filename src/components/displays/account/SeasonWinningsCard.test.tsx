@@ -65,6 +65,10 @@ describe("SeasonWinningsCard", () => {
     expect(screen.getByText("Donate to charity")).toBeTruthy();
     expect(screen.getByText("Donate to the PGC")).toBeTruthy();
     expect(screen.getByText("Leave in my account")).toBeTruthy();
+    const allocationRow = document
+      .getElementById("settlement-transfer")
+      ?.closest("label")?.parentElement;
+    expect(allocationRow?.className).toContain("items-end");
     const cardButton = screen.getByRole("button", {
       name: "Secure your 2027 spot",
     });

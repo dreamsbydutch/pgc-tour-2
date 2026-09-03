@@ -166,7 +166,7 @@ export function SeasonWinningsCard(props: Props) {
                   </h2>
                 </div>
 
-                <div className="flex flex-wrap gap-x-8 gap-y-5">
+                <div className="flex flex-wrap items-end gap-x-8 gap-y-5">
                   <AllocationInput
                     id="settlement-transfer"
                     icon={Send}
@@ -374,12 +374,12 @@ function AllocationInput(props: {
 }) {
   const Icon = props.icon;
   return (
-    <label htmlFor={props.id} className="block w-36 max-w-full">
+    <label htmlFor={props.id} className="block w-44 max-w-full">
       <span className="flex items-center gap-2 text-sm font-semibold">
         <Icon className="h-4 w-4 text-golf-700" aria-hidden="true" />
         {props.label}
       </span>
-      <span className="relative mt-2 block">
+      <span className="relative mt-2 block w-36 max-w-full">
         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
           $
         </span>
