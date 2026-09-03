@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Id } from "@/convex";
 import type { AccountSeasonFinancial } from "@/types";
@@ -19,9 +19,12 @@ const financial = {
   request: null,
 } satisfies AccountSeasonFinancial;
 
+afterEach(cleanup);
+
 describe("SeasonWinningsCard", () => {
   it("shows the balance and every season-end allocation choice", () => {
     const keepRemaining = vi.fn();
+    const reserveCard = vi.fn();
     render(
       <SeasonWinningsCard
         balanceCents={50_000}
@@ -35,12 +38,13 @@ describe("SeasonWinningsCard", () => {
         retainedAmount=""
         onRetainedAmountChange={vi.fn()}
         nextSeasonCard={false}
-        onNextSeasonCardChange={vi.fn()}
+        onNextSeasonCardChange={reserveCard}
         payoutEmail="member@example.com"
         onPayoutEmailChange={vi.fn()}
         parsedAmounts={{
           valid: true,
           transferCents: 10_000,
+          retainedCents: 0,
           allocatedCents: 10_000,
           remainingCents: 40_000,
         }}
@@ -61,11 +65,57 @@ describe("SeasonWinningsCard", () => {
     expect(screen.getByText("Donate to charity")).toBeTruthy();
     expect(screen.getByText("Donate to the PGC")).toBeTruthy();
     expect(screen.getByText("Leave in my account")).toBeTruthy();
-    expect(
-      screen.getByText("Reserve my $100 next-season tour card"),
-    ).toBeTruthy();
+    const cardButton = screen.getByRole("button", {
+      name: "Buy next season tour card",
+    });
+    fireEvent.click(cardButton);
+    expect(reserveCard).toHaveBeenCalledWith(true);
+
+    const balanceHeading = screen.getByRole("heading", {
+      name: "Available balance",
+    });
+    expect(balanceHeading.closest("[class*='bg-golf-900']")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Keep the rest" }));
     expect(keepRemaining).toHaveBeenCalledOnce();
+  });
+
+  it("hides the tour-card action when less than $100 is available", () => {
+    const view = render(
+      <SeasonWinningsCard
+        balanceCents={5_000}
+        financial={{ ...financial, availableCents: 5_000 }}
+        transferAmount=""
+        onTransferAmountChange={vi.fn()}
+        charityAmount=""
+        onCharityAmountChange={vi.fn()}
+        leagueAmount=""
+        onLeagueAmountChange={vi.fn()}
+        retainedAmount=""
+        onRetainedAmountChange={vi.fn()}
+        nextSeasonCard={false}
+        onNextSeasonCardChange={vi.fn()}
+        payoutEmail="member@example.com"
+        onPayoutEmailChange={vi.fn()}
+        parsedAmounts={{
+          valid: true,
+          transferCents: 0,
+          retainedCents: 0,
+          allocatedCents: 0,
+          remainingCents: 5_000,
+        }}
+        canSubmit
+        submitting={false}
+        submitError={null}
+        submitSuccess={null}
+        onAllocateRemainingToTransfer={vi.fn()}
+        onAllocateRemainingToAccount={vi.fn()}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    expect(
+      view.queryByRole("button", { name: "Buy next season tour card" }),
+    ).toBeNull();
   });
 });

@@ -13,7 +13,7 @@ import {
 
 import type { AccountSeasonFinancial } from "@/types";
 import { Button, Card, CardContent } from "@/ui";
-import { settlementStatusLabel } from "@/utils";
+import { NEXT_SEASON_CARD_CENTS, settlementStatusLabel } from "@/utils";
 import { formatMoney } from "@/utils/app";
 import { cn } from "@/utils/classNames";
 
@@ -35,6 +35,7 @@ type Props = {
   parsedAmounts: {
     valid: boolean;
     transferCents: number;
+    retainedCents: number;
     allocatedCents: number;
     remainingCents: number;
   };
@@ -51,10 +52,20 @@ export function SeasonWinningsCard(props: Props) {
   const financial = props.financial;
   const request = financial?.request ?? null;
   const summary = request ?? financial;
+  const retainedTopUp = Math.max(
+    0,
+    NEXT_SEASON_CARD_CENTS - props.parsedAmounts.retainedCents,
+  );
+  const showTourCardAction =
+    (financial?.availableCents ?? 0) >= NEXT_SEASON_CARD_CENTS;
+  const canReserveTourCard =
+    props.nextSeasonCard ||
+    (props.parsedAmounts.valid &&
+      props.parsedAmounts.remainingCents >= retainedTopUp);
 
   return (
     <Card id="earnings" className="scroll-mt-20 overflow-hidden">
-      <div className="bg-golf-950 border-b border-golf-800/20 px-5 py-5 text-white sm:px-6">
+      <div className="border-b border-golf-800/20 bg-golf-900 px-5 py-5 text-white sm:px-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
@@ -154,7 +165,7 @@ export function SeasonWinningsCard(props: Props) {
                   </h2>
                 </div>
 
-                <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
+                <div className="flex flex-wrap gap-x-8 gap-y-5">
                   <AllocationInput
                     id="settlement-transfer"
                     icon={Send}
@@ -219,35 +230,6 @@ export function SeasonWinningsCard(props: Props) {
                   </label>
                 ) : null}
 
-                <label className="flex cursor-pointer items-start gap-3 bg-amber-50 p-4">
-                  <input
-                    type="checkbox"
-                    checked={props.nextSeasonCard}
-                    onChange={(event) =>
-                      props.onNextSeasonCardChange(event.target.checked)
-                    }
-                    disabled={
-                      !props.canSubmit ||
-                      props.submitting ||
-                      financial.availableCents < 10_000
-                    }
-                    className="mt-1 h-4 w-4 accent-golf-700"
-                  />
-                  <TicketCheck
-                    className="mt-0.5 h-5 w-5 shrink-0 text-amber-800"
-                    aria-hidden="true"
-                  />
-                  <span>
-                    <span className="block font-semibold text-amber-950">
-                      Reserve my $100 next-season tour card
-                    </span>
-                    <span className="mt-1 block text-sm text-amber-900/80">
-                      This earmarks $100 now. You will choose your tour when
-                      next-season registration opens.
-                    </span>
-                  </span>
-                </label>
-
                 <div className="border-y py-4">
                   <div className="flex items-center justify-between gap-3 text-sm">
                     <span className="text-muted-foreground">Allocated</span>
@@ -268,24 +250,53 @@ export function SeasonWinningsCard(props: Props) {
                       {formatMoney(props.parsedAmounts.remainingCents, true)}
                     </span>
                   </div>
-                  {props.parsedAmounts.remainingCents > 0 ? (
+                  {props.parsedAmounts.remainingCents > 0 ||
+                  showTourCardAction ? (
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={props.onAllocateRemainingToTransfer}
-                      >
-                        Send the rest
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={props.onAllocateRemainingToAccount}
-                      >
-                        Keep the rest
-                      </Button>
+                      {props.parsedAmounts.remainingCents > 0 ? (
+                        <>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={props.onAllocateRemainingToTransfer}
+                          >
+                            Send the rest
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={props.onAllocateRemainingToAccount}
+                          >
+                            Keep the rest
+                          </Button>
+                        </>
+                      ) : null}
+                      {showTourCardAction ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={props.nextSeasonCard ? "default" : "outline"}
+                          aria-pressed={props.nextSeasonCard}
+                          disabled={
+                            !props.canSubmit ||
+                            props.submitting ||
+                            !canReserveTourCard
+                          }
+                          onClick={() =>
+                            props.onNextSeasonCardChange(!props.nextSeasonCard)
+                          }
+                        >
+                          <TicketCheck
+                            className="mr-2 h-4 w-4"
+                            aria-hidden="true"
+                          />
+                          {props.nextSeasonCard
+                            ? "Tour card reserved"
+                            : "Buy next season tour card"}
+                        </Button>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -361,12 +372,12 @@ function AllocationInput(props: {
 }) {
   const Icon = props.icon;
   return (
-    <label htmlFor={props.id} className="block">
+    <label htmlFor={props.id} className="block w-36 max-w-full">
       <span className="flex items-center gap-2 text-sm font-semibold">
         <Icon className="h-4 w-4 text-golf-700" aria-hidden="true" />
         {props.label}
       </span>
-      <span className="relative mt-2 block w-36 max-w-full">
+      <span className="relative mt-2 block">
         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
           $
         </span>
