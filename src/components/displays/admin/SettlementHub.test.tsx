@@ -31,7 +31,7 @@ const request = {
 } satisfies AdminSettlementRequest;
 
 describe("SettlementHub", () => {
-  it("shows actionable allocations and sends the selected item to its hook", () => {
+  it("shows actionable allocations and sends the selected item to its hook", async () => {
     const onComplete = vi.fn();
     render(
       <SettlementHub
@@ -50,9 +50,9 @@ describe("SettlementHub", () => {
       />,
     );
 
+    expect(await screen.findByText("Requested e-transfers")).toBeTruthy();
     expect(screen.getAllByText("Test Member")).toHaveLength(2);
     expect(screen.getByText("payout@example.com")).toBeTruthy();
-    expect(screen.getByText("Requested e-transfers")).toBeTruthy();
     expect(screen.getAllByText("$300.00").length).toBeGreaterThanOrEqual(3);
     fireEvent.click(screen.getByRole("button", { name: "Mark paid" }));
     expect(onComplete).toHaveBeenCalledWith(requestId, "transfer");
