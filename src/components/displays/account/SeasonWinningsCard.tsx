@@ -58,6 +58,7 @@ export function SeasonWinningsCard(props: Props) {
   );
   const showTourCardAction =
     (financial?.availableCents ?? 0) >= NEXT_SEASON_CARD_CENTS;
+  const nextSeasonYear = (financial?.year ?? 0) + 1;
   const canReserveTourCard =
     props.nextSeasonCard ||
     (props.parsedAmounts.valid &&
@@ -287,14 +288,15 @@ export function SeasonWinningsCard(props: Props) {
                           onClick={() =>
                             props.onNextSeasonCardChange(!props.nextSeasonCard)
                           }
+                          title={`Reserve $100 for your ${nextSeasonYear} PGC tour card`}
                         >
                           <TicketCheck
                             className="mr-2 h-4 w-4"
                             aria-hidden="true"
                           />
                           {props.nextSeasonCard
-                            ? "Tour card reserved"
-                            : "Buy next season tour card"}
+                            ? `${nextSeasonYear} spot secured`
+                            : `Secure your ${nextSeasonYear} spot`}
                         </Button>
                       ) : null}
                     </div>

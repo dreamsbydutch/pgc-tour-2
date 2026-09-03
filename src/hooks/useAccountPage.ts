@@ -181,7 +181,7 @@ export function useAccountPage() {
     }
     if (parsedAmounts.remainingCents !== 0) {
       setSubmitError(
-        "Allocate the full available earnings amount before submitting",
+        "Allocate the full available account balance before submitting",
       );
       return;
     }

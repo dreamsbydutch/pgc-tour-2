@@ -116,7 +116,7 @@ export const submitMyRequest = mutation({
       creditedEarningsCents,
     });
     if (availableCents <= 0) {
-      throw new Error("There are no earnings available to allocate");
+      throw new Error("There are no account funds available to allocate");
     }
     const allocatedCents =
       transferCents +
@@ -125,7 +125,7 @@ export const submitMyRequest = mutation({
       nextSeasonCardCents +
       retainedCents;
     if (allocatedCents !== availableCents) {
-      throw new Error("Allocate the full available earnings amount");
+      throw new Error("Allocate the full available account balance");
     }
     const payoutEmail =
       transferCents > 0

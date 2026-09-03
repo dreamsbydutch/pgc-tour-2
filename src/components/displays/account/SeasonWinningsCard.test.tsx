@@ -66,7 +66,7 @@ describe("SeasonWinningsCard", () => {
     expect(screen.getByText("Donate to the PGC")).toBeTruthy();
     expect(screen.getByText("Leave in my account")).toBeTruthy();
     const cardButton = screen.getByRole("button", {
-      name: "Buy next season tour card",
+      name: "Secure your 2027 spot",
     });
     fireEvent.click(cardButton);
     expect(reserveCard).toHaveBeenCalledWith(true);
@@ -115,7 +115,7 @@ describe("SeasonWinningsCard", () => {
     );
 
     expect(
-      view.queryByRole("button", { name: "Buy next season tour card" }),
+      view.queryByRole("button", { name: "Secure your 2027 spot" }),
     ).toBeNull();
   });
 });

@@ -326,6 +326,44 @@ describe("earnings settlements", () => {
     });
   }, 15_000);
 
+  it("adds an existing positive account balance to the distributable total", async () => {
+    const t = createTestBackend();
+    const owner = await ensureMember(t, "positive-balance-owner");
+    const fixture = await seedCompletedSeason(t, owner.member._id, 50_000);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(owner.member._id, { account: 12_500 });
+    });
+
+    const overview = await owner.authenticated.query(
+      api.functions.account.getMyOverview,
+      {},
+    );
+    expect(overview.currentSeasonFinancial).toMatchObject({
+      earningsCents: 50_000,
+      accountOffsetCents: 0,
+      availableCents: 62_500,
+    });
+
+    const request = await owner.authenticated.mutation(
+      api.functions.settlements.submitMyRequest,
+      {
+        seasonId: fixture.seasonId,
+        transferCents: 0,
+        charityCents: 0,
+        leagueCents: 0,
+        nextSeasonCardCents: 0,
+        retainedCents: 62_500,
+      },
+    );
+    expect(request).toMatchObject({
+      availableCents: 62_500,
+      retainedCents: 62_500,
+      status: "completed",
+    });
+    const member = await t.run(async (ctx) => ctx.db.get(owner.member._id));
+    expect(member?.account).toBe(62_500);
+  });
+
   it("lets a member retain all winnings without creating admin work", async () => {
     const t = createTestBackend();
     const owner = await ensureMember(t, "retained-owner");

@@ -39,13 +39,13 @@ export function getSettlementAmounts(args: {
   );
   const projectedAccountCents =
     Math.round(args.accountCents) + earningsCents - creditedEarningsCents;
-  const availableCents = Math.min(
+  const seasonEarningsAvailableCents = Math.min(
     earningsCents,
     Math.max(0, projectedAccountCents),
   );
   return {
-    accountOffsetCents: earningsCents - availableCents,
-    availableCents,
+    accountOffsetCents: earningsCents - seasonEarningsAvailableCents,
+    availableCents: Math.max(0, projectedAccountCents),
   };
 }
 

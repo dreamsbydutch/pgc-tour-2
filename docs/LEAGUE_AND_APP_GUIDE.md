@@ -202,7 +202,8 @@ paginated, audited, and safe to rerun; completed `TournamentWinnings`
 transactions are the credit ledger.
 
 An existing negative account balance is paid first from the season earnings.
-The member allocates the remaining season amount across any combination of:
+The member then allocates their full positive account balance, including any
+funds carried into the season, across any combination of:
 
 - an e-transfer to an email address they specify;
 - the season-end charity donation;
@@ -210,7 +211,7 @@ The member allocates the remaining season amount across any combination of:
 - a fixed $100 reserve for a next-season tour card; and
 - funds left unreserved in their PGC account for future fees.
 
-The full available season amount must be accounted for. E-transfers and
+The full available account balance must be accounted for. E-transfers and
 donations debit the member account when an administrator confirms the real-world
 action. The next-season card choice earmarks $100 but does not create a tour card
 or choose a tour; the member completes that choice when registration opens.
