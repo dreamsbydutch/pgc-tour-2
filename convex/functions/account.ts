@@ -1,6 +1,7 @@
 import { query } from "../_generated/server";
 import { getCurrentMember } from "../utils/auth";
 import {
+  getCompletedSeasonWinningsCredit,
   getSettlementAmounts,
   isSettlementSeasonComplete,
 } from "../utils/settlements";
@@ -131,6 +132,13 @@ export const getMyOverview = query({
     const currentSeason = appState?.currentSeasonId
       ? seasonById.get(appState.currentSeasonId)
       : undefined;
+    const currentSeasonWinningsCredit = currentSeason
+      ? await getCompletedSeasonWinningsCredit(
+          ctx,
+          member._id,
+          currentSeason._id,
+        )
+      : 0;
     const currentSeasonFinancial = currentSeason
       ? (() => {
           const season = currentSeason;
@@ -140,6 +148,7 @@ export const getMyOverview = query({
           const amounts = getSettlementAmounts({
             earningsCents,
             accountCents: member.account,
+            creditedEarningsCents: currentSeasonWinningsCredit,
           });
           const request = requestBySeasonId.get(season._id);
           return {
@@ -166,6 +175,7 @@ export const getMyOverview = query({
                   charityCents: request.charityCents,
                   leagueCents: request.leagueCents,
                   nextSeasonCardCents: request.nextSeasonCardCents,
+                  retainedCents: request.retainedCents ?? 0,
                   payoutEmail: request.payoutEmail,
                   submittedAt: request.submittedAt,
                   completedAt: request.completedAt,

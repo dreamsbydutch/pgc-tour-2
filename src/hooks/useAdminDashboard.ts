@@ -7,6 +7,7 @@ import type {
   AdminOperationKey,
   AdminOperationRun,
   AdminTaskKey,
+  CreditSeasonWinningsPage,
   StandingsBackfillResult,
   TeamMetadataBackfillResult,
   SettlementAdminFilter,
@@ -76,6 +77,9 @@ export function useAdminDashboard() {
   const completeSettlementItem = useMutation(
     api.functions.settlements.adminCompleteItem,
   );
+  const creditCurrentSeasonWinnings = useMutation(
+    api.functions.settlements.adminCreditCurrentSeasonWinnings,
+  );
   const cancelSettlementRequest = useMutation(
     api.functions.settlements.adminCancelRequest,
   );
@@ -101,6 +105,7 @@ export function useAdminDashboard() {
   );
   const [settlementFeedback, setSettlementFeedback] =
     useState<SettlementFeedback | null>(null);
+  const [creditingWinnings, setCreditingWinnings] = useState(false);
   const [activeTask, setActiveTask] = useState<AdminTaskKey | null>(null);
   const [confirmationOperation, setConfirmationOperation] = useState<
     AdminConfirmationRequest["operation"] | null
@@ -490,11 +495,11 @@ export function useAdminDashboard() {
     requestId: Id<"settlementRequests">,
     item: SettlementItemKind,
   ) {
-    if (
-      !globalThis.confirm(
-        "Mark this allocation complete? This records the financial transaction and cannot be unchecked.",
-      )
-    ) {
+    const confirmationMessage =
+      item === "transfer"
+        ? "Mark this e-transfer as paid? This records the withdrawal, updates the member's balance, and cannot be unchecked."
+        : "Mark this allocation complete? This records the financial transaction and cannot be unchecked.";
+    if (!globalThis.confirm(confirmationMessage)) {
       return;
     }
     const key = `${requestId}:${item}`;
@@ -504,7 +509,10 @@ export function useAdminDashboard() {
       await completeSettlementItem({ requestId, item });
       setSettlementFeedback({
         tone: "success",
-        message: "Allocation marked complete.",
+        message:
+          item === "transfer"
+            ? "E-transfer marked paid."
+            : "Allocation marked complete.",
       });
     } catch (error) {
       setSettlementFeedback({
@@ -516,6 +524,57 @@ export function useAdminDashboard() {
       });
     } finally {
       setSettlementBusyKey(null);
+    }
+  }
+
+  async function creditSeasonWinnings() {
+    if (
+      !globalThis.confirm(
+        "Credit every member's official current-season winnings to their PGC account? This is safe to rerun, but it changes account balances.",
+      )
+    ) {
+      return;
+    }
+    setCreditingWinnings(true);
+    setSettlementFeedback(null);
+    try {
+      let cursor: string | null = null;
+      let pages = 0;
+      let scanned = 0;
+      let creditedMembers = 0;
+      let creditedCents = 0;
+      let unchanged = 0;
+      let noEarnings = 0;
+      let seasonLabel = "Current season";
+      do {
+        const page: CreditSeasonWinningsPage =
+          await creditCurrentSeasonWinnings({ cursor, limit: 50 });
+        pages += 1;
+        scanned += page.scanned;
+        creditedMembers += page.creditedMembers;
+        creditedCents += page.creditedCents;
+        unchanged += page.unchanged;
+        noEarnings += page.noEarnings;
+        seasonLabel = page.seasonLabel;
+        cursor = page.isDone ? null : page.continueCursor;
+        if (pages >= 100 && cursor) {
+          throw new Error("Stopped after 100 pages; rerun to continue safely.");
+        }
+      } while (cursor);
+      setSettlementFeedback({
+        tone: "success",
+        message: `${seasonLabel}: credited ${formatCents(creditedCents)} to ${creditedMembers} member${creditedMembers === 1 ? "" : "s"}. ${unchanged} already current; ${noEarnings} had no winnings (${scanned} scanned).`,
+      });
+    } catch (error) {
+      setSettlementFeedback({
+        tone: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unable to credit season winnings.",
+      });
+    } finally {
+      setCreditingWinnings(false);
     }
   }
 
@@ -580,12 +639,21 @@ export function useAdminDashboard() {
     pendingTransferTotal,
     settlementBusyKey,
     settlementFeedback,
+    creditingWinnings,
+    creditSeasonWinnings,
     completeSettlement,
     cancelSettlement,
     requestConfirmation: setConfirmationOperation,
     dismissConfirmation: () => setConfirmationOperation(null),
     confirmOperation,
   };
+}
+
+function formatCents(cents: number) {
+  return new Intl.NumberFormat("en-CA", {
+    style: "currency",
+    currency: "CAD",
+  }).format(cents / 100);
 }
 
 function formatResult(result: unknown) {

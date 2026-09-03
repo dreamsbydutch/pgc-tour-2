@@ -30,15 +30,46 @@ export async function getOfficialMemberSeasonEarnings(
 export function getSettlementAmounts(args: {
   earningsCents: number;
   accountCents: number;
+  creditedEarningsCents?: number;
 }) {
-  const accountOffsetCents = Math.min(
-    args.earningsCents,
-    Math.max(0, -Math.round(args.accountCents)),
+  const earningsCents = Math.max(0, Math.round(args.earningsCents));
+  const creditedEarningsCents = Math.min(
+    earningsCents,
+    Math.max(0, Math.round(args.creditedEarningsCents ?? 0)),
+  );
+  const projectedAccountCents =
+    Math.round(args.accountCents) + earningsCents - creditedEarningsCents;
+  const availableCents = Math.min(
+    earningsCents,
+    Math.max(0, projectedAccountCents),
   );
   return {
-    accountOffsetCents,
-    availableCents: Math.max(0, args.earningsCents - accountOffsetCents),
+    accountOffsetCents: earningsCents - availableCents,
+    availableCents,
   };
+}
+
+export async function getCompletedSeasonWinningsCredit(
+  ctx: QueryCtx | MutationCtx,
+  memberId: Id<"members">,
+  seasonId: Id<"seasons">,
+): Promise<number> {
+  const winnings = await ctx.db
+    .query("transactions")
+    .withIndex("by_member_season_type", (query) =>
+      query
+        .eq("memberId", memberId)
+        .eq("seasonId", seasonId)
+        .eq("transactionType", "TournamentWinnings"),
+    )
+    .take(100);
+
+  return winnings
+    .filter(
+      (transaction) =>
+        transaction.status === undefined || transaction.status === "completed",
+    )
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
 }
 
 export function isSettlementSeasonComplete(args: {

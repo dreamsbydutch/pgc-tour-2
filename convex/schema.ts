@@ -527,6 +527,7 @@ const schema = defineSchema({
     charityCents: v.number(),
     leagueCents: v.number(),
     nextSeasonCardCents: v.number(),
+    retainedCents: v.optional(v.number()),
     payoutEmail: v.optional(v.string()),
     status: v.union(
       v.literal("pending"),

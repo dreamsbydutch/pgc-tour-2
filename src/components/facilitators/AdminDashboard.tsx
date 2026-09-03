@@ -357,6 +357,8 @@ export function AdminDashboard() {
           pendingTransferTotal={model.pendingTransferTotal}
           busyKey={model.settlementBusyKey}
           feedback={model.settlementFeedback}
+          creditingWinnings={model.creditingWinnings}
+          onCreditWinnings={model.creditSeasonWinnings}
           onComplete={model.completeSettlement}
           onCancel={model.cancelSettlement}
         />

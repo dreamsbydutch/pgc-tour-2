@@ -5,6 +5,7 @@ import {
   Clock3,
   Loader2,
   Mail,
+  WalletCards,
   XCircle,
 } from "lucide-react";
 
@@ -35,6 +36,20 @@ const filters: Array<{ value: SettlementAdminFilter; label: string }> = [
 ];
 
 export function SettlementHub(props: AdminSettlementHubProps) {
+  const transferRequests = (props.requests ?? [])
+    .filter(
+      (request) => request.transferCents > 0 && request.status !== "cancelled",
+    )
+    .sort((a, b) => {
+      const aPaid = a.transferCompletedAt === undefined ? 0 : 1;
+      const bPaid = b.transferCompletedAt === undefined ? 0 : 1;
+      return aPaid - bPaid || a.submittedAt - b.submittedAt;
+    });
+  const requestedTransferTotal = transferRequests.reduce(
+    (total, request) => total + request.transferCents,
+    0,
+  );
+
   return (
     <section
       id={props.embedded ? undefined : "payout-requests"}
@@ -43,17 +58,20 @@ export function SettlementHub(props: AdminSettlementHubProps) {
       aria-labelledby={props.embedded ? undefined : "payout-requests-title"}
     >
       {props.embedded ? (
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl border bg-muted/20 px-4 py-3">
-            <p className="text-xs text-muted-foreground">Open requests</p>
-            <p className="mt-1 text-xl font-bold">{props.pendingCount}</p>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border bg-muted/20 px-4 py-3">
+              <p className="text-xs text-muted-foreground">Open requests</p>
+              <p className="mt-1 text-xl font-bold">{props.pendingCount}</p>
+            </div>
+            <div className="rounded-xl border bg-muted/20 px-4 py-3">
+              <p className="text-xs text-muted-foreground">E-transfers due</p>
+              <p className="mt-1 text-xl font-bold">
+                {formatMoney(props.pendingTransferTotal, true)}
+              </p>
+            </div>
           </div>
-          <div className="rounded-xl border bg-muted/20 px-4 py-3">
-            <p className="text-xs text-muted-foreground">E-transfers due</p>
-            <p className="mt-1 text-xl font-bold">
-              {formatMoney(props.pendingTransferTotal, true)}
-            </p>
-          </div>
+          <CreditWinningsButton {...props} />
         </div>
       ) : (
         <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-5 sm:p-6">
@@ -74,34 +92,26 @@ export function SettlementHub(props: AdminSettlementHubProps) {
                 complete.
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-xl border bg-white px-4 py-3">
-                <p className="text-xs text-muted-foreground">Open requests</p>
-                <p className="mt-1 text-xl font-bold">{props.pendingCount}</p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border bg-white px-4 py-3">
+                  <p className="text-xs text-muted-foreground">Open requests</p>
+                  <p className="mt-1 text-xl font-bold">{props.pendingCount}</p>
+                </div>
+                <div className="rounded-xl border bg-white px-4 py-3">
+                  <p className="text-xs text-muted-foreground">
+                    E-transfers due
+                  </p>
+                  <p className="mt-1 text-xl font-bold">
+                    {formatMoney(props.pendingTransferTotal, true)}
+                  </p>
+                </div>
               </div>
-              <div className="rounded-xl border bg-white px-4 py-3">
-                <p className="text-xs text-muted-foreground">E-transfers due</p>
-                <p className="mt-1 text-xl font-bold">
-                  {formatMoney(props.pendingTransferTotal, true)}
-                </p>
-              </div>
+              <CreditWinningsButton {...props} />
             </div>
           </div>
         </div>
       )}
-
-      <div className="flex flex-wrap gap-2" aria-label="Filter payout requests">
-        {filters.map((filter) => (
-          <Button
-            key={filter.value}
-            size="sm"
-            variant={props.filter === filter.value ? "default" : "outline"}
-            onClick={() => props.onFilterChange(filter.value)}
-          >
-            {filter.label}
-          </Button>
-        ))}
-      </div>
 
       {props.feedback ? (
         <div
@@ -117,6 +127,34 @@ export function SettlementHub(props: AdminSettlementHubProps) {
           {props.feedback.message}
         </div>
       ) : null}
+
+      <TransferQueue
+        loading={props.requests === undefined}
+        requests={transferRequests}
+        requestedTotal={requestedTransferTotal}
+        outstandingTotal={props.pendingTransferTotal}
+        busyKey={props.busyKey}
+        onComplete={props.onComplete}
+      />
+
+      <div className="space-y-2 pt-2">
+        <h3 className="text-lg font-bold">All allocation requests</h3>
+        <div
+          className="flex flex-wrap gap-2"
+          aria-label="Filter payout requests"
+        >
+          {filters.map((filter) => (
+            <Button
+              key={filter.value}
+              size="sm"
+              variant={props.filter === filter.value ? "default" : "outline"}
+              onClick={() => props.onFilterChange(filter.value)}
+            >
+              {filter.label}
+            </Button>
+          ))}
+        </div>
+      </div>
 
       {props.requests === undefined ? (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -184,20 +222,15 @@ export function SettlementHub(props: AdminSettlementHubProps) {
                 </div>
               </CardHeader>
               <CardContent className="space-y-3 p-5">
-                <SettlementChecklistItem
-                  requestId={request._id}
-                  item="transfer"
-                  label="Send e-transfer"
-                  amountCents={request.transferCents}
-                  detail={request.payoutEmail}
-                  completedAt={request.transferCompletedAt}
-                  disabled={
-                    request.status === "cancelled" ||
-                    request.status === "completed"
-                  }
-                  busy={props.busyKey === `${request._id}:transfer`}
-                  onComplete={props.onComplete}
-                />
+                {request.transferCents > 0 ? (
+                  <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3 text-sm">
+                    <span className="font-semibold">E-transfer</span>
+                    <span className="text-right text-muted-foreground">
+                      {formatMoney(request.transferCents, true)} ·{" "}
+                      {request.transferCompletedAt ? "Paid" : "Use queue above"}
+                    </span>
+                  </div>
+                ) : null}
                 <SettlementChecklistItem
                   requestId={request._id}
                   item="charity"
@@ -237,6 +270,17 @@ export function SettlementHub(props: AdminSettlementHubProps) {
                   busy={props.busyKey === `${request._id}:nextSeasonCard`}
                   onComplete={props.onComplete}
                 />
+                {(request.retainedCents ?? 0) > 0 ? (
+                  <div className="rounded-lg border border-golf-200 bg-golf-50/60 p-3">
+                    <p className="text-sm font-semibold">
+                      Left in member account
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {formatMoney(request.retainedCents ?? 0, true)} · no admin
+                      action needed
+                    </p>
+                  </div>
+                ) : null}
 
                 {request.status === "pending" ? (
                   <div className="border-t pt-3 text-right">
@@ -263,6 +307,130 @@ export function SettlementHub(props: AdminSettlementHubProps) {
         </div>
       )}
     </section>
+  );
+}
+
+function TransferQueue(props: {
+  loading: boolean;
+  requests: AdminSettlementHubProps["visibleRequests"];
+  requestedTotal: number;
+  outstandingTotal: number;
+  busyKey: string | null;
+  onComplete: AdminSettlementHubProps["onComplete"];
+}) {
+  return (
+    <Card className="overflow-hidden border-amber-200 shadow-none">
+      <CardHeader className="border-b border-amber-200 bg-amber-50 p-5">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-800">
+              Payment queue
+            </p>
+            <CardTitle className="mt-1 text-xl">
+              Requested e-transfers
+            </CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Send each transfer to the requested email, then mark it paid.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:min-w-64">
+            <div className="rounded-lg border border-amber-200 bg-white px-3 py-2">
+              <p className="text-xs text-muted-foreground">Outstanding</p>
+              <p className="mt-0.5 font-bold text-amber-900">
+                {formatMoney(props.outstandingTotal, true)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-white px-3 py-2">
+              <p className="text-xs text-muted-foreground">Total requested</p>
+              <p className="mt-0.5 font-bold">
+                {formatMoney(props.requestedTotal, true)}
+              </p>
+            </div>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {props.loading ? (
+          <div className="space-y-2 p-4">
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </div>
+        ) : props.requests.length === 0 ? (
+          <div className="flex items-center gap-3 p-5 text-sm text-muted-foreground">
+            <CheckCircle2
+              className="h-5 w-5 text-golf-600"
+              aria-hidden="true"
+            />
+            No e-transfers have been requested.
+          </div>
+        ) : (
+          <div className="divide-y">
+            {props.requests.map((request) => {
+              const paid = request.transferCompletedAt !== undefined;
+              const busy = props.busyKey === `${request._id}:transfer`;
+              return (
+                <div
+                  key={request._id}
+                  className={cn(
+                    "grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center",
+                    paid && "bg-muted/30",
+                  )}
+                >
+                  <div className="min-w-0">
+                    <p className="font-semibold">{request.memberName}</p>
+                    <p className="mt-1 flex items-center gap-1.5 break-all text-sm text-muted-foreground">
+                      <Mail className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      <span className="select-all">
+                        {request.payoutEmail ?? "Email unavailable"}
+                      </span>
+                    </p>
+                  </div>
+                  <p className="text-xl font-bold tabular-nums sm:text-right">
+                    {formatMoney(request.transferCents, true)}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant={paid ? "ghost" : "default"}
+                    disabled={paid || busy}
+                    onClick={() => props.onComplete(request._id, "transfer")}
+                  >
+                    {busy ? (
+                      <Loader2
+                        className="mr-2 h-4 w-4 animate-spin"
+                        aria-hidden="true"
+                      />
+                    ) : paid ? (
+                      <Check className="mr-2 h-4 w-4" aria-hidden="true" />
+                    ) : null}
+                    {busy ? "Saving…" : paid ? "Paid" : "Mark paid"}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CreditWinningsButton(props: AdminSettlementHubProps) {
+  return (
+    <Button
+      className="w-full"
+      variant="outline"
+      onClick={props.onCreditWinnings}
+      disabled={props.creditingWinnings}
+    >
+      {props.creditingWinnings ? (
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+      ) : (
+        <WalletCards className="mr-2 h-4 w-4" aria-hidden="true" />
+      )}
+      {props.creditingWinnings
+        ? "Crediting winnings…"
+        : "Credit season winnings"}
+    </Button>
   );
 }
 

@@ -18,12 +18,14 @@ export function getAllocationTotal(args: {
   charityCents: number;
   leagueCents: number;
   nextSeasonCard: boolean;
+  retainedCents: number;
 }) {
   return (
     args.transferCents +
     args.charityCents +
     args.leagueCents +
-    (args.nextSeasonCard ? NEXT_SEASON_CARD_CENTS : 0)
+    (args.nextSeasonCard ? NEXT_SEASON_CARD_CENTS : 0) +
+    args.retainedCents
   );
 }
 

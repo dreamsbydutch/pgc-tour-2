@@ -22,7 +22,8 @@ describe("account allocation helpers", () => {
         charityCents: 5_000,
         leagueCents: 1_000,
         nextSeasonCard: true,
+        retainedCents: 1_000,
       }),
-    ).toBe(26_000 + NEXT_SEASON_CARD_CENTS);
+    ).toBe(27_000 + NEXT_SEASON_CARD_CENTS);
   });
 });

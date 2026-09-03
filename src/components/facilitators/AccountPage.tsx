@@ -1,7 +1,7 @@
 import { Show } from "@clerk/tanstack-react-start";
 import { lazy, Suspense } from "react";
 
-import { loadNotificationCenter } from "@/displays";
+import { loadNotificationCenter, SeasonWinningsCard } from "@/displays";
 import {
   Button,
   Card,
@@ -47,7 +47,7 @@ export function AccountPage() {
           <div>
             <h1 className="text-3xl font-bold">Account</h1>
             <p className="text-sm text-muted-foreground">
-              Update your profile and review your history.
+              Review your balance, winnings, and profile.
             </p>
           </div>
 
@@ -82,6 +82,35 @@ export function AccountPage() {
         </Show>
 
         <Show when="signed-in">
+          {vm.isLoading ? (
+            <Skeleton className="h-80 w-full rounded-lg" />
+          ) : vm.overview ? (
+            <SeasonWinningsCard
+              balanceCents={vm.memberAccountCents ?? 0}
+              financial={vm.currentSeasonFinancial}
+              transferAmount={vm.transferAmount}
+              onTransferAmountChange={vm.setTransferAmount}
+              charityAmount={vm.charityAmount}
+              onCharityAmountChange={vm.setCharityAmount}
+              leagueAmount={vm.leagueAmount}
+              onLeagueAmountChange={vm.setLeagueAmount}
+              retainedAmount={vm.retainedAmount}
+              onRetainedAmountChange={vm.setRetainedAmount}
+              nextSeasonCard={vm.nextSeasonCard}
+              onNextSeasonCardChange={vm.setNextSeasonCard}
+              payoutEmail={vm.payoutEmail}
+              onPayoutEmailChange={vm.setPayoutEmail}
+              parsedAmounts={vm.parsedAmounts}
+              canSubmit={vm.canSubmitSettlement}
+              submitting={vm.submitting}
+              submitError={vm.submitError}
+              submitSuccess={vm.submitSuccess}
+              onAllocateRemainingToTransfer={vm.allocateRemainingToTransfer}
+              onAllocateRemainingToAccount={vm.allocateRemainingToAccount}
+              onSubmit={vm.onSubmitSettlement}
+            />
+          ) : null}
+
           <Card>
             <CardHeader>
               <CardTitle>Profile</CardTitle>
