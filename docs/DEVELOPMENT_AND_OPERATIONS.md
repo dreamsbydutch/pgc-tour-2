@@ -56,6 +56,7 @@ Convex environment variables:
 - `BREVO_TEST_TO` for safe test sends
 - `BREVO_GROUPS_FINALIZED_TEMPLATE_ID`
 - `BREVO_WEEKLY_RECAP_TEMPLATE_ID` (optional; falls back to the groups template)
+- `BREVO_SEASON_RECAP_TEMPLATE_ID`
 - `BREVO_MISSING_TEAM_REMINDER_TEMPLATE_ID`
 - `BREVO_SEASON_START_TEMPLATE_ID`
 - `APP_BASE_URL` for links in email; legacy fallbacks are

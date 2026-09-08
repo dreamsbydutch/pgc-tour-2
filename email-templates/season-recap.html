@@ -10,8 +10,139 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="x-ua-compatible" content="ie=edge" />
     <title>PGC Season Recap</title>
+    <style>
+      @media only screen and (max-width: 480px) {
+        .outer-padding {
+          padding: 8px 6px !important;
+        }
+
+        .recap-card {
+          border-radius: 10px !important;
+        }
+
+        .championship-header {
+          padding: 9px 12px !important;
+        }
+
+        .header-logo-cell {
+          width: 44px !important;
+        }
+
+        .header-logo {
+          width: 38px !important;
+          height: 29px !important;
+        }
+
+        .header-title {
+          font-size: 15px !important;
+        }
+
+        .official-badge {
+          display: none !important;
+        }
+
+        .champion-hero {
+          padding: 16px 12px !important;
+        }
+
+        .champion-eyebrow {
+          font-size: 9px !important;
+          letter-spacing: 0.11em !important;
+        }
+
+        .champion-title {
+          margin-top: 3px !important;
+          font-size: 18px !important;
+        }
+
+        .champion-name {
+          margin-top: 6px !important;
+          font-size: 25px !important;
+          line-height: 1.08 !important;
+        }
+
+        .champion-meta {
+          margin-top: 9px !important;
+        }
+
+        .champion-tour,
+        .silver-tour {
+          display: none !important;
+        }
+
+        .gold-trophy-cell {
+          width: 78px !important;
+        }
+
+        .gold-trophy {
+          width: 72px !important;
+          height: 86px !important;
+        }
+
+        .silver-row {
+          padding: 10px 12px !important;
+        }
+
+        .silver-trophy-cell {
+          width: 48px !important;
+          padding-right: 8px !important;
+        }
+
+        .silver-trophy {
+          width: 40px !important;
+          height: 46px !important;
+        }
+
+        .silver-name {
+          font-size: 16px !important;
+        }
+
+        .silver-score-cell {
+          padding-left: 6px !important;
+        }
+
+        .recap-copy {
+          padding: 16px 12px 14px !important;
+        }
+
+        .recap-copy-text {
+          font-size: 15px !important;
+          line-height: 1.5 !important;
+        }
+
+        .account-cta-cell {
+          padding: 0 12px 16px !important;
+        }
+
+        .account-cta {
+          padding: 12px !important;
+          border-radius: 10px !important;
+        }
+
+        .account-cta-title {
+          font-size: 16px !important;
+        }
+
+        .account-cta-copy {
+          font-size: 12px !important;
+          line-height: 1.3 !important;
+        }
+
+        .email-footer {
+          padding-top: 8px !important;
+        }
+      }
+    </style>
   </head>
-  <body style="margin: 0; padding: 0; background: #f1f5f9">
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      background: #f1f5f9;
+      -webkit-text-size-adjust: 100%;
+      -ms-text-size-adjust: 100%;
+    "
+  >
     <div
       style="
         display: none;
@@ -34,13 +165,14 @@
       style="background: #f1f5f9"
     >
       <tr>
-        <td align="center" style="padding: 24px 12px">
+        <td class="outer-padding" align="center" style="padding: 24px 12px">
           <table
             role="presentation"
             width="100%"
             cellspacing="0"
             cellpadding="0"
             border="0"
+            class="recap-card"
             style="
               width: 100%;
               max-width: 600px;
@@ -74,6 +206,7 @@
 
             <tr>
               <td
+                class="championship-header"
                 style="
                   padding: 14px 20px;
                   background: #f8fafc;
@@ -97,8 +230,14 @@
                   border="0"
                 >
                   <tr>
-                    <td width="60" valign="middle" style="padding: 0">
+                    <td
+                      class="header-logo-cell"
+                      width="60"
+                      valign="middle"
+                      style="padding: 0"
+                    >
                       <img
+                        class="header-logo"
                         src="https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPJiXqZRs47Fgtd9BSMeHQ2WnVuLfP8IaTAp6E"
                         width="48"
                         height="36"
@@ -113,6 +252,7 @@
                     </td>
                     <td valign="middle" style="padding: 0">
                       <div
+                        class="header-title"
                         style="
                           color: #020617;
                           font-size: 17px;
@@ -136,7 +276,12 @@
                         {{ params.seasonYear }} season
                       </div>
                     </td>
-                    <td align="right" valign="middle" style="padding: 0">
+                    <td
+                      class="official-badge"
+                      align="right"
+                      valign="middle"
+                      style="padding: 0"
+                    >
                       <span
                         style="
                           display: inline-block;
@@ -161,6 +306,7 @@
 
             <tr>
               <td
+                class="champion-hero"
                 style="
                   padding: 28px 24px;
                   background: #fffbeb;
@@ -191,6 +337,7 @@
                   <tr>
                     <td valign="middle" style="padding: 0 14px 0 0">
                       <div
+                        class="champion-eyebrow"
                         style="
                           color: #b45309;
                           font-size: 10px;
@@ -203,6 +350,7 @@
                         Overall season champion
                       </div>
                       <div
+                        class="champion-title"
                         style="
                           margin-top: 5px;
                           color: #020617;
@@ -214,6 +362,7 @@
                         PGC Champion
                       </div>
                       <div
+                        class="champion-name"
                         style="
                           margin-top: 9px;
                           color: #020617;
@@ -226,7 +375,7 @@
                       >
                         {{ params.championName }}
                       </div>
-                      <div style="margin-top: 13px">
+                      <div class="champion-meta" style="margin-top: 13px">
                         <span
                           style="
                             display: inline-block;
@@ -241,6 +390,7 @@
                           >Final {{ params.championScore }}</span
                         >
                         <span
+                          class="champion-tour"
                           style="
                             display: inline-block;
                             margin-left: 8px;
@@ -254,12 +404,14 @@
                       </div>
                     </td>
                     <td
+                      class="gold-trophy-cell"
                       width="116"
                       align="right"
                       valign="middle"
                       style="padding: 0"
                     >
                       <img
+                        class="gold-trophy"
                         src="https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPNsO8w6FZhY1BamONzvl3bLgdn0IXVM8fEoTC"
                         width="108"
                         height="128"
@@ -279,6 +431,7 @@
 
             <tr>
               <td
+                class="silver-row"
                 style="
                   padding: 16px 24px;
                   background: #f8fafc;
@@ -303,8 +456,14 @@
                   border="0"
                 >
                   <tr>
-                    <td width="64" valign="middle" style="padding: 0 12px 0 0">
+                    <td
+                      class="silver-trophy-cell"
+                      width="64"
+                      valign="middle"
+                      style="padding: 0 12px 0 0"
+                    >
                       <img
+                        class="silver-trophy"
                         src="https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPNDs7T9FZhY1BamONzvl3bLgdn0IXVM8fEoTC"
                         width="52"
                         height="60"
@@ -331,6 +490,7 @@
                         Silver Champion
                       </div>
                       <div
+                        class="silver-name"
                         style="
                           margin-top: 4px;
                           color: #0f172a;
@@ -343,6 +503,7 @@
                         {{ params.silverChampionName }}
                       </div>
                       <div
+                        class="silver-tour"
                         style="
                           margin-top: 4px;
                           color: #64748b;
@@ -355,6 +516,7 @@
                       </div>
                     </td>
                     <td
+                      class="silver-score-cell"
                       align="right"
                       valign="middle"
                       style="padding: 0 0 0 10px"
@@ -381,6 +543,7 @@
 
             <tr>
               <td
+                class="recap-copy"
                 style="
                   padding: 24px 24px 20px 24px;
                   background: #ffffff;
@@ -396,6 +559,7 @@
                 "
               >
                 <div
+                  class="recap-copy-text"
                   style="
                     color: #0f172a;
                     font-size: 17px;
@@ -411,6 +575,7 @@
 
             <tr>
               <td
+                class="account-cta-cell"
                 align="center"
                 style="
                   padding: 0 24px 28px 24px;
@@ -427,12 +592,14 @@
                 "
               >
                 <a
-                  href="https://www.pgctour.ca/account#earnings"
+                  class="account-cta"
+                  href="{{ params.accountUrl }}"
                   target="_blank"
                   style="
                     display: block;
                     width: 100%;
                     max-width: 520px;
+                    box-sizing: border-box;
                     padding: 16px;
                     background: #475569;
                     border-radius: 14px;
@@ -441,6 +608,7 @@
                   "
                 >
                   <div
+                    class="account-cta-title"
                     style="
                       color: #ffffff;
                       font-size: 18px;
@@ -451,6 +619,7 @@
                     Choose what to do with your winnings
                   </div>
                   <div
+                    class="account-cta-copy"
                     style="
                       margin-top: 4px;
                       color: #e2e8f0;
@@ -477,6 +646,7 @@
           >
             <tr>
               <td
+                class="email-footer"
                 align="center"
                 style="
                   padding: 14px 8px 0 8px;

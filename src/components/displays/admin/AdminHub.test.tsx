@@ -23,6 +23,8 @@ const operationStatus = {
   updateWorldRank: readyStatus,
   weeklyRecapTest: readyStatus,
   weeklyRecapSendAll: readyStatus,
+  seasonRecapTest: readyStatus,
+  seasonRecapSendAll: readyStatus,
   missingTeamReminderSend: readyStatus,
   createPayment: readyStatus,
   recomputeStandings: readyStatus,
@@ -57,6 +59,7 @@ describe("AdminHub", () => {
           eventSetup: readyStatus,
           liveSync: readyStatus,
           weeklyRecap: readyStatus,
+          seasonRecap: readyStatus,
           standings: readyStatus,
         }}
         pendingSettlementCount={0}
@@ -73,6 +76,9 @@ describe("AdminHub", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Remind picks" }));
     expect(onOpenTask).toHaveBeenCalledWith("pickReminder");
+
+    fireEvent.click(screen.getByRole("button", { name: "Season recap" }));
+    expect(onOpenTask).toHaveBeenCalledWith("seasonRecap");
   });
 
   it("keeps recovery tools collapsed by default", () => {
@@ -98,6 +104,7 @@ describe("AdminHub", () => {
           eventSetup: readyStatus,
           liveSync: readyStatus,
           weeklyRecap: readyStatus,
+          seasonRecap: readyStatus,
           standings: readyStatus,
         }}
         pendingSettlementCount={0}

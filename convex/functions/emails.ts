@@ -11,9 +11,13 @@ import {
 import type { QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
-import type { GroupsEmailContext } from "../types/emails";
+import type {
+  GroupsEmailContext,
+  SeasonRecapEmailContext,
+} from "../types/emails";
 import {
   formatMemberName,
+  formatScoreToPar,
   findPreviousCompletedTournament,
   getChampionsStringForTournamentId,
   getLeaderboardRowsForTournament,
@@ -343,6 +347,161 @@ export const getActiveMemberEmailRecipients = internalQuery({
       ok: true,
       recipients,
       recipientCount: recipients.length,
+    } as const;
+  },
+});
+
+async function loadSeasonRecapEmailContext(ctx: QueryCtx) {
+  const appState = await ctx.db
+    .query("appState")
+    .withIndex("by_key", (q) => q.eq("key", "primary"))
+    .unique();
+  const season = appState?.currentSeasonId
+    ? await ctx.db.get(appState.currentSeasonId)
+    : await ctx.db.query("seasons").order("desc").first();
+
+  if (!season) {
+    return { ok: true, skipped: true, reason: "no_season" } as const;
+  }
+
+  const [tournaments, tours, tourCards] = await Promise.all([
+    ctx.db
+      .query("tournaments")
+      .withIndex("by_season", (q) => q.eq("seasonId", season._id))
+      .take(100),
+    ctx.db
+      .query("tours")
+      .withIndex("by_season", (q) => q.eq("seasonId", season._id))
+      .take(20),
+    ctx.db
+      .query("tourCards")
+      .withIndex("by_season", (q) => q.eq("seasonId", season._id))
+      .take(500),
+  ]);
+  const tierIds = [...new Set(tournaments.map((item) => item.tierId))];
+  const tiers = await Promise.all(tierIds.map((tierId) => ctx.db.get(tierId)));
+  const tierById = new Map(
+    tiers.filter(Boolean).map((tier) => [tier!._id, tier!] as const),
+  );
+  const finalPlayoffTournament =
+    tournaments
+      .filter((tournament) =>
+        includesPlayoffLabel(tierById.get(tournament.tierId)?.name),
+      )
+      .sort((a, b) => b.startDate - a.startDate)[0] ?? null;
+
+  if (finalPlayoffTournament?.status !== "completed") {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "season_not_complete",
+      seasonId: season._id,
+      seasonYear: season.year,
+    } as const;
+  }
+
+  const firstPlaceTeams = await ctx.db
+    .query("teams")
+    .withIndex("by_tournament_position", (q) =>
+      q.eq("tournamentId", finalPlayoffTournament._id).eq("position", "1"),
+    )
+    .take(10);
+  const firstPlaceCards = await Promise.all(
+    firstPlaceTeams.map((team) => ctx.db.get(team.tourCardId)),
+  );
+  const tourById = new Map(tours.map((tour) => [tour._id, tour] as const));
+  const winners = firstPlaceTeams.map((team, index) => ({
+    team,
+    card: firstPlaceCards[index],
+    playoff: team.playoff ?? firstPlaceCards[index]?.playoff,
+  }));
+  const projectWinner = (playoff: 1 | 2) => {
+    const bracketWinners = winners.filter(
+      (winner) => winner.playoff === playoff,
+    );
+    if (bracketWinners.length !== 1) return null;
+    const winner = bracketWinners[0]!;
+    const displayName = winner.team.displayName ?? winner.card?.displayName;
+    if (!displayName) return null;
+    const tourId = winner.team.tourId ?? winner.card?.tourId;
+    return {
+      displayName,
+      scoreText: formatScoreToPar(winner.team.score),
+      tourShortForm: tourId ? (tourById.get(tourId)?.shortForm ?? "") : "",
+    };
+  };
+  const champion = projectWinner(1);
+  const silverChampion = projectWinner(2);
+
+  if (!champion || !silverChampion) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "champions_unavailable",
+      seasonId: season._id,
+      seasonYear: season.year,
+    } as const;
+  }
+
+  const memberIds = [...new Set(tourCards.map((card) => card.memberId))];
+  const members = await Promise.all(
+    memberIds.map((memberId) => ctx.db.get(memberId)),
+  );
+  const recipientsByEmail = new Map<
+    string,
+    { memberId: Id<"members">; email: string; name?: string }
+  >();
+  for (const member of members) {
+    if (!member || member.isActive === false) continue;
+    const email = member.email.trim();
+    if (!email) continue;
+    const key = email.toLowerCase();
+    if (!recipientsByEmail.has(key)) {
+      recipientsByEmail.set(key, {
+        memberId: member._id,
+        email,
+        name: formatMemberName(member),
+      });
+    }
+  }
+  const recipients = [...recipientsByEmail.values()].sort((a, b) =>
+    a.email.localeCompare(b.email),
+  );
+
+  return {
+    ok: true,
+    skipped: false,
+    seasonId: season._id,
+    seasonYear: season.year,
+    finalTournamentId: finalPlayoffTournament._id,
+    champion,
+    silverChampion,
+    recipients,
+    activeTourCardCount: tourCards.length,
+    memberCount: recipients.length,
+  } as const;
+}
+
+export const getSeasonRecapEmailContext = internalQuery({
+  args: {},
+  handler: async (ctx) => await loadSeasonRecapEmailContext(ctx),
+});
+
+export const adminGetSeasonRecapPreview = query({
+  args: emailsValidators.args.adminGetSeasonRecapPreview,
+  handler: async (ctx) => {
+    await requireAdminForQuery(ctx);
+    const context = await loadSeasonRecapEmailContext(ctx);
+    if (context.skipped) return context;
+    return {
+      ok: true,
+      skipped: false,
+      seasonId: context.seasonId,
+      seasonYear: context.seasonYear,
+      championName: context.champion.displayName,
+      silverChampionName: context.silverChampion.displayName,
+      recipientCount: context.memberCount,
+      activeTourCardCount: context.activeTourCardCount,
     } as const;
   },
 });
@@ -810,6 +969,141 @@ export const sendWeeklyRecapEmailTest: ReturnType<typeof action> = action({
       errorReasons: summary.errorReasons ?? [],
       wouldEmailMemberCount: tournamentContext.memberCount,
       wouldEmailActiveTourCardCount: tournamentContext.activeTourCardCount,
+    } as const;
+  },
+});
+
+/** Builds the shared Brevo parameters for season recap test and bulk sends. */
+function buildSeasonRecapTemplateParams(args: {
+  context: SeasonRecapEmailContext;
+  customBlurb?: string;
+  baseUrl: string;
+}) {
+  return {
+    seasonYear: args.context.seasonYear,
+    championName: args.context.champion.displayName,
+    championScore: args.context.champion.scoreText,
+    championTour: args.context.champion.tourShortForm,
+    silverChampionName: args.context.silverChampion.displayName,
+    silverChampionScore: args.context.silverChampion.scoreText,
+    silverChampionTour: args.context.silverChampion.tourShortForm,
+    customBlurb: (args.customBlurb ?? "").trim(),
+    accountUrl: new URL("/account#earnings", args.baseUrl).toString(),
+  };
+}
+
+/**
+ * Sends one season recap test to `BREVO_TEST_TO` after official Gold and
+ * Silver winners are available. This never emails the league list.
+ */
+export const sendSeasonRecapEmailTest: ReturnType<typeof action> = action({
+  args: emailsValidators.args.sendSeasonRecapEmailTest,
+  handler: async (ctx, args) => {
+    await requireAdminForAction(ctx);
+    const context = await ctx.runQuery(
+      internal.functions.emails.getSeasonRecapEmailContext,
+      {},
+    );
+    if (context.skipped) return context;
+
+    const apiKey = getBrevoApiKey();
+    const templateId = parseNumericEnv("BREVO_SEASON_RECAP_TEMPLATE_ID");
+    const testTo = getBrevoTestTo();
+    const baseUrl = getAppBaseUrl({ allowLocalhostFallback: true });
+    const testRecipient =
+      context.recipients.find(
+        (recipient) => recipient.email.toLowerCase() === testTo.toLowerCase(),
+      ) ?? null;
+    const dispatchLease = await acquireEmailDispatchGuard({
+      ctx,
+      key: `season-recap:test:${context.seasonId}`,
+      cooldownMs: EMAIL_TEST_COOLDOWN_MS,
+    });
+    const summary = await sendBrevoTemplateEmailBatch({
+      apiKey,
+      templateId,
+      includeMessageIds: true,
+      includeErrorReasons: true,
+      recipients: [
+        {
+          email: testTo,
+          name: testRecipient?.name,
+          params: buildSeasonRecapTemplateParams({
+            context,
+            customBlurb: args.customBlurb,
+            baseUrl,
+          }),
+        },
+      ],
+    });
+    await completeEmailDispatchGuard(ctx, dispatchLease);
+
+    return {
+      ok: true,
+      skipped: false,
+      mode: "test",
+      testTo,
+      seasonId: context.seasonId,
+      seasonYear: context.seasonYear,
+      attempted: summary.attempted,
+      sent: summary.sent,
+      failed: summary.failed,
+      messageIds: summary.messageIds ?? [],
+      errorReasons: summary.errorReasons ?? [],
+      wouldEmailMemberCount: context.memberCount,
+      wouldEmailActiveTourCardCount: context.activeTourCardCount,
+    } as const;
+  },
+});
+
+/** Emails the completed season recap to deduplicated active season members. */
+export const adminSendSeasonRecapEmailToActiveMembers: ReturnType<
+  typeof action
+> = action({
+  args: emailsValidators.args.adminSendSeasonRecapEmailToActiveMembers,
+  handler: async (ctx, args) => {
+    await requireAdminForAction(ctx);
+    const context = await ctx.runQuery(
+      internal.functions.emails.getSeasonRecapEmailContext,
+      {},
+    );
+    if (context.skipped) return context;
+
+    const apiKey = getBrevoApiKey();
+    const templateId = parseNumericEnv("BREVO_SEASON_RECAP_TEMPLATE_ID");
+    const baseUrl = getAppBaseUrl({ allowLocalhostFallback: false });
+    const params = buildSeasonRecapTemplateParams({
+      context,
+      customBlurb: args.customBlurb,
+      baseUrl,
+    });
+    const dispatchLease = await acquireEmailDispatchGuard({
+      ctx,
+      key: `season-recap:bulk:${context.seasonId}`,
+      cooldownMs: EMAIL_BULK_COOLDOWN_MS,
+    });
+    const summary = await sendBrevoTemplateEmailBatch({
+      apiKey,
+      templateId,
+      recipients: context.recipients.map((recipient) => ({
+        email: recipient.email,
+        name: recipient.name,
+        params,
+      })),
+    });
+    await completeEmailDispatchGuard(ctx, dispatchLease);
+
+    return {
+      ok: true,
+      skipped: false,
+      mode: "real",
+      seasonId: context.seasonId,
+      seasonYear: context.seasonYear,
+      attempted: summary.attempted,
+      sent: summary.sent,
+      failed: summary.failed,
+      recipientCount: context.memberCount,
+      activeTourCardCount: context.activeTourCardCount,
     } as const;
   },
 });

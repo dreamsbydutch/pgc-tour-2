@@ -7,6 +7,7 @@ import type {
   AdminOperationStatus,
   AdminPaymentPreviewArgs,
   AdminRepairPreviewArgs,
+  AdminSeasonRecapPreviewArgs,
 } from "@/types";
 
 export function buildImportTeamsPreview(
@@ -217,6 +218,64 @@ export function buildBulkEmailPreview(
     warnings,
     canRun: Boolean(
       args.tournamentName &&
+        args.recipientCount !== undefined &&
+        args.recipientCount > 0,
+    ),
+  };
+}
+
+export function buildSeasonRecapEmailPreview(
+  args: AdminSeasonRecapPreviewArgs,
+): AdminDryRunPreview {
+  const warnings: string[] = [];
+  if (args.seasonYear === undefined) {
+    warnings.push("No completed season is available for a recap.");
+  }
+  if (!args.championName || !args.silverChampionName) {
+    warnings.push("Official Gold and Silver winners are not available yet.");
+  }
+  if (args.recipientCount === undefined) {
+    warnings.push("Recipient information is still loading.");
+  } else if (args.recipientCount === 0) {
+    warnings.push("No eligible recipients were found.");
+  }
+
+  return {
+    title: "Preview: season recap recipients",
+    description:
+      "Recipients are deduplicated active members with a tour card in the completed season.",
+    lines: [
+      {
+        label: "Season",
+        value:
+          args.seasonYear === undefined
+            ? "Not available"
+            : String(args.seasonYear),
+      },
+      { label: "PGC Champion", value: args.championName ?? "Not available" },
+      {
+        label: "Silver Champion",
+        value: args.silverChampionName ?? "Not available",
+      },
+      {
+        label: "Recipients",
+        value:
+          args.recipientCount === undefined
+            ? "Loading"
+            : String(args.recipientCount),
+      },
+      {
+        label: "Recap message",
+        value: args.customBlurb.trim()
+          ? `${args.customBlurb.trim().length} characters`
+          : "No recap message",
+      },
+    ],
+    warnings,
+    canRun: Boolean(
+      args.seasonYear !== undefined &&
+        args.championName &&
+        args.silverChampionName &&
         args.recipientCount !== undefined &&
         args.recipientCount > 0,
     ),

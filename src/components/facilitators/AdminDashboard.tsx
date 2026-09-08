@@ -227,6 +227,65 @@ export function AdminDashboard() {
       </AdminTaskPanel>
 
       <AdminTaskPanel
+        open={model.activeTask === "seasonRecap"}
+        title="Email the season recap"
+        description="Write the season wrap-up, send yourself a test, then review the official champions and recipient count before emailing everyone."
+        tone="communication"
+        onClose={model.closeTask}
+        footer={
+          <>
+            <Button
+              className="min-h-11 flex-1 sm:flex-none"
+              variant="outline"
+              onClick={model.jobs.seasonRecapTest}
+              disabled={
+                !model.previews.seasonRecapSendAll.canRun ||
+                model.operationStatus.seasonRecapTest.isBusy ||
+                model.operationStatus.seasonRecapSendAll.isBusy
+              }
+            >
+              <BusyIcon busy={model.operationStatus.seasonRecapTest.isBusy} />
+              {model.operationStatus.seasonRecapTest.isBusy
+                ? "Sending testâ€¦"
+                : "1. Send test to me"}
+            </Button>
+            <Button
+              className="min-h-11 flex-1 bg-violet-700 text-white hover:bg-violet-800 sm:flex-none"
+              onClick={() => model.requestConfirmation("seasonRecapSendAll")}
+              disabled={
+                !model.previews.seasonRecapSendAll.canRun ||
+                model.operationStatus.seasonRecapTest.isBusy ||
+                model.operationStatus.seasonRecapSendAll.isBusy
+              }
+            >
+              2. Review &amp; send
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <label className="block space-y-2 text-sm font-medium">
+            <span>Season recap message</span>
+            <textarea
+              className={`${inputClassName} min-h-36 resize-y`}
+              value={model.seasonRecapBody}
+              onChange={(event) => model.setSeasonRecapBody(event.target.value)}
+              placeholder="Write the season recap message"
+            />
+          </label>
+          <AdminDryRunPreview preview={model.previews.seasonRecapSendAll} />
+          <AdminOperationFeedback
+            label="Test email"
+            status={model.operationStatus.seasonRecapTest}
+          />
+          <AdminOperationFeedback
+            label="Bulk email"
+            status={model.operationStatus.seasonRecapSendAll}
+          />
+        </div>
+      </AdminTaskPanel>
+
+      <AdminTaskPanel
         open={model.activeTask === "pickReminder"}
         title="Remind missing picks"
         description="Email active members who are eligible for the upcoming tournament and have not submitted their roster. Playoff qualification is calculated from current points."
