@@ -1,0 +1,4 @@
+interface:
+  display_name: "PGC Data Repairs"
+  short_description: "Design and run bounded PGC data repairs"
+  default_prompt: "Use $pgc-data-repairs to design and verify this bounded PGC data repair."

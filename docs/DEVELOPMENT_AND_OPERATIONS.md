@@ -1,32 +1,28 @@
-# PGC Development and Operations
+# Development and Operations
 
-This guide covers the repeatable work required to develop, verify, deploy, and
-operate PGC. League behavior belongs in
-[LEAGUE_AND_APP_GUIDE.md](LEAGUE_AND_APP_GUIDE.md).
+This hub routes repeatable setup, verification, deployment, administration, recovery, and safety work. `package.json`, root configuration, scripts, and `.github/workflows/` remain the executable sources of truth.
 
-## Local development
+## Workflows
 
-Prerequisites:
+- [Local development](operations/LOCAL_DEVELOPMENT.md) — prerequisites, environment ownership, dev processes, code generation, and common setup failures.
+- [Command reference](reference/COMMANDS.md) — every package script, focused command, prerequisite, output, and mutation risk.
+- [Quality and testing](operations/QUALITY_AND_TESTING.md) — test placement, proportional checks, CI differences, Convex I/O guard, and bundle budgets.
+- [Deployment](operations/DEPLOYMENT.md) — separate Convex/Vercel artifacts, compatibility order, environment checks, smoke tests, and repository-known unknowns.
+- [Admin and automation](operations/ADMIN_AND_AUTOMATION.md) — scheduled jobs, exact boundaries, `syncRuns`, admin workflows, observability, and recovery choices.
+- [Data repairs](operations/DATA_REPAIRS.md) — bounded migrations, dry runs, dependency order, cursor handling, audits, and production authorization.
+- [Security, performance, and incidents](operations/SECURITY_PERFORMANCE_AND_INCIDENTS.md) — identity/privacy, secrets, CSP, hot reads, common incidents, and escalation evidence.
 
-- Node.js 22.12 or newer within Node 22 (`.nvmrc` pins 22.23.1)
-- npm
-- Access to the appropriate Convex and Clerk projects
-- DataGolf, ESPN, Brevo, and PostHog access only when working on those features
+## Non-negotiable safety boundary
 
-Install and configure:
+Use a development Convex deployment for tests and experiments. Do not deploy, invoke production repair/migration functions, import production data, send real email/push, rotate credentials, or change live provider configuration without explicit authorization. Diagnose and prepare safely first; authorization for implementation does not imply authorization for a live operation.
 
-```bash
-npm install
-npx convex dev --configure
-```
+Preserve the user's working tree and processes. Track and stop only processes you start, do not hand-edit generated files, and never copy ignored environment values into source or documentation.
 
-Run the frontend and Convex development process in separate terminals:
+## Local versus CI
 
-```bash
-npm run dev
-npm run convex:dev
-```
+`npm run check` is the complete **local** application quality gate. GitHub Actions adds environment-dependent Convex generated-drift verification and separate dependency audit, dependency review, Gitleaks, and CodeQL jobs. Passing the local command does not claim those remote security checks passed.
 
+See [known gaps](KNOWN_GAPS.md#architecture-and-operations) for unresolved runtime, deployment, configuration, and CSP facts.
 The frontend is available at `http://localhost:3000`. Convex development also
 regenerates `convex/_generated/` when server exports or the schema change.
 

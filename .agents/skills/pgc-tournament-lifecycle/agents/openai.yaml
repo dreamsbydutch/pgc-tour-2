@@ -1,0 +1,4 @@
+interface:
+  display_name: "PGC Tournament Lifecycle"
+  short_description: "Trace PGC tournament schedules and live sync"
+  default_prompt: "Use $pgc-tournament-lifecycle to diagnose this tournament state or automation issue."

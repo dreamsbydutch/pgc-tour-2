@@ -1,0 +1,4 @@
+interface:
+  display_name: "Maintain a PGC Pull Request"
+  short_description: "Maintain and babysit an existing PGC pull request"
+  default_prompt: "Use $maintain-pgc-pr to inspect this existing PGC pull request, assess its latest checks and review feedback, and report actionable status."

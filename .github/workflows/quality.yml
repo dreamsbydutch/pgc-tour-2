@@ -42,6 +42,8 @@ jobs:
           convex/_generated/server.js
       - name: 1. Formatting check
         run: npm run format:check
+      - name: 1b. Agent documentation check
+        run: npm run docs:check
       - name: 2. Strict lint
         run: npm run lint:strict
       - name: 3. Type check

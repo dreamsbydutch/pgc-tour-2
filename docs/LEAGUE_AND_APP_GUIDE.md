@@ -1,72 +1,48 @@
-# PGC League and App Guide
+# League and App Guide
 
-This is the shared product contract for the PGC Tour. Read it before changing
-tournament fields, rosters, scoring, positions, awards, standings, payouts, or
-playoffs.
+This is the domain router for any change that can affect registration, fields, rosters, scores, positions, points, payouts, standings, playoffs, member balances, or league communication.
 
-The in-app rulebook records league intent. The Convex backend and tests record
-behavior currently enforced by the app. If they disagree, preserve the intent,
-identify the implementation gap, and confirm the rule before making a broad
-change. An intentional rules change updates the rulebook, backend, tests, and
-this guide in the same change.
+## Source contract
 
-## League structure
+- `src/utils/rules.ts` is the organizer-confirmed rulebook displayed to members.
+- Convex functions, utilities, schema, and tests define what the app enforces today.
+- Tournament tiers in the database define points and payout distributions; do not hardcode them when tier data exists.
+- [Known gaps](KNOWN_GAPS.md#league-intent-versus-enforcement) records confirmed disagreements.
 
-The PGC Tour is a season-long fantasy golf league based on selected PGA Tour
-events.
+An intentional rule change updates the rulebook, enforcement, focused tests, and the canonical domain page in one change. Do not infer a new rule from a convenient UI or provider field.
 
-- A season contains tours, tournament tiers, tournaments, and tour cards.
-- A member competes through a tour card on a specific tour.
-- A regular tournament gives every eligible tour card a new 10-golfer team.
-- Teams compete only against teams in the same tour and playoff division.
-- Tournament finishes award PGC Cup Points and league earnings.
-- Regular-season points determine standings and playoff qualification.
-- The intended regular schedule is 16 events: 4 Majors, 6 Elevated events, and
-  6 Standard events. The database and in-app rulebook hold the actual schedule.
-- Tier records hold award distributions. Points and payouts must never be
-  hardcoded when tier data is available.
-
-These records are not interchangeable:
-
-| Record            | Meaning                                                 |
-| ----------------- | ------------------------------------------------------- |
-| Member            | The authenticated person and financial account          |
-| Tour card         | That member's season/tour entry and cumulative standing |
-| Team              | The tour card's picks and result for one tournament     |
-| Golfer            | Stable golfer identity                                  |
-| Tournament golfer | That golfer's group and performance in one event        |
-
-## End-to-end league workflow
+## End-to-end league flow
 
 ```text
-Schedule and tier configuration
-  -> DataGolf field + rankings
-  -> five tournament groups
-  -> member roster submissions
-  -> DataGolf live results + ESPN hole scores
-  -> team round scores
-  -> tour-specific positions
-  -> tier points and payouts
-  -> season standings
-  -> playoff qualification and carryover
+season + tours + tiers + courses + schedule
+  -> member registration and tour cards
+  -> DataGolf directory, field, rankings, and five groups
+  -> 10-golfer roster submission or playoff inheritance
+  -> DataGolf tournament totals + ESPN hole display
+  -> PGC round averages, positions, points, and payouts
+  -> standings contributions and materialized ranks
+  -> Gold/Silver qualification, starting strokes, and carryover
+  -> official earnings and season settlement
 ```
 
-Each stage feeds the next. A correction to an upstream stage must invalidate or
-recompute every affected downstream result.
+Each stage feeds the next. A correction is complete only after every affected downstream stage is refreshed or deliberately shown as pending.
 
-## 1. Build the tournament field
+## Domain guides
 
-The grouping workflow combines the DataGolf field-updates and rankings feeds.
-Before writing groups, it confirms that the external event name is compatible
-with the scheduled PGC tournament.
+1. [League structure](domain/LEAGUE_STRUCTURE.md)
+2. [Members and access](domain/MEMBERS_AND_ACCESS.md)
+3. [Registration and rosters](domain/REGISTRATION_AND_ROSTERS.md)
+4. [Tournament lifecycle](domain/TOURNAMENT_LIFECYCLE.md)
+5. [Scoring](domain/SCORING.md)
+6. [Standings and playoffs](domain/STANDINGS_AND_PLAYOFFS.md)
+7. [Finance and settlements](domain/FINANCE_AND_SETTLEMENTS.md)
+8. [Messaging and notifications](domain/MESSAGING_AND_NOTIFICATIONS.md)
 
-The app then:
+The [code map](reference/CODE_MAP.md) connects each guide to routes, hooks, Convex operations, tables, tests, and the matching project skill.
 
-1. Joins field entries to rankings by DataGolf golfer ID.
-2. Removes explicitly excluded golfer IDs.
-3. Sorts highest to lowest by `dg_skill_estimate`; missing estimates sort last.
-4. Divides the ranked field into five tournament-specific groups.
+## Cross-domain completion check
 
+For league-affecting work, identify the canonical input, comparison scope (tour or playoff bracket), lifecycle phase, score/money units, authorization boundary, materialized consumers, correction path, and focused edge cases before editing. Verify every applicable tie, terminal state, exact time boundary, regular/playoff distinction, and partial-provider state.
 | Group |    Target share | Maximum |
 | ----- | --------------: | ------: |
 | 1     |             10% |      10 |

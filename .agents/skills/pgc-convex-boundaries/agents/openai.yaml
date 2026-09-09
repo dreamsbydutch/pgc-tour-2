@@ -1,0 +1,4 @@
+interface:
+  display_name: "PGC Convex Boundaries"
+  short_description: "Protect PGC Convex data and access boundaries"
+  default_prompt: "Use $pgc-convex-boundaries to design and verify this PGC backend boundary."
