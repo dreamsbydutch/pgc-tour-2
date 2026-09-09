@@ -579,6 +579,11 @@ function WalletPanel(
 ) {
   const financial = props.overview.currentSeasonFinancial;
   const request = financial?.request;
+  const activeRequest = request?.status === "cancelled" ? null : request;
+  const availableBalanceCents =
+    activeRequest?.availableCents ??
+    financial?.availableCents ??
+    props.overview.member.accountCents;
 
   return (
     <section
@@ -613,41 +618,35 @@ function WalletPanel(
               Available balance
             </p>
             <p className="mt-2 text-3xl font-bold">
-              {formatMoney(props.overview.member.accountCents, true)}
+              {formatMoney(availableBalanceCents, true)}
             </p>
           </div>
-          {request ? (
-            <StatusPill status={request.status} minimal={props.minimal} />
+          {activeRequest ? (
+            <StatusPill status={activeRequest.status} minimal={props.minimal} />
           ) : null}
         </div>
         {financial ? (
           <div
             className={cn(
-              "mt-5 grid grid-cols-2 gap-4 border-t pt-4 text-sm",
+              "mt-5 border-t pt-4 text-sm",
               props.minimal ? "border-slate-200" : "border-white/15",
             )}
           >
-            <div>
-              <p className={props.minimal ? "text-slate-500" : "text-golf-100"}>
-                Season winnings
-              </p>
-              <p className="mt-1 font-bold">
-                {formatMoney(financial.earningsCents, true)}
-              </p>
-            </div>
-            <div>
-              <p className={props.minimal ? "text-slate-500" : "text-golf-100"}>
-                To allocate
-              </p>
-              <p
-                className={cn(
-                  "mt-1 font-bold",
-                  props.minimal ? "text-slate-950" : "text-lime-300",
-                )}
+            <p className={props.minimal ? "text-slate-500" : "text-golf-100"}>
+              Includes{" "}
+              <strong
+                className={props.minimal ? "text-slate-950" : "text-white"}
               >
-                {formatMoney(financial.availableCents, true)}
+                {formatMoney(financial.earningsCents, true)}
+              </strong>{" "}
+              in {financial.seasonLabel} winnings.
+            </p>
+            {financial.accountOffsetCents > 0 ? (
+              <p className="mt-1 text-xs opacity-80">
+                {formatMoney(financial.accountOffsetCents, true)} offset an
+                existing negative account balance.
               </p>
-            </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -742,11 +741,24 @@ function MoneyControls(
       </EmptyCopy>
     );
 
+  const remainingCents = props.vm.parsedAmounts.remainingCents;
+  const reserveTopUpCents = Math.max(
+    0,
+    NEXT_SEASON_CARD_CENTS - props.vm.parsedAmounts.retainedCents,
+  );
+  const canReserveCard =
+    props.vm.nextSeasonCard ||
+    (props.vm.parsedAmounts.valid && reserveTopUpCents <= remainingCents);
+  const quickActionClass =
+    "flex min-h-12 w-full items-center justify-between gap-3 border border-slate-300 bg-white px-3 py-2 text-left text-sm font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
+
   return (
     <div>
-      <p className="font-bold">Choose where your balance goes</p>
+      <p className={cn("font-bold", props.minimal && "text-lg")}>
+        Choose how to receive your money
+      </p>
       <p className="mt-1 text-sm text-muted-foreground">
-        Allocate the full amount before sending your request.
+        Assign the full balance, then submit your payout instructions.
       </p>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <MoneyInput
@@ -783,7 +795,68 @@ function MoneyControls(
           />
         </label>
       ) : null}
-      {financial.availableCents >= NEXT_SEASON_CARD_CENTS ? (
+      {props.minimal ? (
+        <div className="mt-5">
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            Quick ways to finish
+          </p>
+          <div className="mt-2 grid gap-2">
+            <button
+              type="button"
+              className={quickActionClass}
+              onClick={props.vm.allocateRemainingToTransfer}
+              disabled={remainingCents <= 0}
+            >
+              <span className="flex items-center gap-2">
+                <Send className="h-4 w-4" aria-hidden="true" />
+                Send remaining by e-transfer
+              </span>
+              <span className="tabular-nums">
+                {formatMoney(remainingCents, true)}
+              </span>
+            </button>
+            <button
+              type="button"
+              className={quickActionClass}
+              onClick={props.vm.allocateRemainingToAccount}
+              disabled={remainingCents <= 0}
+            >
+              <span className="flex items-center gap-2">
+                <PiggyBank className="h-4 w-4" aria-hidden="true" />
+                Keep remaining in account
+              </span>
+              <span className="tabular-nums">
+                {formatMoney(remainingCents, true)}
+              </span>
+            </button>
+            {financial.availableCents >= NEXT_SEASON_CARD_CENTS ? (
+              <button
+                type="button"
+                aria-pressed={props.vm.nextSeasonCard}
+                onClick={() =>
+                  props.vm.setNextSeasonCard(!props.vm.nextSeasonCard)
+                }
+                disabled={!canReserveCard}
+                className={cn(
+                  quickActionClass,
+                  props.vm.nextSeasonCard &&
+                    "border-slate-950 bg-slate-950 text-white hover:bg-slate-800",
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <CreditCard className="h-4 w-4" aria-hidden="true" />
+                  Reserve next season&apos;s card
+                </span>
+                <span>
+                  {props.vm.nextSeasonCard
+                    ? "Reserved"
+                    : formatMoney(NEXT_SEASON_CARD_CENTS, true)}
+                </span>
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : financial.availableCents >= NEXT_SEASON_CARD_CENTS ? (
         <button
           type="button"
           aria-pressed={props.vm.nextSeasonCard}
@@ -809,46 +882,49 @@ function MoneyControls(
         </button>
       ) : null}
       <div className="mt-4 flex items-center justify-between border-y py-3 text-sm">
-        <span>Still to allocate</span>
+        <span>Left to assign</span>
         <span
           className={cn(
             "font-bold",
-            props.vm.parsedAmounts.remainingCents === 0
-              ? "text-golf-700"
-              : "text-amber-700",
+            remainingCents === 0 ? "text-golf-700" : "text-amber-700",
           )}
         >
-          {formatMoney(props.vm.parsedAmounts.remainingCents, true)}
+          {formatMoney(remainingCents, true)}
         </span>
       </div>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={props.vm.allocateRemainingToTransfer}
-        >
-          Send the rest
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={props.vm.allocateRemainingToAccount}
-        >
-          Keep the rest
-        </Button>
-      </div>
+      {!props.minimal ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={props.vm.allocateRemainingToTransfer}
+          >
+            Send the rest
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={props.vm.allocateRemainingToAccount}
+          >
+            Keep the rest
+          </Button>
+        </div>
+      ) : null}
       <Button
         type="button"
-        className="mt-4 w-full"
+        size={props.minimal ? "lg" : "default"}
+        className={cn("mt-4 w-full", props.minimal && "text-base")}
         disabled={
           !props.vm.parsedAmounts.valid ||
           props.vm.parsedAmounts.remainingCents !== 0
         }
-        onClick={() => props.onPrototypeAction("Winnings request previewed.")}
+        onClick={() =>
+          props.onPrototypeAction("Payout instructions previewed.")
+        }
       >
-        Preview winnings request
+        Submit payout instructions
       </Button>
     </div>
   );

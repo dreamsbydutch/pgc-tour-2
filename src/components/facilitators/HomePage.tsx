@@ -1,5 +1,11 @@
 import { Link as RouterLink } from "@tanstack/react-router";
-import { Shield, Star, WifiOff } from "lucide-react";
+import {
+  ArrowRight,
+  CircleDollarSign,
+  Shield,
+  Star,
+  WifiOff,
+} from "lucide-react";
 
 import {
   LeagueSchedule,
@@ -8,6 +14,7 @@ import {
 } from "@/displays";
 import { useHomePage } from "@/hooks";
 import { Button, Skeleton } from "@/ui";
+import type { AccountSettlementSummaryDto } from "@/types";
 import { formatMoney } from "@/utils/app";
 import { TourCardForm } from "@/widgets";
 
@@ -67,6 +74,11 @@ export function HomePage() {
                 seasonYear={model.currentSeason.year}
               />
             ) : null}
+            <PostseasonPayoutFocus
+              settlement={model.settlement}
+              account={model.account}
+              signedIn={Boolean(model.member)}
+            />
             {model.member ? (
               <TourCardForm
                 currentSeason={model.currentSeason}
@@ -85,12 +97,74 @@ export function HomePage() {
                 standings and leaderboard.
               </div>
             )}
-            <AccountAlert account={model.account} />
             <LeagueSchedule tournaments={model.seasonTournaments} />
           </>
         )}
       </div>
     </div>
+  );
+}
+
+function PostseasonPayoutFocus(props: {
+  settlement: AccountSettlementSummaryDto | undefined;
+  account: number | null;
+  signedIn: boolean;
+}) {
+  if (props.signedIn && props.settlement === undefined) return null;
+  if (!props.settlement?.isComplete || props.settlement.allocationCents <= 0) {
+    return <AccountAlert account={props.account} />;
+  }
+
+  const status = props.settlement.request?.status;
+  const needsInstructions = !status;
+  const title = needsInstructions
+    ? "Your postseason balance is ready"
+    : status === "completed"
+      ? "Your payout instructions are complete"
+      : status === "in_progress"
+        ? "Your payout is being processed"
+        : "Your payout instructions were received";
+
+  return (
+    <section className="border-y-2 border-slate-950 py-6 text-left">
+      <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+        <div>
+          <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-slate-600">
+            <CircleDollarSign className="h-4 w-4" aria-hidden="true" />
+            Postseason payout
+          </p>
+          <h2 className="mt-2 text-2xl font-bold">{title}</h2>
+          <p className="mt-2 max-w-xl text-sm text-slate-600">
+            {needsInstructions
+              ? `${props.settlement.seasonLabel} winnings are included. Choose how much to receive, donate, reserve, or keep.`
+              : `Review how your ${props.settlement.seasonLabel} balance was allocated.`}
+          </p>
+          {needsInstructions ? (
+            <p className="mt-3 text-xs font-semibold text-slate-500">
+              E-transfer · Charity · PGC donation · Next-season card · Keep in
+              account
+            </p>
+          ) : null}
+        </div>
+
+        <div className="sm:min-w-56 sm:text-right">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            {needsInstructions ? "Available balance" : "Season balance"}
+          </p>
+          <p className="mt-1 text-3xl font-bold tabular-nums">
+            {formatMoney(props.settlement.allocationCents, true)}
+          </p>
+          <Button asChild size="lg" className="mt-4 w-full sm:w-auto">
+            <RouterLink to="/account" search={{ variant: "a" }}>
+              {needsInstructions
+                ? "Choose how to receive it"
+                : "Review payout details"}
+              <ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" />
+            </RouterLink>
+          </Button>
+        </div>
+      </div>
+    </section>
   );
 }
 

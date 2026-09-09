@@ -13,6 +13,68 @@ function parseRank(position: string | undefined) {
   return match ? Number.parseInt(match[0], 10) : Number.POSITIVE_INFINITY;
 }
 
+export const getMySettlementSummary = query({
+  args: {},
+  handler: async (ctx) => {
+    const member = await getCurrentMember(ctx);
+    const appState = await ctx.db
+      .query("appState")
+      .withIndex("by_key", (query) => query.eq("key", "primary"))
+      .unique();
+    if (!appState?.currentSeasonId) return null;
+
+    const season = await ctx.db.get(appState.currentSeasonId);
+    if (!season) return null;
+
+    const [cards, requests, creditedEarningsCents] = await Promise.all([
+      ctx.db
+        .query("tourCards")
+        .withIndex("by_member_season", (query) =>
+          query.eq("memberId", member._id).eq("seasonId", season._id),
+        )
+        .take(100),
+      ctx.db
+        .query("settlementRequests")
+        .withIndex("by_member_season", (query) =>
+          query.eq("memberId", member._id).eq("seasonId", season._id),
+        )
+        .order("desc")
+        .take(20),
+      getCompletedSeasonWinningsCredit(ctx, member._id, season._id),
+    ]);
+    const earningsCents = cards.reduce(
+      (total, card) => total + Math.max(0, Math.round(card.earnings)),
+      0,
+    );
+    const amounts = getSettlementAmounts({
+      earningsCents,
+      accountCents: member.account,
+      creditedEarningsCents,
+    });
+    const request = requests.find((item) => item.status !== "cancelled");
+
+    return {
+      seasonId: season._id,
+      seasonLabel: `${season.year} Season ${season.number}`,
+      earningsCents,
+      accountOffsetCents: amounts.accountOffsetCents,
+      availableCents: amounts.availableCents,
+      allocationCents: request?.availableCents ?? amounts.availableCents,
+      isComplete: isSettlementSeasonComplete({
+        season,
+        appState,
+        now: Date.now(),
+      }),
+      request: request
+        ? {
+            status: request.status,
+            availableCents: request.availableCents,
+          }
+        : null,
+    };
+  },
+});
+
 export const getMyOverview = query({
   args: {},
   handler: async (ctx) => {

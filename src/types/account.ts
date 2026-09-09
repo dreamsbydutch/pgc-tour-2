@@ -5,6 +5,9 @@ import type { Id } from "@/convex";
 export type AccountOverviewDto = FunctionReturnType<
   typeof api.functions.account.getMyOverview
 >;
+export type AccountSettlementSummaryDto = FunctionReturnType<
+  typeof api.functions.account.getMySettlementSummary
+>;
 export type AccountAchievement = AccountOverviewDto["achievements"][number];
 export type AccountTourCard = AccountOverviewDto["tourCards"][number];
 export type AccountTournamentHistory =
