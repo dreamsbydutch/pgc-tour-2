@@ -2,6 +2,7 @@ import {
   ArrowRight,
   Check,
   ChevronRight,
+  CircleDollarSign,
   CircleUserRound,
   CreditCard,
   Flag,
@@ -125,6 +126,12 @@ export function AccountPagePrototype(props: PrototypeProps) {
 function VariantA(props: ReadyProps) {
   const memberName = getMemberName(props.overview);
   const newestCard = props.overview.tourCards[0];
+  const financial = props.overview.currentSeasonFinancial;
+  const needsPayoutAction = Boolean(
+    financial?.isComplete &&
+      financial.availableCents > 0 &&
+      (!financial.request || financial.request.status === "cancelled"),
+  );
 
   return (
     <main className="container mx-auto max-w-6xl px-4 py-6 sm:py-10">
@@ -164,6 +171,30 @@ function VariantA(props: ReadyProps) {
         </dl>
       </header>
 
+      {needsPayoutAction && financial ? (
+        <a
+          href="#payout-instructions"
+          className="group flex items-center justify-between gap-5 border-b-2 border-slate-950 bg-slate-950 px-4 py-4 text-white sm:px-5"
+        >
+          <div>
+            <p className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-slate-300">
+              Payout action required
+            </p>
+            <p className="mt-1 text-sm sm:text-base">
+              <strong>{formatMoney(financial.availableCents, true)}</strong> is
+              ready. Choose how you want to receive it.
+            </p>
+          </div>
+          <span className="flex shrink-0 items-center gap-2 text-xs font-bold uppercase tracking-wide sm:text-sm">
+            <span className="hidden sm:inline">Go to payments</span>
+            <ArrowRight
+              className="h-5 w-5 rotate-90 transition-transform group-hover:translate-y-1 lg:rotate-0 lg:group-hover:translate-x-1 lg:group-hover:translate-y-0"
+              aria-hidden="true"
+            />
+          </span>
+        </a>
+      ) : null}
+
       <div className="grid lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 lg:pr-10">
           <section className="border-b border-slate-200 py-8 sm:py-10">
@@ -201,7 +232,19 @@ function VariantA(props: ReadyProps) {
           </section>
         </div>
 
-        <aside className="order-first border-b border-slate-200 py-8 lg:order-last lg:border-b-0 lg:border-l lg:py-10 lg:pl-8">
+        <aside
+          id="payout-instructions"
+          className={cn(
+            "order-first scroll-mt-4 border-b border-slate-200 py-8 lg:order-last lg:border-b-0 lg:border-l lg:py-10 lg:pl-8",
+            needsPayoutAction && "lg:border-l-2 lg:border-slate-950",
+          )}
+        >
+          {needsPayoutAction ? (
+            <p className="mb-5 inline-flex items-center gap-2 bg-slate-950 px-2.5 py-1.5 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-white">
+              <CircleDollarSign className="h-3.5 w-3.5" aria-hidden="true" />
+              Payout action required
+            </p>
+          ) : null}
           <WalletPanel {...props} minimal />
           <ProfilePanel {...props} minimal />
           <LedgerPanel
