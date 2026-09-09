@@ -1,32 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { shouldShowAccountPrototype } from "./accountPrototype";
+import { getAccountPrototypeVariant } from "./accountPrototype";
 
-describe("shouldShowAccountPrototype", () => {
-  it("shows account variants in local development", () => {
-    expect(
-      shouldShowAccountPrototype({
-        isDevelopment: true,
-        vercelEnvironment: undefined,
-      }),
-    ).toBe(true);
-  });
+describe("getAccountPrototypeVariant", () => {
+  it.each(["a", "b", "c"] as const)(
+    "selects account prototype %s from the URL",
+    (variant) => {
+      expect(getAccountPrototypeVariant(variant)).toBe(variant);
+    },
+  );
 
-  it("shows account variants in a Vercel preview build", () => {
-    expect(
-      shouldShowAccountPrototype({
-        isDevelopment: false,
-        vercelEnvironment: "preview",
-      }),
-    ).toBe(true);
-  });
-
-  it("keeps account variants out of the Vercel production build", () => {
-    expect(
-      shouldShowAccountPrototype({
-        isDevelopment: false,
-        vercelEnvironment: "production",
-      }),
-    ).toBe(false);
+  it("keeps the current account page when no prototype is requested", () => {
+    expect(getAccountPrototypeVariant(undefined)).toBeNull();
   });
 });

@@ -1,7 +1,6 @@
 import { ArrowLeft, ArrowRight, FlaskConical } from "lucide-react";
 import { useEffect } from "react";
 
-import { ACCOUNT_PROTOTYPE_ENABLED } from "@/utils/accountPrototype";
 import { cn } from "@/utils/classNames";
 
 type PrototypeOption<T extends string> = {
@@ -49,7 +48,6 @@ export function PrototypeSwitcher<T extends string>(
     return () => window.removeEventListener("keydown", onKeyDown);
   });
 
-  if (!ACCOUNT_PROTOTYPE_ENABLED) return null;
   const active = props.options[currentIndex];
 
   return (

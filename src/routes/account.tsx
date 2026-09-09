@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { HardGateSignedIn } from "@/widgets";
 import { AccountPage, AccountPagePrototype } from "@/facilitators";
 import type { AccountPrototypeVariant, AccountSearch } from "@/types";
-import { ACCOUNT_PROTOTYPE_ENABLED } from "@/utils/accountPrototype";
+import { getAccountPrototypeVariant } from "@/utils/accountPrototype";
 
 export const Route = createFileRoute("/account")({
   component: AccountRoute,
@@ -25,14 +25,15 @@ export const Route = createFileRoute("/account")({
 });
 
 function AccountRoute() {
-  const { variant = "a" } = Route.useSearch();
+  const { variant } = Route.useSearch();
+  const prototypeVariant = getAccountPrototypeVariant(variant);
   const navigate = Route.useNavigate();
 
   return (
     <HardGateSignedIn>
-      {ACCOUNT_PROTOTYPE_ENABLED ? (
+      {prototypeVariant ? (
         <AccountPagePrototype
-          variant={variant}
+          variant={prototypeVariant}
           onVariantChange={(nextVariant: AccountPrototypeVariant) =>
             navigate({ search: { variant: nextVariant }, replace: true })
           }
