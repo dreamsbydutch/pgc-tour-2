@@ -17,11 +17,6 @@ export type AccountSeasonFinancial = NonNullable<
   AccountOverviewDto["currentSeasonFinancial"]
 >;
 
-export type AccountPrototypeVariant = "a" | "b" | "c";
-export type AccountSearch = {
-  variant?: AccountPrototypeVariant;
-};
-
 export type AdminSettlementRequestsDto = FunctionReturnType<
   typeof api.functions.settlements.adminListRequests
 >;

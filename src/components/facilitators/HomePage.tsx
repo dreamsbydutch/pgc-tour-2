@@ -155,7 +155,7 @@ function PostseasonPayoutFocus(props: {
             {formatMoney(props.settlement.allocationCents, true)}
           </p>
           <Button asChild size="lg" className="mt-4 w-full sm:w-auto">
-            <RouterLink to="/account" search={{ variant: "a" }}>
+            <RouterLink to="/account">
               {needsInstructions
                 ? "Choose how to receive it"
                 : "Review payout details"}
@@ -200,7 +200,6 @@ function AccountAlert({ account }: { account: number | null }) {
     return (
       <RouterLink
         to="/account"
-        search={{}}
         className="block rounded-lg border bg-amber-50 p-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <div className="font-medium text-amber-900">

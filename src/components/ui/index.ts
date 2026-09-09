@@ -8,4 +8,3 @@ export * from "./primitives/table";
 export * from "./composites/dialog";
 export * from "./composites/dropdown";
 export * from "./composites/member-name-with-badges";
-export * from "./composites/PrototypeSwitcher";
