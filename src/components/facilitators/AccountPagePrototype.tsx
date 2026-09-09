@@ -1,6 +1,5 @@
 import {
   ArrowRight,
-  CalendarDays,
   Check,
   ChevronRight,
   CircleUserRound,
@@ -41,7 +40,7 @@ const NotificationCenter = lazy(async () => {
 });
 
 const prototypeOptions = [
-  { key: "a", label: "Clubhouse dashboard" },
+  { key: "a", label: "Minimal account" },
   { key: "b", label: "Focused account hub" },
   { key: "c", label: "Career scorecard" },
 ] as const;
@@ -77,12 +76,22 @@ export function AccountPagePrototype(props: PrototypeProps) {
 
   return (
     <>
-      <div className="bg-slate-50/70 pb-24">
+      <div
+        className={cn(
+          "pb-24",
+          props.variant === "a" ? "bg-white" : "bg-slate-50/70",
+        )}
+      >
         {notice ? (
           <div className="container mx-auto max-w-6xl px-4 pt-4">
             <div
               role="status"
-              className="flex items-center justify-between gap-4 rounded-xl border border-lime-300 bg-lime-50 px-4 py-3 text-sm text-lime-950"
+              className={cn(
+                "flex items-center justify-between gap-4 px-4 py-3 text-sm",
+                props.variant === "a"
+                  ? "border-y border-slate-300 text-slate-700"
+                  : "rounded-xl border border-lime-300 bg-lime-50 text-lime-950",
+              )}
             >
               <span className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -119,87 +128,87 @@ function VariantA(props: ReadyProps) {
 
   return (
     <main className="container mx-auto max-w-6xl px-4 py-6 sm:py-10">
-      <section className="overflow-hidden rounded-[1.75rem] bg-golf-900 text-white shadow-lg">
-        <div className="relative px-5 py-6 sm:px-8 sm:py-8">
-          <div className="pointer-events-none absolute -right-20 -top-28 h-72 w-72 rounded-full border-[48px] border-white/[0.04]" />
-          <div className="relative flex flex-wrap items-start justify-between gap-5">
-            <div className="flex items-center gap-4">
-              <MemberMonogram name={memberName} />
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-lime-300">
-                  PGC member profile
-                </p>
-                <h1 className="mt-1 text-3xl font-bold tracking-tight sm:text-4xl">
-                  {memberName}
-                </h1>
-                <p className="mt-1 text-sm text-golf-100">
-                  {newestCard
-                    ? `${newestCard.tourName} · ${newestCard.seasonLabel}`
-                    : "Your PGC career starts here"}
-                </p>
-              </div>
-            </div>
-            <HeaderActions vm={props.vm} compact />
+      <header>
+        <div className="flex items-start justify-between gap-5">
+          <div className="min-w-0">
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              Account
+            </h1>
+            <p className="mt-2 truncate text-sm text-slate-500">
+              {memberName}
+              {newestCard
+                ? ` · ${newestCard.tourName} · ${newestCard.seasonLabel}`
+                : " · Your PGC career starts here"}
+            </p>
           </div>
-
-          <div className="relative mt-7 grid grid-cols-2 gap-px overflow-hidden rounded-2xl bg-white/10 sm:grid-cols-4">
-            <HeroStat
-              label="Career earnings"
-              value={formatMoney(props.overview.career.earningsCents, false)}
-            />
-            <HeroStat
-              label="PGC Cup points"
-              value={formatNumber(props.overview.career.points)}
-            />
-            <HeroStat
-              label="Tournament wins"
-              value={props.overview.career.wins}
-            />
-            <HeroStat
-              label="Seasons played"
-              value={props.overview.career.seasonsPlayed}
-            />
-          </div>
+          <HeaderActions vm={props.vm} />
         </div>
-      </section>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_21rem]">
-        <div className="space-y-6">
-          <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
-            <SectionHeading
-              eyebrow="Trophy cabinet"
+        <dl className="mt-7 grid grid-cols-2 border-t border-slate-200 sm:grid-cols-4 sm:divide-x sm:divide-slate-200 sm:border-y">
+          <MinimalStat
+            label="Career earnings"
+            value={formatMoney(props.overview.career.earningsCents, false)}
+          />
+          <MinimalStat
+            label="PGC Cup points"
+            value={formatNumber(props.overview.career.points)}
+          />
+          <MinimalStat
+            label="Tournament wins"
+            value={props.overview.career.wins}
+          />
+          <MinimalStat
+            label="Seasons played"
+            value={props.overview.career.seasonsPlayed}
+          />
+        </dl>
+      </header>
+
+      <div className="grid lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="min-w-0 lg:pr-10">
+          <section className="border-b border-slate-200 py-8 sm:py-10">
+            <MinimalSectionHeading
+              eyebrow="Titles"
               title="Career wins"
               detail={`${props.overview.achievements.length} title${props.overview.achievements.length === 1 ? "" : "s"}`}
-              icon={<Trophy className="h-5 w-5" />}
             />
-            <AchievementGrid achievements={props.overview.achievements} />
+            <AchievementGrid
+              achievements={props.overview.achievements}
+              minimal
+            />
           </section>
 
-          <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
-            <SectionHeading
-              eyebrow="Season by season"
-              title="Your PGC record"
+          <section className="border-b border-slate-200 py-8 sm:py-10">
+            <MinimalSectionHeading
+              eyebrow="Career record"
+              title="Seasons played"
               detail="Every tour card"
-              icon={<CalendarDays className="h-5 w-5" />}
             />
-            <SeasonRows cards={props.overview.tourCards} />
+            <SeasonRows cards={props.overview.tourCards} minimal />
           </section>
 
-          <section className="rounded-2xl border bg-white p-5 shadow-sm sm:p-6">
-            <SectionHeading
-              eyebrow="Recent results"
+          <section className="py-8 sm:py-10">
+            <MinimalSectionHeading
+              eyebrow="Results"
               title="Tournament history"
               detail={`${props.overview.tournamentHistory.length} completed events`}
-              icon={<History className="h-5 w-5" />}
             />
-            <TournamentRows rows={props.overview.tournamentHistory} limit={8} />
+            <TournamentRows
+              rows={props.overview.tournamentHistory}
+              limit={8}
+              minimal
+            />
           </section>
         </div>
 
-        <aside className="space-y-6 lg:sticky lg:top-20 lg:self-start">
-          <WalletPanel {...props} />
-          <ProfilePanel {...props} />
-          <LedgerPanel transactions={props.overview.transactions} limit={5} />
+        <aside className="order-first border-b border-slate-200 py-8 lg:order-last lg:border-b-0 lg:border-l lg:py-10 lg:pl-8">
+          <WalletPanel {...props} minimal />
+          <ProfilePanel {...props} minimal />
+          <LedgerPanel
+            transactions={props.overview.transactions}
+            limit={5}
+            minimal
+          />
         </aside>
       </div>
     </main>
@@ -562,7 +571,11 @@ function HeaderActions(props: {
 }
 
 function WalletPanel(
-  props: ReadyProps & { expanded?: boolean; flat?: boolean },
+  props: ReadyProps & {
+    expanded?: boolean;
+    flat?: boolean;
+    minimal?: boolean;
+  },
 ) {
   const financial = props.overview.currentSeasonFinancial;
   const request = financial?.request;
@@ -570,39 +583,68 @@ function WalletPanel(
   return (
     <section
       className={cn(
-        !props.flat && "overflow-hidden rounded-2xl border bg-white shadow-sm",
+        !props.flat &&
+          !props.minimal &&
+          "overflow-hidden rounded-2xl border bg-white shadow-sm",
+        props.minimal && "border-b border-slate-200 pb-8",
       )}
     >
       <div
         className={cn(
-          "bg-golf-900 p-5 text-white",
-          props.expanded && "sm:p-6",
-          props.flat && "rounded-xl",
+          props.minimal ? "pb-5" : "bg-golf-900 p-5 text-white",
+          props.expanded && !props.minimal && "sm:p-6",
+          props.flat && !props.minimal && "rounded-xl",
         )}
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-golf-100">
-              <WalletCards className="h-4 w-4 text-lime-300" /> Available
-              balance
+            <p
+              className={cn(
+                "flex items-center gap-2 text-xs font-bold uppercase tracking-widest",
+                props.minimal ? "text-slate-500" : "text-golf-100",
+              )}
+            >
+              <WalletCards
+                className={cn(
+                  "h-4 w-4",
+                  props.minimal ? "text-slate-700" : "text-lime-300",
+                )}
+              />{" "}
+              Available balance
             </p>
             <p className="mt-2 text-3xl font-bold">
               {formatMoney(props.overview.member.accountCents, true)}
             </p>
           </div>
-          {request ? <StatusPill status={request.status} /> : null}
+          {request ? (
+            <StatusPill status={request.status} minimal={props.minimal} />
+          ) : null}
         </div>
         {financial ? (
-          <div className="mt-5 grid grid-cols-2 gap-4 border-t border-white/15 pt-4 text-sm">
+          <div
+            className={cn(
+              "mt-5 grid grid-cols-2 gap-4 border-t pt-4 text-sm",
+              props.minimal ? "border-slate-200" : "border-white/15",
+            )}
+          >
             <div>
-              <p className="text-golf-100">Season winnings</p>
+              <p className={props.minimal ? "text-slate-500" : "text-golf-100"}>
+                Season winnings
+              </p>
               <p className="mt-1 font-bold">
                 {formatMoney(financial.earningsCents, true)}
               </p>
             </div>
             <div>
-              <p className="text-golf-100">To allocate</p>
-              <p className="mt-1 font-bold text-lime-300">
+              <p className={props.minimal ? "text-slate-500" : "text-golf-100"}>
+                To allocate
+              </p>
+              <p
+                className={cn(
+                  "mt-1 font-bold",
+                  props.minimal ? "text-slate-950" : "text-lime-300",
+                )}
+              >
                 {formatMoney(financial.availableCents, true)}
               </p>
             </div>
@@ -611,25 +653,40 @@ function WalletPanel(
       </div>
 
       <div
-        className={cn("p-5", props.expanded && "sm:p-6", props.flat && "px-0")}
+        className={cn(
+          props.minimal ? "pt-5" : "p-5",
+          props.expanded && !props.minimal && "sm:p-6",
+          props.flat && !props.minimal && "px-0",
+        )}
       >
-        <MoneyControls {...props} financial={financial} />
+        <MoneyControls
+          {...props}
+          financial={financial}
+          minimal={props.minimal}
+        />
       </div>
     </section>
   );
 }
 
 function MoneyControls(
-  props: ReadyProps & { financial: AccountSeasonFinancial | null },
+  props: ReadyProps & {
+    financial: AccountSeasonFinancial | null;
+    minimal?: boolean;
+  },
 ) {
   const financial = props.financial;
   const request = financial?.request;
 
   if (!financial)
-    return <EmptyCopy>Season winnings are not available yet.</EmptyCopy>;
+    return (
+      <EmptyCopy minimal={props.minimal}>
+        Season winnings are not available yet.
+      </EmptyCopy>
+    );
   if (!financial.isComplete) {
     return (
-      <EmptyCopy>
+      <EmptyCopy minimal={props.minimal}>
         Requests open when {financial.seasonLabel} is complete. Your official
         totals will appear here.
       </EmptyCopy>
@@ -680,7 +737,9 @@ function MoneyControls(
   }
   if (financial.availableCents <= 0)
     return (
-      <EmptyCopy>There are no funds to allocate for this season.</EmptyCopy>
+      <EmptyCopy minimal={props.minimal}>
+        There are no funds to allocate for this season.
+      </EmptyCopy>
     );
 
   return (
@@ -730,9 +789,14 @@ function MoneyControls(
           aria-pressed={props.vm.nextSeasonCard}
           onClick={() => props.vm.setNextSeasonCard(!props.vm.nextSeasonCard)}
           className={cn(
-            "mt-4 flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left text-sm",
+            "mt-4 flex min-h-11 w-full items-center justify-between gap-3 border text-left text-sm",
+            props.minimal
+              ? "border-x-0 border-slate-200 py-3"
+              : "rounded-xl px-3 py-2",
             props.vm.nextSeasonCard
-              ? "border-golf-500 bg-golf-50 text-golf-900"
+              ? props.minimal
+                ? "bg-slate-50 text-slate-950"
+                : "border-golf-500 bg-golf-50 text-golf-900"
               : "bg-white",
           )}
         >
@@ -791,19 +855,31 @@ function MoneyControls(
 }
 
 function ProfilePanel(
-  props: ReadyProps & { expanded?: boolean; flat?: boolean },
+  props: ReadyProps & {
+    expanded?: boolean;
+    flat?: boolean;
+    minimal?: boolean;
+  },
 ) {
   return (
     <section
       className={cn(
-        "p-5",
-        !props.flat && "rounded-2xl border bg-white shadow-sm",
-        props.expanded && "sm:p-6",
-        props.flat && "border-t border-slate-300 px-0",
+        !props.minimal && "p-5",
+        !props.flat &&
+          !props.minimal &&
+          "rounded-2xl border bg-white shadow-sm",
+        props.expanded && !props.minimal && "sm:p-6",
+        props.flat && !props.minimal && "border-t border-slate-300 px-0",
+        props.minimal && "border-b border-slate-200 py-8",
       )}
     >
       <div className="flex items-center gap-2">
-        <PencilLine className="h-4 w-4 text-golf-700" />
+        <PencilLine
+          className={cn(
+            "h-4 w-4",
+            props.minimal ? "text-slate-600" : "text-golf-700",
+          )}
+        />
         <h2 className="font-bold">Personal information</h2>
       </div>
       <div
@@ -845,6 +921,7 @@ function LedgerPanel(props: {
   transactions: AccountTransaction[];
   limit?: number;
   flat?: boolean;
+  minimal?: boolean;
 }) {
   const rows = props.limit
     ? props.transactions.slice(0, props.limit)
@@ -852,14 +929,23 @@ function LedgerPanel(props: {
   return (
     <section
       className={cn(
-        "p-5",
-        !props.flat && "rounded-2xl border bg-white shadow-sm",
-        props.flat && "border-t border-slate-300 px-0",
+        !props.minimal && "p-5",
+        !props.flat &&
+          !props.minimal &&
+          "rounded-2xl border bg-white shadow-sm",
+        props.flat && !props.minimal && "border-t border-slate-300 px-0",
+        props.minimal && "pt-8",
       )}
     >
       <div className="flex items-center justify-between gap-4">
         <h2 className="flex items-center gap-2 font-bold">
-          <Landmark className="h-4 w-4 text-golf-700" /> Account activity
+          <Landmark
+            className={cn(
+              "h-4 w-4",
+              props.minimal ? "text-slate-600" : "text-golf-700",
+            )}
+          />{" "}
+          Account activity
         </h2>
         <span className="text-xs text-muted-foreground">
           {props.transactions.length} entries
@@ -893,7 +979,9 @@ function LedgerPanel(props: {
                   row.status !== "completed"
                     ? "text-muted-foreground"
                     : row.amountCents >= 0
-                      ? "text-golf-700"
+                      ? props.minimal
+                        ? "text-slate-900"
+                        : "text-golf-700"
                       : "text-slate-900",
                 )}
               >
@@ -904,7 +992,7 @@ function LedgerPanel(props: {
           ))}
         </div>
       ) : (
-        <EmptyCopy>No account activity yet.</EmptyCopy>
+        <EmptyCopy minimal={props.minimal}>No account activity yet.</EmptyCopy>
       )}
     </section>
   );
@@ -913,22 +1001,46 @@ function LedgerPanel(props: {
 function AchievementGrid(props: {
   achievements: AccountOverviewDto["achievements"];
   compact?: boolean;
+  minimal?: boolean;
 }) {
   if (!props.achievements.length)
-    return <EmptyCopy>Your first PGC win will be celebrated here.</EmptyCopy>;
+    return (
+      <EmptyCopy minimal={props.minimal}>
+        Your first PGC win will be celebrated here.
+      </EmptyCopy>
+    );
   return (
     <div
       className={cn(
-        "mt-5 grid gap-3",
-        props.compact ? "sm:grid-cols-2" : "sm:grid-cols-2 xl:grid-cols-3",
+        "mt-5",
+        props.minimal
+          ? "divide-y divide-slate-200 border-y border-slate-200"
+          : cn(
+              "grid gap-3",
+              props.compact
+                ? "sm:grid-cols-2"
+                : "sm:grid-cols-2 xl:grid-cols-3",
+            ),
       )}
     >
       {props.achievements.map((item) => (
         <div
           key={String(item.id)}
-          className="flex items-center gap-3 rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4"
+          className={cn(
+            "flex items-center gap-3",
+            props.minimal
+              ? "py-4"
+              : "rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4",
+          )}
         >
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-800">
+          <div
+            className={cn(
+              "flex h-12 w-12 shrink-0 items-center justify-center rounded-full",
+              props.minimal
+                ? "border border-slate-200 text-slate-700"
+                : "bg-amber-100 text-amber-800",
+            )}
+          >
             {item.logoUrl ? (
               <img
                 src={item.logoUrl}
@@ -941,7 +1053,12 @@ function AchievementGrid(props: {
           </div>
           <div className="min-w-0">
             <p className="truncate font-bold">{item.tournamentName}</p>
-            <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-amber-800">
+            <p
+              className={cn(
+                "mt-1 text-xs font-semibold uppercase tracking-wide",
+                props.minimal ? "text-slate-500" : "text-amber-800",
+              )}
+            >
               Champion · {item.year ?? "PGC"}
             </p>
           </div>
@@ -951,20 +1068,43 @@ function AchievementGrid(props: {
   );
 }
 
-function SeasonRows(props: { cards: AccountOverviewDto["tourCards"] }) {
-  if (!props.cards.length) return <EmptyCopy>No seasons played yet.</EmptyCopy>;
+function SeasonRows(props: {
+  cards: AccountOverviewDto["tourCards"];
+  minimal?: boolean;
+}) {
+  if (!props.cards.length)
+    return (
+      <EmptyCopy minimal={props.minimal}>No seasons played yet.</EmptyCopy>
+    );
   return (
-    <div className="mt-5 divide-y rounded-xl border">
+    <div
+      className={cn(
+        "mt-5 divide-y",
+        props.minimal
+          ? "divide-slate-200 border-y border-slate-200"
+          : "rounded-xl border",
+      )}
+    >
       {props.cards.map((card) => (
         <div
           key={String(card._id)}
-          className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1.2fr)_repeat(4,minmax(4rem,0.55fr))] sm:items-center"
+          className={cn(
+            "grid gap-3 sm:grid-cols-[minmax(0,1.2fr)_repeat(4,minmax(4rem,0.55fr))] sm:items-center",
+            props.minimal ? "py-4" : "p-4",
+          )}
         >
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <p className="font-bold">{card.seasonLabel}</p>
               {card.isCurrent ? (
-                <span className="rounded-full bg-golf-100 px-2 py-0.5 text-[0.65rem] font-bold uppercase text-golf-800">
+                <span
+                  className={cn(
+                    "px-2 py-0.5 text-[0.65rem] font-bold uppercase",
+                    props.minimal
+                      ? "border border-slate-300 text-slate-600"
+                      : "rounded-full bg-golf-100 text-golf-800",
+                  )}
+                >
                   Current
                 </span>
               ) : null}
@@ -989,13 +1129,28 @@ function SeasonRows(props: { cards: AccountOverviewDto["tourCards"] }) {
 function TournamentRows(props: {
   rows: AccountTournamentHistory[];
   limit?: number;
+  minimal?: boolean;
 }) {
   const rows = props.limit ? props.rows.slice(0, props.limit) : props.rows;
   if (!rows.length)
-    return <EmptyCopy>No completed tournament results yet.</EmptyCopy>;
+    return (
+      <EmptyCopy minimal={props.minimal}>
+        No completed tournament results yet.
+      </EmptyCopy>
+    );
   return (
-    <div className="mt-5 overflow-hidden rounded-xl border">
-      <div className="hidden grid-cols-[minmax(0,1fr)_5rem_5rem_6rem] gap-3 bg-slate-50 px-4 py-2 text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground sm:grid">
+    <div
+      className={cn(
+        "mt-5 overflow-hidden",
+        props.minimal ? "border-y border-slate-200" : "rounded-xl border",
+      )}
+    >
+      <div
+        className={cn(
+          "hidden grid-cols-[minmax(0,1fr)_5rem_5rem_6rem] gap-3 py-2 text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground sm:grid",
+          props.minimal ? "border-b border-slate-200" : "bg-slate-50 px-4",
+        )}
+      >
         <span>Tournament</span>
         <span className="text-right">Finish</span>
         <span className="text-right">Points</span>
@@ -1005,10 +1160,19 @@ function TournamentRows(props: {
         {rows.map((row) => (
           <div
             key={String(row.id)}
-            className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_5rem_5rem_6rem] sm:items-center"
+            className={cn(
+              "grid grid-cols-[minmax(0,1fr)_auto] gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_5rem_5rem_6rem] sm:items-center",
+              !props.minimal && "px-4",
+            )}
           >
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100">
+              <div
+                className={cn(
+                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+                  props.minimal && "border border-slate-200",
+                  !props.minimal && "bg-slate-100",
+                )}
+              >
                 {row.logoUrl ? (
                   <img
                     src={row.logoUrl}
@@ -1030,7 +1194,8 @@ function TournamentRows(props: {
             <span
               className={cn(
                 "text-right font-bold",
-                row.position === "1" && "text-amber-700",
+                row.position === "1" &&
+                  (props.minimal ? "text-slate-950" : "text-amber-700"),
               )}
             >
               {row.position}
@@ -1153,6 +1318,28 @@ function SectionHeading(props: {
   );
 }
 
+function MinimalSectionHeading(props: {
+  eyebrow: string;
+  title: string;
+  detail?: string;
+}) {
+  return (
+    <div className="flex items-end justify-between gap-4">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+          {props.eyebrow}
+        </p>
+        <h2 className="mt-1 text-xl font-bold sm:text-2xl">{props.title}</h2>
+      </div>
+      {props.detail ? (
+        <p className="shrink-0 text-xs text-slate-500 sm:text-sm">
+          {props.detail}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function PageIntro(props: {
   eyebrow: string;
   title: string;
@@ -1195,13 +1382,15 @@ function MemberMonogram(props: { name: string; small?: boolean }) {
   );
 }
 
-function HeroStat(props: { label: string; value: string | number }) {
+function MinimalStat(props: { label: string; value: string | number }) {
   return (
-    <div className="bg-white/[0.06] p-4 sm:p-5">
-      <dt className="text-[0.65rem] font-bold uppercase tracking-wider text-golf-100">
+    <div className="border-b border-slate-200 py-4 odd:border-r odd:pr-4 even:pl-4 sm:border-b-0 sm:border-r-0 sm:px-5 sm:first:pl-0 sm:last:pr-0">
+      <dt className="text-[0.65rem] font-semibold uppercase tracking-wider text-slate-500">
         {props.label}
       </dt>
-      <dd className="mt-1 text-2xl font-bold text-white">{props.value}</dd>
+      <dd className="mt-1 text-xl font-bold tabular-nums text-slate-950 sm:text-2xl">
+        {props.value}
+      </dd>
     </div>
   );
 }
@@ -1285,18 +1474,32 @@ function TextInput(props: {
   );
 }
 
-function StatusPill(props: { status: string }) {
+function StatusPill(props: { status: string; minimal?: boolean }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-bold capitalize">
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold capitalize",
+        props.minimal
+          ? "border border-slate-300 text-slate-600"
+          : "rounded-full border border-white/20 bg-white/10",
+      )}
+    >
       <Check className="h-3.5 w-3.5" />
       {props.status.replace("_", " ")}
     </span>
   );
 }
 
-function EmptyCopy(props: { children: ReactNode }) {
+function EmptyCopy(props: { children: ReactNode; minimal?: boolean }) {
   return (
-    <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-muted-foreground">
+    <p
+      className={cn(
+        "mt-4 text-sm text-muted-foreground",
+        props.minimal
+          ? "border-y border-slate-200 py-4"
+          : "rounded-xl bg-slate-50 p-4",
+      )}
+    >
       {props.children}
     </p>
   );
