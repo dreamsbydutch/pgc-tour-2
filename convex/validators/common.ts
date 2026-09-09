@@ -139,6 +139,13 @@ export const emailsValidators = {
       tournamentId: idValidators.optionalTournamentId,
       customBlurb: v.optional(v.string()),
     },
+    adminGetSeasonRecapPreview: sharedArgs.none,
+    adminSendSeasonRecapEmailToActiveMembers: {
+      customBlurb: v.optional(v.string()),
+    },
+    sendSeasonRecapEmailTest: {
+      customBlurb: v.optional(v.string()),
+    },
     sendMissingTeamReminderEmailTest: sharedArgs.optionalTournamentId,
   },
 } as const;

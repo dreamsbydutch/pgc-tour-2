@@ -11,6 +11,10 @@ export const PLAYOFF_SILVER_PAYOUT_OFFSET = 75;
 
 export const PGC_LOGO_URL =
   "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPJiXqZRs47Fgtd9BSMeHQ2WnVuLfP8IaTAp6E";
+export const PLAYOFF_GOLD_LOGO_URL =
+  "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPNsO8w6FZhY1BamONzvl3bLgdn0IXVM8fEoTC";
+export const PLAYOFF_SILVER_LOGO_URL =
+  "https://jn9n1jxo7g.ufs.sh/f/94GU8p0EVxqPNDs7T9FZhY1BamONzvl3bLgdn0IXVM8fEoTC";
 
 export const PRE_TOURNAMENT_PICK_WINDOW_MS = 4 * 24 * 60 * 60 * 1000;
 

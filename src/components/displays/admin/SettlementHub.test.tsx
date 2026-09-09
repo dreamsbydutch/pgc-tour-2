@@ -23,6 +23,7 @@ const request = {
   charityCents: 0,
   leagueCents: 0,
   nextSeasonCardCents: 10_000,
+  retainedCents: 0,
   payoutEmail: "payout@example.com",
   status: "pending",
   submittedAt: 1,
@@ -30,7 +31,7 @@ const request = {
 } satisfies AdminSettlementRequest;
 
 describe("SettlementHub", () => {
-  it("shows actionable allocations and sends the selected item to its hook", () => {
+  it("shows actionable allocations and sends the selected item to its hook", async () => {
     const onComplete = vi.fn();
     render(
       <SettlementHub
@@ -42,17 +43,18 @@ describe("SettlementHub", () => {
         pendingTransferTotal={30_000}
         busyKey={null}
         feedback={null}
+        creditingWinnings={false}
+        onCreditWinnings={vi.fn()}
         onComplete={onComplete}
         onCancel={vi.fn()}
       />,
     );
 
-    expect(screen.getByText("Test Member")).toBeTruthy();
+    expect(await screen.findByText("Requested e-transfers")).toBeTruthy();
+    expect(screen.getAllByText("Test Member")).toHaveLength(2);
     expect(screen.getByText("payout@example.com")).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "Check off" })).toHaveLength(
-      2,
-    );
-    fireEvent.click(screen.getAllByRole("button", { name: "Check off" })[0]!);
+    expect(screen.getAllByText("$300.00").length).toBeGreaterThanOrEqual(3);
+    fireEvent.click(screen.getByRole("button", { name: "Mark paid" }));
     expect(onComplete).toHaveBeenCalledWith(requestId, "transfer");
   });
 });

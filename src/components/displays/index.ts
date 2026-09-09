@@ -8,11 +8,12 @@ export {
 } from "./admin/AdminOperationUi";
 export { AdminHub } from "./admin/AdminHub";
 export { AdminTaskPanel } from "./admin/AdminTaskPanel";
-export { SettlementHub } from "./admin/SettlementHub";
+export { SeasonWinningsCard } from "./account/SeasonWinningsCard";
 export const loadNotificationCenter = () => import("./NotificationCenter");
 
 export { ChampionsPopup } from "./standings/ChampionsPopup";
 export { ClubhousePulse, ClubhousePulseSkeleton } from "./ClubhousePulse";
+export { SeasonChampions } from "./SeasonChampions";
 
 // COMPLETED
 export { LeaderboardHeader } from "./LeaderboardHeader";

@@ -5,14 +5,23 @@ import type { Id } from "@/convex";
 export type AccountOverviewDto = FunctionReturnType<
   typeof api.functions.account.getMyOverview
 >;
+export type AccountSettlementSummaryDto = FunctionReturnType<
+  typeof api.functions.account.getMySettlementSummary
+>;
 export type AccountAchievement = AccountOverviewDto["achievements"][number];
 export type AccountTourCard = AccountOverviewDto["tourCards"][number];
+export type AccountTournamentHistory =
+  AccountOverviewDto["tournamentHistory"][number];
+export type AccountTransaction = AccountOverviewDto["transactions"][number];
 export type AccountSeasonFinancial = NonNullable<
   AccountOverviewDto["currentSeasonFinancial"]
 >;
 
 export type AdminSettlementRequestsDto = FunctionReturnType<
   typeof api.functions.settlements.adminListRequests
+>;
+export type CreditSeasonWinningsPage = FunctionReturnType<
+  typeof api.functions.settlements.adminCreditCurrentSeasonWinnings
 >;
 export type AdminSettlementRequest = AdminSettlementRequestsDto[number];
 export type SettlementItemKind =
@@ -59,6 +68,8 @@ export type AdminSettlementHubProps = {
   pendingTransferTotal: number;
   busyKey: string | null;
   feedback: SettlementFeedback | null;
+  creditingWinnings: boolean;
+  onCreditWinnings: () => void;
   onComplete: (
     requestId: Id<"settlementRequests">,
     item: SettlementItemKind,

@@ -6,6 +6,7 @@ import {
   chunkSyncUpdates,
   derivePersistedTournamentState,
   deriveTournamentTimelineState,
+  getCurrentTournamentFieldGolfers,
   getEffectiveGolferLeaderboardScore,
   getAdaptiveSyncDelayMs,
   projectDataGolfRankingsForMutation,
@@ -14,6 +15,7 @@ import {
   getTournamentPayoutAheadCount,
   getTeamRoundWindowGolfers,
   getTeamRoundScore,
+  getTeamTournamentFieldState,
   getTournamentRoundWindowMetrics,
   getTeamTournamentRank,
   isRoundPublishedForTimeline,
@@ -214,6 +216,7 @@ type TestSyncTeam = Parameters<
 function makeGolfer(
   args: {
     golfer?: Partial<NonNullable<EnhancedGolfer["golfer"]>>;
+    field?: Partial<NonNullable<EnhancedGolfer["field"]>>;
     live?: Partial<NonNullable<EnhancedGolfer["live"]>>;
     historical?: Partial<NonNullable<EnhancedGolfer["historical"]>>;
     historicalEvent?: Partial<NonNullable<EnhancedGolfer["historicalEvent"]>>;
@@ -222,6 +225,7 @@ function makeGolfer(
 ): EnhancedGolfer {
   return {
     golfer: args.golfer as EnhancedGolfer["golfer"],
+    field: args.field as EnhancedGolfer["field"],
     live: args.live as EnhancedGolfer["live"],
     historical: args.historical as EnhancedGolfer["historical"],
     historicalEvent: args.historicalEvent as EnhancedGolfer["historicalEvent"],
@@ -256,6 +260,109 @@ function makeTeam(args: {
     tourCard: { tourId },
   } as unknown as TestSyncTeam;
 }
+
+describe("later playoff current-field selection", () => {
+  it("excludes inherited placeholders so a completed second round advances", () => {
+    const participant = makeGolfer({
+      golfer: { apiId: 1 },
+      live: {
+        current_pos: "T8",
+        current_score: -5,
+        round: 2,
+        thru: "F",
+        R1: 70,
+        R2: 69,
+      },
+    });
+    const inheritedPlaceholder = makeGolfer({
+      golfer: { apiId: 2 },
+      tournamentGolfer: { group: 4, position: "T51" },
+    });
+
+    const bmwField = getCurrentTournamentFieldGolfers({
+      golfers: [participant, inheritedPlaceholder],
+      eventIndex: 2,
+    });
+
+    expect(bmwField).toEqual([participant]);
+    expect(
+      deriveTournamentTimelineState({
+        golfers: bmwField,
+        existingStatus: "active",
+      }),
+    ).toMatchObject({
+      currentRound: 2,
+      livePlay: false,
+      status: "active",
+    });
+    expect(
+      getCurrentTournamentFieldGolfers({
+        golfers: [participant, inheritedPlaceholder],
+        eventIndex: 1,
+      }),
+    ).toHaveLength(2);
+  });
+
+  it("retains feed and stored participation evidence between static syncs", () => {
+    const fromField = makeGolfer({
+      golfer: { apiId: 1 },
+      field: { dg_id: 1 },
+    });
+    const fromStoredTeeTime = makeGolfer({
+      golfer: { apiId: 2 },
+      tournamentGolfer: { roundOneTeeTime: Date.UTC(2026, 7, 20, 12) },
+    });
+    const staleSyntheticCut = makeGolfer({
+      golfer: { apiId: 3 },
+      tournamentGolfer: {
+        group: 3,
+        position: "T51",
+        score: 0,
+        today: 0,
+        thru: 0,
+      },
+    });
+
+    expect(
+      getCurrentTournamentFieldGolfers({
+        golfers: [fromField, fromStoredTeeTime, staleSyntheticCut],
+        eventIndex: 2,
+      }),
+    ).toEqual([fromField, fromStoredTeeTime]);
+  });
+
+  it("gives an undersized BMW field no live scoring golfers", () => {
+    const participants = Array.from({ length: 4 }, (_, index) =>
+      makeGolfer({
+        golfer: { apiId: index + 1 },
+        live: {
+          current_pos: `T${index + 1}`,
+          current_score: -index,
+          round: 1,
+          thru: "6",
+          today: -index,
+        },
+      }),
+    );
+    const inheritedPlaceholders = Array.from({ length: 6 }, (_, index) =>
+      makeGolfer({
+        golfer: { apiId: index + 5 },
+        tournamentGolfer: { group: (index % 5) + 1 },
+      }),
+    );
+
+    const state = getTeamTournamentFieldState({
+      golfers: [...participants, ...inheritedPlaceholders],
+      golferIds: Array.from({ length: 10 }, (_, index) => index + 1),
+      isPlayoff: true,
+      eventIndex: 2,
+    });
+
+    expect(state.fieldGolfers).toEqual(participants);
+    expect(state.automaticEvenPar).toBe(true);
+    expect(state.scoringGolfers).toEqual([]);
+  });
+});
 
 describe("golfer leaderboard score and rank", () => {
   it("uses historical totals when the live score is missing", () => {
