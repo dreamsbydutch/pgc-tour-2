@@ -1,5 +1,6 @@
 // Pages
 export { AccountPage } from "./AccountPage";
+export { AccountPagePrototype } from "./AccountPagePrototype";
 export { AdminDashboard } from "./AdminDashboard";
 export { HomePage } from "./HomePage";
 export { StandingsView } from "./StandingsView";

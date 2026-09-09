@@ -16,7 +16,7 @@ export const getMyOverview = query({
   args: {},
   handler: async (ctx) => {
     const member = await getCurrentMember(ctx);
-    const [cards, requests, appState] = await Promise.all([
+    const [cards, requests, transactions, appState] = await Promise.all([
       ctx.db
         .query("tourCards")
         .withIndex("by_member", (query) => query.eq("memberId", member._id))
@@ -26,12 +26,22 @@ export const getMyOverview = query({
         .withIndex("by_member", (query) => query.eq("memberId", member._id))
         .take(100),
       ctx.db
+        .query("transactions")
+        .withIndex("by_member", (query) => query.eq("memberId", member._id))
+        .order("desc")
+        .take(100),
+      ctx.db
         .query("appState")
         .withIndex("by_key", (query) => query.eq("key", "primary"))
         .unique(),
     ]);
 
-    const seasonIds = [...new Set(cards.map((card) => card.seasonId))];
+    const seasonIds = [
+      ...new Set([
+        ...cards.map((card) => card.seasonId),
+        ...transactions.map((transaction) => transaction.seasonId),
+      ]),
+    ];
     const tourIds = [...new Set(cards.map((card) => card.tourId))];
     const [
       seasonDocs,
@@ -211,6 +221,40 @@ export const getMyOverview = query({
       }))
       .sort((a, b) => b.wonAt - a.wonAt);
 
+    const tournamentHistory = contributions
+      .filter((item) => item.tournamentStatus === "completed")
+      .map((item) => ({
+        id: item._id,
+        tournamentId: item.tournamentId,
+        tournamentName: item.tournamentName,
+        logoUrl: item.tournamentLogoUrl ?? null,
+        playedAt: item.tournamentEndDate,
+        seasonLabel: (() => {
+          const season = seasonById.get(item.seasonId);
+          return season ? `${season.year} Season ${season.number}` : null;
+        })(),
+        tourName: tourById.get(item.tourId)?.name ?? "Tour",
+        tierName: item.tierName,
+        position: item.position ?? "-",
+        score: item.score ?? null,
+        points: item.points ?? 0,
+        earningsCents: item.earnings ?? 0,
+        isPlayoff: isPlayoffContribution(item),
+      }))
+      .sort((a, b) => b.playedAt - a.playedAt);
+
+    const transactionHistory = transactions.map((transaction) => ({
+      id: transaction._id,
+      seasonLabel: (() => {
+        const season = seasonById.get(transaction.seasonId);
+        return season ? `${season.year} Season ${season.number}` : "Season";
+      })(),
+      amountCents: transaction.amount,
+      type: transaction.transactionType,
+      status: transaction.status ?? "completed",
+      processedAt: transaction.processedAt ?? transaction._creationTime,
+    }));
+
     const tourCards = cards
       .map((card) => {
         const season = seasonById.get(card.seasonId);
@@ -289,6 +333,8 @@ export const getMyOverview = query({
       },
       achievements,
       tourCards,
+      tournamentHistory,
+      transactions: transactionHistory,
       currentSeasonFinancial,
     };
   },

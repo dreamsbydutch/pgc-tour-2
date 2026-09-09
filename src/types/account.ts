@@ -7,9 +7,17 @@ export type AccountOverviewDto = FunctionReturnType<
 >;
 export type AccountAchievement = AccountOverviewDto["achievements"][number];
 export type AccountTourCard = AccountOverviewDto["tourCards"][number];
+export type AccountTournamentHistory =
+  AccountOverviewDto["tournamentHistory"][number];
+export type AccountTransaction = AccountOverviewDto["transactions"][number];
 export type AccountSeasonFinancial = NonNullable<
   AccountOverviewDto["currentSeasonFinancial"]
 >;
+
+export type AccountPrototypeVariant = "a" | "b" | "c";
+export type AccountSearch = {
+  variant?: AccountPrototypeVariant;
+};
 
 export type AdminSettlementRequestsDto = FunctionReturnType<
   typeof api.functions.settlements.adminListRequests
