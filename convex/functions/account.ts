@@ -6,6 +6,7 @@ import {
   isSettlementSeasonComplete,
 } from "../utils/settlements";
 import { includesPlayoffLabel } from "../utils/standings";
+import { getAccountAchievementHonor } from "../utils/accountAchievements";
 
 function parseRank(position: string | undefined) {
   const match = position ? /\d+/.exec(position) : null;
@@ -211,15 +212,27 @@ export const getMyOverview = query({
           .length,
       ]),
     );
+    const cardById = new Map(cards.map((card) => [card._id, card] as const));
     const achievements = careerWinContributions
-      .map((item) => ({
-        id: item._id,
-        tournamentName: item.tournamentName,
-        logoUrl: item.tournamentLogoUrl ?? null,
-        wonAt: item.tournamentEndDate,
-        year: seasonById.get(item.seasonId)?.year ?? null,
-      }))
-      .sort((a, b) => b.wonAt - a.wonAt);
+      .map((item) => {
+        const honor = getAccountAchievementHonor({
+          isPlayoff: isPlayoffContribution(item),
+          playoffLevel: cardById.get(item.tourCardId)?.playoff,
+          tierName: item.tierName,
+        });
+        return {
+          id: item._id,
+          tournamentName: item.tournamentName,
+          logoUrl: item.tournamentLogoUrl ?? null,
+          wonAt: item.tournamentEndDate,
+          year: seasonById.get(item.seasonId)?.year ?? null,
+          kind: honor.kind,
+          honorLabel: honor.label,
+          priority: honor.priority,
+        };
+      })
+      .sort((a, b) => a.priority - b.priority || b.wonAt - a.wonAt)
+      .map(({ priority: _priority, ...achievement }) => achievement);
 
     const tournamentHistory = contributions
       .filter((item) => item.tournamentStatus === "completed")

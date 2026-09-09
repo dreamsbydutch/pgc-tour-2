@@ -1009,38 +1009,24 @@ function AchievementGrid(props: {
         Your first PGC win will be celebrated here.
       </EmptyCopy>
     );
+
+  if (props.minimal) {
+    return <MinimalAchievementGroups achievements={props.achievements} />;
+  }
+
   return (
     <div
       className={cn(
-        "mt-5",
-        props.minimal
-          ? "divide-y divide-slate-200 border-y border-slate-200"
-          : cn(
-              "grid gap-3",
-              props.compact
-                ? "sm:grid-cols-2"
-                : "sm:grid-cols-2 xl:grid-cols-3",
-            ),
+        "mt-5 grid gap-3",
+        props.compact ? "sm:grid-cols-2" : "sm:grid-cols-2 xl:grid-cols-3",
       )}
     >
       {props.achievements.map((item) => (
         <div
           key={String(item.id)}
-          className={cn(
-            "flex items-center gap-3",
-            props.minimal
-              ? "py-4"
-              : "rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4",
-          )}
+          className="flex items-center gap-3 rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4"
         >
-          <div
-            className={cn(
-              "flex h-12 w-12 shrink-0 items-center justify-center rounded-full",
-              props.minimal
-                ? "border border-slate-200 text-slate-700"
-                : "bg-amber-100 text-amber-800",
-            )}
-          >
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-800">
             {item.logoUrl ? (
               <img
                 src={item.logoUrl}
@@ -1053,17 +1039,78 @@ function AchievementGrid(props: {
           </div>
           <div className="min-w-0">
             <p className="truncate font-bold">{item.tournamentName}</p>
-            <p
-              className={cn(
-                "mt-1 text-xs font-semibold uppercase tracking-wide",
-                props.minimal ? "text-slate-500" : "text-amber-800",
-              )}
-            >
+            <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-amber-800">
               Champion · {item.year ?? "PGC"}
             </p>
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function MinimalAchievementGroups(props: {
+  achievements: AccountOverviewDto["achievements"];
+}) {
+  const groups = [
+    {
+      label: "Season champions",
+      kinds: ["pgcChampion", "silverChampion"],
+    },
+    { label: "Major championships", kinds: ["major"] },
+    { label: "Tournament wins", kinds: ["tournament"] },
+  ] as const;
+
+  return (
+    <div className="mt-5 border-b border-slate-200">
+      {groups.map((group) => {
+        const achievements = props.achievements.filter((achievement) =>
+          group.kinds.some((kind) => kind === achievement.kind),
+        );
+        if (!achievements.length) return null;
+
+        return (
+          <section key={group.label} className="border-t border-slate-200 py-5">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              {group.label}
+            </h3>
+            <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-7 sm:grid-cols-3 xl:grid-cols-4">
+              {achievements.map((item) => {
+                const isSeasonChampion =
+                  item.kind === "pgcChampion" || item.kind === "silverChampion";
+                return (
+                  <article key={String(item.id)} className="min-w-0">
+                    <div className="flex h-14 w-14 items-center justify-center text-slate-700">
+                      {item.logoUrl ? (
+                        <img
+                          src={item.logoUrl}
+                          alt=""
+                          className="h-full w-full object-contain"
+                        />
+                      ) : (
+                        <Trophy className="h-8 w-8" />
+                      )}
+                    </div>
+                    <p
+                      className={cn(
+                        "mt-3 text-xs uppercase tracking-wide",
+                        isSeasonChampion
+                          ? "font-black text-slate-950"
+                          : "font-semibold text-slate-600",
+                      )}
+                    >
+                      {item.honorLabel} · {item.year ?? "PGC"}
+                    </p>
+                    <p className="mt-1 truncate text-sm font-semibold">
+                      {item.tournamentName}
+                    </p>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
     </div>
   );
 }

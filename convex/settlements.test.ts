@@ -202,7 +202,15 @@ describe("earnings settlements", () => {
       "TOUR Championship",
       "Account Major",
     ]);
-    expect(overview.achievements[0]).toMatchObject({ year: 2026 });
+    expect(overview.achievements[0]).toMatchObject({
+      year: 2026,
+      kind: "pgcChampion",
+      honorLabel: "PGC Champion",
+    });
+    expect(overview.achievements[1]).toMatchObject({
+      kind: "major",
+      honorLabel: "Major Champion",
+    });
     expect(overview.tourCards[0]).toMatchObject({
       wins: 2,
       topFive: 3,
