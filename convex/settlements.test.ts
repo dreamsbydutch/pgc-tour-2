@@ -202,7 +202,15 @@ describe("earnings settlements", () => {
       "TOUR Championship",
       "Account Major",
     ]);
-    expect(overview.achievements[0]).toMatchObject({ year: 2026 });
+    expect(overview.achievements[0]).toMatchObject({
+      year: 2026,
+      kind: "pgcChampion",
+      honorLabel: "PGC Champion",
+    });
+    expect(overview.achievements[1]).toMatchObject({
+      kind: "major",
+      honorLabel: "Major Champion",
+    });
     expect(overview.tourCards[0]).toMatchObject({
       wins: 2,
       topFive: 3,
@@ -213,6 +221,19 @@ describe("earnings settlements", () => {
     expect(overview.currentSeasonFinancial?.seasonId).toBe(fixture.seasonId);
     expect(overview).not.toHaveProperty("seasonFinancials");
     expect(overview.member).not.toHaveProperty("clerkId");
+
+    const settlement = await owner.authenticated.query(
+      api.functions.account.getMySettlementSummary,
+      {},
+    );
+    expect(settlement).toMatchObject({
+      seasonId: fixture.seasonId,
+      earningsCents: 50_000,
+      availableCents: 50_000,
+      allocationCents: 50_000,
+      isComplete: true,
+      request: null,
+    });
   }, 15_000);
 
   it("processes each allocation once and preserves the card reserve", async () => {
@@ -273,6 +294,23 @@ describe("earnings settlements", () => {
         .map((transaction) => transaction.amount)
         .sort((a, b) => a - b),
     ).toEqual([-20_000, -10_000, 50_000]);
+
+    const settlement = await owner.authenticated.query(
+      api.functions.account.getMySettlementSummary,
+      {},
+    );
+    expect(settlement).toMatchObject({
+      seasonId: fixture.seasonId,
+      earningsCents: 50_000,
+      accountOffsetCents: 40_000,
+      availableCents: 10_000,
+      allocationCents: 40_000,
+      isComplete: true,
+      request: {
+        status: "completed",
+        availableCents: 40_000,
+      },
+    });
   }, 15_000);
 
   it("credits completed-season winnings for every member exactly once", async () => {

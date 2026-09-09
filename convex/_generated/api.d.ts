@@ -41,6 +41,7 @@ import type * as types_emails from "../types/emails.js";
 import type * as types_espnGolf from "../types/espnGolf.js";
 import type * as types_notifications from "../types/notifications.js";
 import type * as types_types from "../types/types.js";
+import type * as utils_accountAchievements from "../utils/accountAchievements.js";
 import type * as utils_audit from "../utils/audit.js";
 import type * as utils_auth from "../utils/auth.js";
 import type * as utils_batchProcess from "../utils/batchProcess.js";
@@ -101,6 +102,7 @@ declare const fullApi: ApiFromModules<{
   "types/espnGolf": typeof types_espnGolf;
   "types/notifications": typeof types_notifications;
   "types/types": typeof types_types;
+  "utils/accountAchievements": typeof utils_accountAchievements;
   "utils/audit": typeof utils_audit;
   "utils/auth": typeof utils_auth;
   "utils/batchProcess": typeof utils_batchProcess;
