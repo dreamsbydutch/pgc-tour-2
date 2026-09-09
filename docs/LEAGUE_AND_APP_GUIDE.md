@@ -43,13 +43,13 @@ The [code map](reference/CODE_MAP.md) connects each guide to routes, hooks, Conv
 ## Cross-domain completion check
 
 For league-affecting work, identify the canonical input, comparison scope (tour or playoff bracket), lifecycle phase, score/money units, authorization boundary, materialized consumers, correction path, and focused edge cases before editing. Verify every applicable tie, terminal state, exact time boundary, regular/playoff distinction, and partial-provider state.
-| Group |    Target share | Maximum |
+| Group | Target share | Maximum |
 | ----- | --------------: | ------: |
-| 1     |             10% |      10 |
-| 2     |           17.5% |      16 |
-| 3     |           22.5% |      22 |
-| 4     |             25% |      30 |
-| 5     | Remaining field |    None |
+| 1 | 10% | 10 |
+| 2 | 17.5% | 16 |
+| 3 | 22.5% | 22 |
+| 4 | 25% | 30 |
+| 5 | Remaining field | None |
 
 After Groups 1–3 fill, the allocator balances the remaining golfers between
 Groups 4 and 5 while respecting Group 4's target and cap. The algorithm and
