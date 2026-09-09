@@ -4,7 +4,6 @@ import {
   CircleDollarSign,
   CreditCard,
   Flag,
-  Landmark,
   LogOut,
   Mail,
   Medal,
@@ -22,7 +21,6 @@ import type {
   AccountOverviewDto,
   AccountSeasonFinancial,
   AccountTournamentHistory,
-  AccountTransaction,
 } from "@/types";
 import { Button, Skeleton } from "@/ui";
 import { NEXT_SEASON_CARD_CENTS } from "@/utils";
@@ -175,11 +173,6 @@ function AccountOverview(props: ReadyProps) {
           ) : null}
           <WalletPanel {...props} minimal />
           <ProfilePanel {...props} minimal />
-          <LedgerPanel
-            transactions={props.overview.transactions}
-            limit={5}
-            minimal
-          />
         </aside>
       </div>
     </main>
@@ -656,87 +649,6 @@ function ProfilePanel(
   );
 }
 
-function LedgerPanel(props: {
-  transactions: AccountTransaction[];
-  limit?: number;
-  flat?: boolean;
-  minimal?: boolean;
-}) {
-  const rows = props.limit
-    ? props.transactions.slice(0, props.limit)
-    : props.transactions;
-  return (
-    <section
-      className={cn(
-        !props.minimal && "p-5",
-        !props.flat &&
-          !props.minimal &&
-          "rounded-2xl border bg-white shadow-sm",
-        props.flat && !props.minimal && "border-t border-slate-300 px-0",
-        props.minimal && "pt-8",
-      )}
-    >
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="flex items-center gap-2 font-bold">
-          <Landmark
-            className={cn(
-              "h-4 w-4",
-              props.minimal ? "text-slate-600" : "text-golf-700",
-            )}
-          />{" "}
-          Account activity
-        </h2>
-        <span className="text-xs text-muted-foreground">
-          {props.transactions.length} entries
-        </span>
-      </div>
-      {rows.length ? (
-        <div className="mt-3 divide-y">
-          {rows.map((row) => (
-            <div
-              key={String(row.id)}
-              className="flex items-center justify-between gap-3 py-3 text-sm"
-            >
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="truncate font-medium">
-                    {transactionLabel(row.type)}
-                  </p>
-                  {row.status !== "completed" ? (
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-slate-600">
-                      {row.status}
-                    </span>
-                  ) : null}
-                </div>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {formatDate(row.processedAt)} · {row.seasonLabel}
-                </p>
-              </div>
-              <span
-                className={cn(
-                  "shrink-0 font-bold tabular-nums",
-                  row.status !== "completed"
-                    ? "text-muted-foreground"
-                    : row.amountCents >= 0
-                      ? props.minimal
-                        ? "text-slate-900"
-                        : "text-golf-700"
-                      : "text-slate-900",
-                )}
-              >
-                {row.amountCents > 0 ? "+" : ""}
-                {formatMoney(row.amountCents, true)}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <EmptyCopy minimal={props.minimal}>No account activity yet.</EmptyCopy>
-      )}
-    </section>
-  );
-}
-
 function AchievementGrid(props: {
   achievements: AccountOverviewDto["achievements"];
   compact?: boolean;
@@ -1135,10 +1047,6 @@ function getMemberName(overview: AccountOverviewDto) {
     overview.member.email.split("@")[0] ||
     "PGC Member"
   );
-}
-
-function transactionLabel(value: AccountTransaction["type"]) {
-  return String(value).replace(/([a-z])([A-Z])/g, "$1 $2");
 }
 
 function formatDate(value: number) {
