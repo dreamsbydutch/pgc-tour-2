@@ -19,6 +19,7 @@ import {
   buildImportTeamsPreview,
   buildPaymentPreview,
   buildRepairPreview,
+  buildSeasonRecapEmailPreview,
   toAdminOperationStatus,
   toLatestAdminOperationStatus,
 } from "@/utils/adminOperations";
@@ -31,6 +32,10 @@ export function useAdminDashboard() {
   );
   const missingTeamReminderPreview = useQuery(
     api.functions.emails.adminGetMissingTeamReminderPreview,
+    {},
+  );
+  const seasonRecapPreview = useQuery(
+    api.functions.emails.adminGetSeasonRecapPreview,
     {},
   );
   const tournaments = dashboard?.tournaments ?? null;
@@ -55,6 +60,12 @@ export function useAdminDashboard() {
   );
   const sendWeeklyRecapEmailToAll = useAction(
     api.functions.emails.adminSendWeeklyRecapEmailToActiveTourCards,
+  );
+  const sendSeasonRecapEmailTest = useAction(
+    api.functions.emails.sendSeasonRecapEmailTest,
+  );
+  const sendSeasonRecapEmailToAll = useAction(
+    api.functions.emails.adminSendSeasonRecapEmailToActiveMembers,
   );
   const sendMissingTeamReminder = useAction(
     api.functions.emails.adminSendMissingTeamReminderForUpcomingTournament,
@@ -94,6 +105,7 @@ export function useAdminDashboard() {
   const [tournamentId, setTournamentId] = useState("");
   const [teamsJson, setTeamsJson] = useState("");
   const [weeklyRecapBody, setWeeklyRecapBody] = useState("");
+  const [seasonRecapBody, setSeasonRecapBody] = useState("");
   const [paymentMemberId, setPaymentMemberId] = useState("");
   const [paymentSeasonId, setPaymentSeasonId] = useState("");
   const [paymentAmountDollars, setPaymentAmountDollars] = useState("");
@@ -155,6 +167,27 @@ export function useAdminDashboard() {
             ? undefined
             : (dashboard.weeklyRecapPreview?.recipientCount ?? 0),
         customBlurb: weeklyRecapBody,
+      }),
+      seasonRecapSendAll: buildSeasonRecapEmailPreview({
+        seasonYear:
+          seasonRecapPreview && !seasonRecapPreview.skipped
+            ? seasonRecapPreview.seasonYear
+            : undefined,
+        championName:
+          seasonRecapPreview && !seasonRecapPreview.skipped
+            ? seasonRecapPreview.championName
+            : undefined,
+        silverChampionName:
+          seasonRecapPreview && !seasonRecapPreview.skipped
+            ? seasonRecapPreview.silverChampionName
+            : undefined,
+        recipientCount:
+          seasonRecapPreview === undefined
+            ? undefined
+            : seasonRecapPreview.skipped
+              ? 0
+              : seasonRecapPreview.recipientCount,
+        customBlurb: seasonRecapBody,
       }),
       missingTeamReminderSend: (() => {
         const base = buildBulkEmailPreview({
@@ -225,6 +258,8 @@ export function useAdminDashboard() {
       selectedPaymentMember,
       selectedPaymentSeason,
       selectedRepairTournament,
+      seasonRecapBody,
+      seasonRecapPreview,
       teamsJson,
       tournamentId,
       weeklyRecapBody,
@@ -246,6 +281,8 @@ export function useAdminDashboard() {
     updateWorldRank: toAdminOperationStatus(updateWorldRankRun),
     weeklyRecapTest: toAdminOperationStatus(runs.weeklyRecapTest),
     weeklyRecapSendAll: toAdminOperationStatus(runs.weeklyRecapSendAll),
+    seasonRecapTest: toAdminOperationStatus(runs.seasonRecapTest),
+    seasonRecapSendAll: toAdminOperationStatus(runs.seasonRecapSendAll),
     missingTeamReminderSend: toAdminOperationStatus(
       runs.missingTeamReminderSend,
     ),
@@ -268,6 +305,10 @@ export function useAdminDashboard() {
     weeklyRecap: toLatestAdminOperationStatus([
       runs.weeklyRecapTest,
       runs.weeklyRecapSendAll,
+    ]),
+    seasonRecap: toLatestAdminOperationStatus([
+      runs.seasonRecapTest,
+      runs.seasonRecapSendAll,
     ]),
     standings: toLatestAdminOperationStatus([
       runs.recomputeStandings,
@@ -301,6 +342,15 @@ export function useAdminDashboard() {
             "Review the recipient estimate and message details before starting the bulk send.",
           confirmLabel: "Send bulk email",
           preview: previews.weeklyRecapSendAll,
+        };
+      case "seasonRecapSendAll":
+        return {
+          operation: confirmationOperation,
+          title: "Send the season recap to everyone?",
+          description:
+            "Review the official champions, recipient estimate, and recap message before starting the bulk send.",
+          confirmLabel: "Send season recap",
+          preview: previews.seasonRecapSendAll,
         };
       case "missingTeamReminderSend":
         return {
@@ -385,6 +435,10 @@ export function useAdminDashboard() {
       runJob("weeklyRecapTest", () =>
         sendWeeklyRecapEmailTest({ customBlurb: weeklyRecapBody }),
       ),
+    seasonRecapTest: () =>
+      runJob("seasonRecapTest", () =>
+        sendSeasonRecapEmailTest({ customBlurb: seasonRecapBody }),
+      ),
     recomputeStandings: () =>
       runJob("recomputeStandings", () =>
         runRecomputeStandings({
@@ -448,6 +502,11 @@ export function useAdminDashboard() {
       case "weeklyRecapSendAll":
         await runJob(operation, () =>
           sendWeeklyRecapEmailToAll({ customBlurb: weeklyRecapBody }),
+        );
+        break;
+      case "seasonRecapSendAll":
+        await runJob(operation, () =>
+          sendSeasonRecapEmailToAll({ customBlurb: seasonRecapBody }),
         );
         break;
       case "missingTeamReminderSend":
@@ -614,6 +673,8 @@ export function useAdminDashboard() {
     setTeamsJson,
     weeklyRecapBody,
     setWeeklyRecapBody,
+    seasonRecapBody,
+    setSeasonRecapBody,
     paymentMemberId,
     setPaymentMemberId,
     paymentSeasonId,

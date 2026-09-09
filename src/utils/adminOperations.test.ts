@@ -5,6 +5,7 @@ import {
   buildImportTeamsPreview,
   buildPaymentPreview,
   buildRepairPreview,
+  buildSeasonRecapEmailPreview,
   toAdminOperationStatus,
   toLatestAdminOperationStatus,
 } from "./adminOperations";
@@ -74,6 +75,26 @@ describe("admin operation previews", () => {
       buildBulkEmailPreview({ recipientCount: 0, customBlurb: "" }).canRun,
     ).toBe(false);
     expect(buildRepairPreview({}).canRun).toBe(false);
+  });
+
+  it("requires official champions before enabling a season recap send", () => {
+    expect(
+      buildSeasonRecapEmailPreview({
+        seasonYear: 2026,
+        recipientCount: 42,
+        customBlurb: "What a season.",
+      }).canRun,
+    ).toBe(false);
+
+    expect(
+      buildSeasonRecapEmailPreview({
+        seasonYear: 2026,
+        championName: "Gold Winner",
+        silverChampionName: "Silver Winner",
+        recipientCount: 42,
+        customBlurb: "What a season.",
+      }),
+    ).toMatchObject({ canRun: true, warnings: [] });
   });
 });
 

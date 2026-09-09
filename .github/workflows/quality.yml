@@ -17,9 +17,9 @@ jobs:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Use Node 22.23.1
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 22.23.1
           cache: npm
@@ -42,6 +42,8 @@ jobs:
           convex/_generated/server.js
       - name: 1. Formatting check
         run: npm run format:check
+      - name: 1b. Agent documentation check
+        run: npm run docs:check
       - name: 2. Strict lint
         run: npm run lint:strict
       - name: 3. Type check
@@ -55,7 +57,7 @@ jobs:
       - name: Produce bundle analysis
         run: npm run bundle:analyze
       - name: Upload bundle analysis
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: bundle-analysis
           path: artifacts/bundle-analysis.json
@@ -72,9 +74,9 @@ jobs:
       pull-requests: read
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Use Node 22.23.1
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 22.23.1
           cache: npm
@@ -85,7 +87,7 @@ jobs:
       - name: Review dependency changes
         if: github.event_name == 'pull_request'
         continue-on-error: true
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@v5
 
   secret-scan:
     name: 8c. Secret scan
@@ -98,7 +100,7 @@ jobs:
       GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
     steps:
       - name: Check out full repository history
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Install verified Gitleaks binary

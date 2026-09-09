@@ -31,6 +31,27 @@ export type GroupsEmailContext = {
   memberCount: number;
 };
 
+export type SeasonRecapWinner = {
+  displayName: string;
+  scoreText: string;
+  tourShortForm: string;
+};
+
+export type SeasonRecapEmailContext = {
+  seasonId: Id<"seasons">;
+  seasonYear: number;
+  finalTournamentId: Id<"tournaments">;
+  champion: SeasonRecapWinner;
+  silverChampion: SeasonRecapWinner;
+  recipients: Array<{
+    memberId: Id<"members">;
+    email: string;
+    name?: string;
+  }>;
+  activeTourCardCount: number;
+  memberCount: number;
+};
+
 export type GetLeaderboardRowsForTournamentArgs = {
   ctx: QueryCtx;
   tournamentId: Id<"tournaments">;

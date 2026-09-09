@@ -1,0 +1,4 @@
+interface:
+  display_name: "PGC DataGolf API"
+  short_description: "Trace and change PGC DataGolf integrations"
+  default_prompt: "Use $datagolf-api to diagnose this PGC DataGolf integration issue."

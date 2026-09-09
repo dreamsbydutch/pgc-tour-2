@@ -1,0 +1,4 @@
+interface:
+  display_name: "PGC Registration and Picks"
+  short_description: "Maintain PGC registration and tournament picks"
+  default_prompt: "Use $pgc-registration-and-picks to trace this PGC registration or roster issue."

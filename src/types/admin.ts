@@ -23,6 +23,8 @@ export type AdminOperationKey =
   | "updateWorldRank"
   | "weeklyRecapTest"
   | "weeklyRecapSendAll"
+  | "seasonRecapTest"
+  | "seasonRecapSendAll"
   | "missingTeamReminderSend"
   | "createPayment"
   | "recomputeStandings"
@@ -67,6 +69,7 @@ export type AdminConfirmationRequest = {
   operation: Extract<
     AdminOperationKey,
     | "weeklyRecapSendAll"
+    | "seasonRecapSendAll"
     | "missingTeamReminderSend"
     | "createPayment"
     | "repairTournament"
@@ -129,6 +132,7 @@ export type AdminTaskKey =
   | "eventSetup"
   | "liveScoring"
   | "weeklyRecap"
+  | "seasonRecap"
   | "pickReminder"
   | "memberPayment"
   | "settlements"
@@ -175,6 +179,7 @@ export type AdminHubProps = {
     eventSetup: AdminOperationStatus;
     liveSync: AdminOperationStatus;
     weeklyRecap: AdminOperationStatus;
+    seasonRecap: AdminOperationStatus;
     standings: AdminOperationStatus;
   };
   pendingSettlementCount: number;
@@ -252,6 +257,14 @@ export type AdminRepairPreviewArgs = {
 
 export type AdminBulkEmailPreviewArgs = {
   tournamentName?: string;
+  recipientCount?: number;
+  customBlurb: string;
+};
+
+export type AdminSeasonRecapPreviewArgs = {
+  seasonYear?: number;
+  championName?: string;
+  silverChampionName?: string;
   recipientCount?: number;
   customBlurb: string;
 };

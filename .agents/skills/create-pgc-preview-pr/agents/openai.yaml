@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create a PGC Preview Pull Request"
+  short_description: "Ship a completed goal with a verified preview"
+  default_prompt: "Use $create-pgc-preview-pr to deliver the completed current goal as a GitHub pull request with a verified Vercel preview URL."

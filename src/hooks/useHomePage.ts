@@ -22,6 +22,10 @@ export function useHomePage(): HomePageModel {
   const connection = useConvexConnectionState();
   const queriedDashboard = useQuery(api.functions.home.getPublicHomeDashboard);
   const bootstrap = useViewerBootstrap();
+  const settlement = useQuery(
+    api.functions.account.getMySettlementSummary,
+    bootstrap?.member ? {} : "skip",
+  );
   const [retriedDashboard, setRetriedDashboard] =
     useState<typeof queriedDashboard>();
   const [isRetrying, setIsRetrying] = useState(false);
@@ -111,6 +115,7 @@ export function useHomePage(): HomePageModel {
     seasonTourCards: bootstrap.tourCards as TourCardDoc[],
     role,
     account: typeof member?.account === "number" ? member.account : null,
+    settlement,
     seasonHonors,
     freshness,
   };

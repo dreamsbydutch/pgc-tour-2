@@ -262,6 +262,28 @@ describe("email action hardening", () => {
         {},
       ),
     ).rejects.toThrow("Admin access required");
+
+    await expect(
+      t.query(api.functions.emails.adminGetSeasonRecapPreview, {}),
+    ).rejects.toThrow("Unauthorized");
+    await expect(
+      regular.authenticated.query(
+        api.functions.emails.adminGetSeasonRecapPreview,
+        {},
+      ),
+    ).rejects.toThrow("Admin access required");
+    await expect(
+      regular.authenticated.action(
+        api.functions.emails.sendSeasonRecapEmailTest,
+        {},
+      ),
+    ).rejects.toThrow("Admin access required");
+    await expect(
+      regular.authenticated.action(
+        api.functions.emails.adminSendSeasonRecapEmailToActiveMembers,
+        {},
+      ),
+    ).rejects.toThrow("Admin access required");
   });
 
   it("blocks concurrent sends and enforces the completed-send cooldown", async () => {
@@ -1220,6 +1242,12 @@ describe("registration, picks, payments, and leases", () => {
       {},
     );
     expect(activeDashboard.seasonHonors).toBeNull();
+    await expect(
+      t.query(internal.functions.emails.getSeasonRecapEmailContext, {}),
+    ).resolves.toMatchObject({
+      skipped: true,
+      reason: "season_not_complete",
+    });
 
     await t.run((ctx) =>
       ctx.db.patch(finalPlayoffTournamentId, { status: "completed" }),
@@ -1248,6 +1276,24 @@ describe("registration, picks, payments, and leases", () => {
           logoUrl: "https://example.com/tour.png",
         },
       },
+    });
+    await expect(
+      t.query(internal.functions.emails.getSeasonRecapEmailContext, {}),
+    ).resolves.toMatchObject({
+      skipped: false,
+      seasonYear: new Date().getFullYear(),
+      champion: {
+        displayName: "Gold Winner",
+        scoreText: "-22",
+        tourShortForm: "TEST",
+      },
+      silverChampion: {
+        displayName: "Silver Winner",
+        scoreText: "-14",
+        tourShortForm: "TEST",
+      },
+      memberCount: 2,
+      activeTourCardCount: 2,
     });
   });
 
